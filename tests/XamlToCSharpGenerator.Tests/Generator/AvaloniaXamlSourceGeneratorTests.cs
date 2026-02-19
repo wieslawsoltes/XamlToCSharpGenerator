@@ -132,6 +132,144 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Does_Not_Clear_Content_On_Nested_Class_Backed_UserControl()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class ContentControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class UserControl : ContentControl { }
+
+                public class Button : ContentControl { }
+            }
+
+            namespace Demo
+            {
+                public partial class HostView : global::Avalonia.Controls.UserControl { }
+                public partial class ChildView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string hostXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.HostView">
+                <local:ChildView />
+            </UserControl>
+            """;
+
+        const string childXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.ChildView">
+                <Button Content="Child Content" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            [("HostView.axaml", hostXaml), ("ChildView.axaml", childXaml)]);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedTrees = updatedCompilation.SyntaxTrees.Select(static tree => tree.ToString()).ToArray();
+        var hostGenerated = Assert.Single(
+            generatedTrees.Where(static source =>
+                source.Contains("partial class HostView") &&
+                source.Contains("__PopulateGeneratedObjectGraph")));
+        Assert.Contains("new global::Demo.ChildView()", hostGenerated);
+        Assert.DoesNotContain(".Content = default!;", hostGenerated);
+    }
+
+    [Fact]
+    public void Does_Not_Clear_Content_On_TopDown_Attached_Class_Backed_UserControl()
+    {
+        const string code = """
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Class, Inherited = true)]
+                public sealed class UsableDuringInitializationAttribute : global::System.Attribute
+                {
+                    public UsableDuringInitializationAttribute() { }
+                    public UsableDuringInitializationAttribute(bool usable) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class ContentControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                [global::Avalonia.Metadata.UsableDuringInitialization]
+                public class UserControl : ContentControl { }
+
+                public class TabControl : Control
+                {
+                    public global::System.Collections.ArrayList Items { get; } = new();
+                }
+
+                public class TabItem : ContentControl
+                {
+                    public object? Header { get; set; }
+                }
+
+                public class Button : ContentControl { }
+            }
+
+            namespace Demo
+            {
+                public partial class HostView : global::Avalonia.Controls.UserControl { }
+                public partial class ChildView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string hostXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.HostView">
+                <TabControl>
+                    <TabItem Header="Child">
+                        <local:ChildView />
+                    </TabItem>
+                </TabControl>
+            </UserControl>
+            """;
+
+        const string childXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.ChildView">
+                <Button Content="Child Content" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            [("HostView.axaml", hostXaml), ("ChildView.axaml", childXaml)]);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedTrees = updatedCompilation.SyntaxTrees.Select(static tree => tree.ToString()).ToArray();
+        var hostGenerated = Assert.Single(
+            generatedTrees.Where(static source =>
+                source.Contains("partial class HostView") &&
+                source.Contains("__PopulateGeneratedObjectGraph")));
+        Assert.Contains("new global::Demo.ChildView()", hostGenerated);
+        Assert.DoesNotContain(".Content = default!;", hostGenerated);
+    }
+
+    [Fact]
     public void Emits_Object_Lifecycle_And_NameScope_Completion()
     {
         const string code = """

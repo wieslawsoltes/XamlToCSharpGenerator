@@ -577,6 +577,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 var contentPropertyName = string.IsNullOrWhiteSpace(node.ContentPropertyName)
                     ? "Content"
                     : node.ContentPropertyName!;
+                var shouldResetImplicitContent =
+                    existingVariableName is not null &&
+                    string.IsNullOrWhiteSpace(topDownAttachmentTemplate);
                 if (node.Children.Length > 0)
                 {
                     var firstChildNode = node.Children[0];
@@ -599,7 +602,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         sourceBuilder.AppendLine($"{indent}{variableName}.{contentPropertyName} = {firstChild};");
                     }
                 }
-                else if (!HasExplicitContentValue(node, contentPropertyName))
+                else if (shouldResetImplicitContent && !HasExplicitContentValue(node, contentPropertyName))
                 {
                     sourceBuilder.AppendLine($"{indent}{variableName}.{contentPropertyName} = default!;");
                 }
@@ -1253,7 +1256,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return node.UseServiceProviderConstructor
-            ? "new " + node.TypeName + "(" + serviceProviderReference + ")"
+            ? "new " + node.TypeName + "(global::XamlToCSharpGenerator.Runtime.SourceGenServiceProviderUtilities.EnsureNotNull(" + serviceProviderReference + "))"
             : "new " + node.TypeName + "()";
     }
 
