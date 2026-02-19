@@ -186,10 +186,20 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                 {
                     IXamlCodeEmitter emitter = new AvaloniaCodeEmitter();
                     var (hintName, source) = emitter.Emit(viewModel);
-                    if (TryAddSource(sourceContext, hintName, source) &&
-                        resilienceEnabled)
+                    if (TryAddSource(sourceContext, hintName, source))
                     {
-                        LastGoodGeneratedSources[cacheKey] = new CachedGeneratedSource(hintName, source);
+                        if (resilienceEnabled)
+                        {
+                            LastGoodGeneratedSources[cacheKey] = new CachedGeneratedSource(hintName, source);
+                        }
+                    }
+                    else
+                    {
+                        sourceContext.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticCatalog.DuplicateGeneratedHintName,
+                            Location.None,
+                            hintName,
+                            parseResult.FilePath));
                     }
                 }
                 catch (Exception ex)
@@ -296,7 +306,17 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        return options.DotNetWatchBuild;
+        if (options.DotNetWatchBuild)
+        {
+            return true;
+        }
+
+        if (!options.IdeHotReloadEnabled)
+        {
+            return false;
+        }
+
+        return options.BuildingInsideVisualStudio || options.BuildingByReSharper;
     }
 
     private static bool TryUseCachedSource(
@@ -694,14 +714,84 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             return string.Empty;
         }
 
+        var normalized = path.Replace('\\', '/');
+
         try
         {
-            return Path.GetFullPath(path).Replace('\\', '/');
+            if (Path.IsPathRooted(path))
+            {
+                normalized = Path.GetFullPath(path).Replace('\\', '/');
+            }
         }
         catch
         {
-            return path.Replace('\\', '/');
+            // Keep lexical normalization when physical normalization fails.
         }
+
+        return NormalizePathSegments(normalized);
+    }
+
+    private static string NormalizePathSegments(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        var normalized = path.Replace('\\', '/');
+        var hasUncPrefix = normalized.StartsWith("//", StringComparison.Ordinal);
+        var hasUnixRoot = !hasUncPrefix && normalized.StartsWith("/", StringComparison.Ordinal);
+        var isRooted = Path.IsPathRooted(normalized) || hasUncPrefix || hasUnixRoot;
+        var parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+        var stack = new List<string>(parts.Length);
+
+        foreach (var part in parts)
+        {
+            if (part == ".")
+            {
+                continue;
+            }
+
+            if (part == "..")
+            {
+                if (stack.Count > 0 &&
+                    !string.Equals(stack[^1], "..", StringComparison.Ordinal) &&
+                    !IsDriveSegment(stack[^1]))
+                {
+                    stack.RemoveAt(stack.Count - 1);
+                    continue;
+                }
+
+                if (!isRooted)
+                {
+                    stack.Add(part);
+                }
+
+                continue;
+            }
+
+            stack.Add(part);
+        }
+
+        var collapsed = string.Join("/", stack);
+        if (hasUncPrefix)
+        {
+            return "//" + collapsed;
+        }
+
+        if (hasUnixRoot)
+        {
+            return "/" + collapsed;
+        }
+
+        return collapsed;
+    }
+
+    private static bool IsDriveSegment(string value)
+    {
+        return value.Length == 2 &&
+               value[1] == ':' &&
+               char.IsLetter(value[0]);
     }
 
     private static string GetIncludeDirectory(string path)

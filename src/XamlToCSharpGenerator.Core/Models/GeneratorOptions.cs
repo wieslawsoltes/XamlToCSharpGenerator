@@ -9,7 +9,10 @@ public sealed record GeneratorOptions(
     bool StrictMode,
     bool HotReloadEnabled,
     bool HotReloadErrorResilienceEnabled,
+    bool IdeHotReloadEnabled,
     bool DotNetWatchBuild,
+    bool BuildingInsideVisualStudio,
+    bool BuildingByReSharper,
     bool TracePasses,
     string Backend,
     string? AssemblyName)
@@ -26,7 +29,10 @@ public sealed record GeneratorOptions(
             StrictMode: GetBool(globalOptions, "build_property.AvaloniaSourceGenStrictMode", false),
             HotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadEnabled", true),
             HotReloadErrorResilienceEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", true),
+            IdeHotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenIdeHotReloadEnabled", true),
             DotNetWatchBuild: GetBool(globalOptions, "build_property.DotNetWatchBuild", false),
+            BuildingInsideVisualStudio: GetBool(globalOptions, "build_property.BuildingInsideVisualStudio", false),
+            BuildingByReSharper: GetBool(globalOptions, "build_property.BuildingByReSharper", false),
             TracePasses: GetBool(globalOptions, "build_property.AvaloniaSourceGenTracePasses", false),
             Backend: backend,
             AssemblyName: assemblyName);

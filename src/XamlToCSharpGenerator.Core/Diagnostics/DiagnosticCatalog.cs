@@ -292,6 +292,14 @@ public static class DiagnosticCatalog
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor DuplicateGeneratedHintName = new(
+        id: "AXSG0701",
+        title: "Generated source hint name is duplicated",
+        messageFormat: "Generator hint '{0}' was emitted more than once. Check duplicate AXAML inputs for '{1}'.",
+        category: "AXSG.HotReload",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor EmissionFailed = new(
         id: "AXSG0200",
         title: "Source emission failed",

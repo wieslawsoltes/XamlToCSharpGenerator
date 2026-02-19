@@ -15,18 +15,21 @@ public class BuildIntegrationTests
         var output = RunEvaluation(sourceGenBackend: true);
 
         Assert.Contains("STATE|true|false|false|", output, StringComparison.Ordinal);
-        Assert.Contains("AF|AvaloniaXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
+        var afMatches = CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml");
+        var watchMatches = CountMatches(output, "WATCH|");
+        var caciMatches = CountMatches(output, "CACI|");
+        var utdiMatches = CountMatches(output, "UTDI|");
+        Assert.True(afMatches == 1, output);
+        Assert.True(watchMatches == 1, output);
+        Assert.True(caciMatches == 1, output);
+        Assert.True(utdiMatches == 1, output);
     }
 
     [Fact]
     public void SourceGen_Backend_Rewrites_AvaloniaXaml_AdditionalFiles_Without_Duplicates()
     {
         var output = RunEvaluation(sourceGenBackend: true, seedAdditionalFile: true);
-        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        var matches = lines.Count(line =>
-            line.Contains("AF|AvaloniaXaml|Views/MainView.axaml", StringComparison.Ordinal));
-
-        Assert.Equal(1, matches);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
     }
 
     [Fact]
@@ -43,27 +46,50 @@ public class BuildIntegrationTests
     {
         var output = RunEvaluation(sourceGenBackend: true, seedAdditionalFile: true, watchMode: true);
 
-        Assert.Contains("STATE|true|false|false|1|1|1", output, StringComparison.Ordinal);
-        Assert.Contains("AF|AvaloniaXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
+        Assert.Contains("STATE|true|false|false|1|1", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
     }
 
     [Fact]
     public void SourceGen_Backend_Deduplicates_Duplicate_AvaloniaXaml_Items()
     {
         var output = RunEvaluation(sourceGenBackend: true, duplicateAvaloniaXaml: true);
-        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        var matches = lines.Count(line =>
-            line.Contains("AF|AvaloniaXaml|Views/MainView.axaml", StringComparison.Ordinal));
 
-        Assert.Contains("STATE|true|false|false|1|1|1", output, StringComparison.Ordinal);
-        Assert.Equal(1, matches);
+        Assert.Contains("STATE|true|false|false|1|2", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void SourceGen_Backend_Watch_Uses_Project_Rooted_Path_When_Working_Directory_Differs()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            watchMode: true,
+            runFromRepositoryRoot: true);
+
+        var projectDirectory = GetSinglePrefixedValue(output, "PROJDIR|");
+        var watchPath = GetSinglePrefixedValue(output, "WATCH|");
+
+        var normalizedProjectDirectory = NormalizePathForAssert(projectDirectory).TrimEnd('/');
+        var normalizedWatchPath = NormalizePathForAssert(watchPath);
+        Assert.StartsWith(
+            normalizedProjectDirectory + "/",
+            normalizedWatchPath,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RunEvaluation(
         bool sourceGenBackend,
         bool seedAdditionalFile = false,
         bool watchMode = false,
-        bool duplicateAvaloniaXaml = false)
+        bool duplicateAvaloniaXaml = false,
+        bool runFromRepositoryRoot = false)
     {
         var repositoryRoot = GetRepositoryRoot();
         var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
@@ -94,7 +120,7 @@ public class BuildIntegrationTests
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = tempDir
+                WorkingDirectory = runFromRepositoryRoot ? repositoryRoot : tempDir
             };
 
             using var process = Process.Start(startInfo);
@@ -162,12 +188,38 @@ public class BuildIntegrationTests
   <Import Project="{propsPath}" />
   <Import Project="{targetsPath}" />
 
-  <Target Name="PrintState" DependsOnTargets="XamlToCSharpGenerator_InjectAdditionalFiles">
-    <Message Importance="high" Text="STATE|$(AvaloniaSourceGenCompilerEnabled)|$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)|@(AdditionalFiles->Count())|@(AvaloniaXaml->Count())|@(Watch->Count())" />
+  <Target Name="PrintState" DependsOnTargets="XamlToCSharpGenerator_InjectAdditionalFiles;XamlToCSharpGenerator_PrepareCoreCompileInputs;XamlToCSharpGenerator_CollectUpToDateCheckInputDesignTime">
+    <Message Importance="high" Text="PROJDIR|$(MSBuildProjectDirectory)" />
+    <Message Importance="high" Text="STATE|$(AvaloniaSourceGenCompilerEnabled)|$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)|@(AdditionalFiles->Count())|@(AvaloniaXaml->Count())" />
     <Message Importance="high" Condition="'@(AdditionalFiles)' != ''" Text="AF|%(AdditionalFiles.SourceItemGroup)|%(AdditionalFiles.TargetPath)" />
+    <Message Importance="high" Condition="'@(Watch)' != '' and '%(Watch.XamlToCSharpGenerator)' == 'true'" Text="WATCH|%(Watch.Identity)" />
+    <Message Importance="high" Condition="'@(CustomAdditionalCompileInputs)' != '' and '%(CustomAdditionalCompileInputs.XamlToCSharpGenerator)' == 'true'" Text="CACI|%(CustomAdditionalCompileInputs.Identity)" />
+    <Message Importance="high" Condition="'@(UpToDateCheckInput)' != '' and '%(UpToDateCheckInput.XamlToCSharpGenerator)' == 'true'" Text="UTDI|%(UpToDateCheckInput.Identity)" />
   </Target>
 </Project>
 """;
+    }
+
+    private static int CountMatches(string output, string value)
+    {
+        return output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Count(line => line.Contains(value, StringComparison.Ordinal));
+    }
+
+    private static string GetSinglePrefixedValue(string output, string prefix)
+    {
+        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var matches = lines
+            .Select(static line => line.TrimStart())
+            .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
+            .ToArray();
+        var match = Assert.Single(matches);
+        return match.Substring(prefix.Length);
+    }
+
+    private static string NormalizePathForAssert(string value)
+    {
+        return value.Replace('\\', '/');
     }
 
     private static string GetRepositoryRoot()

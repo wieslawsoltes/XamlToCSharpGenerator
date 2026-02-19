@@ -7,6 +7,7 @@
     <AvaloniaSourceGenStrictMode Condition="'$(AvaloniaSourceGenStrictMode)' == ''">false</AvaloniaSourceGenStrictMode>
     <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
     <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
+    <AvaloniaSourceGenIdeHotReloadEnabled Condition="'$(AvaloniaSourceGenIdeHotReloadEnabled)' == ''">true</AvaloniaSourceGenIdeHotReloadEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
   </PropertyGroup>
 
@@ -20,8 +21,11 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenStrictMode" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIdeHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
     <CompilerVisibleProperty Include="DotNetWatchBuild" />
+    <CompilerVisibleProperty Include="BuildingInsideVisualStudio" />
+    <CompilerVisibleProperty Include="BuildingByReSharper" />
     <CompilerVisibleProperty Include="AvaloniaNameGeneratorIsEnabled" />
   </ItemGroup>
 </Project>

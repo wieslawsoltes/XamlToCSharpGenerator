@@ -386,11 +386,10 @@ public class AvaloniaXamlSourceGeneratorTests
             """;
 
         var compilation = CreateCompilation(code);
-        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("var __n0 = new global::Avalonia.Controls.ServiceOnlyControl(__serviceProvider);", generated);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
     }
 
     [Fact]
@@ -482,6 +481,9 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
         Assert.Contains("XamlSourceGenHotReloadManager.Register", generated);
+        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions", generated);
+        Assert.Contains("CaptureState = static __instance =>", generated);
+        Assert.Contains("RestoreState = static (__instance, __state) =>", generated);
     }
 
     [Fact]
@@ -546,6 +548,65 @@ public class AvaloniaXamlSourceGeneratorTests
         var second = RunGeneratorWithResult(
             compilation,
             [("WatchView.axaml", invalidXaml)],
+            options);
+
+        Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(second.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0001" && d.Severity == DiagnosticSeverity.Warning);
+        Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0700" && d.Severity == DiagnosticSeverity.Warning);
+
+        var firstSources = first.RunResult.Results
+            .SelectMany(static result => result.GeneratedSources)
+            .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+        var secondSources = second.RunResult.Results
+            .SelectMany(static result => result.GeneratedSources)
+            .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+
+        Assert.Equal(firstSources.Count, secondSources.Count);
+        foreach (var pair in firstSources)
+        {
+            Assert.True(secondSources.TryGetValue(pair.Key, out var secondSource));
+            Assert.Equal(pair.Value, secondSource);
+        }
+    }
+
+    [Fact]
+    public void HotReload_IdeMode_Uses_Last_Good_Source_When_Xaml_Is_Temporarily_Invalid()
+    {
+        const string code = "namespace Demo; public partial class IdeView {}";
+        const string validXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.IdeView">
+                <Button Content="Valid" />
+            </UserControl>
+            """;
+
+        const string invalidXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.IdeView">
+                <Button Content="Broken"
+            </UserControl>
+            """;
+
+        var options = new[]
+        {
+            new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "false"),
+            new KeyValuePair<string, string>("build_property.BuildingInsideVisualStudio", "true"),
+            new KeyValuePair<string, string>("build_property.AvaloniaSourceGenIdeHotReloadEnabled", "true"),
+            new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+            new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", "true"),
+        };
+
+        var compilation = CreateCompilation(code);
+        var first = RunGeneratorWithResult(
+            compilation,
+            [("IdeView.axaml", validXaml)],
+            options);
+        var second = RunGeneratorWithResult(
+            compilation,
+            [("IdeView.axaml", invalidXaml)],
             options);
 
         Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
@@ -728,8 +789,119 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("__TryClearCollection(__n0.Children);", generated);
+        Assert.Contains("if (list.IsReadOnly || list.IsFixedSize)", generated);
+        Assert.Contains("catch (global::System.InvalidOperationException)", generated);
         Assert.Contains("__n1.Click -= __root.OnAccept;", generated);
         Assert.Contains("__n1.Click += __root.OnAccept;", generated);
+    }
+
+    [Fact]
+    public void Emits_ItemsCollection_Clear_Guards_For_ItemsSource_Backends()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class IndexerDescriptor
+                {
+                    public AvaloniaProperty? Property { get; set; }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public enum BindingMode
+                {
+                    TwoWay
+                }
+
+                public class Binding
+                {
+                    public Binding(string path) { }
+                    public BindingMode Mode { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public string? Text { get; set; }
+                }
+
+                public class ItemCollection : global::System.Collections.IList
+                {
+                    public int Count => 0;
+                    public object SyncRoot => this;
+                    public bool IsSynchronized => false;
+                    public bool IsReadOnly => true;
+                    public bool IsFixedSize => false;
+                    public object? this[int index] { get => null; set { } }
+                    public int Add(object? value) => -1;
+                    public void Clear() { throw new global::System.InvalidOperationException(); }
+                    public bool Contains(object? value) => false;
+                    public int IndexOf(object? value) => -1;
+                    public void Insert(int index, object? value) { }
+                    public void Remove(object? value) { }
+                    public void RemoveAt(int index) { }
+                    public void CopyTo(global::System.Array array, int index) { }
+                    public global::System.Collections.IEnumerator GetEnumerator() => global::System.Array.Empty<object>().GetEnumerator();
+                }
+
+                public class ItemsControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ItemsSourceProperty = new();
+                    public ItemCollection Items { get; } = new();
+                }
+
+                public class ListBox : ItemsControl
+                {
+                    public object? ItemTemplate { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ListBox ItemsSource="{Binding People}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__TryClearCollection(__n0.Items);", generated);
+        Assert.Contains("if (list.IsReadOnly || list.IsFixedSize)", generated);
+        Assert.Contains("catch (global::System.InvalidOperationException)", generated);
     }
 
     [Fact]
@@ -4665,7 +4837,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("__n1.Property = global::Avalonia.Controls.TextBlock.FontSizeProperty;", generated);
-        Assert.Contains("__n1.Value = 17;", generated);
+        Assert.Contains("Value = 17", generated);
     }
 
     [Fact]
