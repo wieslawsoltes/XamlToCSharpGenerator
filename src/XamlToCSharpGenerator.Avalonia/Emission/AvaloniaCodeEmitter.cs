@@ -250,10 +250,30 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("                case null:");
         sourceBuilder.AppendLine("                    return;");
         sourceBuilder.AppendLine("                case global::System.Collections.IDictionary dictionary:");
-        sourceBuilder.AppendLine("                    dictionary.Clear();");
+        sourceBuilder.AppendLine("                    try");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                        dictionary.Clear();");
+        sourceBuilder.AppendLine("                    }");
+        sourceBuilder.AppendLine("                    catch (global::System.NotSupportedException)");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                    }");
         sourceBuilder.AppendLine("                    return;");
         sourceBuilder.AppendLine("                case global::System.Collections.IList list:");
-        sourceBuilder.AppendLine("                    list.Clear();");
+        sourceBuilder.AppendLine("                    if (list.IsReadOnly || list.IsFixedSize)");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                        return;");
+        sourceBuilder.AppendLine("                    }");
+        sourceBuilder.AppendLine();
+        sourceBuilder.AppendLine("                    try");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                        list.Clear();");
+        sourceBuilder.AppendLine("                    }");
+        sourceBuilder.AppendLine("                    catch (global::System.InvalidOperationException)");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                    }");
+        sourceBuilder.AppendLine("                    catch (global::System.NotSupportedException)");
+        sourceBuilder.AppendLine("                    {");
+        sourceBuilder.AppendLine("                    }");
         sourceBuilder.AppendLine("                    return;");
         sourceBuilder.AppendLine("            }");
         sourceBuilder.AppendLine("        }");
@@ -319,10 +339,26 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine();
             if (viewModel.EnableHotReload)
             {
+                var escapedSourcePath = Escape(viewModel.Document.FilePath);
                 sourceBuilder.AppendLine("                if (__loadedWithSourceGen)");
                 sourceBuilder.AppendLine("                {");
                 sourceBuilder.AppendLine(
-                    $"                    global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.Register(this, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload());");
+                    $"                    global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.Register(this, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions");
+                sourceBuilder.AppendLine("                    {");
+                sourceBuilder.AppendLine($"                        SourcePath = \"{escapedSourcePath}\",");
+                sourceBuilder.AppendLine("                        CaptureState = static __instance =>");
+                sourceBuilder.AppendLine("                            __instance is global::Avalonia.StyledElement __styledElement");
+                sourceBuilder.AppendLine("                                ? __styledElement.DataContext");
+                sourceBuilder.AppendLine("                                : null,");
+                sourceBuilder.AppendLine("                        RestoreState = static (__instance, __state) =>");
+                sourceBuilder.AppendLine("                        {");
+                sourceBuilder.AppendLine("                            if (__instance is global::Avalonia.StyledElement __styledElement &&");
+                sourceBuilder.AppendLine("                                __styledElement.DataContext is null)");
+                sourceBuilder.AppendLine("                            {");
+                sourceBuilder.AppendLine("                                __styledElement.DataContext = __state;");
+                sourceBuilder.AppendLine("                            }");
+                sourceBuilder.AppendLine("                        }");
+                sourceBuilder.AppendLine("                    });");
                 sourceBuilder.AppendLine("                }");
             }
 

@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -9,7 +12,7 @@ public class XamlSourceGenHotReloadManagerTests
     [Fact]
     public void UpdateApplication_Reloads_Registered_Instance_For_Matching_Type()
     {
-        XamlSourceGenHotReloadManager.ClearRegistrations();
+        ResetManager();
         XamlSourceGenHotReloadManager.Enable();
 
         var reloadCount = 0;
@@ -29,7 +32,7 @@ public class XamlSourceGenHotReloadManagerTests
     [Fact]
     public void UpdateApplication_Does_Not_Reload_When_Disabled()
     {
-        XamlSourceGenHotReloadManager.ClearRegistrations();
+        ResetManager();
         XamlSourceGenHotReloadManager.Disable();
 
         var reloadCount = 0;
@@ -44,7 +47,7 @@ public class XamlSourceGenHotReloadManagerTests
     [Fact]
     public void UpdateApplication_With_Null_Types_Reloads_All_Tracked_Types()
     {
-        XamlSourceGenHotReloadManager.ClearRegistrations();
+        ResetManager();
         XamlSourceGenHotReloadManager.Enable();
 
         var firstCount = 0;
@@ -64,7 +67,7 @@ public class XamlSourceGenHotReloadManagerTests
     [Fact]
     public void UpdateApplication_Normalizes_Generic_Type_Keys()
     {
-        XamlSourceGenHotReloadManager.ClearRegistrations();
+        ResetManager();
         XamlSourceGenHotReloadManager.Enable();
 
         var reloadCount = 0;
@@ -77,9 +80,151 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void UpdateApplication_Maps_MetadataUpdate_Replacement_Type_To_Original_Type()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new MetadataOriginalReloadTarget();
+        XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(MetadataReplacementReloadTarget)]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Queues_Reentrant_Update_And_Replays_It_After_Current_Pass()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var requestedNestedUpdate = false;
+        var instance = new ReentrantReloadTarget();
+
+        XamlSourceGenHotReloadManager.Register(instance, _ =>
+        {
+            var currentCount = Interlocked.Increment(ref reloadCount);
+            if (currentCount != 1 || requestedNestedUpdate)
+            {
+                return;
+            }
+
+            requestedNestedUpdate = true;
+            XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReentrantReloadTarget)]);
+        });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReentrantReloadTarget)]);
+
+        Assert.Equal(2, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Executes_Registration_State_Transfer_And_Handler_Phases()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var handler = new RecordingHotReloadHandler();
+        XamlSourceGenHotReloadManager.RegisterHandler(handler);
+
+        var beforeReloadCount = 0;
+        var afterReloadCount = 0;
+        var target = new StatefulReloadTarget { Value = 42 };
+
+        XamlSourceGenHotReloadManager.Register(
+            target,
+            static instance => ((StatefulReloadTarget)instance).Value = 0,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BeforeReload = _ => beforeReloadCount++,
+                CaptureState = static instance => ((StatefulReloadTarget)instance).Value,
+                RestoreState = static (instance, state) =>
+                {
+                    if (state is int value)
+                    {
+                        ((StatefulReloadTarget)instance).Value = value;
+                    }
+                },
+                AfterReload = _ => afterReloadCount++
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(StatefulReloadTarget)]);
+
+        Assert.Equal(42, target.Value);
+        Assert.Equal(1, beforeReloadCount);
+        Assert.Equal(1, afterReloadCount);
+        Assert.Equal(1, handler.BeforeVisualTreeUpdateCount);
+        Assert.Equal(1, handler.AfterVisualTreeUpdateCount);
+        Assert.Equal(1, handler.CaptureStateCount);
+        Assert.Equal(1, handler.BeforeElementReloadCount);
+        Assert.Equal(1, handler.AfterElementReloadCount);
+        Assert.Equal(1, handler.ReloadCompletedCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Raises_HotReload_Pipeline_Events_With_Context()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        SourceGenHotReloadUpdateContext? startedContext = null;
+        SourceGenHotReloadUpdateContext? completedContext = null;
+        var target = new PipelineEventTarget();
+
+        XamlSourceGenHotReloadManager.Register(target, _ => { });
+        XamlSourceGenHotReloadManager.HotReloadPipelineStarted += OnStarted;
+        XamlSourceGenHotReloadManager.HotReloadPipelineCompleted += OnCompleted;
+
+        try
+        {
+            XamlSourceGenHotReloadManager.UpdateApplication([typeof(PipelineEventTarget)]);
+        }
+        finally
+        {
+            XamlSourceGenHotReloadManager.HotReloadPipelineStarted -= OnStarted;
+            XamlSourceGenHotReloadManager.HotReloadPipelineCompleted -= OnCompleted;
+        }
+
+        Assert.NotNull(startedContext);
+        Assert.NotNull(completedContext);
+        Assert.Equal(SourceGenHotReloadTrigger.MetadataUpdate, completedContext!.Trigger);
+        Assert.Equal(1, completedContext.OperationCount);
+        Assert.Single(completedContext.ReloadedTypes);
+        Assert.Equal(typeof(PipelineEventTarget), completedContext.ReloadedTypes[0]);
+        return;
+
+        void OnStarted(SourceGenHotReloadUpdateContext context)
+        {
+            startedContext = context;
+        }
+
+        void OnCompleted(SourceGenHotReloadUpdateContext context)
+        {
+            completedContext = context;
+        }
+    }
+
+    [Fact]
+    public void UpdateApplication_Loads_AssemblyLevel_HotReload_Handler_Registration()
+    {
+        ResetManager();
+        AssemblyLevelHotReloadHandler.Reset();
+        XamlSourceGenHotReloadManager.Enable();
+        var target = new AssemblyLevelHandlerReloadTarget();
+
+        XamlSourceGenHotReloadManager.Register(target, _ => { });
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(AssemblyLevelHandlerReloadTarget)]);
+
+        Assert.True(AssemblyLevelHotReloadHandler.ReloadCompletedCount > 0);
+    }
+
+    [Fact]
     public void UpdateApplication_Raises_HotReloaded_Event()
     {
-        XamlSourceGenHotReloadManager.ClearRegistrations();
+        ResetManager();
         Type[]? observedTypes = null;
 
         void Handler(Type[]? updatedTypes)
@@ -101,6 +246,108 @@ public class XamlSourceGenHotReloadManagerTests
         Assert.NotNull(observedTypes);
         Assert.Single(observedTypes!);
         Assert.Equal(typeof(ReloadTargetEvent), observedTypes![0]);
+    }
+
+    [Fact]
+    public void EnableIdePollingFallback_CanBe_Enabled_And_Disabled()
+    {
+        ResetManager();
+
+        XamlSourceGenHotReloadManager.EnableIdePollingFallback(intervalMs: 250);
+        Assert.True(XamlSourceGenHotReloadManager.IsIdePollingFallbackEnabled);
+
+        XamlSourceGenHotReloadManager.DisableIdePollingFallback();
+        Assert.False(XamlSourceGenHotReloadManager.IsIdePollingFallbackEnabled);
+    }
+
+    [Fact]
+    public void UpdateApplication_NativeCallback_Keeps_IdePollingFallback_Enabled()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+        XamlSourceGenHotReloadManager.EnableIdePollingFallback(intervalMs: 250);
+
+        var instance = new ReloadTargetA();
+        XamlSourceGenHotReloadManager.Register(instance, _ => { });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReloadTargetA)]);
+
+        Assert.True(XamlSourceGenHotReloadManager.IsIdePollingFallbackEnabled);
+    }
+
+    [Fact]
+    public void EnableIdePollingFallback_Rejects_Too_Short_Interval()
+    {
+        ResetManager();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => XamlSourceGenHotReloadManager.EnableIdePollingFallback(intervalMs: 99));
+    }
+
+    [Fact]
+    public void ShouldEnableIdePollingFallbackFromEnvironment_Checks_Dotnet_Modifiable_Assemblies()
+    {
+        ResetManager();
+        var original = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
+            Assert.True(XamlSourceGenHotReloadManager.ShouldEnableIdePollingFallbackFromEnvironment());
+
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", null);
+            Assert.False(XamlSourceGenHotReloadManager.ShouldEnableIdePollingFallbackFromEnvironment());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", original);
+        }
+    }
+
+    [Fact]
+    public void IdePollingFallback_SourceFileChange_Triggers_Reload_Attempts()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+        XamlSourceGenHotReloadManager.EnableIdePollingFallback(intervalMs: 100);
+
+        var reloadCount = 0;
+        var tempPath = Path.Combine(Path.GetTempPath(), "AXSG-HotReload-" + Guid.NewGuid().ToString("N") + ".axaml");
+        File.WriteAllText(tempPath, "<TextBlock/>");
+
+        try
+        {
+            var instance = new ReloadTargetA();
+            XamlSourceGenHotReloadManager.Register(instance, _ => Interlocked.Increment(ref reloadCount), tempPath);
+
+            File.WriteAllText(tempPath, "<TextBlock Text=\"Updated\"/>");
+            var reloaded = SpinWait.SpinUntil(() => Volatile.Read(ref reloadCount) > 0, millisecondsTimeout: 3000);
+
+            Assert.True(reloaded);
+            Assert.True(reloadCount > 0);
+        }
+        finally
+        {
+            XamlSourceGenHotReloadManager.DisableIdePollingFallback();
+            XamlSourceGenHotReloadManager.ClearRegistrations();
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+                // Best effort temp cleanup.
+            }
+        }
+    }
+
+    private static void ResetManager()
+    {
+        XamlSourceGenHotReloadManager.DisableIdePollingFallback();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
+        XamlSourceGenHotReloadManager.ResetHandlersToDefaults();
     }
 
     private sealed class ReloadTargetA
@@ -126,5 +373,79 @@ public class XamlSourceGenHotReloadManagerTests
 
     private sealed class GenericReloadTarget<T>
     {
+    }
+
+    private sealed class MetadataOriginalReloadTarget
+    {
+    }
+
+    [MetadataUpdateOriginalType(typeof(MetadataOriginalReloadTarget))]
+    private sealed class MetadataReplacementReloadTarget
+    {
+    }
+
+    private sealed class ReentrantReloadTarget
+    {
+    }
+
+    private sealed class StatefulReloadTarget
+    {
+        public int Value { get; set; }
+    }
+
+    private sealed class PipelineEventTarget
+    {
+    }
+
+    private sealed class AssemblyLevelHandlerReloadTarget
+    {
+    }
+
+    private sealed class RecordingHotReloadHandler : ISourceGenHotReloadHandler
+    {
+        public int BeforeVisualTreeUpdateCount { get; private set; }
+
+        public int CaptureStateCount { get; private set; }
+
+        public int BeforeElementReloadCount { get; private set; }
+
+        public int AfterElementReloadCount { get; private set; }
+
+        public int AfterVisualTreeUpdateCount { get; private set; }
+
+        public int ReloadCompletedCount { get; private set; }
+
+        public void BeforeVisualTreeUpdate(SourceGenHotReloadUpdateContext context)
+        {
+            BeforeVisualTreeUpdateCount++;
+        }
+
+        public object? CaptureState(Type reloadType, object instance)
+        {
+            CaptureStateCount++;
+            return "handler-state";
+        }
+
+        public void BeforeElementReload(Type reloadType, object instance, object? state)
+        {
+            Assert.Equal("handler-state", state);
+            BeforeElementReloadCount++;
+        }
+
+        public void AfterElementReload(Type reloadType, object instance, object? state)
+        {
+            Assert.Equal("handler-state", state);
+            AfterElementReloadCount++;
+        }
+
+        public void AfterVisualTreeUpdate(SourceGenHotReloadUpdateContext context)
+        {
+            AfterVisualTreeUpdateCount++;
+        }
+
+        public void ReloadCompleted(SourceGenHotReloadUpdateContext context)
+        {
+            ReloadCompletedCount++;
+        }
     }
 }
