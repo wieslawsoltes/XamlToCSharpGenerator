@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore XamlToCSharpGenerator.sln --nologo
+
+      - name: Build
+        run: dotnet build XamlToCSharpGenerator.sln --nologo -m:1 /nodeReuse:false --disable-build-servers
+
+      - name: Test
+        run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers --no-build
+
+  perf-sourcegen:
+    runs-on: ubuntu-latest
+    env:
+      AXSG_RUN_PERF_TESTS: "true"
+      AXSG_PERF_MAX_FULL_BUILD_MS: "150000"
+      AXSG_PERF_MAX_SINGLE_EDIT_MS: "50000"
+      AXSG_PERF_MAX_INCLUDE_EDIT_MS: "70000"
+      AXSG_PERF_MAX_INCREMENTAL_TO_FULL_RATIO: "25"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo
+
+      - name: Run SourceGen Perf Harness
+        run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers --filter "FullyQualifiedName~PerformanceHarnessTests"
