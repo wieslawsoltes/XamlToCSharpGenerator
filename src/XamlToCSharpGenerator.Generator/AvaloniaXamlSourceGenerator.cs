@@ -543,7 +543,7 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             return false;
         }
 
-        var trimmedSource = includeSource.Trim();
+        var trimmedSource = NormalizeIncludeSource(includeSource);
         if (trimmedSource.StartsWith("/", StringComparison.Ordinal))
         {
             var rootedPath = NormalizeIncludePath(trimmedSource.TrimStart('/'));
@@ -592,6 +592,77 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
         resolvedUri = BuildUri(assemblyName, includePath);
         isProjectLocal = true;
         return true;
+    }
+
+    private static string NormalizeIncludeSource(string includeSource)
+    {
+        var trimmed = includeSource.Trim();
+        if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
+            !trimmed.EndsWith("}", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        var inner = trimmed.Substring(1, trimmed.Length - 2).Trim();
+        if (inner.Length == 0)
+        {
+            return trimmed;
+        }
+
+        var separatorIndex = inner.IndexOfAny(new[] { ' ', ',' });
+        var markupName = separatorIndex >= 0
+            ? inner.Substring(0, separatorIndex)
+            : inner;
+        if (!markupName.Equals("x:Uri", StringComparison.OrdinalIgnoreCase) &&
+            !markupName.Equals("Uri", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        var arguments = separatorIndex >= 0
+            ? inner.Substring(separatorIndex + 1).Trim()
+            : string.Empty;
+        if (arguments.Length == 0)
+        {
+            return trimmed;
+        }
+
+        var argumentSegment = arguments;
+        var commaIndex = argumentSegment.IndexOf(',');
+        if (commaIndex >= 0)
+        {
+            argumentSegment = argumentSegment.Substring(0, commaIndex).Trim();
+        }
+
+        var equalsIndex = argumentSegment.IndexOf('=');
+        if (equalsIndex > 0)
+        {
+            var key = argumentSegment.Substring(0, equalsIndex).Trim();
+            var value = argumentSegment.Substring(equalsIndex + 1).Trim();
+            if (key.Equals("Uri", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Value", StringComparison.OrdinalIgnoreCase))
+            {
+                return UnquoteIncludeSource(value);
+            }
+
+            return trimmed;
+        }
+
+        return UnquoteIncludeSource(argumentSegment);
+    }
+
+    private static string UnquoteIncludeSource(string value)
+    {
+        if (value.Length >= 2)
+        {
+            if ((value[0] == '"' && value[^1] == '"') ||
+                (value[0] == '\'' && value[^1] == '\''))
+            {
+                return value.Substring(1, value.Length - 2);
+            }
+        }
+
+        return value;
     }
 
     private static string BuildUri(string assemblyName, string normalizedTargetPath)

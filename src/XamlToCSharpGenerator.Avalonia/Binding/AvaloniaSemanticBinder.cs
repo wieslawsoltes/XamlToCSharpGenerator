@@ -2153,7 +2153,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
-            if (!Uri.TryCreate(include.Source, UriKind.RelativeOrAbsolute, out var sourceUri))
+            var normalizedIncludeSource = NormalizeIncludeSourceForResolution(include.Source);
+            if (!Uri.TryCreate(normalizedIncludeSource, UriKind.RelativeOrAbsolute, out var sourceUri))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0401",
@@ -2177,7 +2178,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var resolvedIncludeUri = ResolveIncludedBuildUri(
-                include.Source,
+                normalizedIncludeSource,
                 document.TargetPath,
                 currentDocumentUri,
                 out var isProjectLocalInclude);
@@ -2269,6 +2270,38 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         isProjectLocal = true;
         return "avares://" + currentAssembly + "/" + normalizedIncludePath;
+    }
+
+    private static string NormalizeIncludeSourceForResolution(string includeSource)
+    {
+        if (string.IsNullOrWhiteSpace(includeSource))
+        {
+            return includeSource;
+        }
+
+        var trimmedSource = includeSource.Trim();
+        if (!TryParseMarkupExtension(trimmedSource, out var markup))
+        {
+            return trimmedSource;
+        }
+
+        var markupName = markup.Name.ToLowerInvariant();
+        if (markupName is not ("x:uri" or "uri"))
+        {
+            return trimmedSource;
+        }
+
+        var uriToken = markup.NamedArguments.TryGetValue("Uri", out var explicitUri)
+            ? explicitUri
+            : markup.NamedArguments.TryGetValue("Value", out var explicitValue)
+                ? explicitValue
+                : markup.PositionalArguments.Length > 0
+                    ? markup.PositionalArguments[0]
+                    : null;
+
+        return string.IsNullOrWhiteSpace(uriToken)
+            ? trimmedSource
+            : Unquote(uriToken!).Trim();
     }
 
     private static string GetIncludeDirectory(string targetPath)
@@ -6704,7 +6737,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (type.SpecialType == SpecialType.System_Double && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
         {
-            expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
+            expression = doubleValue.ToString("R", CultureInfo.InvariantCulture) + "d";
             return true;
         }
 
@@ -8058,7 +8091,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                 expression = targetType.SpecialType == SpecialType.System_Single
                     ? parsed.ToString("R", CultureInfo.InvariantCulture) + "f"
-                    : parsed.ToString("R", CultureInfo.InvariantCulture);
+                    : parsed.ToString("R", CultureInfo.InvariantCulture) + "d";
                 return true;
             }
             case "x:decimal":
