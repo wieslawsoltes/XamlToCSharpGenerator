@@ -1,0 +1,65 @@
+<Project>
+  <!-- Resolve SourceGen backend switches in .targets so project-level properties are already available. -->
+  <PropertyGroup>
+    <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'">true</AvaloniaSourceGenCompilerEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
+    <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
+    <_XamlToCSharpGeneratorAvaloniaWatchCandidate Include="@(AvaloniaXaml->'%(FullPath)')" />
+    <Watch Remove="@(_XamlToCSharpGeneratorAvaloniaWatchCandidate)" />
+    <Watch Include="@(_XamlToCSharpGeneratorAvaloniaWatchCandidate->Distinct())" />
+  </ItemGroup>
+
+  <Target Name="XamlToCSharpGenerator_InjectAdditionalFiles"
+          AfterTargets="_InjectAdditionalFiles"
+          BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun"
+          Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
+    <ItemGroup>
+      <!-- Normalize all AvaloniaXaml entries into AdditionalFiles exactly once.
+           This prevents duplicate AdditionalFiles under watch/re-evaluation flows. -->
+      <_XamlToCSharpGeneratorAvaloniaXamlRaw Include="@(AvaloniaXaml)">
+        <NormalizedIdentity>$([System.IO.Path]::GetFullPath('%(Identity)'))</NormalizedIdentity>
+      </_XamlToCSharpGeneratorAvaloniaXamlRaw>
+
+      <_XamlToCSharpGeneratorAvaloniaXaml Include="@(_XamlToCSharpGeneratorAvaloniaXamlRaw->'%(NormalizedIdentity)')">
+        <OriginalIdentity>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.Identity)</OriginalIdentity>
+        <Link>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.Link)</Link>
+        <TargetPath>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.TargetPath)</TargetPath>
+      </_XamlToCSharpGeneratorAvaloniaXaml>
+    </ItemGroup>
+
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorAvaloniaXaml)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorAvaloniaXamlDistinct" />
+    </RemoveDuplicates>
+
+    <RemoveDuplicates Inputs="@(AvaloniaXaml)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorAvaloniaXamlItemDistinct" />
+    </RemoveDuplicates>
+
+    <ItemGroup>
+
+      <!-- Drop any existing AXAML AdditionalFiles projections before re-adding deterministic entries. -->
+      <AdditionalFiles Remove="@(AdditionalFiles)" Condition="'%(AdditionalFiles.SourceItemGroup)' == 'AvaloniaXaml'" />
+      <AdditionalFiles Remove="@(AvaloniaXaml)" />
+      <AdditionalFiles Remove="@(AvaloniaXaml->'%(FullPath)')" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorAvaloniaXaml->'%(NormalizedIdentity)')" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorAvaloniaXamlDistinct)" />
+      <AdditionalFiles Include="@(_XamlToCSharpGeneratorAvaloniaXamlDistinct)" SourceItemGroup="AvaloniaXaml">
+        <Watch>false</Watch>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)' == ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Identity)</TargetPath>
+      </AdditionalFiles>
+
+      <!-- Keep AvaloniaXaml items for IDE/project-system visibility, but de-duplicate duplicates from mixed includes. -->
+      <AvaloniaXaml Remove="@(AvaloniaXaml)" />
+      <AvaloniaXaml Include="@(_XamlToCSharpGeneratorAvaloniaXamlItemDistinct)" />
+    </ItemGroup>
+  </Target>
+</Project>

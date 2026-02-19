@@ -1,0 +1,27 @@
+<Project>
+  <PropertyGroup>
+    <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == ''">XamlIl</AvaloniaXamlCompilerBackend>
+    <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == ''">false</AvaloniaSourceGenCompilerEnabled>
+    <AvaloniaSourceGenUseCompiledBindingsByDefault Condition="'$(AvaloniaSourceGenUseCompiledBindingsByDefault)' == ''">false</AvaloniaSourceGenUseCompiledBindingsByDefault>
+    <AvaloniaSourceGenCreateSourceInfo Condition="'$(AvaloniaSourceGenCreateSourceInfo)' == ''">false</AvaloniaSourceGenCreateSourceInfo>
+    <AvaloniaSourceGenStrictMode Condition="'$(AvaloniaSourceGenStrictMode)' == ''">false</AvaloniaSourceGenStrictMode>
+    <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
+    <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
+    <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="SourceItemGroup" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="TargetPath" />
+    <CompilerVisibleProperty Include="AvaloniaXamlCompilerBackend" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenCompilerEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenUseCompiledBindingsByDefault" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenCreateSourceInfo" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenStrictMode" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
+    <CompilerVisibleProperty Include="DotNetWatchBuild" />
+    <CompilerVisibleProperty Include="AvaloniaNameGeneratorIsEnabled" />
+  </ItemGroup>
+</Project>

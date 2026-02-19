@@ -1,0 +1,38 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace XamlToCSharpGenerator.Runtime;
+
+public static class XamlStyleRegistry
+{
+    private static readonly ConcurrentDictionary<string, ConcurrentBag<SourceGenStyleDescriptor>> Entries =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public static void Register(string uri, string? key, string selector, string? targetTypeName, string rawXaml)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(uri));
+        }
+
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            throw new ArgumentException("Selector must be provided.", nameof(selector));
+        }
+
+        var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenStyleDescriptor>());
+        bag.Add(new SourceGenStyleDescriptor(uri, key, selector, targetTypeName, rawXaml));
+    }
+
+    public static IReadOnlyCollection<SourceGenStyleDescriptor> GetAll(string uri)
+    {
+        if (!Entries.TryGetValue(uri, out var items))
+        {
+            return Array.Empty<SourceGenStyleDescriptor>();
+        }
+
+        return items.ToArray();
+    }
+}

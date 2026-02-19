@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.Runtime</PackageId>
+    <Description>Runtime registry and bootstrap extensions for source-generated Avalonia XAML.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+  </ItemGroup>
+</Project>
