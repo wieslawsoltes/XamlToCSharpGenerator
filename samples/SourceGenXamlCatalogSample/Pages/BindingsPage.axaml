@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.BindingsPage"
+             x:DataType="vm:BindingsPageViewModel"
+             x:CompileBindings="True">
+  <Grid ColumnDefinitions="2*,3*" ColumnSpacing="12" Margin="8">
+    <Border Grid.Column="0" Classes="catalog-card">
+      <StackPanel Spacing="8">
+        <TextBlock FontWeight="SemiBold" Text="Compiled binding data source" />
+        <ListBox ItemsSource="{Binding People}" SelectedItem="{Binding SelectedPerson, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:CatalogPersonViewModel">
+              <StackPanel Spacing="2" Margin="0,0,0,4">
+                <TextBlock Text="{Binding Name}" />
+                <TextBlock Classes="catalog-muted" Text="{Binding Address.City}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Button Content="Cycle selected person"
+                Command="{Binding CycleSelectionCommand}" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Column="1" Classes="catalog-card">
+      <StackPanel Spacing="8">
+        <TextBlock FontWeight="SemiBold" Text="Path features" />
+        <TextBlock Text="{Binding SelectedPersonDisplayName}" />
+        <TextBlock Text="{Binding SelectedPerson.Address.City}" />
+        <TextBlock Text="{Binding PeopleArray[0].Email}" />
+        <TextBlock Classes="catalog-muted"
+                   Text="Method arguments, nested properties, and indexer access are all compiled to typed accessors." />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

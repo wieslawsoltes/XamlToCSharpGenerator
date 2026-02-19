@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.BasicsPage"
+             x:DataType="vm:BasicsPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="catalog-h1" FontSize="18" Text="{Binding Heading}" />
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,0" Text="Attached property:" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="Grid.Row and Grid.Column used across catalog pages." />
+            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,0" Text="Content property:" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="StackPanel and Border host children/content inline." />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Collection + templates" />
+          <ItemsControl ItemsSource="{Binding Tags}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <Border Classes="tag-chip">
+                  <TextBlock Text="{Binding .}" />
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

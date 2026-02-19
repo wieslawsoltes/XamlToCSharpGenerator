@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             xmlns:catalog="clr-namespace:SourceGenXamlCatalogSample.Catalog"
+             x:Class="SourceGenXamlCatalogSample.Pages.MarkupExtensionsPage"
+             x:DataType="vm:MarkupExtensionsPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Built-in + custom markup extensions" />
+          <TextBlock x:Name="ReferenceTarget" Text="Reference target text" />
+          <TextBlock Text="{catalog:CatalogPrefix ExtensionValue, Prefix='Prefix: '}" />
+          <TextBlock Text="{x:Static catalog:SampleStaticValues.VersionLabel}" />
+          <TextBlock Text="{x:Static catalog:SampleStaticValues.SecondaryLabel}" />
+          <TextBlock Text="{OnPlatform Default='Default platform', Windows='Windows platform', macOS='macOS platform', Linux='Linux platform'}" />
+          <TextBlock Text="{OnFormFactor Default='Default form factor', Desktop='Desktop form factor', Mobile='Mobile form factor'}" />
+          <TextBlock Text="{Binding GreetingFromViewModel}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="x: primitive markup extensions" />
+          <catalog:PrimitiveValuesControl x:Name="PrimitiveProbe"
+                                          ByteValue="{x:Byte 5}"
+                                          DecimalValue="{x:Decimal 12.5}"
+                                          SpanValue="{x:TimeSpan 00:01:30}"
+                                          UriValue="{x:Uri https://avaloniaui.net}"
+                                          CharValue="{x:Char Z}" />
+          <TextBlock Text="Primitive extension values are assigned to strongly typed properties." TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card" Background="#FF2D7FF9" Padding="10">
+        <TextBlock Foreground="White"
+                   Text="Inline accent panel." />
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

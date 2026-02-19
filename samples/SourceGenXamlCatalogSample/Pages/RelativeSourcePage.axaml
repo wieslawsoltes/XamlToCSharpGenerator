@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.RelativeSourcePage"
+             x:DataType="vm:RelativeSourcePageViewModel"
+             x:CompileBindings="True">
+  <Border Classes="catalog-card" Margin="8">
+    <StackPanel Spacing="8">
+      <TextBlock FontWeight="SemiBold" Text="Query paths using $self and $parent[...]" />
+      <TextBox x:Name="SearchBox" Text="{Binding Query, Mode=TwoWay}" Watermark="Type to mirror text" />
+      <TextBlock Text="{Binding Query}" />
+
+      <Border Tag="OuterBorderTag" Padding="8" Background="#10000000">
+        <StackPanel Spacing="6">
+          <TextBlock Tag="SelfTextBlockTag" Text="{Binding $self.Tag}" />
+          <TextBlock Text="{Binding $parent[Border].Tag}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Border>
+</UserControl>

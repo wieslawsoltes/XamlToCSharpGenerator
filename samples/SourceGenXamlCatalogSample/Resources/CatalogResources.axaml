@@ -1,0 +1,7 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    x:Class="SourceGenXamlCatalogSample.Resources.CatalogResourcesDictionary">
+  <SolidColorBrush x:Key="CatalogWarningBrush">Tomato</SolidColorBrush>
+  <x:String x:Key="CatalogAccentText">Merged override from CatalogResources.axaml</x:String>
+  <x:String x:Key="CatalogIncludeMarker">CatalogResources.axaml loaded (last include)</x:String>
+</ResourceDictionary>

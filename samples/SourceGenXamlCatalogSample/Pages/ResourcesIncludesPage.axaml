@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             xmlns:resources="clr-namespace:SourceGenXamlCatalogSample.Resources"
+             x:Class="SourceGenXamlCatalogSample.Pages.ResourcesIncludesPage"
+             x:DataType="vm:ResourcesIncludesPageViewModel"
+             x:CompileBindings="True">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <resources:CatalogPaletteDictionary />
+        <resources:CatalogResourcesDictionary />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Merged dictionary precedence" />
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+          <TextBlock Text="{StaticResource CatalogIncludeMarker}" />
+          <TextBlock Text="{StaticResource CatalogAccentText}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card" Background="{DynamicResource CatalogAccentBrush}">
+        <StackPanel Spacing="6">
+          <TextBlock Foreground="White" Text="DynamicResource brush applied from merged include" />
+          <TextBlock Foreground="White" Text="{StaticResource CatalogAccentText}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

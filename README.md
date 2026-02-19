@@ -81,3 +81,10 @@ Detailed migration/release checklist:
 - Source generation is opt-in.
 - Default Avalonia backend remains unchanged (`XamlIl`) unless switched.
 - Build integration disables Avalonia XAML compile task and Avalonia name generator when SourceGen backend is enabled.
+
+## Samples
+
+- CRUD sample:
+  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample`
+- Feature catalog sample (tabbed coverage of supported XAML features):
+  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenXamlCatalogSample`

@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SourceGenXamlCatalogSample.Pages.StylesSelectorsPage">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.local-warning">
+      <Setter Property="Foreground" Value="OrangeRed" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+
+    <Style Selector="Border.local-card > StackPanel > TextBlock.subtitle">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Global selectors from included style dictionary" />
+          <TextBlock Classes="warning" Text="Class selector: TextBlock.warning" />
+          <TextBlock Tag="Hot" Text="Property predicate selector: TextBlock[Tag=Hot]" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card local-card">
+        <StackPanel Spacing="4">
+          <TextBlock Text="Combinator selector in local styles" />
+          <TextBlock Classes="subtitle" Text="Border.local-card > StackPanel > TextBlock.subtitle" />
+          <TextBlock Classes="local-warning" Text="Local class selector style" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

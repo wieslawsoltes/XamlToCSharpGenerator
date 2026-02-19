@@ -1,0 +1,9 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    x:Class="SourceGenXamlCatalogSample.Resources.CatalogPaletteDictionary">
+  <SolidColorBrush x:Key="CatalogAccentBrush">#FF2D7FF9</SolidColorBrush>
+  <SolidColorBrush x:Key="CatalogForegroundBrush">#FF0F2742</SolidColorBrush>
+  <SolidColorBrush x:Key="CatalogSurfaceBrush">#FFF7FAFF</SolidColorBrush>
+  <x:String x:Key="CatalogAccentText">Accent text from CatalogPalette.axaml</x:String>
+  <x:String x:Key="CatalogIncludeMarker">CatalogPalette.axaml loaded</x:String>
+</ResourceDictionary>

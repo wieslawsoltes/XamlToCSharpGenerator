@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             xmlns:catalog="clr-namespace:SourceGenXamlCatalogSample.Catalog"
+             x:Class="SourceGenXamlCatalogSample.Pages.TemplatesPage"
+             x:DataType="vm:TemplatesPageViewModel"
+             x:CompileBindings="True">
+  <UserControl.Resources>
+    <ControlTemplate x:Key="InfoTemplate" TargetType="{x:Type catalog:TemplatedInfoControl}">
+      <Border Background="#FF2D7FF9" Padding="10" CornerRadius="6">
+        <StackPanel Spacing="4">
+          <TextBlock Foreground="White" FontWeight="Bold" Text="{TemplateBinding Title}" />
+          <TextBlock Foreground="White" Text="{TemplateBinding Content}" />
+        </StackPanel>
+      </Border>
+    </ControlTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="DataTemplate (deferred materialization)" />
+          <ListBox ItemsSource="{Binding People}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:CatalogPersonViewModel">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{Binding Name}" />
+                  <TextBlock Classes="catalog-muted" Text="{Binding Email}" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="ControlTemplate + TemplateBinding" />
+          <catalog:TemplatedInfoControl Template="{StaticResource InfoTemplate}"
+                                        Title="Templated control title"
+                                        Content="Template content generated and applied." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Inline ContentTemplate" />
+          <ContentControl Content="Inline template payload">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Text="{Binding}" />
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

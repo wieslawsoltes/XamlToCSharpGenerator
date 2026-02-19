@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:catalog="clr-namespace:SourceGenXamlCatalogSample.Catalog"
+             x:Class="SourceGenXamlCatalogSample.Pages.ConstructionPage"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="x:Arguments constructor call" />
+          <catalog:PairControl>
+            <x:Arguments>
+              <x:Int32>7</x:Int32>
+              <x:String>west</x:String>
+            </x:Arguments>
+          </catalog:PairControl>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="x:FactoryMethod + x:TypeArguments" />
+          <catalog:GenericFactoryHolder x:TypeArguments="x:String"
+                                        x:FactoryMethod="Create">
+            <x:Arguments>
+              <x:String>factory-value</x:String>
+            </x:Arguments>
+          </catalog:GenericFactoryHolder>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="x:Array materialization" />
+          <catalog:ArrayHostControl>
+            <catalog:ArrayHostControl.Values>
+              <x:Array x:TypeArguments="x:String">
+                <x:String>alpha</x:String>
+                <x:String>beta</x:String>
+                <x:String>gamma</x:String>
+              </x:Array>
+            </catalog:ArrayHostControl.Values>
+          </catalog:ArrayHostControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

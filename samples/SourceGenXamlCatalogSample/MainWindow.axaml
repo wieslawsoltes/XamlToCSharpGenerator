@@ -1,0 +1,114 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+        xmlns:resources="clr-namespace:SourceGenXamlCatalogSample.Resources"
+        xmlns:pages="clr-namespace:SourceGenXamlCatalogSample.Pages"
+        x:Class="SourceGenXamlCatalogSample.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        x:CompileBindings="True"
+        Width="1320"
+        Height="920"
+        MinWidth="980"
+        MinHeight="720"
+        Title="SourceGen XAML Feature Catalog">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <resources:CatalogPaletteDictionary />
+        <resources:CatalogResourcesDictionary />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="Border.catalog-banner">
+      <Setter Property="Background" Value="{DynamicResource CatalogSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CatalogAccentBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style Selector="TextBlock.catalog-h1">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{DynamicResource CatalogForegroundBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.catalog-muted">
+      <Setter Property="Foreground" Value="{DynamicResource CatalogForegroundBrush}" />
+      <Setter Property="Opacity" Value="0.78" />
+    </Style>
+
+    <Style Selector="Border.catalog-card">
+      <Setter Property="Background" Value="{DynamicResource CatalogSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CatalogAccentBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+
+    <Style Selector="Border.tag-chip">
+      <Setter Property="Background" Value="#1F2D7FF9" />
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
+
+    <Style Selector="TextBlock.warning">
+      <Setter Property="Foreground" Value="{DynamicResource CatalogWarningBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="TextBlock[Tag=Hot]">
+      <Setter Property="Foreground" Value="OrangeRed" />
+      <Setter Property="TextDecorations" Value="Underline" />
+    </Style>
+
+    <Style Selector="Border.card > StackPanel > TextBlock.subtitle">
+      <Setter Property="Foreground" Value="{DynamicResource CatalogForegroundBrush}" />
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+    <Border Grid.Row="0" Classes="catalog-banner" Padding="18,14">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="catalog-h1" Text="{Binding Title}" />
+        <TextBlock Classes="catalog-muted" Text="{Binding Summary}" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <TabControl Grid.Row="1"
+                Margin="10"
+                SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+      <TabItem Header="Basics">
+        <pages:BasicsPage DataContext="{Binding Basics}" />
+      </TabItem>
+      <TabItem Header="Bindings">
+        <pages:BindingsPage DataContext="{Binding Bindings}" />
+      </TabItem>
+      <TabItem Header="Relative Source">
+        <pages:RelativeSourcePage DataContext="{Binding RelativeSource}" />
+      </TabItem>
+      <TabItem Header="Markup Extensions">
+        <pages:MarkupExtensionsPage DataContext="{Binding MarkupExtensions}" />
+      </TabItem>
+      <TabItem Header="Styles + Selectors">
+        <pages:StylesSelectorsPage />
+      </TabItem>
+      <TabItem Header="Control Themes">
+        <pages:ControlThemesPage />
+      </TabItem>
+      <TabItem Header="Templates">
+        <pages:TemplatesPage DataContext="{Binding Templates}" />
+      </TabItem>
+      <TabItem Header="Resources + Dictionaries">
+        <pages:ResourcesIncludesPage DataContext="{Binding Resources}" />
+      </TabItem>
+      <TabItem Header="Construction Grammar">
+        <pages:ConstructionPage />
+      </TabItem>
+    </TabControl>
+  </Grid>
+</Window>
