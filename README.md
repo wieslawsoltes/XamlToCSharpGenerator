@@ -31,6 +31,7 @@ Optional backend knobs:
   <AvaloniaSourceGenStrictMode>true</AvaloniaSourceGenStrictMode>
   <AvaloniaSourceGenHotReloadEnabled>true</AvaloniaSourceGenHotReloadEnabled>
   <AvaloniaSourceGenHotReloadErrorResilienceEnabled>true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
+  <AvaloniaSourceGenIdeHotReloadEnabled>true</AvaloniaSourceGenIdeHotReloadEnabled>
 </PropertyGroup>
 ```
 
@@ -44,6 +45,52 @@ public static AppBuilder BuildAvaloniaApp() =>
         .UsePlatformDetect()
         .UseAvaloniaSourceGeneratedXaml();
 ```
+
+Optional Rider/IDE fallback poller (only needed when native metadata callback is unreliable in a specific IDE session):
+
+```csharp
+public static AppBuilder BuildAvaloniaApp() =>
+    AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml()
+        .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
+```
+
+Advanced hot reload pipeline hooks (phased extensibility):
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+public sealed class MyHotReloadHandler : ISourceGenHotReloadHandler
+{
+    public void ReloadCompleted(SourceGenHotReloadUpdateContext context)
+    {
+        // custom refresh/reporting
+    }
+}
+
+public static AppBuilder BuildAvaloniaApp() =>
+    AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml()
+        .UseAvaloniaSourceGeneratedXamlHotReloadHandler(new MyHotReloadHandler());
+```
+
+Assembly-level handler registration is also supported:
+
+```csharp
+[assembly: SourceGenHotReloadHandler(typeof(MyHotReloadHandler))]
+```
+
+## IDE Hot Reload (Visual Studio and Rider)
+
+When `AvaloniaXamlCompilerBackend=SourceGen`:
+
+1. AXAML files are projected into Roslyn `AdditionalFiles` for source generation.
+2. AXAML files are also injected into `CustomAdditionalCompileInputs` and `UpToDateCheckInput` so IDE fast up-to-date and compile invalidation detect AXAML edits.
+3. Generated runtime refresh is driven by `.NET` metadata update callbacks (`MetadataUpdateHandler`).
+4. Hot reload error resilience is enabled in `dotnet watch` and IDE build sessions by default (`AvaloniaSourceGenIdeHotReloadEnabled=true`).
+5. Runtime hot reload pipeline maps replacement types to original types and serializes reentrant updates.
 
 ## Migration Guide (XamlIl -> SourceGen)
 

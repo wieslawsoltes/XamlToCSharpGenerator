@@ -17,6 +17,7 @@ internal static class Program
         return AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .LogToTrace()
-            .UseAvaloniaSourceGeneratedXaml();
+            .UseAvaloniaSourceGeneratedXaml()
+            .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
     }
 }
