@@ -8,6 +8,7 @@ public sealed record ResolvedViewModel(
     string ClassModifier,
     bool CreateSourceInfo,
     bool EnableHotReload,
+    bool EnableHotDesign,
     ImmutableArray<string> PassExecutionTrace,
     bool EmitNameScopeRegistration,
     bool EmitStaticResourceResolver,

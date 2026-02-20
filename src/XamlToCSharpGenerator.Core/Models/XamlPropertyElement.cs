@@ -6,4 +6,5 @@ public sealed record XamlPropertyElement(
     string PropertyName,
     ImmutableArray<XamlObjectNode> ObjectValues,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

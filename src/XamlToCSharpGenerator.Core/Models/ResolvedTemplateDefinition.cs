@@ -7,4 +7,5 @@ public sealed record ResolvedTemplateDefinition(
     string? DataType,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

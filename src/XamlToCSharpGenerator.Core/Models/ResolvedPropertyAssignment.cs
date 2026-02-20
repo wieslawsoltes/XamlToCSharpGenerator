@@ -9,4 +9,5 @@ public sealed record ResolvedPropertyAssignment(
     string? ClrPropertyTypeName,
     string? BindingPriorityExpression,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

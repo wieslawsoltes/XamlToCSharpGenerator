@@ -116,6 +116,14 @@ public static class DiagnosticCatalog
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor ConditionalXamlExpressionInvalid = new(
+        id: "AXSG0120",
+        title: "Conditional XAML expression is invalid",
+        messageFormat: "{0}",
+        category: "AXSG.Conditional",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor StyleSelectorInvalid = new(
         id: "AXSG0300",
         title: "Style selector is invalid",
@@ -298,6 +306,54 @@ public static class DiagnosticCatalog
         messageFormat: "Generator hint '{0}' was emitted more than once. Check duplicate AXAML inputs for '{1}'.",
         category: "AXSG.HotReload",
         defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TransformRuleParseFailed = new(
+        id: "AXSG0900",
+        title: "Transform rule file is invalid",
+        messageFormat: "{0}",
+        category: "AXSG.Transform",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TransformRuleEntryInvalid = new(
+        id: "AXSG0901",
+        title: "Transform rule entry is invalid",
+        messageFormat: "{0}",
+        category: "AXSG.Transform",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TransformRuleTypeResolutionFailed = new(
+        id: "AXSG0902",
+        title: "Transform rule type could not be resolved",
+        messageFormat: "{0}",
+        category: "AXSG.Transform",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TransformRuleDuplicateAlias = new(
+        id: "AXSG0903",
+        title: "Transform rule alias is duplicated",
+        messageFormat: "{0}",
+        category: "AXSG.Transform",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CompileMetricsSummary = new(
+        id: "AXSG0800",
+        title: "XAML compile metrics summary",
+        messageFormat: "{0}",
+        category: "AXSG.Metrics",
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CompileMetricsFile = new(
+        id: "AXSG0801",
+        title: "XAML compile metrics per file",
+        messageFormat: "{0}",
+        category: "AXSG.Metrics",
+        defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor EmissionFailed = new(

@@ -6,4 +6,5 @@ public sealed record XamlResourceDefinition(
     string XmlTypeName,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

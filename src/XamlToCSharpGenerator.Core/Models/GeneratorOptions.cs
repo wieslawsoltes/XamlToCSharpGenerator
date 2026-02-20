@@ -5,15 +5,23 @@ namespace XamlToCSharpGenerator.Core.Models;
 public sealed record GeneratorOptions(
     bool IsEnabled,
     bool UseCompiledBindingsByDefault,
+    bool CSharpExpressionsEnabled,
+    bool ImplicitCSharpExpressionsEnabled,
     bool CreateSourceInfo,
     bool StrictMode,
     bool HotReloadEnabled,
     bool HotReloadErrorResilienceEnabled,
     bool IdeHotReloadEnabled,
+    bool HotDesignEnabled,
     bool DotNetWatchBuild,
     bool BuildingInsideVisualStudio,
     bool BuildingByReSharper,
     bool TracePasses,
+    bool MetricsEnabled,
+    bool MetricsDetailed,
+    bool AllowImplicitXmlnsDeclaration,
+    string ImplicitDefaultXmlns,
+    string? GlobalXmlnsPrefixes,
     string Backend,
     string? AssemblyName)
 {
@@ -25,15 +33,23 @@ public sealed record GeneratorOptions(
         return new GeneratorOptions(
             IsEnabled: explicitEnable || backend.Equals("SourceGen", System.StringComparison.OrdinalIgnoreCase),
             UseCompiledBindingsByDefault: GetBool(globalOptions, "build_property.AvaloniaSourceGenUseCompiledBindingsByDefault", false),
+            CSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenCSharpExpressionsEnabled", true),
+            ImplicitCSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitCSharpExpressionsEnabled", true),
             CreateSourceInfo: GetBool(globalOptions, "build_property.AvaloniaSourceGenCreateSourceInfo", false),
             StrictMode: GetBool(globalOptions, "build_property.AvaloniaSourceGenStrictMode", false),
             HotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadEnabled", true),
             HotReloadErrorResilienceEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", true),
             IdeHotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenIdeHotReloadEnabled", true),
+            HotDesignEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotDesignEnabled", false),
             DotNetWatchBuild: GetBool(globalOptions, "build_property.DotNetWatchBuild", false),
             BuildingInsideVisualStudio: GetBool(globalOptions, "build_property.BuildingInsideVisualStudio", false),
             BuildingByReSharper: GetBool(globalOptions, "build_property.BuildingByReSharper", false),
             TracePasses: GetBool(globalOptions, "build_property.AvaloniaSourceGenTracePasses", false),
+            MetricsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsEnabled", false),
+            MetricsDetailed: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsDetailed", false),
+            AllowImplicitXmlnsDeclaration: GetBool(globalOptions, "build_property.AvaloniaSourceGenAllowImplicitXmlnsDeclaration", false),
+            ImplicitDefaultXmlns: GetOrDefault(globalOptions, "build_property.AvaloniaSourceGenImplicitDefaultXmlns", "https://github.com/avaloniaui"),
+            GlobalXmlnsPrefixes: GetNullable(globalOptions, "build_property.AvaloniaSourceGenGlobalXmlnsPrefixes"),
             Backend: backend,
             AssemblyName: assemblyName);
     }
@@ -53,6 +69,16 @@ public sealed record GeneratorOptions(
         if (!options.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
         {
             return fallback;
+        }
+
+        return value;
+    }
+
+    private static string? GetNullable(AnalyzerConfigOptions options, string key)
+    {
+        if (!options.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
         }
 
         return value;

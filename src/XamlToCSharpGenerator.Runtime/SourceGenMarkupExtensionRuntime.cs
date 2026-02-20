@@ -60,6 +60,21 @@ public static class SourceGenMarkupExtensionRuntime
         }
     }
 
+    public static T CoerceStaticResourceValue<T>(object? value)
+    {
+        if (ReferenceEquals(value, AvaloniaProperty.UnsetValue) || value is null)
+        {
+            return default!;
+        }
+
+        if (value is T typed)
+        {
+            return typed;
+        }
+
+        return (T)value;
+    }
+
     public static IBinding? ProvideDynamicResource(
         string resourceKey,
         IServiceProvider? parentServiceProvider,
@@ -103,6 +118,59 @@ public static class SourceGenMarkupExtensionRuntime
             parentStack);
 
         return extension.ProvideValue(contextProvider);
+    }
+
+    public static IBinding ProvideExpressionBinding<TSource>(
+        Func<TSource, object?> evaluator,
+        IReadOnlyList<string>? dependencyNames,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+        where TSource : class
+    {
+        _ = CreateContextProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject,
+            targetProperty,
+            baseUri,
+            parentStack);
+
+        var multiBinding = new MultiBinding
+        {
+            Converter = new SourceGenExpressionMultiValueConverter<TSource>(evaluator),
+            Mode = BindingMode.OneWay
+        };
+
+        // First binding carries the source object used by the generated evaluator delegate.
+        multiBinding.Bindings.Add(new Binding("."));
+
+        if (dependencyNames is not null)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var dependencyName in dependencyNames)
+            {
+                if (string.IsNullOrWhiteSpace(dependencyName))
+                {
+                    continue;
+                }
+
+                var trimmedDependencyName = dependencyName.Trim();
+                if (!seen.Add(trimmedDependencyName))
+                {
+                    continue;
+                }
+
+                multiBinding.Bindings.Add(new Binding(trimmedDependencyName));
+            }
+        }
+
+        return multiBinding;
     }
 
     public static object? ProvideMarkupExtension(

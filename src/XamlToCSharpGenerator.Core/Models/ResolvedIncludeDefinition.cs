@@ -9,4 +9,5 @@ public sealed record ResolvedIncludeDefinition(
     bool IsProjectLocal,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

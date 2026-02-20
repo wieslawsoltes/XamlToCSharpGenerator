@@ -7,4 +7,5 @@ public sealed record XamlTemplateDefinition(
     string? DataType,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

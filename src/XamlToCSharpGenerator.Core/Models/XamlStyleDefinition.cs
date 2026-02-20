@@ -12,4 +12,5 @@ public sealed record XamlStyleDefinition(
     ImmutableArray<XamlSetterDefinition> Setters,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

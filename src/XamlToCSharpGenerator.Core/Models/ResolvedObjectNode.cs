@@ -16,4 +16,5 @@ public sealed record ResolvedObjectNode(
     ResolvedChildAttachmentMode ChildAttachmentMode,
     string? ContentPropertyName,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

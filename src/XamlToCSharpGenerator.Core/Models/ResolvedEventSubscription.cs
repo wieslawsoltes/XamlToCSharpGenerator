@@ -14,4 +14,6 @@ public sealed record ResolvedEventSubscription(
     string? RoutedEventFieldName,
     string? RoutedEventHandlerTypeName,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null,
+    ResolvedEventBindingDefinition? EventBindingDefinition = null);

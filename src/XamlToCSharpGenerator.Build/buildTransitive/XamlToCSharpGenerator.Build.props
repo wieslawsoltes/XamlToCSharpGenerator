@@ -3,12 +3,21 @@
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == ''">XamlIl</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == ''">false</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaSourceGenUseCompiledBindingsByDefault Condition="'$(AvaloniaSourceGenUseCompiledBindingsByDefault)' == ''">false</AvaloniaSourceGenUseCompiledBindingsByDefault>
+    <AvaloniaSourceGenCSharpExpressionsEnabled Condition="'$(AvaloniaSourceGenCSharpExpressionsEnabled)' == ''">true</AvaloniaSourceGenCSharpExpressionsEnabled>
+    <AvaloniaSourceGenImplicitCSharpExpressionsEnabled Condition="'$(AvaloniaSourceGenImplicitCSharpExpressionsEnabled)' == ''">true</AvaloniaSourceGenImplicitCSharpExpressionsEnabled>
     <AvaloniaSourceGenCreateSourceInfo Condition="'$(AvaloniaSourceGenCreateSourceInfo)' == ''">false</AvaloniaSourceGenCreateSourceInfo>
     <AvaloniaSourceGenStrictMode Condition="'$(AvaloniaSourceGenStrictMode)' == ''">false</AvaloniaSourceGenStrictMode>
     <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
     <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
     <AvaloniaSourceGenIdeHotReloadEnabled Condition="'$(AvaloniaSourceGenIdeHotReloadEnabled)' == ''">true</AvaloniaSourceGenIdeHotReloadEnabled>
+    <AvaloniaSourceGenHotDesignEnabled Condition="'$(AvaloniaSourceGenHotDesignEnabled)' == ''">false</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
+    <AvaloniaSourceGenMetricsEnabled Condition="'$(AvaloniaSourceGenMetricsEnabled)' == ''">false</AvaloniaSourceGenMetricsEnabled>
+    <AvaloniaSourceGenMetricsDetailed Condition="'$(AvaloniaSourceGenMetricsDetailed)' == ''">false</AvaloniaSourceGenMetricsDetailed>
+    <AvaloniaSourceGenAllowImplicitXmlnsDeclaration Condition="'$(AvaloniaSourceGenAllowImplicitXmlnsDeclaration)' == ''">false</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
+    <AvaloniaSourceGenImplicitDefaultXmlns Condition="'$(AvaloniaSourceGenImplicitDefaultXmlns)' == ''">https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
+    <AvaloniaSourceGenGlobalXmlnsPrefixes Condition="'$(AvaloniaSourceGenGlobalXmlnsPrefixes)' == ''"></AvaloniaSourceGenGlobalXmlnsPrefixes>
+    <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == ''"></AvaloniaSourceGenTransformRules>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,12 +26,21 @@
     <CompilerVisibleProperty Include="AvaloniaXamlCompilerBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCompilerEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenUseCompiledBindingsByDefault" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenCSharpExpressionsEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitCSharpExpressionsEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCreateSourceInfo" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenStrictMode" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIdeHotReloadEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsDetailed" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenAllowImplicitXmlnsDeclaration" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitDefaultXmlns" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenGlobalXmlnsPrefixes" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenTransformRules" />
     <CompilerVisibleProperty Include="DotNetWatchBuild" />
     <CompilerVisibleProperty Include="BuildingInsideVisualStudio" />
     <CompilerVisibleProperty Include="BuildingByReSharper" />

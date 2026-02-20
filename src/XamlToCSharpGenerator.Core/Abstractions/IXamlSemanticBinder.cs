@@ -9,5 +9,6 @@ public interface IXamlSemanticBinder
     (ResolvedViewModel? ViewModel, ImmutableArray<DiagnosticInfo> Diagnostics) Bind(
         XamlDocumentModel document,
         Compilation compilation,
-        GeneratorOptions options);
+        GeneratorOptions options,
+        XamlTransformConfiguration transformConfiguration);
 }

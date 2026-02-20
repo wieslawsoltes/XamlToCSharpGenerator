@@ -19,4 +19,5 @@ public sealed record XamlObjectNode(
     ImmutableArray<XamlObjectNode> ChildObjects,
     ImmutableArray<XamlPropertyElement> PropertyElements,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

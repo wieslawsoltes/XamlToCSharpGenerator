@@ -10,4 +10,5 @@ public sealed record ResolvedControlThemeDefinition(
     ImmutableArray<ResolvedSetterDefinition> Setters,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

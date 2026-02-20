@@ -6,4 +6,5 @@ public sealed record XamlIncludeDefinition(
     string MergeTarget,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

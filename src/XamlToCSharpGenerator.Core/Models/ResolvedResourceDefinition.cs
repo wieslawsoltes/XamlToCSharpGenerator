@@ -5,4 +5,5 @@ public sealed record ResolvedResourceDefinition(
     string TypeName,
     string RawXaml,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

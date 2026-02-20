@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -20,6 +22,10 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
 {
     private const string SourceItemGroupMetadata = "build_metadata.AdditionalFiles.SourceItemGroup";
     private const string TargetPathMetadata = "build_metadata.AdditionalFiles.TargetPath";
+    private const string TransformRuleSourceItemGroup = "AvaloniaSourceGenTransformRule";
+    private const string AvaloniaXmlnsPrefixAttributeMetadataName = "Avalonia.Metadata.XmlnsPrefixAttribute";
+    private const string SourceGenGlobalXmlnsPrefixAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenGlobalXmlnsPrefixAttribute";
+    private const string SourceGenAllowImplicitXmlnsDeclarationAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenAllowImplicitXmlnsDeclarationAttribute";
     private static readonly ConcurrentDictionary<string, CachedGeneratedSource> LastGoodGeneratedSources =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -112,23 +118,75 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                     .ToImmutableArray();
             });
 
-        var parsedDocuments = uniqueXamlInputs.SelectMany(static (inputs, _) =>
-        {
-            if (inputs.IsDefaultOrEmpty)
+        var transformRuleInputs = context.AdditionalTextsProvider
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .Combine(optionsProvider)
+            .Select(static (pair, cancellationToken) =>
             {
-                return ImmutableArray<ParsedDocumentResult>.Empty;
-            }
+                var text = pair.Left.Left;
+                var optionsProvider = pair.Left.Right;
+                var generatorOptions = pair.Right;
+                if (!generatorOptions.IsEnabled)
+                {
+                    return null;
+                }
 
-            IXamlDocumentParser parser = new SimpleXamlDocumentParser();
-            var results = ImmutableArray.CreateBuilder<ParsedDocumentResult>(inputs.Length);
-            foreach (var input in inputs)
+                var metadataOptions = optionsProvider.GetOptions(text);
+                metadataOptions.TryGetValue(SourceItemGroupMetadata, out var sourceItemGroup);
+                if (!string.Equals(sourceItemGroup, TransformRuleSourceItemGroup, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var textContent = text.GetText(cancellationToken)?.ToString();
+                if (string.IsNullOrWhiteSpace(textContent))
+                {
+                    return null;
+                }
+
+                return new TransformRuleFileInput(text.Path, textContent);
+            })
+            .Where(static input => input is not null)
+            .Select(static (input, _) => input!);
+
+        var transformRules = transformRuleInputs
+            .Select(static (input, _) => TransformRulesParser.Parse(input))
+            .Collect()
+            .Select(static (results, _) => MergeTransformRules(results));
+
+        context.RegisterSourceOutput(
+            transformRules,
+            static (sourceContext, rules) => ReportDiagnostics(sourceContext, rules.Diagnostics));
+
+        var parserNamespaceContext = context.CompilationProvider
+            .Combine(optionsProvider)
+            .Select(static (pair, _) => BuildParserNamespaceContext(pair.Left, pair.Right));
+
+        var parsedDocuments = uniqueXamlInputs
+            .Combine(parserNamespaceContext)
+            .SelectMany(static (payload, _) =>
             {
-                var (document, diagnostics) = parser.Parse(input);
-                results.Add(new ParsedDocumentResult(input, document, diagnostics));
-            }
+                var (inputs, parserContext) = payload;
+                if (inputs.IsDefaultOrEmpty)
+                {
+                    return ImmutableArray<ParsedDocumentResult>.Empty;
+                }
 
-            return results.ToImmutable();
-        });
+                IXamlDocumentParser parser = new SimpleXamlDocumentParser(
+                    parserContext.GlobalXmlnsPrefixes,
+                    parserContext.AllowImplicitDefaultXmlns,
+                    parserContext.ImplicitDefaultXmlns);
+                var results = ImmutableArray.CreateBuilder<ParsedDocumentResult>(inputs.Length);
+                foreach (var input in inputs)
+                {
+                    var parseStart = Stopwatch.GetTimestamp();
+                    var (document, diagnostics) = parser.Parse(input);
+                    var parseElapsed = Stopwatch.GetElapsedTime(parseStart);
+                    results.Add(new ParsedDocumentResult(input, document, diagnostics, parseElapsed));
+                }
+
+                return results.ToImmutable();
+            });
 
         var globalGraphDiagnostics = parsedDocuments
             .Select(static (result, _) => result.Document)
@@ -136,9 +194,19 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             .Select(static (document, _) => document!)
             .Collect()
             .Combine(optionsProvider)
-            .Select(static (pair, _) => new GlobalDiagnosticsResult(
-                AnalyzeGlobalDocumentGraph(pair.Left, pair.Right),
-                IsHotReloadErrorResilienceEnabled(pair.Right)));
+            .Select(static (pair, _) =>
+            {
+                var globalGraphStart = Stopwatch.GetTimestamp();
+                var diagnostics = AnalyzeGlobalDocumentGraph(pair.Left, pair.Right);
+                var globalGraphElapsed = Stopwatch.GetElapsedTime(globalGraphStart);
+                return new GlobalDiagnosticsResult(
+                    diagnostics,
+                    IsHotReloadErrorResilienceEnabled(pair.Right),
+                    pair.Right.MetricsEnabled,
+                    pair.Right.MetricsDetailed,
+                    pair.Left.Length,
+                    globalGraphElapsed);
+            });
 
         context.RegisterSourceOutput(globalGraphDiagnostics,
             static (sourceContext, diagnosticsResult) =>
@@ -147,12 +215,14 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                     sourceContext,
                     diagnosticsResult.Diagnostics,
                     diagnosticsResult.DemoteErrorsToWarnings);
+                ReportGlobalMetrics(sourceContext, diagnosticsResult);
             });
 
-        context.RegisterSourceOutput(parsedDocuments.Combine(context.CompilationProvider.Combine(optionsProvider)),
+        context.RegisterSourceOutput(
+            parsedDocuments.Combine(context.CompilationProvider.Combine(optionsProvider).Combine(transformRules)),
             static (sourceContext, payload) =>
             {
-                var (parsedDocument, (compilation, options)) = payload;
+                var (parsedDocument, ((compilation, options), transformRules)) = payload;
                 var parseResult = parsedDocument.Document;
                 var parseDiagnostics = parsedDocument.Diagnostics;
                 var resilienceEnabled = IsHotReloadErrorResilienceEnabled(options);
@@ -160,58 +230,106 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                     options.AssemblyName,
                     parsedDocument.Input.FilePath,
                     parsedDocument.Input.TargetPath);
-
-                ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
-                if (parseResult is null)
-                {
-                    TryUseCachedSource(sourceContext, cacheKey, parsedDocument.Input.FilePath, resilienceEnabled);
-                    return;
-                }
-
-                if (parseResult.Precompile == false)
-                {
-                    return;
-                }
-
-                IXamlSemanticBinder binder = new AvaloniaSemanticBinder();
-                var (viewModel, semanticDiagnostics) = binder.Bind(parseResult, compilation, options);
-                ReportDiagnostics(sourceContext, semanticDiagnostics, resilienceEnabled);
-                if (viewModel is null)
-                {
-                    TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled);
-                    return;
-                }
+                var bindElapsed = TimeSpan.Zero;
+                var emitElapsed = TimeSpan.Zero;
+                var semanticDiagnosticsCount = 0;
+                var generatedSource = false;
+                var usedFallbackSource = false;
+                var duplicateHint = false;
+                var status = "parse";
+                var totalStartTimestamp = options.MetricsEnabled ? Stopwatch.GetTimestamp() : 0L;
 
                 try
                 {
-                    IXamlCodeEmitter emitter = new AvaloniaCodeEmitter();
-                    var (hintName, source) = emitter.Emit(viewModel);
-                    if (TryAddSource(sourceContext, hintName, source))
+                    ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
+                    if (parseResult is null)
                     {
-                        if (resilienceEnabled)
+                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parsedDocument.Input.FilePath, resilienceEnabled);
+                        status = usedFallbackSource ? "fallback-parse" : "parse-failed";
+                        return;
+                    }
+
+                    if (parseResult.Precompile == false)
+                    {
+                        status = "skipped-precompile";
+                        return;
+                    }
+
+                    status = "bind";
+                    var bindStart = Stopwatch.GetTimestamp();
+                    IXamlSemanticBinder binder = new AvaloniaSemanticBinder();
+                    var (viewModel, semanticDiagnostics) = binder.Bind(parseResult, compilation, options, transformRules.Configuration);
+                    bindElapsed = Stopwatch.GetElapsedTime(bindStart);
+                    semanticDiagnosticsCount = semanticDiagnostics.Length;
+                    ReportDiagnostics(sourceContext, semanticDiagnostics, resilienceEnabled);
+                    if (viewModel is null)
+                    {
+                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled);
+                        status = usedFallbackSource ? "fallback-bind" : "bind-failed";
+                        return;
+                    }
+
+                    status = "emit";
+                    var emitStart = Stopwatch.GetTimestamp();
+                    try
+                    {
+                        IXamlCodeEmitter emitter = new AvaloniaCodeEmitter();
+                        var (hintName, source) = emitter.Emit(viewModel);
+                        if (TryAddSource(sourceContext, hintName, source))
                         {
-                            LastGoodGeneratedSources[cacheKey] = new CachedGeneratedSource(hintName, source);
+                            generatedSource = true;
+                            status = "generated";
+                            if (resilienceEnabled)
+                            {
+                                LastGoodGeneratedSources[cacheKey] = new CachedGeneratedSource(hintName, source);
+                            }
+                        }
+                        else
+                        {
+                            duplicateHint = true;
+                            status = "duplicate-hint";
+                            sourceContext.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticCatalog.DuplicateGeneratedHintName,
+                                Location.None,
+                                hintName,
+                                parseResult.FilePath));
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        sourceContext.ReportDiagnostic(Diagnostic.Create(
-                            DiagnosticCatalog.DuplicateGeneratedHintName,
-                            Location.None,
-                            hintName,
-                            parseResult.FilePath));
+                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled);
+                        status = usedFallbackSource ? "fallback-emit" : "emit-failed";
+                        if (!usedFallbackSource)
+                        {
+                            sourceContext.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticCatalog.EmissionFailed,
+                                Location.None,
+                                parseResult.ClassFullName ?? parseResult.TargetPath,
+                                ex.Message));
+                        }
+                    }
+                    finally
+                    {
+                        emitElapsed = Stopwatch.GetElapsedTime(emitStart);
                     }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    if (!TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled))
-                    {
-                        sourceContext.ReportDiagnostic(Diagnostic.Create(
-                            DiagnosticCatalog.EmissionFailed,
-                            Location.None,
-                            parseResult.ClassFullName ?? parseResult.TargetPath,
-                            ex.Message));
-                    }
+                    ReportFileMetrics(
+                        sourceContext,
+                        options,
+                        parsedDocument,
+                        parseResult,
+                        parseDiagnostics.Length,
+                        semanticDiagnosticsCount,
+                        parsedDocument.ParseElapsed,
+                        bindElapsed,
+                        emitElapsed,
+                        options.MetricsEnabled ? Stopwatch.GetElapsedTime(totalStartTimestamp) : TimeSpan.Zero,
+                        status,
+                        generatedSource,
+                        usedFallbackSource,
+                        duplicateHint);
                 }
             });
     }
@@ -239,6 +357,7 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                 "AXSG0108" => DiagnosticCatalog.ArrayConstructionInvalid,
                 "AXSG0110" => DiagnosticCatalog.CompiledBindingRequiresDataType,
                 "AXSG0111" => DiagnosticCatalog.CompiledBindingPathInvalid,
+                "AXSG0120" => DiagnosticCatalog.ConditionalXamlExpressionInvalid,
                 "AXSG0300" => DiagnosticCatalog.StyleSelectorInvalid,
                 "AXSG0301" => DiagnosticCatalog.StyleSetterPropertyInvalid,
                 "AXSG0302" => DiagnosticCatalog.ControlThemeTargetTypeInvalid,
@@ -260,6 +379,12 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                 "AXSG0404" => DiagnosticCatalog.IncludeCycleDetected,
                 "AXSG0600" => DiagnosticCatalog.RoutedEventHandlerInvalid,
                 "AXSG0601" => DiagnosticCatalog.DuplicateBuildUriRegistration,
+                "AXSG0700" => DiagnosticCatalog.HotReloadFallbackUsed,
+                "AXSG0701" => DiagnosticCatalog.DuplicateGeneratedHintName,
+                "AXSG0900" => DiagnosticCatalog.TransformRuleParseFailed,
+                "AXSG0901" => DiagnosticCatalog.TransformRuleEntryInvalid,
+                "AXSG0902" => DiagnosticCatalog.TransformRuleTypeResolutionFailed,
+                "AXSG0903" => DiagnosticCatalog.TransformRuleDuplicateAlias,
                 _ => DiagnosticCatalog.InternalError,
             };
 
@@ -272,17 +397,113 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                 descriptor = WithSeverity(descriptor, DiagnosticSeverity.Error);
             }
 
-            var location = string.IsNullOrWhiteSpace(diagnostic.FilePath)
-                ? Location.None
-                : Location.Create(
-                    diagnostic.FilePath,
-                    TextSpan.FromBounds(0, 0),
-                    new LinePositionSpan(
-                        new LinePosition(Math.Max(0, diagnostic.Line - 1), Math.Max(0, diagnostic.Column - 1)),
-                        new LinePosition(Math.Max(0, diagnostic.Line - 1), Math.Max(0, diagnostic.Column - 1))));
+            var location = CreateLocation(diagnostic.FilePath, diagnostic.Line, diagnostic.Column);
 
             context.ReportDiagnostic(Diagnostic.Create(descriptor, location, diagnostic.Message));
         }
+    }
+
+    private static void ReportGlobalMetrics(
+        SourceProductionContext context,
+        GlobalDiagnosticsResult result)
+    {
+        if (!result.MetricsEnabled)
+        {
+            return;
+        }
+
+        var message = result.MetricsDetailed
+            ? string.Format(
+                CultureInfo.InvariantCulture,
+                "Global XAML graph analysis: documents={0}, diagnostics={1}, elapsed={2}.",
+                result.DocumentCount,
+                result.Diagnostics.Length,
+                FormatMilliseconds(result.Elapsed))
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "Global XAML graph analysis elapsed={0}.",
+                FormatMilliseconds(result.Elapsed));
+
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticCatalog.CompileMetricsSummary,
+            Location.None,
+            message));
+    }
+
+    private static void ReportFileMetrics(
+        SourceProductionContext context,
+        GeneratorOptions options,
+        ParsedDocumentResult parsedDocument,
+        XamlDocumentModel? parseResult,
+        int parseDiagnosticsCount,
+        int semanticDiagnosticsCount,
+        TimeSpan parseElapsed,
+        TimeSpan bindElapsed,
+        TimeSpan emitElapsed,
+        TimeSpan totalElapsed,
+        string status,
+        bool generatedSource,
+        bool usedFallbackSource,
+        bool duplicateHint)
+    {
+        if (!options.MetricsEnabled)
+        {
+            return;
+        }
+
+        var line = parseResult?.RootObject.Line ?? 1;
+        var column = parseResult?.RootObject.Column ?? 1;
+        var location = CreateLocation(parsedDocument.Input.FilePath, line, column);
+        var documentDisplayName = parseResult?.ClassFullName ?? parsedDocument.Input.TargetPath;
+
+        var message = options.MetricsDetailed
+            ? string.Format(
+                CultureInfo.InvariantCulture,
+                "XAML compile metrics for '{0}': total={1}, parse={2}, bind={3}, emit={4}, status={5}, generated={6}, fallback={7}, duplicateHint={8}, parseDiagnostics={9}, semanticDiagnostics={10}.",
+                documentDisplayName,
+                FormatMilliseconds(totalElapsed),
+                FormatMilliseconds(parseElapsed),
+                FormatMilliseconds(bindElapsed),
+                FormatMilliseconds(emitElapsed),
+                status,
+                generatedSource,
+                usedFallbackSource,
+                duplicateHint,
+                parseDiagnosticsCount,
+                semanticDiagnosticsCount)
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "XAML compile metrics for '{0}': total={1}, status={2}.",
+                documentDisplayName,
+                FormatMilliseconds(totalElapsed),
+                status);
+
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticCatalog.CompileMetricsFile,
+            location,
+            message));
+    }
+
+    private static string FormatMilliseconds(TimeSpan elapsed)
+    {
+        return string.Format(CultureInfo.InvariantCulture, "{0:0.000}ms", elapsed.TotalMilliseconds);
+    }
+
+    private static Location CreateLocation(string? filePath, int line, int column)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return Location.None;
+        }
+
+        var lineIndex = Math.Max(0, line - 1);
+        var columnIndex = Math.Max(0, column - 1);
+        return Location.Create(
+            filePath,
+            TextSpan.FromBounds(0, 0),
+            new LinePositionSpan(
+                new LinePosition(lineIndex, columnIndex),
+                new LinePosition(lineIndex, columnIndex)));
     }
 
     private static DiagnosticDescriptor WithSeverity(DiagnosticDescriptor descriptor, DiagnosticSeverity severity)
@@ -333,14 +554,7 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
 
         _ = TryAddSource(sourceContext, cached.HintName, cached.Source);
 
-        var location = string.IsNullOrWhiteSpace(filePath)
-            ? Location.None
-            : Location.Create(
-                filePath,
-                TextSpan.FromBounds(0, 0),
-                new LinePositionSpan(
-                    new LinePosition(0, 0),
-                    new LinePosition(0, 0)));
+        var location = CreateLocation(filePath, 1, 1);
 
         sourceContext.ReportDiagnostic(Diagnostic.Create(
             DiagnosticCatalog.HotReloadFallbackUsed,
@@ -382,6 +596,197 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
         return path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase) ||
                path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase) ||
                path.EndsWith(".paml", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ParserNamespaceContext BuildParserNamespaceContext(
+        Compilation compilation,
+        GeneratorOptions options)
+    {
+        var globalPrefixes = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+
+        foreach (var assembly in EnumerateAssemblies(compilation))
+        {
+            foreach (var attribute in assembly.GetAttributes())
+            {
+                if (IsXmlnsPrefixAttribute(attribute))
+                {
+                    if (attribute.ConstructorArguments.Length < 2 ||
+                        attribute.ConstructorArguments[0].Value is not string xmlNamespace ||
+                        attribute.ConstructorArguments[1].Value is not string prefix ||
+                        string.IsNullOrWhiteSpace(prefix) ||
+                        string.IsNullOrWhiteSpace(xmlNamespace))
+                    {
+                        continue;
+                    }
+
+                    globalPrefixes[prefix.Trim()] = xmlNamespace.Trim();
+                    continue;
+                }
+
+                if (IsSourceGenAllowImplicitXmlnsDeclarationAttribute(attribute))
+                {
+                    if (attribute.ConstructorArguments.Length == 0)
+                    {
+                        options = options with { AllowImplicitXmlnsDeclaration = true };
+                    }
+                    else if (attribute.ConstructorArguments[0].Value is bool allowImplicit)
+                    {
+                        options = options with { AllowImplicitXmlnsDeclaration = allowImplicit };
+                    }
+                }
+            }
+        }
+
+        foreach (var entry in ParseGlobalXmlnsPrefixesProperty(options.GlobalXmlnsPrefixes))
+        {
+            globalPrefixes[entry.Key] = entry.Value;
+        }
+
+        if (options.AllowImplicitXmlnsDeclaration &&
+            !string.IsNullOrWhiteSpace(options.ImplicitDefaultXmlns) &&
+            !globalPrefixes.ContainsKey(string.Empty))
+        {
+            globalPrefixes[string.Empty] = options.ImplicitDefaultXmlns;
+        }
+
+        return new ParserNamespaceContext(
+            globalPrefixes.ToImmutable(),
+            options.AllowImplicitXmlnsDeclaration,
+            options.ImplicitDefaultXmlns);
+    }
+
+    private static IEnumerable<IAssemblySymbol> EnumerateAssemblies(Compilation compilation)
+    {
+        var visited = new HashSet<IAssemblySymbol>(SymbolEqualityComparer.Default);
+        foreach (var referencedAssembly in compilation.SourceModule.ReferencedAssemblySymbols)
+        {
+            if (referencedAssembly is not null && visited.Add(referencedAssembly))
+            {
+                yield return referencedAssembly;
+            }
+        }
+
+        if (visited.Add(compilation.Assembly))
+        {
+            yield return compilation.Assembly;
+        }
+    }
+
+    private static bool IsXmlnsPrefixAttribute(AttributeData attribute)
+    {
+        var metadataName = attribute.AttributeClass?.ToDisplayString();
+        return string.Equals(metadataName, AvaloniaXmlnsPrefixAttributeMetadataName, StringComparison.Ordinal) ||
+               string.Equals(metadataName, SourceGenGlobalXmlnsPrefixAttributeMetadataName, StringComparison.Ordinal);
+    }
+
+    private static bool IsSourceGenAllowImplicitXmlnsDeclarationAttribute(AttributeData attribute)
+    {
+        return string.Equals(
+            attribute.AttributeClass?.ToDisplayString(),
+            SourceGenAllowImplicitXmlnsDeclarationAttributeMetadataName,
+            StringComparison.Ordinal);
+    }
+
+    private static ImmutableDictionary<string, string> ParseGlobalXmlnsPrefixesProperty(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var map = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        var entries = rawValue
+            .Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var entry in entries)
+        {
+            var separatorIndex = entry.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex >= entry.Length - 1)
+            {
+                continue;
+            }
+
+            var prefix = entry.Substring(0, separatorIndex).Trim();
+            var xmlNamespace = entry.Substring(separatorIndex + 1).Trim();
+            if (prefix.Length == 0 || xmlNamespace.Length == 0)
+            {
+                continue;
+            }
+
+            map[prefix] = xmlNamespace;
+        }
+
+        return map.ToImmutable();
+    }
+
+    private static TransformRuleAggregateResult MergeTransformRules(
+        ImmutableArray<TransformRuleFileResult> files)
+    {
+        if (files.IsDefaultOrEmpty)
+        {
+            return new TransformRuleAggregateResult(
+                XamlTransformConfiguration.Empty,
+                ImmutableArray<DiagnosticInfo>.Empty);
+        }
+
+        var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
+        var typeAliases = new Dictionary<string, XamlTypeAliasRule>(StringComparer.OrdinalIgnoreCase);
+        var propertyAliases = new Dictionary<string, XamlPropertyAliasRule>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in files.OrderBy(static x => x.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            diagnostics.AddRange(file.Diagnostics);
+
+            foreach (var typeAlias in file.Configuration.TypeAliases)
+            {
+                var key = BuildTypeAliasKey(typeAlias.XmlNamespace, typeAlias.XamlTypeName);
+                if (typeAliases.TryGetValue(key, out var existing))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0903",
+                        $"Type alias '{typeAlias.XmlNamespace}:{typeAlias.XamlTypeName}' is declared multiple times. The later declaration from '{typeAlias.Source}' overrides '{existing.Source}'.",
+                        typeAlias.Source,
+                        typeAlias.Line,
+                        typeAlias.Column,
+                        false));
+                }
+
+                typeAliases[key] = typeAlias;
+            }
+
+            foreach (var propertyAlias in file.Configuration.PropertyAliases)
+            {
+                var key = BuildPropertyAliasKey(propertyAlias.TargetTypeName, propertyAlias.XamlPropertyName);
+                if (propertyAliases.TryGetValue(key, out var existing))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0903",
+                        $"Property alias '{propertyAlias.TargetTypeName}:{propertyAlias.XamlPropertyName}' is declared multiple times. The later declaration from '{propertyAlias.Source}' overrides '{existing.Source}'.",
+                        propertyAlias.Source,
+                        propertyAlias.Line,
+                        propertyAlias.Column,
+                        false));
+                }
+
+                propertyAliases[key] = propertyAlias;
+            }
+        }
+
+        return new TransformRuleAggregateResult(
+            new XamlTransformConfiguration(
+                typeAliases.Values.ToImmutableArray(),
+                propertyAliases.Values.ToImmutableArray()),
+            diagnostics.ToImmutable());
+    }
+
+    private static string BuildTypeAliasKey(string xmlNamespace, string xamlType)
+    {
+        return xmlNamespace.Trim() + "|" + xamlType.Trim();
+    }
+
+    private static string BuildPropertyAliasKey(string targetType, string xamlProperty)
+    {
+        return targetType.Trim() + "|" + xamlProperty.Trim();
     }
 
     private static ImmutableArray<DiagnosticInfo> AnalyzeGlobalDocumentGraph(
@@ -886,16 +1291,37 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
         public int Column { get; }
     }
 
+    private sealed class ParserNamespaceContext
+    {
+        public ParserNamespaceContext(
+            ImmutableDictionary<string, string> globalXmlnsPrefixes,
+            bool allowImplicitDefaultXmlns,
+            string implicitDefaultXmlns)
+        {
+            GlobalXmlnsPrefixes = globalXmlnsPrefixes;
+            AllowImplicitDefaultXmlns = allowImplicitDefaultXmlns;
+            ImplicitDefaultXmlns = implicitDefaultXmlns;
+        }
+
+        public ImmutableDictionary<string, string> GlobalXmlnsPrefixes { get; }
+
+        public bool AllowImplicitDefaultXmlns { get; }
+
+        public string ImplicitDefaultXmlns { get; }
+    }
+
     private sealed class ParsedDocumentResult
     {
         public ParsedDocumentResult(
             XamlFileInput input,
             XamlDocumentModel? document,
-            ImmutableArray<DiagnosticInfo> diagnostics)
+            ImmutableArray<DiagnosticInfo> diagnostics,
+            TimeSpan parseElapsed)
         {
             Input = input;
             Document = document;
             Diagnostics = diagnostics;
+            ParseElapsed = parseElapsed;
         }
 
         public XamlFileInput Input { get; }
@@ -903,21 +1329,39 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
         public XamlDocumentModel? Document { get; }
 
         public ImmutableArray<DiagnosticInfo> Diagnostics { get; }
+
+        public TimeSpan ParseElapsed { get; }
     }
 
     private sealed class GlobalDiagnosticsResult
     {
         public GlobalDiagnosticsResult(
             ImmutableArray<DiagnosticInfo> diagnostics,
-            bool demoteErrorsToWarnings)
+            bool demoteErrorsToWarnings,
+            bool metricsEnabled,
+            bool metricsDetailed,
+            int documentCount,
+            TimeSpan elapsed)
         {
             Diagnostics = diagnostics;
             DemoteErrorsToWarnings = demoteErrorsToWarnings;
+            MetricsEnabled = metricsEnabled;
+            MetricsDetailed = metricsDetailed;
+            DocumentCount = documentCount;
+            Elapsed = elapsed;
         }
 
         public ImmutableArray<DiagnosticInfo> Diagnostics { get; }
 
         public bool DemoteErrorsToWarnings { get; }
+
+        public bool MetricsEnabled { get; }
+
+        public bool MetricsDetailed { get; }
+
+        public int DocumentCount { get; }
+
+        public TimeSpan Elapsed { get; }
     }
 
     private sealed class CachedGeneratedSource

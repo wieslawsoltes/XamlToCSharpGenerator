@@ -6,4 +6,5 @@ public sealed record XamlPropertyAssignment(
     string Value,
     bool IsAttached,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);

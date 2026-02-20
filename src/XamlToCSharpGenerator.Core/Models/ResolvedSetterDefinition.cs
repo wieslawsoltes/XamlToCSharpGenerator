@@ -9,4 +9,5 @@ public sealed record ResolvedSetterDefinition(
     string? AvaloniaPropertyOwnerTypeName,
     string? AvaloniaPropertyFieldName,
     int Line,
-    int Column);
+    int Column,
+    ConditionalXamlExpression? Condition = null);
