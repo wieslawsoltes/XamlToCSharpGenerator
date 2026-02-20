@@ -46,4 +46,14 @@ public static class XamlIncludeRegistry
 
         return includes.ToArray();
     }
+
+    public static void Clear(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return;
+        }
+
+        Entries.TryRemove(uri, out _);
+    }
 }

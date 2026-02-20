@@ -93,4 +93,14 @@ public static class XamlCompiledBindingRegistry
 
         return false;
     }
+
+    public static void Clear(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return;
+        }
+
+        Entries.TryRemove(uri, out _);
+    }
 }

@@ -20,10 +20,28 @@ public static class XamlSourceGenRegistry
         }
 
         var providedFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-        if (!Entries.TryAdd(uri, providedFactory))
+        if (Entries.TryGetValue(uri, out var existing))
         {
+            if (!ReferenceEquals(existing, providedFactory))
+            {
+                Entries[uri] = providedFactory;
+            }
+
             DuplicateUriRegistration?.Invoke(uri);
+            return;
         }
+
+        Entries[uri] = providedFactory;
+    }
+
+    public static void Unregister(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return;
+        }
+
+        Entries.TryRemove(uri, out _);
     }
 
     public static bool TryCreate(IServiceProvider? serviceProvider, string uri, out object? value)

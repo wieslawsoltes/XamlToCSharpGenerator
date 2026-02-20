@@ -158,6 +158,16 @@ public static class XamlControlThemeRegistry
         Entries.Clear();
     }
 
+    public static void Clear(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return;
+        }
+
+        Entries.TryRemove(uri, out _);
+    }
+
     private static bool TryMaterialize(
         SourceGenControlThemeDescriptor descriptor,
         IReadOnlyDictionary<string, SourceGenControlThemeDescriptor> byKey,

@@ -6,7 +6,7 @@ namespace XamlToCSharpGenerator.Tests.Runtime;
 public class XamlSourceGenRegistryTests
 {
     [Fact]
-    public void Register_Duplicate_Uri_Raises_Conflict_Event_And_Keeps_First_Entry()
+    public void Register_Duplicate_Uri_Raises_Conflict_Event_And_Replaces_Entry()
     {
         XamlSourceGenRegistry.Clear();
         var duplicateUri = string.Empty;
@@ -22,7 +22,7 @@ public class XamlSourceGenRegistryTests
             var created = XamlSourceGenRegistry.TryCreate(null, "avares://Demo/Main.axaml", out var value);
 
             Assert.True(created);
-            Assert.Equal("first", value);
+            Assert.Equal("second", value);
             Assert.Equal("avares://Demo/Main.axaml", duplicateUri);
         }
         finally
@@ -54,5 +54,20 @@ public class XamlSourceGenRegistryTests
             XamlSourceGenRegistry.MissingUriRequested -= Handler;
             XamlSourceGenRegistry.Clear();
         }
+    }
+
+    [Fact]
+    public void Unregister_Removes_Registered_Uri()
+    {
+        XamlSourceGenRegistry.Clear();
+        const string uri = "avares://Demo/Main.axaml";
+
+        XamlSourceGenRegistry.Register(uri, static _ => "value");
+        XamlSourceGenRegistry.Unregister(uri);
+
+        var created = XamlSourceGenRegistry.TryCreate(null, uri, out var value);
+
+        Assert.False(created);
+        Assert.Null(value);
     }
 }

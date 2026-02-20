@@ -39,6 +39,16 @@ public static class XamlIncludeGraphRegistry
         Interlocked.Exchange(ref Sequence, 0);
     }
 
+    public static void Clear(string sourceUri)
+    {
+        if (string.IsNullOrWhiteSpace(sourceUri))
+        {
+            return;
+        }
+
+        Entries.TryRemove(sourceUri, out _);
+    }
+
     public static IReadOnlyList<SourceGenIncludeEdgeDescriptor> GetDirect(string sourceUri, string? mergeTarget = null)
     {
         if (!Entries.TryGetValue(sourceUri, out var includes))
