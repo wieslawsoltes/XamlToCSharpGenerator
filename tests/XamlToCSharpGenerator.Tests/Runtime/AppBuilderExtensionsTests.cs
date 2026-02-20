@@ -135,6 +135,39 @@ public class AppBuilderExtensionsTests
         Assert.True(handler.ReloadCompletedCount > 0);
     }
 
+    [Fact]
+    public void UseAvaloniaSourceGeneratedXamlHotDesign_Enables_Manager_With_Configuration()
+    {
+        XamlSourceGenHotDesignManager.Disable();
+        XamlSourceGenHotDesignManager.ClearRegistrations();
+        XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        var builder = AppBuilder.Configure<TestApp>();
+
+        builder.UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
+        {
+            options.PersistChangesToSource = false;
+            options.WaitForHotReload = false;
+        });
+        builder.AfterSetupCallback(builder);
+
+        var status = XamlSourceGenHotDesignManager.GetStatus();
+        Assert.True(status.IsEnabled);
+        Assert.False(status.Options.PersistChangesToSource);
+        Assert.False(status.Options.WaitForHotReload);
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedXamlHotDesign_Disables_Manager()
+    {
+        XamlSourceGenHotDesignManager.Enable();
+        var builder = AppBuilder.Configure<TestApp>();
+
+        builder.UseAvaloniaSourceGeneratedXamlHotDesign(enable: false);
+        builder.AfterSetupCallback(builder);
+
+        Assert.False(XamlSourceGenHotDesignManager.IsEnabled);
+    }
+
     private sealed class TestApp : Application
     {
     }

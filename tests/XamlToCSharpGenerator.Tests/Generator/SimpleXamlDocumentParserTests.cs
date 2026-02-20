@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 
@@ -267,5 +268,121 @@ public class SimpleXamlDocumentParserTests
 
         var arrayNode = stackPanel.ChildObjects[1];
         Assert.Equal("x:Int32", arrayNode.ArrayItemType);
+    }
+
+    [Fact]
+    public void Parse_Supports_Global_Prefixes_And_Implicit_Default_Namespace()
+    {
+        var parser = new SimpleXamlDocumentParser(
+            ImmutableDictionary<string, string>.Empty
+                .Add("x", "http://schemas.microsoft.com/winfx/2006/xaml")
+                .Add("local", "using:Demo.Controls"),
+            allowImplicitDefaultXmlns: true,
+            implicitDefaultXmlns: "https://github.com/avaloniaui");
+        var input = new XamlFileInput(
+            FilePath: "MainView.axaml",
+            TargetPath: "MainView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl x:Class="Demo.MainView">
+                      <local:CustomControl />
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        Assert.Equal("Demo.MainView", document!.ClassFullName);
+        Assert.Equal("https://github.com/avaloniaui", document.RootObject.XmlNamespace);
+        Assert.Equal("using:Demo.Controls", document.RootObject.ChildObjects[0].XmlNamespace);
+        Assert.Equal("http://schemas.microsoft.com/winfx/2006/xaml", document.XmlNamespaces["x"]);
+        Assert.Equal("using:Demo.Controls", document.XmlNamespaces["local"]);
+        Assert.Equal("https://github.com/avaloniaui", document.XmlNamespaces[string.Empty]);
+    }
+
+    [Fact]
+    public void Parse_Applies_Global_Prefixes_To_Directive_Values()
+    {
+        var parser = new SimpleXamlDocumentParser(
+            ImmutableDictionary<string, string>.Empty
+                .Add("vm", "using:Demo.ViewModels"),
+            allowImplicitDefaultXmlns: false,
+            implicitDefaultXmlns: null);
+        var input = new XamlFileInput(
+            FilePath: "MainView.axaml",
+            TargetPath: "MainView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.MainView"
+                               x:DataType="vm:MainViewModel">
+                      <TextBlock Text="{Binding Name}" />
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        Assert.Equal("vm:MainViewModel", document!.RootObject.DataType);
+        Assert.Equal("using:Demo.ViewModels", document.XmlNamespaces["vm"]);
+    }
+
+    [Fact]
+    public void Parse_Extracts_Conditional_Namespace_Metadata_For_Elements_And_Attributes()
+    {
+        var parser = new SimpleXamlDocumentParser();
+        var input = new XamlFileInput(
+            FilePath: "ConditionalView.axaml",
+            TargetPath: "ConditionalView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               xmlns:cx="https://github.com/avaloniaui?ApiInformation.IsTypePresent('Avalonia.Controls.TextBlock')"
+                               x:Class="Demo.ConditionalView">
+                      <cx:TextBlock x:Name="ConditionalBlock" cx:Text="Hello" />
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+
+        var conditionalNode = Assert.Single(document!.RootObject.ChildObjects);
+        Assert.Equal("https://github.com/avaloniaui", conditionalNode.XmlNamespace);
+        Assert.NotNull(conditionalNode.Condition);
+        Assert.Equal("IsTypePresent", conditionalNode.Condition!.MethodName);
+        Assert.Equal("Avalonia.Controls.TextBlock", Assert.Single(conditionalNode.Condition.Arguments));
+
+        var conditionalAttribute = Assert.Single(conditionalNode.PropertyAssignments.Where(x => x.PropertyName == "Text"));
+        Assert.NotNull(conditionalAttribute.Condition);
+        Assert.Equal("IsTypePresent", conditionalAttribute.Condition!.MethodName);
+    }
+
+    [Fact]
+    public void Parse_Reports_Invalid_Conditional_Namespace_Expression()
+    {
+        var parser = new SimpleXamlDocumentParser();
+        var input = new XamlFileInput(
+            FilePath: "ConditionalView.axaml",
+            TargetPath: "ConditionalView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               xmlns:cx="https://github.com/avaloniaui?ApiInformation.IsThingPresent('Avalonia.Controls.TextBlock')"
+                               x:Class="Demo.ConditionalView">
+                      <cx:TextBlock />
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0120");
     }
 }
