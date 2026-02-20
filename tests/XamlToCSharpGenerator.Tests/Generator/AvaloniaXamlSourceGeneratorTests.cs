@@ -480,6 +480,11 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
+        Assert.Contains("__RegisterXamlSourceGenArtifacts();", generated);
+        Assert.Contains("XamlIncludeGraphRegistry.Clear(", generated);
+        Assert.Contains("XamlCompiledBindingRegistry.Clear(", generated);
+        Assert.Contains("__TrackAndReconcileSourceGenHotReloadState(this);", generated);
+        Assert.Contains("XamlSourceGenHotReloadStateTracker.Reconcile", generated);
         Assert.Contains("XamlSourceGenHotReloadManager.Register", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions", generated);
         Assert.Contains("CaptureState = static __instance =>", generated);
@@ -511,6 +516,178 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.DoesNotContain("__ApplySourceGenHotReload", generated);
         Assert.DoesNotContain("XamlSourceGenHotReloadManager.Register", generated);
+    }
+
+    [Fact]
+    public void HotReload_Emits_Root_State_Tracking_For_Collections_And_Avalonia_Properties()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TitleProperty = new();
+                    public object? Content { get; set; }
+                    public Styles Styles { get; } = new();
+                    public ResourceDictionary Resources { get; } = new();
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                }
+
+                public class TextBlock : Control { }
+
+                public class Styles : global::System.Collections.Generic.List<Control> { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         Title="Sample">
+                <UserControl.Styles>
+                    <TextBlock />
+                </UserControl.Styles>
+                <UserControl.Resources>
+                    <TextBlock x:Key="Accent" />
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__GetSourceGenHotReloadCollectionMembers()", generated);
+        Assert.Contains("\"Resources\"", generated);
+        Assert.Contains("\"Styles\"", generated);
+        Assert.Contains("__GetSourceGenHotReloadAvaloniaPropertyMembers()", generated);
+        Assert.Contains("global::Avalonia.Controls.UserControl.TitleProperty", generated);
+        Assert.DoesNotContain("private static readonly string[] __SourceGenHotReloadCollectionMembers", generated);
+    }
+
+    [Fact]
+    public void HotReload_Emits_Named_Field_Members_In_Clr_Reset_Manifest()
+    {
+        const string code = "namespace Demo; public partial class MainView {}";
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <Button x:Name="AcceptButton" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__GetSourceGenHotReloadClrPropertyMembers()", generated);
+        Assert.Contains("return new string[] { \"AcceptButton\" };", generated);
+    }
+
+    [Fact]
+    public void HotReload_Emits_Clear_Before_Dictionary_Merge_Property_Reapply()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public ResourceDictionary Resources { get; } = new();
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                }
+
+                public class Button : Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <Button x:Key="PrimaryButton" />
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__TryClearCollection(__root.Resources);", generated);
+        Assert.Contains("__root.Resources.Add(\"PrimaryButton\",", generated);
+    }
+
+    [Fact]
+    public void HotReload_Emits_Root_Event_Subscription_Manifest_For_Reconciliation()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public event global::System.EventHandler? Loaded;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    private void OnLoaded(object? sender, global::System.EventArgs args) { }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         Loaded="OnLoaded" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__GetSourceGenHotReloadRootEventSubscriptions()", generated);
+        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadEventDescriptor(\"Loaded\", \"OnLoaded\", false, null, null, null)", generated);
+        Assert.Contains("__GetSourceGenHotReloadRootEventSubscriptions());", generated);
     }
 
     [Fact]
@@ -789,6 +966,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("__TryClearCollection(__n0.Children);", generated);
+        Assert.Contains("__TryInvokeClearMethod(value);", generated);
         Assert.Contains("if (list.IsReadOnly || list.IsFixedSize)", generated);
         Assert.Contains("catch (global::System.InvalidOperationException)", generated);
         Assert.Contains("__n1.Click -= __root.OnAccept;", generated);
