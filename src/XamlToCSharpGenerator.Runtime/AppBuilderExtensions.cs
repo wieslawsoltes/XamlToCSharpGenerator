@@ -84,4 +84,41 @@ public static class AppBuilderExtensions
             XamlSourceGenHotReloadManager.RegisterHandler(handler, elementType);
         });
     }
+
+    public static AppBuilder UseAvaloniaSourceGeneratedXamlHotDesign(
+        this AppBuilder builder,
+        bool enable = true,
+        Action<SourceGenHotDesignOptions>? configure = null,
+        ISourceGenHotDesignUpdateApplier? applier = null)
+    {
+        ConfigureHotDesign(enable, configure, applier);
+        return builder.AfterSetup(_ => ConfigureHotDesign(enable, configure, applier));
+    }
+
+    private static void ConfigureHotDesign(
+        bool enable,
+        Action<SourceGenHotDesignOptions>? configure,
+        ISourceGenHotDesignUpdateApplier? applier)
+    {
+        if (applier is not null)
+        {
+            XamlSourceGenHotDesignManager.RegisterApplier(applier);
+        }
+
+        if (enable)
+        {
+            if (configure is null)
+            {
+                XamlSourceGenHotDesignManager.Enable();
+                return;
+            }
+
+            var options = new SourceGenHotDesignOptions();
+            configure(options);
+            XamlSourceGenHotDesignManager.Enable(options);
+            return;
+        }
+
+        XamlSourceGenHotDesignManager.Disable();
+    }
 }

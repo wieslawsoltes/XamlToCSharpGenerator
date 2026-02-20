@@ -1,0 +1,12 @@
+using System.Collections.Generic;
+
+namespace XamlToCSharpGenerator.Runtime;
+
+public sealed record SourceGenHotDesignPropertyEntry(
+    string Name,
+    string? Value,
+    string TypeName,
+    bool IsSet,
+    bool IsAttached,
+    bool IsMarkupExtension,
+    IReadOnlyList<SourceGenHotDesignPropertyQuickSet> QuickSets);
