@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Threading;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 [assembly: MetadataUpdateHandler(typeof(XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
 
@@ -46,6 +47,8 @@ public static class XamlSourceGenHotReloadManager
     public static event Action<Type[]?>? HotReloaded;
 
     public static event Action<Type, Exception>? HotReloadFailed;
+
+    public static event Action<Type, Exception>? HotReloadRudeEditDetected;
 
     public static event Action<Type, string, Exception>? HotReloadHandlerFailed;
 
@@ -866,6 +869,11 @@ public static class XamlSourceGenHotReloadManager
         {
             Debug.WriteLine($"XAML source generator hot reload failed for '{operation.Type.FullName}': {ex}");
             HotReloadFailed?.Invoke(operation.Type, ex);
+            if (IsRudeEditException(ex))
+            {
+                Trace("Detected rude-edit constrained hot reload failure for type '" + operation.Type.FullName + "'. A rebuild/restart may be required.");
+                HotReloadRudeEditDetected?.Invoke(operation.Type, ex);
+            }
         }
         finally
         {
@@ -1112,6 +1120,7 @@ public static class XamlSourceGenHotReloadManager
     private static void AddDefaultHandlersLocked()
     {
         AddHandlerLocked(new StyledElementDataContextHotReloadHandler(), typeof(global::Avalonia.StyledElement), "default");
+        AddHandlerLocked(new VisualTemplateRematerializationHotReloadHandler(), typeof(global::Avalonia.Visual), "default");
     }
 
     private static void AddHandlerLocked(
@@ -1300,6 +1309,144 @@ public static class XamlSourceGenHotReloadManager
         {
             public object? DataContext { get; } = dataContext;
         }
+    }
+
+    private sealed class VisualTemplateRematerializationHotReloadHandler : ISourceGenHotReloadHandler
+    {
+        private static readonly MethodInfo? InvalidateStylesMethod =
+            typeof(global::Avalonia.StyledElement).GetMethod(
+                "InvalidateStyles",
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(bool)],
+                modifiers: null);
+
+        public int Priority => -200;
+
+        public bool CanHandle(Type reloadType, object instance)
+        {
+            return instance is global::Avalonia.Visual;
+        }
+
+        public void AfterElementReload(Type reloadType, object instance, object? state)
+        {
+            if (instance is not global::Avalonia.Visual rootVisual)
+            {
+                return;
+            }
+
+            // Two passes ensure template-created descendants are also materialized.
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var visuals = CaptureVisualSnapshot(rootVisual);
+                for (var index = 0; index < visuals.Count; index++)
+                {
+                    if (visuals[index] is global::Avalonia.StyledElement styledElement)
+                    {
+                        TryInvalidateStyles(styledElement, recurse: false);
+                        TryApplyStyling(styledElement);
+                    }
+                }
+
+                for (var index = 0; index < visuals.Count; index++)
+                {
+                    if (visuals[index] is global::Avalonia.Layout.Layoutable layoutable)
+                    {
+                        TryApplyTemplate(layoutable);
+                    }
+                }
+            }
+        }
+
+        private static IReadOnlyList<global::Avalonia.Visual> CaptureVisualSnapshot(global::Avalonia.Visual rootVisual)
+        {
+            var visuals = new List<global::Avalonia.Visual>(64) { rootVisual };
+            try
+            {
+                foreach (var visual in rootVisual.GetVisualDescendants())
+                {
+                    visuals.Add(visual);
+                }
+            }
+            catch
+            {
+                // Best effort visual enumeration only.
+            }
+
+            return visuals;
+        }
+
+        private static void TryInvalidateStyles(global::Avalonia.StyledElement styledElement, bool recurse)
+        {
+            if (InvalidateStylesMethod is null)
+            {
+                return;
+            }
+
+            try
+            {
+                InvalidateStylesMethod.Invoke(styledElement, [recurse]);
+            }
+            catch
+            {
+                // Best effort style invalidation only.
+            }
+        }
+
+        private static void TryApplyStyling(global::Avalonia.StyledElement styledElement)
+        {
+            try
+            {
+                styledElement.ApplyStyling();
+            }
+            catch
+            {
+                // Best effort style apply only.
+            }
+        }
+
+        private static void TryApplyTemplate(global::Avalonia.Layout.Layoutable layoutable)
+        {
+            try
+            {
+                layoutable.ApplyTemplate();
+            }
+            catch
+            {
+                // Best effort template materialization only.
+            }
+        }
+    }
+
+    private static bool IsRudeEditException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException!)
+        {
+            if (current is MissingMethodException ||
+                current is MissingMemberException ||
+                current is TypeLoadException ||
+                current is InvalidProgramException ||
+                current is BadImageFormatException ||
+                current is MemberAccessException)
+            {
+                return true;
+            }
+
+            var message = current.Message;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                continue;
+            }
+
+            if (message.Contains("rude edit", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("ENC", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("Edit and Continue", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void Trace(string message)

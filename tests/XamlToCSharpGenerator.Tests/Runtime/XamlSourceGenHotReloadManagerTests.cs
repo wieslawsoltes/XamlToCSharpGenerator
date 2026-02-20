@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Avalonia.Layout;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -162,6 +164,98 @@ public class XamlSourceGenHotReloadManagerTests
         Assert.Equal(1, handler.BeforeElementReloadCount);
         Assert.Equal(1, handler.AfterElementReloadCount);
         Assert.Equal(1, handler.ReloadCompletedCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Default_Template_Rematerialization_Handler_Reapplies_Descendant_Templates()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var root = new TemplateProbeLayoutable();
+        var child = new TemplateProbeLayoutable();
+        root.AttachChild(child);
+
+        XamlSourceGenHotReloadManager.Register(root, _ => { });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(TemplateProbeLayoutable)]);
+
+        Assert.True(root.ApplyTemplateCount >= 1);
+        Assert.True(child.ApplyTemplateCount >= 1);
+    }
+
+    [Fact]
+    public void UpdateApplication_Raises_RudeEdit_Event_For_Shape_Change_Failures()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var target = new RudeEditTarget();
+        Type? observedType = null;
+        Exception? observedException = null;
+
+        void OnRudeEdit(Type type, Exception exception)
+        {
+            observedType = type;
+            observedException = exception;
+        }
+
+        XamlSourceGenHotReloadManager.HotReloadRudeEditDetected += OnRudeEdit;
+        try
+        {
+            XamlSourceGenHotReloadManager.Register(target, _ => throw new MissingMethodException("Rude edit simulated"));
+            XamlSourceGenHotReloadManager.UpdateApplication([typeof(RudeEditTarget)]);
+        }
+        finally
+        {
+            XamlSourceGenHotReloadManager.HotReloadRudeEditDetected -= OnRudeEdit;
+        }
+
+        Assert.Equal(typeof(RudeEditTarget), observedType);
+        Assert.IsType<MissingMethodException>(observedException);
+    }
+
+    [Fact]
+    public void UpdateApplication_Custom_Policy_Handler_Can_Cleanup_And_Reapply_AppOwned_SideEffects()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var target = new SideEffectTarget();
+        target.SideEffects.Add("stale-style");
+        target.SideEffects.Add("manual-flag");
+
+        var policy = SourceGenHotReloadPolicies.Create<SideEffectTarget, List<string>>(
+            priority: 50,
+            captureState: static (_, instance) => new List<string>(instance.SideEffects),
+            beforeElementReload: static (_, instance, _) => instance.SideEffects.Clear(),
+            afterElementReload: static (_, instance, state) =>
+            {
+                if (state is null)
+                {
+                    return;
+                }
+
+                foreach (var value in state)
+                {
+                    if (value.StartsWith("manual-", StringComparison.Ordinal))
+                    {
+                        instance.SideEffects.Add(value);
+                    }
+                }
+            });
+
+        XamlSourceGenHotReloadManager.RegisterHandler(policy);
+        XamlSourceGenHotReloadManager.Register(target, static instance =>
+        {
+            ((SideEffectTarget)instance).SideEffects.Add("generated-new");
+        });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(SideEffectTarget)]);
+
+        Assert.DoesNotContain("stale-style", target.SideEffects);
+        Assert.Contains("manual-flag", target.SideEffects);
+        Assert.Contains("generated-new", target.SideEffects);
     }
 
     [Fact]
@@ -391,6 +485,31 @@ public class XamlSourceGenHotReloadManagerTests
     private sealed class StatefulReloadTarget
     {
         public int Value { get; set; }
+    }
+
+    private sealed class RudeEditTarget
+    {
+    }
+
+    private sealed class SideEffectTarget
+    {
+        public List<string> SideEffects { get; } = [];
+    }
+
+    private sealed class TemplateProbeLayoutable : Layoutable
+    {
+        public int ApplyTemplateCount { get; private set; }
+
+        public override void ApplyTemplate()
+        {
+            ApplyTemplateCount++;
+            base.ApplyTemplate();
+        }
+
+        public void AttachChild(TemplateProbeLayoutable child)
+        {
+            VisualChildren.Add(child);
+        }
     }
 
     private sealed class PipelineEventTarget

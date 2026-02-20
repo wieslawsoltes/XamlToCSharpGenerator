@@ -82,6 +82,32 @@ Assembly-level handler registration is also supported:
 [assembly: SourceGenHotReloadHandler(typeof(MyHotReloadHandler))]
 ```
 
+Policy-style handler helpers are available for app-owned side effects (for example manual style/resource/event wiring that must be explicitly cleaned/reapplied during reload):
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+var cleanupPolicy = SourceGenHotReloadPolicies.Create<MyView, string[]>(
+    priority: 50,
+    captureState: static (_, view) => view.Classes.ToArray(),
+    beforeElementReload: static (_, view, _) => view.Classes.Clear(),
+    afterElementReload: static (_, view, previous) =>
+    {
+        if (previous is null)
+        {
+            return;
+        }
+
+        foreach (var cls in previous)
+        {
+            if (cls.StartsWith("manual-", StringComparison.Ordinal))
+            {
+                view.Classes.Add(cls);
+            }
+        }
+    });
+```
+
 ## IDE Hot Reload (Visual Studio and Rider)
 
 When `AvaloniaXamlCompilerBackend=SourceGen`:
@@ -91,6 +117,7 @@ When `AvaloniaXamlCompilerBackend=SourceGen`:
 3. Generated runtime refresh is driven by `.NET` metadata update callbacks (`MetadataUpdateHandler`).
 4. Hot reload error resilience is enabled in `dotnet watch` and IDE build sessions by default (`AvaloniaSourceGenIdeHotReloadEnabled=true`).
 5. Runtime hot reload pipeline maps replacement types to original types and serializes reentrant updates.
+6. Runtime emits `HotReloadRudeEditDetected` when CLR/metadata shape changes are not patchable via Edit-and-Continue and require rebuild/restart.
 
 ## Migration Guide (XamlIl -> SourceGen)
 
