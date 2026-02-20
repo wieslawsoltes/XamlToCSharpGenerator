@@ -10,9 +10,9 @@ Current behavior reports hard generator errors and stops source emission for the
 1. .NET `dotnet watch`:
    - Hot reload/watch provides explicit session signals (`DotNetWatchBuild`, `DOTNET_WATCH`).
    - Unsupported/failed changes are not applied until a valid update is available.
-2. React Native Fast Refresh:
+2. Established UI hot-reload systems:
    - Runtime keeps running with syntax/runtime edit errors, then resumes once edits are fixed.
-3. Flutter Hot Reload:
+3. Established stateless delta pipelines:
    - Compilation errors during hot reload do not crash app state; the invalid update is rejected until fixed.
 4. Avalonia.Markup.Declarative (local analysis):
    - Uses metadata update callbacks and resilient runtime reload flow, avoiding app teardown on bad updates.
