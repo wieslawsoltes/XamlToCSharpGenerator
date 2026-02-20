@@ -27,13 +27,132 @@ Optional backend knobs:
 ```xml
 <PropertyGroup>
   <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
+  <AvaloniaSourceGenCSharpExpressionsEnabled>true</AvaloniaSourceGenCSharpExpressionsEnabled>
+  <AvaloniaSourceGenImplicitCSharpExpressionsEnabled>true</AvaloniaSourceGenImplicitCSharpExpressionsEnabled>
   <AvaloniaSourceGenCreateSourceInfo>true</AvaloniaSourceGenCreateSourceInfo>
   <AvaloniaSourceGenStrictMode>true</AvaloniaSourceGenStrictMode>
   <AvaloniaSourceGenHotReloadEnabled>true</AvaloniaSourceGenHotReloadEnabled>
   <AvaloniaSourceGenHotReloadErrorResilienceEnabled>true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
   <AvaloniaSourceGenIdeHotReloadEnabled>true</AvaloniaSourceGenIdeHotReloadEnabled>
+  <AvaloniaSourceGenHotDesignEnabled>true</AvaloniaSourceGenHotDesignEnabled>
+  <AvaloniaSourceGenMetricsEnabled>true</AvaloniaSourceGenMetricsEnabled>
+  <AvaloniaSourceGenMetricsDetailed>true</AvaloniaSourceGenMetricsDetailed>
 </PropertyGroup>
 ```
+
+When `AvaloniaSourceGenCreateSourceInfo=true`, generated C# also emits AXAML `#line` mappings (`// AXSG:XAML line:column` + `#line`) to improve debugger stepping and stack-trace source correlation.
+
+## C# XAML Expressions
+
+SourceGen supports C# expression markup for Avalonia bindings:
+
+```xml
+<TextBlock Text="{= FirstName + ' ' + LastName}" />
+<TextBlock Text="{FirstName + '!'}" />
+<TextBlock IsVisible="{Count GT 0}" />
+```
+
+Behavior:
+- Explicit expressions use `{= ...}`.
+- Implicit expressions use `{ ... }` when the payload is detected as C# (and not a markup extension).
+- Expressions are compiled against the current `x:DataType` scope and emitted as typed runtime expression bindings.
+- Style and `ControlTheme` setters also support expression bindings when their scope defines `x:DataType`.
+- `x:DataType` is required for expression bindings (`AXSG0110` when missing).
+- `AvaloniaSourceGenCSharpExpressionsEnabled=false` disables expression parsing entirely.
+- `AvaloniaSourceGenImplicitCSharpExpressionsEnabled=false` keeps explicit `{= ...}` support while disabling implicit `{ ... }` C# detection.
+
+## Event Bindings
+
+SourceGen supports first-class event bindings in AXAML:
+
+```xml
+<Button Click="{EventBinding SaveCommand}" />
+<Button Click="{EventBinding Command=SaveCommand, Parameter={Binding SelectedItem}}" />
+<Button Click="{EventBinding Method=SaveWithArgs, PassEventArgs=True}" />
+<Button Click="{EventBinding Method=HandleRootAction, Source=Root}" />
+```
+
+EventBinding arguments:
+- `Command` or `Path`: command member path on the event source.
+- `Method`: method path on the event source.
+- `Parameter` / `CommandParameter`: optional parameter value/path.
+- `PassEventArgs`: when `true`, event args are passed when no explicit parameter is provided.
+- `Source`: `DataContext`, `Root`, or `DataContextThenRoot` (default).
+
+Notes:
+- Existing handler syntax (`Click="OnClick"`) continues to work.
+- EventBinding can target commands or methods without manual event-hook code-behind wiring.
+
+## Global XMLNS Imports
+
+SourceGen can pre-seed XML namespace prefixes globally so individual AXAML files don’t need repeated `xmlns:*` declarations.
+
+### MSBuild-based global prefixes
+
+```xml
+<PropertyGroup>
+  <AvaloniaSourceGenGlobalXmlnsPrefixes>
+    x=http://schemas.microsoft.com/winfx/2006/xaml,
+    vm=using:MyApp.ViewModels,
+    catalog=using:MyApp.Catalog
+  </AvaloniaSourceGenGlobalXmlnsPrefixes>
+</PropertyGroup>
+```
+
+`AvaloniaSourceGenGlobalXmlnsPrefixes` accepts comma/semicolon/newline separators. Comma-separated entries are recommended in MSBuild properties.
+
+### Assembly-attribute global prefixes
+
+```csharp
+using Avalonia.Metadata;
+using XamlToCSharpGenerator.Runtime;
+
+[assembly: XmlnsPrefix("using:MyApp.ViewModels", "vm")]
+[assembly: SourceGenGlobalXmlnsPrefix("catalog", "using:MyApp.Catalog")]
+```
+
+### Optional implicit default namespace
+
+```xml
+<PropertyGroup>
+  <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
+  <AvaloniaSourceGenImplicitDefaultXmlns>https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
+</PropertyGroup>
+```
+
+With implicit mode enabled, AXAML can omit the default `xmlns="https://github.com/avaloniaui"` declaration.
+
+Notes:
+- File-local `xmlns:*` declarations still win over global mappings.
+- `using:` namespace URIs are supported in resolver paths.
+- Generic XML URI -> CLR namespace resolution now honors `XmlnsDefinition` attributes beyond Avalonia default URI.
+- Under default Avalonia build integration, AXAML still needs to remain XML-valid for Avalonia resource preprocessing (for example prefixed element names may still require a declaration even when SourceGen globals are configured).
+
+## Conditional XAML
+
+SourceGen supports conditional namespace aliases in AXAML:
+
+```xml
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:cx="https://github.com/avaloniaui?ApiInformation.IsTypePresent('Avalonia.Controls.TextBlock')">
+  <cx:TextBlock cx:Text="Only emitted when TextBlock type is present." />
+</UserControl>
+```
+
+Supported conditional methods:
+- `IsTypePresent` / `IsTypeNotPresent`
+- `IsPropertyPresent` / `IsPropertyNotPresent`
+- `IsMethodPresent` / `IsMethodNotPresent`
+- `IsEventPresent` / `IsEventNotPresent`
+- `IsEnumNamedValuePresent` / `IsEnumNamedValueNotPresent`
+- `IsApiContractPresent` / `IsApiContractNotPresent`
+
+Behavior:
+- Conditional namespace URIs are normalized to the base namespace for normal type/property resolution.
+- Condition-false branches are pruned before semantic binding, so unreachable markup does not produce unknown-type/property diagnostics.
+- Invalid conditional expressions produce `AXSG0120`.
 
 ## Bootstrap Runtime
 
@@ -81,6 +200,76 @@ Assembly-level handler registration is also supported:
 ```csharp
 [assembly: SourceGenHotReloadHandler(typeof(MyHotReloadHandler))]
 ```
+
+## Hot Design Mode (Runtime Tool API)
+
+Enable runtime hot-design orchestration (opt-in):
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+public static AppBuilder BuildAvaloniaApp() =>
+    AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml()
+        .UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
+        {
+            options.PersistChangesToSource = true;
+            options.WaitForHotReload = true;
+            options.HotReloadWaitTimeout = TimeSpan.FromSeconds(10);
+            options.FallbackToRuntimeApplyOnTimeout = false;
+        });
+```
+
+Runtime tool facade (invocable from debug/dev tooling code paths):
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+XamlSourceGenHotDesignTool.Enable();
+var status = XamlSourceGenHotDesignTool.GetStatus();
+var docs = XamlSourceGenHotDesignTool.ListDocuments();
+
+var result = await XamlSourceGenHotDesignTool.ApplyUpdateByUriAsync(
+    "avares://MyApp/MainWindow.axaml",
+    "<Window xmlns=\"https://github.com/avaloniaui\" />");
+```
+
+Core tool-panel API surface (toolbar/elements/toolbox/canvas/properties):
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+var snapshot = XamlSourceGenHotDesignTool.GetWorkspaceSnapshot();
+XamlSourceGenHotDesignTool.SetWorkspaceMode(SourceGenHotDesignWorkspaceMode.Design);
+XamlSourceGenHotDesignTool.SetPropertyFilterMode(SourceGenHotDesignPropertyFilterMode.Smart);
+XamlSourceGenHotDesignTool.SetCanvasZoom(1.15);
+XamlSourceGenHotDesignTool.SelectElement(snapshot.ActiveBuildUri, "0/0");
+
+await XamlSourceGenHotDesignTool.ApplyPropertyUpdateAsync(new SourceGenHotDesignPropertyUpdateRequest
+{
+    BuildUri = snapshot.ActiveBuildUri,
+    ElementId = "0/0",
+    PropertyName = "Margin",
+    PropertyValue = "16",
+    PersistChangesToSource = true,
+    WaitForHotReload = false
+});
+
+await XamlSourceGenHotDesignTool.InsertElementAsync(new SourceGenHotDesignElementInsertRequest
+{
+    BuildUri = snapshot.ActiveBuildUri,
+    ParentElementId = "0/0",
+    ElementName = "Button",
+    PersistChangesToSource = true,
+    WaitForHotReload = false
+});
+
+await XamlSourceGenHotDesignTool.UndoAsync(snapshot.ActiveBuildUri);
+await XamlSourceGenHotDesignTool.RedoAsync(snapshot.ActiveBuildUri);
+```
+
+The hot-design manager is extensible via `ISourceGenHotDesignUpdateApplier` for custom source propagation or update policies.
 
 Policy-style handler helpers are available for app-owned side effects (for example manual style/resource/event wiring that must be explicitly cleaned/reapplied during reload):
 
@@ -144,11 +333,13 @@ Detailed migration/release checklist:
 
 - `AXSG000x`: parse/document contract.
 - `AXSG010x`: semantic binding and property/type conversion.
+- `AXSG012x`: conditional XAML parsing/evaluation.
 - `AXSG030x`: style/selector/control-theme semantics.
 - `AXSG040x`: include graph and merge/source resolution.
 - `AXSG050x`: template semantics/checkers.
 - `AXSG060x`: integration/runtime wiring.
 - `AXSG070x`: hot reload resilience/incremental behavior.
+- `AXSG080x`: compile-time metrics and performance instrumentation.
 
 ## Notes
 

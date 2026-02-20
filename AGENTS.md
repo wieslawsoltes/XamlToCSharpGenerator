@@ -201,3 +201,69 @@ cat package/icons/folder_open_20_regular.svg
 ```
 
 Then copy the `d` attribute from the `<path>` element into code.
+
+## 15) SourceGen XAML compiler parity guardrails (required)
+
+These rules prevent regressions in the source-generator compiler pipeline.
+
+### Parser and semantic model rules
+- Preserve owner-qualified property tokens exactly as authored in XAML (`Owner.Property`).
+  Do not strip owner prefixes in the parser.
+- Keep design-time-only members (`Design.*`, ignored design namespaces) out of runtime
+  semantic binding and runtime code emission.
+- Keep diagnostics location-accurate (file, line, column) and deterministic.
+
+### Property element binding order (strict)
+- Property-element binding must follow this order:
+  1. Skip design-only members.
+  2. Handle explicit child-attachment aliases (`Content`, `Children`, `Items`).
+  3. Bind object values.
+  4. Resolve attached-property elements from owner-qualified tokens.
+  5. Handle dictionary-merge semantics.
+  6. Handle collection-add semantics.
+  7. Handle Avalonia-property assignment.
+  8. Fall back to CLR settable-property assignment.
+- Never run scalar CLR setter cardinality checks before collection/add and Avalonia-property
+  checks, otherwise valid multi-item collection property elements regress.
+
+### Style and ControlTheme setter resolution
+- For setter `Property` tokens, resolve owner-qualified attached-property tokens first.
+- If attached Avalonia property resolution succeeds, do not emit missing CLR-property
+  diagnostics (`AXSG0301`/`AXSG0303`) for that setter.
+- Use resolved Avalonia property metadata for value type conversion and duplicate
+  setter detection.
+
+### Binding emission safety rules
+- If a value is binding-like (`Binding`, `MultiBinding`, compiled/runtime binding expression),
+  emit Avalonia binding assignment via indexer descriptor path, not CLR casts.
+- Do not emit direct typed CLR assignment for binding-like values (`(bool)binding`,
+  `(string)binding`, etc.).
+- Treat both inline markup-extension bindings and object-element binding nodes as binding-like.
+
+### Warning policy and parity intent
+- Treat warning reduction as semantic parity work, not blanket suppression.
+- Preserve strict diagnostics where parity requires explicit author intent
+  (`x:DataType` for compiled bindings, template validation, etc.).
+- Do not downgrade warnings to hide unsupported behavior; either implement behavior
+  or keep the warning actionable.
+
+## 16) Hot reload and incremental generator reliability (required)
+
+### Incremental generator stability
+- Generated hint names must be unique and stable per logical XAML input.
+- Repeated runs and partial rebuilds must not emit duplicate hint names.
+- AdditionalFiles discovery must avoid duplicate logical inputs and editor backup files.
+
+### Hot reload error resilience
+- Hot reload path must be tolerant to transient invalid XAML while editing.
+- On parse/semantic failure during hot reload, keep last known good generated output;
+  do not apply partial invalid graph updates.
+- Resume normal hot reload application automatically once XAML becomes valid again.
+
+### Hot reload apply/revert semantics
+- Runtime hot reload must track and clean up removable graph artifacts (styles, resources,
+  templates, merged dictionaries, theme entries) when they are removed from XAML.
+- Applying an edit and then removing it must converge to the same runtime state as the
+  original baseline.
+- For app-specific side effects outside generated graph, use explicit hot-reload handler
+  policies rather than implicit best-effort cleanup.
