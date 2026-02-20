@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:present="https://github.com/avaloniaui?ApiInformation.IsTypePresent('Avalonia.Controls.TextBlock')"
+             xmlns:missing="https://github.com/avaloniaui?ApiInformation.IsTypePresent('SourceGenXamlCatalogSample.DoesNotExistType')"
+             xmlns:hasForeground="https://github.com/avaloniaui?ApiInformation.IsPropertyPresent('Avalonia.Controls.TextBlock','Foreground')"
+             xmlns:noForeground="https://github.com/avaloniaui?ApiInformation.IsPropertyNotPresent('Avalonia.Controls.TextBlock','Foreground')"
+             xmlns:contractPresent="https://github.com/avaloniaui?ApiInformation.IsApiContractPresent('Avalonia.Controls.TextBlock', 1)"
+             xmlns:contractMissing="https://github.com/avaloniaui?ApiInformation.IsApiContractPresent('Avalonia.Controls.TextBlock', 999)"
+             x:Class="SourceGenXamlCatalogSample.Pages.ConditionalXamlPage"
+             x:DataType="vm:ConditionalXamlPageViewModel"
+             x:CompileBindings="True">
+  <UserControl.Styles>
+    <present:Style Selector="TextBlock.conditional-highlight">
+      <Setter Property="FontWeight" Value="Bold" />
+    </present:Style>
+    <missing:Style Selector="TextBlock.conditional-highlight">
+      <Setter Property="FontStyle" Value="Italic" />
+    </missing:Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding Title}" />
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Type conditions" />
+          <present:TextBlock Text="{Binding TypePresentMessage}" />
+          <missing:TextBlock Text="{Binding TypeMissingMessage}" />
+          <TextBlock Classes="conditional-highlight" Text="{Binding StyleConditionMessage}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Property + API contract conditions" />
+          <TextBlock Text="{Binding PropertyConditionMessage}"
+                     Foreground="{DynamicResource CatalogForegroundBrush}"
+                     hasForeground:Foreground="ForestGreen"
+                     noForeground:Foreground="Red" />
+          <contractPresent:TextBlock Text="{Binding ContractPresentMessage}" />
+          <contractMissing:TextBlock Text="{Binding ContractMissingMessage}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

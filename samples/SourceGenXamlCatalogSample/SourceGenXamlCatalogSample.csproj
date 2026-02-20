@@ -6,12 +6,18 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
     <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8604</NoWarn>
     <AssemblyName>SourceGenXamlCatalogSample</AssemblyName>
     <RootNamespace>SourceGenXamlCatalogSample</RootNamespace>
 
     <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
+    <AvaloniaSourceGenHotDesignEnabled>true</AvaloniaSourceGenHotDesignEnabled>
+    <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
+    <AvaloniaSourceGenImplicitDefaultXmlns>https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
+    <AvaloniaSourceGenGlobalXmlnsPrefixes>x=http://schemas.microsoft.com/winfx/2006/xaml,vm=using:SourceGenXamlCatalogSample.ViewModels,catalog=using:SourceGenXamlCatalogSample.Catalog,pages=using:SourceGenXamlCatalogSample.Pages,resources=using:SourceGenXamlCatalogSample.Resources</AvaloniaSourceGenGlobalXmlnsPrefixes>
   </PropertyGroup>
 
   <ItemGroup>

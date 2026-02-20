@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using XamlToCSharpGenerator.Runtime;
 
@@ -18,6 +19,12 @@ internal static class Program
             .UsePlatformDetect()
             .LogToTrace()
             .UseAvaloniaSourceGeneratedXaml()
+            .UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
+            {
+                options.PersistChangesToSource = true;
+                options.WaitForHotReload = true;
+                options.HotReloadWaitTimeout = TimeSpan.FromSeconds(10);
+            })
             .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
     }
 }

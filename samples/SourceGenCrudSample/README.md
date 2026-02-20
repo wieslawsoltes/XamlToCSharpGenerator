@@ -24,6 +24,7 @@ For shipping consumption, use a single package reference:
   - `src/XamlToCSharpGenerator.Build/buildTransitive/*.props|*.targets`
 - Runtime loader is source-generated via `UseAvaloniaSourceGeneratedXaml()`.
 - Fluent theme is added programmatically in `App.Initialize()` (current SourceGen object-graph pass does not yet emit `Application.Styles` property elements).
+- In-app `Hot Design Studio` tab demonstrates runtime core tool panels (toolbar/elements/toolbox/canvas/properties) and live source-backed edits.
 
 ## Run
 

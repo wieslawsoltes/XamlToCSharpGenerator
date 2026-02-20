@@ -22,7 +22,17 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public MarkupExtensionsPageViewModel MarkupExtensions { get; } = new();
 
+    public ExpressionBindingsPageViewModel Expressions { get; } = new();
+
+    public EventBindingsPageViewModel EventBindings { get; } = new();
+
+    public GlobalXmlnsPageViewModel GlobalXmlns { get; } = new();
+
+    public ConditionalXamlPageViewModel ConditionalXaml { get; } = new();
+
     public TemplatesPageViewModel Templates { get; } = new();
 
     public ResourcesIncludesPageViewModel Resources { get; } = new();
+
+    public HotDesignStudioViewModel HotDesign { get; } = new();
 }

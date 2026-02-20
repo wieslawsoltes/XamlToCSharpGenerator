@@ -8,11 +8,15 @@
 - `Bindings`: compiled bindings with nested paths and indexer segments.
 - `Relative Source`: `$self` and `$parent[...]` query paths.
 - `Markup Extensions`: `x:Static`, custom `MarkupExtension`, `OnPlatform`, `OnFormFactor`, and extended `x:` primitives.
+- `Event Bindings`: first-class `{EventBinding ...}` command/method dispatch with `Parameter`, `PassEventArgs`, and `Source` mode examples.
+- `Global XMLNS`: global prefix imports (`vm`, `catalog`) and implicit default namespace support. The page omits local `vm/catalog` declarations and resolves them from project-level SourceGen settings.
+- `Conditional XAML`: conditional namespace aliases (`?ApiInformation.*`) that gate elements, properties, styles, and contract-specific branches.
 - `Styles + Selectors`: class selectors, combinators, and property predicate selectors.
 - `Control Themes`: `ControlTheme`, `BasedOn`, and theme assignment on framework/custom controls.
 - `Templates`: `DataTemplate`, inline deferred templates, and `ControlTemplate` + `TemplateBinding`.
 - `Resources + Dictionaries`: merged dictionary precedence, `StaticResource` and `DynamicResource`.
 - `Construction Grammar`: `x:Arguments`, `x:FactoryMethod`, `x:TypeArguments`, and `x:Array`.
+- `Hot Design Studio`: runtime design workspace with toolbar/elements/toolbox/canvas/properties panels, property editing, element insert/remove, and undo/redo.
 
 ## Run
 

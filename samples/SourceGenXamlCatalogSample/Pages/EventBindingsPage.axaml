@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.EventBindingsPage"
+             x:DataType="vm:EventBindingsPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Command event bindings" />
+          <TextBlock Text="Click handlers are routed directly to ICommand paths on DataContext." TextWrapping="Wrap" />
+          <Button Content="Invoke IncrementCommand"
+                  Click="{EventBinding Command=IncrementCommand}" />
+          <Button Content="Invoke SelectItemCommand with parameter path"
+                  Click="{EventBinding Command=SelectItemCommand, Parameter={Binding NextItemLabel}}" />
+          <TextBlock Text="{Binding CommandStatus}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Method event bindings" />
+          <TextBlock Text="Method targets resolve from DataContext; event args can be passed explicitly." TextWrapping="Wrap" />
+          <Button Content="Invoke Save()"
+                  Click="{EventBinding Method=Save}" />
+          <Button Content="Invoke SaveWithArgs(sender, args)"
+                  Click="{EventBinding Method=SaveWithArgs, PassEventArgs=True}" />
+          <TextBlock Text="{Binding MethodStatus}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Root source mode" />
+          <TextBlock Text="Source=Root dispatches directly to methods on the generated partial class." TextWrapping="Wrap" />
+          <Button Content="Invoke root method"
+                  Click="{EventBinding Method=HandleRootAction, Source=Root}" />
+          <TextBlock Text="{Binding RootStatus}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

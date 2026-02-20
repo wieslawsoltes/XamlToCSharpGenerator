@@ -94,6 +94,18 @@
       <TabItem Header="Markup Extensions">
         <pages:MarkupExtensionsPage DataContext="{Binding MarkupExtensions}" />
       </TabItem>
+      <TabItem Header="C# Expressions">
+        <pages:ExpressionBindingsPage DataContext="{Binding Expressions}" />
+      </TabItem>
+      <TabItem Header="Event Bindings">
+        <pages:EventBindingsPage DataContext="{Binding EventBindings}" />
+      </TabItem>
+      <TabItem Header="Global XMLNS">
+        <pages:GlobalXmlnsPage DataContext="{Binding GlobalXmlns}" />
+      </TabItem>
+      <TabItem Header="Conditional XAML">
+        <pages:ConditionalXamlPage DataContext="{Binding ConditionalXaml}" />
+      </TabItem>
       <TabItem Header="Styles + Selectors">
         <pages:StylesSelectorsPage />
       </TabItem>
@@ -108,6 +120,9 @@
       </TabItem>
       <TabItem Header="Construction Grammar">
         <pages:ConstructionPage />
+      </TabItem>
+      <TabItem Header="Hot Design Studio">
+        <pages:HotDesignStudioPage DataContext="{Binding HotDesign}" />
       </TabItem>
     </TabControl>
   </Grid>

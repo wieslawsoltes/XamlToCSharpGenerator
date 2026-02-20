@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SourceGenXamlCatalogSample.Pages.GlobalXmlnsPage"
+             x:DataType="vm:GlobalXmlnsPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding Title}" />
+          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Global prefix resolution in directive/markup values" />
+          <TextBlock Text="{Binding DemoLabel}" TextWrapping="Wrap" />
+          <TextBlock Text="x:DataType uses vm prefix from global mapping." />
+          <TextBlock Text="{x:Static catalog:SampleStaticValues.VersionLabel}" />
+          <TextBlock Text="{x:Static catalog:SampleStaticValues.SecondaryLabel}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

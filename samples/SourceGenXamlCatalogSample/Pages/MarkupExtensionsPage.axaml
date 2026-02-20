@@ -33,6 +33,16 @@
         </StackPanel>
       </Border>
 
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="C# expression markup" />
+          <TextBlock Text="{= FirstName + ' - ' + LastName}" />
+          <TextBlock Text="{FirstName + '!'}" />
+          <TextBlock Text="{= Count + 7}" />
+          <TextBlock Text="Visible only when Count GT 0" IsVisible="{Count GT 0}" />
+        </StackPanel>
+      </Border>
+
       <Border Classes="catalog-card" Background="#FF2D7FF9" Padding="10">
         <TextBlock Foreground="White"
                    Text="Inline accent panel." />
