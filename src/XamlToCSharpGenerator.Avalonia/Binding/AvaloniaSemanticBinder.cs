@@ -5,13 +5,13 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -33,6 +33,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
     private const string MarkupContextBaseUriToken = "__AXSG_CTX_BASE_URI__";
     private const string MarkupContextParentStackToken = "__AXSG_CTX_PARENT_STACK__";
     private const string ExpressionSourceParameterName = "source";
+    private static readonly MarkupExpressionParser CanonicalMarkupExpressionParser =
+        new(new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
 
     private static readonly string[] ExpressionOperatorAliases =
     [
@@ -132,7 +134,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         AvaloniaNamespaceCandidateCache = new();
     private static readonly ConditionalWeakTable<Compilation, XmlnsDefinitionCacheEntry>
         XmlnsDefinitionCache = new();
+    private static readonly ConditionalWeakTable<Compilation, SourceAssemblyNamespaceCacheEntry>
+        SourceAssemblyNamespaceCache = new();
     private static readonly AsyncLocal<ResolvedTransformExtensions?> ActiveTransformExtensions = new();
+    private static readonly AsyncLocal<GeneratorOptions?> ActiveGeneratorOptions = new();
+    private static readonly AsyncLocal<TypeResolutionDiagnosticContext?> ActiveTypeResolutionDiagnosticContext = new();
 
     private static readonly ItemContainerTypeMapping[] KnownItemContainerTypeMappings =
     [
@@ -168,9 +174,16 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         var assemblyName = options.AssemblyName ?? compilation.AssemblyName ?? "UnknownAssembly";
         var uri = "avares://" + assemblyName + "/" + document.TargetPath;
         var previousTransformExtensions = ActiveTransformExtensions.Value;
+        var previousGeneratorOptions = ActiveGeneratorOptions.Value;
+        var previousTypeResolutionDiagnostics = ActiveTypeResolutionDiagnosticContext.Value;
 
         try
         {
+            ActiveGeneratorOptions.Value = options;
+            ActiveTypeResolutionDiagnosticContext.Value = new TypeResolutionDiagnosticContext(
+                diagnostics,
+                document.FilePath,
+                options.StrictMode);
             var context = new BindingTransformContext(
                 document,
                 compilation,
@@ -186,6 +199,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         finally
         {
             ActiveTransformExtensions.Value = previousTransformExtensions;
+            ActiveGeneratorOptions.Value = previousGeneratorOptions;
+            ActiveTypeResolutionDiagnosticContext.Value = previousTypeResolutionDiagnostics;
         }
     }
 
@@ -1120,7 +1135,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             context.EmitNameScopeRegistration = context.Compilation.GetTypeByMetadataName("Avalonia.Controls.NameScope") is not null &&
                                                 context.Compilation.GetTypeByMetadataName("Avalonia.StyledElement") is not null &&
                                                 context.NamedElements.Count > 0;
-            context.EmitStaticResourceResolver = RequiresStaticResourceResolver(root);
+            context.EmitStaticResourceResolver = RequiresStaticResourceResolver(
+                root,
+                context.Styles,
+                context.ControlThemes);
 
             context.ViewModel = new ResolvedViewModel(
                 Document: context.Document,
@@ -1196,8 +1214,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return inheritedSetterTargetType;
         }
 
-        if (nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ==
-            "global::Avalonia.Styling.ControlTheme")
+        if (IsControlTemplateType(nodeType, compilation))
         {
             var targetTypeValue = node.PropertyAssignments
                 .FirstOrDefault(assignment => NormalizePropertyName(assignment.PropertyName).Equals("TargetType", StringComparison.Ordinal))
@@ -1214,8 +1231,24 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return inheritedSetterTargetType;
         }
 
-        if (nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ==
-            "global::Avalonia.Styling.Style")
+        if (IsControlThemeType(nodeType, compilation))
+        {
+            var targetTypeValue = node.PropertyAssignments
+                .FirstOrDefault(assignment => NormalizePropertyName(assignment.PropertyName).Equals("TargetType", StringComparison.Ordinal))
+                ?.Value;
+            if (!string.IsNullOrWhiteSpace(targetTypeValue))
+            {
+                var targetType = ResolveTypeFromTypeExpression(compilation, document, targetTypeValue, document.ClassNamespace);
+                if (targetType is not null)
+                {
+                    return targetType;
+                }
+            }
+
+            return inheritedSetterTargetType;
+        }
+
+        if (IsStyleType(nodeType, compilation))
         {
             var selectorValue = node.PropertyAssignments
                 .FirstOrDefault(assignment => NormalizePropertyName(assignment.PropertyName).Equals("Selector", StringComparison.Ordinal))
@@ -1279,6 +1312,53 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return genericType;
+    }
+
+    private static bool IsStyleType(INamedTypeSymbol type, Compilation compilation)
+    {
+        var styleType = compilation.GetTypeByMetadataName("Avalonia.Styling.Style");
+        return styleType is not null && IsTypeAssignableTo(type, styleType);
+    }
+
+    private static bool IsControlThemeType(INamedTypeSymbol type, Compilation compilation)
+    {
+        var controlThemeType = compilation.GetTypeByMetadataName("Avalonia.Styling.ControlTheme");
+        return controlThemeType is not null && IsTypeAssignableTo(type, controlThemeType);
+    }
+
+    private static bool IsControlTemplateType(INamedTypeSymbol type, Compilation compilation)
+    {
+        var markupControlTemplateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.ControlTemplate");
+        if (markupControlTemplateType is not null && IsTypeAssignableTo(type, markupControlTemplateType))
+        {
+            return true;
+        }
+
+        var controlsControlTemplateType = compilation.GetTypeByMetadataName("Avalonia.Controls.Templates.ControlTemplate");
+        if (controlsControlTemplateType is not null && IsTypeAssignableTo(type, controlsControlTemplateType))
+        {
+            return true;
+        }
+
+        var iControlTemplate = compilation.GetTypeByMetadataName("Avalonia.Controls.Templates.IControlTemplate");
+        return iControlTemplate is not null && IsTypeAssignableTo(type, iControlTemplate);
+    }
+
+    private static bool IsTemplateScopeType(INamedTypeSymbol type, Compilation compilation)
+    {
+        if (IsControlTemplateType(type, compilation))
+        {
+            return true;
+        }
+
+        var itemsPanelTemplateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.ItemsPanelTemplate");
+        if (itemsPanelTemplateType is not null && IsTypeAssignableTo(type, itemsPanelTemplateType))
+        {
+            return true;
+        }
+
+        var templateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.Template");
+        return templateType is not null && IsTypeAssignableTo(type, templateType);
     }
 
     private static ResolvedObjectNode BindObjectNode(
@@ -1374,6 +1454,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
+                        currentSetterTargetType,
                         currentBindingPriorityScope,
                         explicitOwnerType: propertyAlias.AvaloniaPropertyOwnerType,
                         explicitPropertyName: propertyAlias.ResolvedPropertyName,
@@ -1492,6 +1573,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             nodeDataType,
                             property.Type,
                             currentBindingPriorityScope,
+                            currentSetterTargetType,
                             out var bindingAssignment,
                             allowCompiledBindingRegistration: false))
                     {
@@ -1522,7 +1604,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             BindingPriorityExpression: null,
                             Line: assignment.Line,
                             Column: assignment.Column,
-                            Condition: assignment.Condition));
+                            Condition: assignment.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
                         continue;
                     }
 
@@ -1547,6 +1631,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         nodeDataType,
                         property.Type,
                         currentBindingPriorityScope,
+                        currentSetterTargetType,
                         out var templatePriorityAssignment,
                         allowCompiledBindingRegistration: false))
                 {
@@ -1558,7 +1643,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                if (LooksLikeMarkupExtension(assignment.Value) &&
+                if (TryParseMarkupExtension(assignment.Value, out _) &&
                     TryBindAvaloniaPropertyAssignment(
                         symbol,
                         typeName,
@@ -1573,6 +1658,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         nodeDataType,
                         property.Type,
                         currentBindingPriorityScope,
+                        currentSetterTargetType,
                         out var markupExtensionAssignment,
                         allowCompiledBindingRegistration: false))
                 {
@@ -1584,31 +1670,111 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
+                var isSetterValueProperty = property.Name.Equals("Value", StringComparison.Ordinal) &&
+                                            IsSetterType(symbol);
                 var conversionTargetType = property.Type;
-                if (property.Name.Equals("Value", StringComparison.Ordinal) &&
-                    inferredSetterValueType is not null &&
-                    conversionTargetType.SpecialType == SpecialType.System_Object)
+                if (isSetterValueProperty &&
+                    inferredSetterValueType is not null)
                 {
-                    conversionTargetType = inferredSetterValueType;
+                    if (conversionTargetType.SpecialType == SpecialType.System_Object)
+                    {
+                        conversionTargetType = inferredSetterValueType;
+                    }
                 }
 
-                if (!TryConvertValueExpression(
+                var valueExpression = string.Empty;
+                var valueKind = ResolvedValueKind.Literal;
+                var requiresStaticResourceResolver = false;
+                var valueRequirements = ResolvedValueRequirements.None;
+                if (isSetterValueProperty &&
+                    TryBuildRuntimeXamlFragmentExpression(
                         assignment.Value,
                         conversionTargetType,
-                        compilation,
                         document,
-                        currentSetterTargetType,
-                        currentBindingPriorityScope,
-                        out var valueExpression))
+                        out var runtimeXamlSetterValueExpression))
                 {
-                    diagnostics.Add(new DiagnosticInfo(
-                        "AXSG0102",
-                        $"Could not convert literal '{assignment.Value}' for '{property.Name}' on '{symbol.ToDisplayString()}'.",
-                        document.FilePath,
-                        assignment.Line,
-                        assignment.Column,
-                        options.StrictMode));
-                    continue;
+                    valueExpression = runtimeXamlSetterValueExpression;
+                    valueKind = ResolvedValueKind.RuntimeXamlFallback;
+                    valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+                }
+
+                var selectorNestingTypeHint =
+                    IsStyleType(symbol, compilation) &&
+                    property.Name.Equals("Selector", StringComparison.Ordinal)
+                        ? inheritedSetterTargetType
+                        : null;
+
+                if (valueExpression.Length == 0 &&
+                    HasResolveByNameSemantics(symbol, property.Name) &&
+                    TryBuildResolveByNameLiteralExpression(
+                        assignment.Value,
+                        conversionTargetType,
+                        out var resolveByNameValueExpression))
+                {
+                    valueExpression = resolveByNameValueExpression;
+                    valueKind = ResolvedValueKind.MarkupExtension;
+                }
+
+                if (valueExpression.Length == 0 && isSetterValueProperty)
+                {
+                    if (!TryResolveSetterValueWithPolicy(
+                            rawValue: assignment.Value,
+                            conversionTargetType: conversionTargetType,
+                            compilation: compilation,
+                            document: document,
+                            setterTargetType: currentSetterTargetType,
+                            bindingPriorityScope: currentBindingPriorityScope,
+                            strictMode: options.StrictMode,
+                            preferTypedStaticResourceCoercion: true,
+                            allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
+                                                                            conversionTargetType.SpecialType == SpecialType.System_Object,
+                            allowCompatibilityStringLiteralFallback: !options.StrictMode &&
+                                                                     conversionTargetType.SpecialType == SpecialType.System_Object,
+                            propertyName: property.Name,
+                            ownerDisplayName: symbol.ToDisplayString(),
+                            line: assignment.Line,
+                            column: assignment.Column,
+                            diagnostics: diagnostics,
+                            resolution: out var setterResolution,
+                            selectorNestingTypeHint: selectorNestingTypeHint,
+                            setterContext: false))
+                    {
+                        continue;
+                    }
+
+                    valueExpression = setterResolution.Expression;
+                    valueKind = setterResolution.ValueKind;
+                    requiresStaticResourceResolver = setterResolution.RequiresStaticResourceResolver;
+                    valueRequirements = setterResolution.ValueRequirements;
+                }
+                else if (valueExpression.Length == 0)
+                {
+                    if (!TryConvertValueConversion(
+                            assignment.Value,
+                            conversionTargetType,
+                            compilation,
+                            document,
+                            currentSetterTargetType,
+                            currentBindingPriorityScope,
+                            out var convertedValue,
+                            allowObjectStringLiteralFallback: !options.StrictMode &&
+                                                              conversionTargetType.SpecialType == SpecialType.System_Object,
+                            selectorNestingTypeHint: selectorNestingTypeHint))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0102",
+                            $"Could not convert literal '{assignment.Value}' for '{property.Name}' on '{symbol.ToDisplayString()}'.",
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    valueExpression = convertedValue.Expression;
+                    valueKind = convertedValue.ValueKind;
+                    requiresStaticResourceResolver = convertedValue.RequiresStaticResourceResolver;
+                    valueRequirements = convertedValue.EffectiveRequirements;
                 }
 
                 assignments.Add(new ResolvedPropertyAssignment(
@@ -1621,7 +1787,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     BindingPriorityExpression: null,
                     Line: assignment.Line,
                     Column: assignment.Column,
-                    Condition: assignment.Condition));
+                    Condition: assignment.Condition,
+                    ValueKind: valueKind,
+                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
+                    ValueRequirements: valueRequirements));
                 continue;
             }
 
@@ -1658,6 +1827,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     nodeDataType,
                     property?.Type,
                     currentBindingPriorityScope,
+                    currentSetterTargetType,
                     out var fallbackAssignment))
             {
                 if (fallbackAssignment is not null)
@@ -1871,7 +2041,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     out var aliasedPropertyField,
                     propertyAlias.AvaloniaPropertyFieldName))
             {
-                if (elementValuesArray.Length != 1)
+                var aliasedAssignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    TryGetAvaloniaPropertyValueType(aliasedPropertyField.Type),
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (aliasedAssignmentValues.Length != 1)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0103",
@@ -1896,7 +2074,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         currentBindingPriorityScope),
                     IsCollectionAdd: false,
                     IsDictionaryMerge: false,
-                    ObjectValues: elementValuesArray,
+                    ObjectValues: aliasedAssignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
                     Condition: propertyElement.Condition));
@@ -1920,7 +2098,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         out var attachedResolvedOwnerType,
                         out var attachedPropertyField))
                 {
-                    if (elementValuesArray.Length != 1)
+                    var attachedAssignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                        TryGetAvaloniaPropertyValueType(attachedPropertyField.Type),
+                        elementValuesArray,
+                        compilation,
+                        document,
+                        propertyElement.Line,
+                        propertyElement.Column);
+
+                    if (attachedAssignmentValues.Length != 1)
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             "AXSG0103",
@@ -1945,7 +2131,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             currentBindingPriorityScope),
                         IsCollectionAdd: false,
                         IsDictionaryMerge: false,
-                        ObjectValues: elementValuesArray,
+                        ObjectValues: attachedAssignmentValues,
                         Line: propertyElement.Line,
                         Column: propertyElement.Column,
                         Condition: propertyElement.Condition));
@@ -2020,7 +2206,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (TryFindAvaloniaPropertyField(symbol, property.Name, out var ownerType, out var propertyField))
             {
-                if (elementValuesArray.Length != 1)
+                var assignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    property.Type,
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (assignmentValues.Length != 1)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0103",
@@ -2045,7 +2239,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         currentBindingPriorityScope),
                     IsCollectionAdd: false,
                     IsDictionaryMerge: false,
-                    ObjectValues: elementValuesArray,
+                    ObjectValues: assignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
                     Condition: propertyElement.Condition));
@@ -2054,7 +2248,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (property.SetMethod is not null)
             {
-                if (elementValuesArray.Length != 1)
+                var assignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    property.Type,
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (assignmentValues.Length != 1)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0103",
@@ -2075,7 +2277,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     BindingPriorityExpression: null,
                     IsCollectionAdd: false,
                     IsDictionaryMerge: false,
-                    ObjectValues: elementValuesArray,
+                    ObjectValues: assignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
                     Condition: propertyElement.Condition));
@@ -2122,6 +2324,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         string? factoryExpression = null;
+        var factoryValueRequirements = ResolvedValueRequirements.None;
         if (TryBuildExplicitConstructionExpression(
                 node,
                 symbol,
@@ -2139,6 +2342,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 out var explicitConstructionExpression))
         {
             factoryExpression = explicitConstructionExpression;
+            factoryValueRequirements = ResolvedValueRequirements.None;
         }
 
         if (symbol is not null &&
@@ -2154,18 +2358,19 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             {
                 var contentProperty = FindProperty(symbol, contentPropertyName!);
                 if (contentProperty?.SetMethod is not null &&
-                    TryConvertValueExpression(
+                    TryConvertValueConversion(
                         inlineTextContent,
                         contentProperty.Type,
                         compilation,
                         document,
                         currentSetterTargetType,
                         currentBindingPriorityScope,
-                        out var inlineContentExpression))
+                        out var inlineContentConversion,
+                        allowObjectStringLiteralFallback: !options.StrictMode))
                 {
                     assignments.Add(new ResolvedPropertyAssignment(
                         PropertyName: contentProperty.Name,
-                        ValueExpression: inlineContentExpression,
+                        ValueExpression: inlineContentConversion.Expression,
                         AvaloniaPropertyOwnerTypeName: null,
                         AvaloniaPropertyFieldName: null,
                         ClrPropertyOwnerTypeName: contentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -2173,23 +2378,26 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         BindingPriorityExpression: null,
                         Line: node.Line,
                         Column: node.Column,
-                        Condition: null));
+                        Condition: null,
+                        ValueKind: inlineContentConversion.ValueKind,
+                        ValueRequirements: inlineContentConversion.EffectiveRequirements));
                     handledAsContentProperty = true;
                 }
             }
 
             if (!handledAsContentProperty &&
                 assignments.Count == 0 &&
-                TryConvertValueExpression(
+                TryConvertValueConversion(
                     inlineTextContent,
                     symbol,
                     compilation,
                     document,
                     currentSetterTargetType,
                     currentBindingPriorityScope,
-                    out var inlineFactoryExpression))
+                    out var inlineFactoryConversion))
             {
-                factoryExpression = inlineFactoryExpression;
+                factoryExpression = inlineFactoryConversion.Expression;
+                factoryValueRequirements = inlineFactoryConversion.EffectiveRequirements;
             }
         }
 
@@ -2198,6 +2406,63 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         var resolvedContentPropertyName = attachmentMode == ResolvedChildAttachmentMode.Content
             ? explicitContentPropertyName ?? defaultContentPropertyName
             : null;
+
+        if (attachmentMode == ResolvedChildAttachmentMode.Content &&
+            children.Count > 0 &&
+            symbol is not null &&
+            !string.IsNullOrWhiteSpace(resolvedContentPropertyName))
+        {
+            var resolvedContentProperty = FindProperty(symbol, resolvedContentPropertyName!);
+            if (resolvedContentProperty is not null)
+            {
+                if (CanAddToCollectionProperty(symbol, resolvedContentProperty.Name))
+                {
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: resolvedContentProperty.Name,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: resolvedContentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: resolvedContentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        IsCollectionAdd: true,
+                        IsDictionaryMerge: false,
+                        ObjectValues: children.ToImmutableArray(),
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: node.Condition));
+
+                    children.Clear();
+                    attachmentMode = ResolvedChildAttachmentMode.None;
+                    resolvedContentPropertyName = null;
+                }
+                else if (CanMergeDictionaryProperty(symbol, resolvedContentProperty.Name) &&
+                         TryBuildKeyedDictionaryMergeContainer(
+                             resolvedContentProperty,
+                             children.ToImmutableArray(),
+                             node.Line,
+                             node.Column,
+                             out var contentDictionaryMergeContainer))
+                {
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: resolvedContentProperty.Name,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: resolvedContentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: resolvedContentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        IsCollectionAdd: false,
+                        IsDictionaryMerge: true,
+                        ObjectValues: ImmutableArray.Create(contentDictionaryMergeContainer),
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: node.Condition));
+
+                    children.Clear();
+                    attachmentMode = ResolvedChildAttachmentMode.None;
+                    resolvedContentPropertyName = null;
+                }
+            }
+        }
 
         if (attachmentMode == ResolvedChildAttachmentMode.Content && children.Count > 1)
         {
@@ -2232,12 +2497,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         var useServiceProviderConstructor = ShouldUseServiceProviderConstructor(symbol);
         var useTopDownInitialization = IsUsableDuringInitialization(symbol);
+        var normalizedNodeName = NormalizeObjectNodeName(node.Name);
 
         return new ResolvedObjectNode(
-            KeyExpression: string.IsNullOrWhiteSpace(node.Key) ? null : "\"" + Escape(node.Key!) + "\"",
-            Name: node.Name,
+            KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+            Name: normalizedNodeName,
             TypeName: typeName,
+            IsBindingObjectNode: IsBindingObjectType(symbol, compilation),
             FactoryExpression: factoryExpression,
+            FactoryValueRequirements: factoryValueRequirements,
             UseServiceProviderConstructor: useServiceProviderConstructor,
             UseTopDownInitialization: useTopDownInitialization,
             PropertyAssignments: assignments.ToImmutable(),
@@ -2326,12 +2594,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         var factoryExpression = valueExpressions.Count == 0
             ? "global::System.Array.Empty<" + elementTypeName + ">()"
             : "new " + elementTypeName + "[] { " + string.Join(", ", valueExpressions) + " }";
+        var normalizedNodeName = NormalizeObjectNodeName(node.Name);
 
         return new ResolvedObjectNode(
-            KeyExpression: string.IsNullOrWhiteSpace(node.Key) ? null : "\"" + Escape(node.Key!) + "\"",
-            Name: node.Name,
+            KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+            Name: normalizedNodeName,
             TypeName: "global::System.Array",
+            IsBindingObjectNode: false,
             FactoryExpression: factoryExpression,
+            FactoryValueRequirements: ResolvedValueRequirements.None,
             UseServiceProviderConstructor: false,
             UseTopDownInitialization: false,
             PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
@@ -2343,6 +2614,24 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             Line: node.Line,
             Column: node.Column,
             Condition: node.Condition);
+    }
+
+    private static string? BuildObjectNodeKeyExpression(
+        string? rawKey,
+        Compilation compilation,
+        XamlDocumentModel document)
+    {
+        if (string.IsNullOrWhiteSpace(rawKey))
+        {
+            return null;
+        }
+
+        if (TryBuildResourceKeyExpression(rawKey!, compilation, document, out var keyExpression))
+        {
+            return keyExpression.Expression;
+        }
+
+        return "\"" + Escape(rawKey!.Trim()) + "\"";
     }
 
     private static bool TryBuildExplicitConstructionExpression(
@@ -2475,7 +2764,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (!string.IsNullOrWhiteSpace(node.FactoryExpression))
         {
-            if (ContainsMarkupContextTokens(node.FactoryExpression!))
+            if (node.FactoryValueRequirements.RequiresMarkupContext)
             {
                 return false;
             }
@@ -2504,7 +2793,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             if (!string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyOwnerTypeName) ||
                 !string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyFieldName) ||
                 assignment.Condition is not null ||
-                ContainsMarkupContextTokens(assignment.ValueExpression))
+                assignment.ValueRequirements.RequiresMarkupContext)
             {
                 return false;
             }
@@ -2514,17 +2803,6 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         expression = "new " + node.TypeName + "() { " + string.Join(", ", initializers) + " }";
         return true;
-    }
-
-    private static bool ContainsMarkupContextTokens(string expression)
-    {
-        return expression.Contains(MarkupContextServiceProviderToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextRootObjectToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextIntermediateRootObjectToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextTargetObjectToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextTargetPropertyToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextBaseUriToken, StringComparison.Ordinal) ||
-               expression.Contains(MarkupContextParentStackToken, StringComparison.Ordinal);
     }
 
     private static bool ShouldSkipConditionalBranch(
@@ -3020,23 +3298,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 if (targetType is not null)
                 {
                     targetProperty = FindProperty(targetType, normalizedPropertyName);
-                    if (targetProperty is null &&
-                        string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
+                    if (targetProperty is not null)
                     {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0301",
-                            $"Style setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-                    else
-                    {
-                        if (targetProperty is not null)
-                        {
-                            resolvedPropertyName = targetProperty.Name;
-                        }
+                        resolvedPropertyName = targetProperty.Name;
                     }
                 }
 
@@ -3049,6 +3313,19 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         stylePropertyOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     setterPropertyFieldName = stylePropertyField.Name;
                     setterValueType ??= TryGetAvaloniaPropertyValueType(stylePropertyField.Type);
+                }
+
+                if (targetType is not null &&
+                    targetProperty is null &&
+                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0301",
+                        $"Style setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
+                        document.FilePath,
+                        setter.Line,
+                        setter.Column,
+                        options.StrictMode));
                 }
 
                 var duplicatePropertyKey = !string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
@@ -3066,7 +3343,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         options.StrictMode));
                 }
 
-                var valueExpression = "\"" + Escape(setter.Value) + "\"";
+                var valueExpression = string.Empty;
+                var valueResolvedFromMarkup = false;
+                var valueKind = ResolvedValueKind.Literal;
+                var requiresStaticResourceResolver = false;
+                var valueRequirements = ResolvedValueRequirements.None;
 
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
@@ -3107,7 +3388,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         AvaloniaPropertyFieldName: setterPropertyFieldName,
                         Line: setter.Line,
                         Column: setter.Column,
-                        Condition: setter.Condition));
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
                     continue;
                 }
 
@@ -3183,20 +3466,57 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindingSourceType = styleDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
                     }
+
+                    if (!isCompiledBinding &&
+                        !bindingMarkup.HasSourceConflict &&
+                        TryBuildRuntimeBindingExpression(
+                            compilation,
+                            document,
+                            bindingMarkup,
+                            targetType,
+                            BindingPriorityScope.Style,
+                            out var runtimeBindingExpression))
+                    {
+                        valueExpression = runtimeBindingExpression;
+                        valueResolvedFromMarkup = true;
+                        valueKind = ResolvedValueKind.Binding;
+                        valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+                    }
                 }
 
                 var conversionTargetType = setterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
-                if (TryConvertValueExpression(
-                        setter.Value,
-                        conversionTargetType,
-                        compilation,
-                        document,
-                        targetType,
-                        BindingPriorityScope.Style,
-                        out var convertedSetterValue,
-                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName)))
+                if (!valueResolvedFromMarkup &&
+                    TryResolveSetterValueWithPolicy(
+                        rawValue: setter.Value,
+                        conversionTargetType: conversionTargetType,
+                        compilation: compilation,
+                        document: document,
+                        setterTargetType: targetType,
+                        bindingPriorityScope: BindingPriorityScope.Style,
+                        strictMode: options.StrictMode,
+                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName),
+                        allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
+                                                                        conversionTargetType.SpecialType == SpecialType.System_Object,
+                        allowCompatibilityStringLiteralFallback: !options.StrictMode &&
+                                                                 conversionTargetType.SpecialType == SpecialType.System_Object,
+                        propertyName: resolvedPropertyName,
+                        ownerDisplayName: targetType?.ToDisplayString() ?? "style",
+                        line: setter.Line,
+                        column: setter.Column,
+                        diagnostics: diagnostics,
+                        resolution: out var styleSetterResolution,
+                        setterContext: true))
                 {
-                    valueExpression = convertedSetterValue;
+                    valueExpression = styleSetterResolution.Expression;
+                    valueResolvedFromMarkup = true;
+                    valueKind = styleSetterResolution.ValueKind;
+                    requiresStaticResourceResolver = styleSetterResolution.RequiresStaticResourceResolver;
+                    valueRequirements = styleSetterResolution.ValueRequirements;
+                }
+
+                if (!valueResolvedFromMarkup)
+                {
+                    continue;
                 }
 
                 setters.Add(new ResolvedSetterDefinition(
@@ -3209,7 +3529,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     AvaloniaPropertyFieldName: setterPropertyFieldName,
                     Line: setter.Line,
                     Column: setter.Column,
-                    Condition: setter.Condition));
+                    Condition: setter.Condition,
+                    ValueKind: isCompiledBinding
+                        ? ResolvedValueKind.Binding
+                        : valueKind,
+                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
+                    ValueRequirements: valueRequirements));
             }
 
             styles.Add(new ResolvedStyleDefinition(
@@ -3336,23 +3661,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 if (targetType is not null)
                 {
                     targetProperty = FindProperty(targetType, normalizedPropertyName);
-                    if (targetProperty is null &&
-                        string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
+                    if (targetProperty is not null)
                     {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0303",
-                            $"ControlTheme setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-                    else
-                    {
-                        if (targetProperty is not null)
-                        {
-                            resolvedPropertyName = targetProperty.Name;
-                        }
+                        resolvedPropertyName = targetProperty.Name;
                     }
                 }
 
@@ -3365,6 +3676,19 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         themePropertyOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     setterPropertyFieldName = themePropertyField.Name;
                     setterValueType ??= TryGetAvaloniaPropertyValueType(themePropertyField.Type);
+                }
+
+                if (targetType is not null &&
+                    targetProperty is null &&
+                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0303",
+                        $"ControlTheme setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
+                        document.FilePath,
+                        setter.Line,
+                        setter.Column,
+                        options.StrictMode));
                 }
 
                 var duplicatePropertyKey = !string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
@@ -3382,7 +3706,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         options.StrictMode));
                 }
 
-                var valueExpression = "\"" + Escape(setter.Value) + "\"";
+                var valueExpression = string.Empty;
+                var valueResolvedFromMarkup = false;
+                var valueKind = ResolvedValueKind.Literal;
+                var requiresStaticResourceResolver = false;
+                var valueRequirements = ResolvedValueRequirements.None;
 
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
@@ -3423,7 +3751,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         AvaloniaPropertyFieldName: setterPropertyFieldName,
                         Line: setter.Line,
                         Column: setter.Column,
-                        Condition: setter.Condition));
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
                     continue;
                 }
 
@@ -3499,20 +3829,59 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindingSourceType = themeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
                     }
+
+                    if (!isCompiledBinding &&
+                        !bindingMarkup.HasSourceConflict &&
+                        TryBuildRuntimeBindingExpression(
+                            compilation,
+                            document,
+                            bindingMarkup,
+                            targetType,
+                            BindingPriorityScope.Style,
+                            out var runtimeBindingExpression))
+                    {
+                        valueExpression = runtimeBindingExpression;
+                        valueResolvedFromMarkup = true;
+                        valueKind = ResolvedValueKind.Binding;
+                        valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+                    }
                 }
 
                 var conversionTargetType = setterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
-                if (TryConvertValueExpression(
-                        setter.Value,
-                        conversionTargetType,
-                        compilation,
-                        document,
-                        targetType,
-                        BindingPriorityScope.Style,
-                        out var convertedSetterValue,
-                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName)))
+                var hasKnownSetterValueType = setterValueType is not null;
+                if (!valueResolvedFromMarkup &&
+                    TryResolveSetterValueWithPolicy(
+                        rawValue: setter.Value,
+                        conversionTargetType: conversionTargetType,
+                        compilation: compilation,
+                        document: document,
+                        setterTargetType: targetType,
+                        bindingPriorityScope: BindingPriorityScope.Style,
+                        strictMode: options.StrictMode,
+                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName),
+                        allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
+                                                                        hasKnownSetterValueType &&
+                                                                        conversionTargetType.SpecialType == SpecialType.System_Object,
+                        allowCompatibilityStringLiteralFallback: !options.StrictMode &&
+                                                                 conversionTargetType.SpecialType == SpecialType.System_Object,
+                        propertyName: resolvedPropertyName,
+                        ownerDisplayName: targetType?.ToDisplayString() ?? "control theme",
+                        line: setter.Line,
+                        column: setter.Column,
+                        diagnostics: diagnostics,
+                        resolution: out var controlThemeSetterResolution,
+                        setterContext: true))
                 {
-                    valueExpression = convertedSetterValue;
+                    valueExpression = controlThemeSetterResolution.Expression;
+                    valueResolvedFromMarkup = true;
+                    valueKind = controlThemeSetterResolution.ValueKind;
+                    requiresStaticResourceResolver = controlThemeSetterResolution.RequiresStaticResourceResolver;
+                    valueRequirements = controlThemeSetterResolution.ValueRequirements;
+                }
+
+                if (!valueResolvedFromMarkup)
+                {
+                    continue;
                 }
 
                 setters.Add(new ResolvedSetterDefinition(
@@ -3525,7 +3894,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     AvaloniaPropertyFieldName: setterPropertyFieldName,
                     Line: setter.Line,
                     Column: setter.Column,
-                    Condition: setter.Condition));
+                    Condition: setter.Condition,
+                    ValueKind: isCompiledBinding
+                        ? ResolvedValueKind.Binding
+                        : valueKind,
+                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
+                    ValueRequirements: valueRequirements));
             }
 
             controlThemes.Add(new ResolvedControlThemeDefinition(
@@ -3982,7 +4356,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             string? targetTypeName = null;
             INamedTypeSymbol? controlTemplateTargetType = null;
 
-            if (!template.Kind.EndsWith("Template", StringComparison.Ordinal))
+            if (!IsKnownTemplateKind(template.Kind))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0101",
@@ -3998,26 +4372,32 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                  template.Kind.Equals("TreeDataTemplate", StringComparison.Ordinal)) &&
                 string.IsNullOrWhiteSpace(template.DataType))
             {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0500",
-                    $"Template '{template.Kind}' should declare x:DataType for compiled-binding safety.",
-                    document.FilePath,
-                    template.Line,
-                    template.Column,
-                    options.StrictMode));
+                if (options.StrictMode)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0500",
+                        $"Template '{template.Kind}' should declare x:DataType for compiled-binding safety.",
+                        document.FilePath,
+                        template.Line,
+                        template.Column,
+                        true));
+                }
             }
 
             if (template.Kind.Equals("ControlTemplate", StringComparison.Ordinal))
             {
                 if (string.IsNullOrWhiteSpace(template.TargetType))
                 {
-                    diagnostics.Add(new DiagnosticInfo(
-                        "AXSG0501",
-                        "ControlTemplate requires TargetType for source-generated validation.",
-                        document.FilePath,
-                        template.Line,
-                        template.Column,
-                        options.StrictMode));
+                    if (options.StrictMode)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0501",
+                            "ControlTemplate requires TargetType for source-generated validation.",
+                            document.FilePath,
+                            template.Line,
+                            template.Column,
+                            true));
+                    }
                 }
                 else
                 {
@@ -4085,7 +4465,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
-        if (!TryCollectControlTemplateNamedParts(template.RawXaml, compilation, out var actualParts))
+        if (!TryFindTemplateNode(document, template, out var templateNode))
+        {
+            return;
+        }
+
+        if (!TryCollectControlTemplateNamedParts(templateNode, compilation, out var actualParts))
         {
             return;
         }
@@ -4162,78 +4547,55 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
-        if (!TryGetTemplateContentRootElement(template.RawXaml, out var contentRoot))
+        if (!TryFindTemplateNode(document, template, out var templateNode))
         {
             return;
         }
 
-        var actualType = ResolveTypeSymbol(compilation, contentRoot.Name.NamespaceName, contentRoot.Name.LocalName);
+        if (!TryGetTemplateContentRootNode(templateNode, out var contentRoot))
+        {
+            return;
+        }
+
+        var actualType = ResolveTypeSymbol(compilation, contentRoot.XmlNamespace, contentRoot.XmlTypeName);
         if (actualType is null || IsTypeAssignableTo(actualType, expectedType))
         {
             return;
         }
 
-        var lineInfo = (IXmlLineInfo)contentRoot;
-        var line = template.Line;
-        var column = template.Column;
-        if (lineInfo.HasLineInfo())
-        {
-            line = template.Line + Math.Max(0, lineInfo.LineNumber - 1);
-            column = lineInfo.LineNumber <= 1
-                ? template.Column + Math.Max(0, lineInfo.LinePosition - 1)
-                : Math.Max(1, lineInfo.LinePosition);
-        }
-
         diagnostics.Add(new DiagnosticInfo(
             "AXSG0506",
-            $"Template '{template.Kind}' content root '{contentRoot.Name.LocalName}' is expected to be assignable to '{expectedType.Name}', but actual type is '{actualType.Name}'.",
+            $"Template '{template.Kind}' content root '{contentRoot.XmlTypeName}' is expected to be assignable to '{expectedType.Name}', but actual type is '{actualType.Name}'.",
             document.FilePath,
-            line,
-            column,
+            contentRoot.Line,
+            contentRoot.Column,
             options.StrictMode));
     }
 
-    private static bool TryGetTemplateContentRootElement(string rawXaml, out XElement contentRoot)
+    private static bool TryGetTemplateContentRootNode(XamlObjectNode templateNode, out XamlObjectNode contentRoot)
     {
-        contentRoot = default!;
-        try
+        foreach (var propertyElement in templateNode.PropertyElements)
         {
-            var parsed = XDocument.Parse(rawXaml, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
-            if (parsed.Root is not { } root)
+            if (!NormalizePropertyName(propertyElement.PropertyName).Equals("Content", StringComparison.Ordinal))
             {
-                return false;
+                continue;
             }
 
-            foreach (var child in root.Elements())
+            if (propertyElement.ObjectValues.Length > 0)
             {
-                if (child.Name.NamespaceName == root.Name.NamespaceName &&
-                    child.Name.LocalName.Contains(".", StringComparison.Ordinal))
-                {
-                    if (!child.Name.LocalName.EndsWith(".Content", StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    var contentChild = child.Elements().FirstOrDefault();
-                    if (contentChild is not null)
-                    {
-                        contentRoot = contentChild;
-                        return true;
-                    }
-
-                    continue;
-                }
-
-                contentRoot = child;
+                contentRoot = propertyElement.ObjectValues[0];
                 return true;
             }
+        }
 
-            return false;
-        }
-        catch (XmlException)
+        if (templateNode.ChildObjects.Length > 0)
         {
-            return false;
+            contentRoot = templateNode.ChildObjects[0];
+            return true;
         }
+
+        contentRoot = default!;
+        return false;
     }
 
     private static void ValidateItemContainerInsideTemplateWarning(
@@ -4327,8 +4689,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         foreach (var propertyElement in templateNode.PropertyElements)
         {
-            if ((propertyElement.PropertyName.Equals("Content", StringComparison.Ordinal) ||
-                 propertyElement.PropertyName.EndsWith(".Content", StringComparison.Ordinal)) &&
+            if (NormalizePropertyName(propertyElement.PropertyName).Equals("Content", StringComparison.Ordinal) &&
                 propertyElement.ObjectValues.Length > 0)
             {
                 return propertyElement.ObjectValues[0];
@@ -4429,72 +4790,213 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
     }
 
     private static bool TryCollectControlTemplateNamedParts(
-        string rawXaml,
+        XamlObjectNode templateNode,
         Compilation compilation,
         out ImmutableDictionary<string, TemplatePartActual> parts)
     {
         var result = ImmutableDictionary.CreateBuilder<string, TemplatePartActual>(StringComparer.Ordinal);
-        try
-        {
-            var document = XDocument.Parse(rawXaml, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
-            if (document.Root is not { } root)
-            {
-                parts = ImmutableDictionary<string, TemplatePartActual>.Empty;
-                return false;
-            }
-
-            CollectControlTemplateNamedPartsRecursive(root, compilation, result, isTemplateRoot: true);
-            parts = result.ToImmutable();
-            return true;
-        }
-        catch (XmlException)
-        {
-            parts = ImmutableDictionary<string, TemplatePartActual>.Empty;
-            return false;
-        }
+        CollectControlTemplateNamedPartsRecursive(templateNode, compilation, result, isTemplateRoot: true);
+        parts = result.ToImmutable();
+        return true;
     }
 
     private static void CollectControlTemplateNamedPartsRecursive(
-        XElement element,
+        XamlObjectNode node,
         Compilation compilation,
         ImmutableDictionary<string, TemplatePartActual>.Builder result,
         bool isTemplateRoot)
     {
-        if (!isTemplateRoot && IsTemplateLikeElement(element.Name.LocalName))
+        if (!isTemplateRoot && IsTemplateLikeElement(node.XmlTypeName))
         {
             return;
         }
 
-        var xNameAttribute = element.Attributes().FirstOrDefault(attribute =>
-            attribute.Name == Xaml2006 + "Name");
-        var nameAttribute = xNameAttribute ?? element.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Name");
-        if (nameAttribute is not null &&
-            !string.IsNullOrWhiteSpace(nameAttribute.Value) &&
-            !result.ContainsKey(nameAttribute.Value))
+        if (TryGetNodeNameScopeRegistration(node, out var partName, out var line, out var column) &&
+            !result.ContainsKey(partName))
         {
-            var type = ResolveTypeSymbol(compilation, element.Name.NamespaceName, element.Name.LocalName);
-            var lineInfo = (IXmlLineInfo)nameAttribute;
-            if (!lineInfo.HasLineInfo())
-            {
-                lineInfo = (IXmlLineInfo)element;
-            }
-
-            result[nameAttribute.Value] = new TemplatePartActual(
+            var type = ResolveTypeSymbol(compilation, node.XmlNamespace, node.XmlTypeName);
+            result[partName] = new TemplatePartActual(
                 type: type,
-                line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1);
+                line: line,
+                column: column);
         }
 
-        foreach (var child in element.Elements())
+        foreach (var constructorArgument in node.ConstructorArguments)
+        {
+            CollectControlTemplateNamedPartsRecursive(constructorArgument, compilation, result, isTemplateRoot: false);
+        }
+
+        foreach (var child in node.ChildObjects)
         {
             CollectControlTemplateNamedPartsRecursive(child, compilation, result, isTemplateRoot: false);
+        }
+
+        foreach (var propertyElement in node.PropertyElements)
+        {
+            foreach (var objectValue in propertyElement.ObjectValues)
+            {
+                CollectControlTemplateNamedPartsRecursive(objectValue, compilation, result, isTemplateRoot: false);
+            }
+        }
+    }
+
+    private static bool TryGetNodeNameScopeRegistration(
+        XamlObjectNode node,
+        out string name,
+        out int line,
+        out int column)
+    {
+        name = string.Empty;
+        line = node.Line;
+        column = node.Column;
+
+        if (TryParseNameScopeRegistrationValue(node.Name ?? string.Empty, out var parsedNodeName))
+        {
+            name = parsedNodeName;
+            return true;
+        }
+
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (!NormalizePropertyName(assignment.PropertyName).Equals("Name", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!TryParseNameScopeRegistrationValue(assignment.Value, out var parsedName))
+            {
+                continue;
+            }
+
+            name = parsedName;
+            line = assignment.Line;
+            column = assignment.Column;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseNameScopeRegistrationValue(string rawValue, out string name)
+    {
+        name = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return false;
+        }
+
+        var trimmed = rawValue.Trim();
+        if (TryParseMarkupExtension(trimmed, out _))
+        {
+            return false;
+        }
+
+        if (!TryNormalizeReferenceName(trimmed, out var normalizedName))
+        {
+            return false;
+        }
+
+        name = normalizedName;
+        return true;
+    }
+
+    private static string? NormalizeObjectNodeName(string? rawName)
+    {
+        return TryParseNameScopeRegistrationValue(rawName ?? string.Empty, out var name)
+            ? name
+            : null;
+    }
+
+    private static bool TryFindTemplateNode(
+        XamlDocumentModel document,
+        XamlTemplateDefinition template,
+        out XamlObjectNode templateNode)
+    {
+        foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
+        {
+            if (!node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (node.Line == template.Line &&
+                node.Column == template.Column)
+            {
+                templateNode = node;
+                return true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(template.Key))
+        {
+            foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
+            {
+                if (!node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (string.Equals(node.Key, template.Key, StringComparison.Ordinal))
+                {
+                    templateNode = node;
+                    return true;
+                }
+            }
+        }
+
+        foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
+        {
+            if (node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
+            {
+                templateNode = node;
+                return true;
+            }
+        }
+
+        templateNode = default!;
+        return false;
+    }
+
+    private static IEnumerable<XamlObjectNode> EnumerateObjectNodeSubtree(XamlObjectNode node)
+    {
+        yield return node;
+
+        foreach (var constructorArgument in node.ConstructorArguments)
+        {
+            foreach (var descendant in EnumerateObjectNodeSubtree(constructorArgument))
+            {
+                yield return descendant;
+            }
+        }
+
+        foreach (var child in node.ChildObjects)
+        {
+            foreach (var descendant in EnumerateObjectNodeSubtree(child))
+            {
+                yield return descendant;
+            }
+        }
+
+        foreach (var propertyElement in node.PropertyElements)
+        {
+            foreach (var objectValue in propertyElement.ObjectValues)
+            {
+                foreach (var descendant in EnumerateObjectNodeSubtree(objectValue))
+                {
+                    yield return descendant;
+                }
+            }
         }
     }
 
     private static bool IsTemplateLikeElement(string localName)
     {
-        return localName.EndsWith("Template", StringComparison.Ordinal);
+        return IsKnownTemplateKind(localName);
+    }
+
+    private static bool IsKnownTemplateKind(string kind)
+    {
+        return kind is "DataTemplate" or "ControlTemplate" or "ItemsPanelTemplate" or "TreeDataTemplate";
     }
 
     private static bool TryParseBindingMarkup(string value, out BindingMarkup bindingMarkup)
@@ -4771,29 +5273,182 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool TryExtractReferenceElementName(string? sourceValue, out string elementName)
     {
         elementName = string.Empty;
-        if (string.IsNullOrWhiteSpace(sourceValue) ||
-            !TryParseMarkupExtension(sourceValue!, out var sourceMarkup))
+        if (string.IsNullOrWhiteSpace(sourceValue))
         {
             return false;
         }
 
-        var sourceMarkupName = sourceMarkup.Name.Trim();
-        if (!sourceMarkupName.Equals("x:Reference", StringComparison.OrdinalIgnoreCase) &&
-            !sourceMarkupName.Equals("Reference", StringComparison.OrdinalIgnoreCase) &&
-            !sourceMarkupName.Equals("ResolveByName", StringComparison.OrdinalIgnoreCase))
+        if (!TryParseResolveByNameReferenceToken(sourceValue!, out var referenceToken) ||
+            !referenceToken.FromMarkupExtension)
         {
             return false;
         }
 
-        var rawName = TryGetNamedMarkupArgument(sourceMarkup, "Name", "ElementName") ??
-                      (sourceMarkup.PositionalArguments.Length > 0 ? Unquote(sourceMarkup.PositionalArguments[0]) : null);
+        elementName = referenceToken.Name;
+        return elementName.Length > 0;
+    }
+
+    private static bool HasResolveByNameSemantics(INamedTypeSymbol ownerType, string propertyName)
+    {
+        var property = FindProperty(ownerType, propertyName);
+        if (property is not null)
+        {
+            if (HasResolveByNameAttribute(property) ||
+                (property.GetMethod is not null && HasResolveByNameAttribute(property.GetMethod)) ||
+                (property.SetMethod is not null && HasResolveByNameAttribute(property.SetMethod)))
+            {
+                return true;
+            }
+        }
+
+        var setterName = "Set" + propertyName;
+        var getterName = "Get" + propertyName;
+        for (var current = ownerType; current is not null; current = current.BaseType)
+        {
+            foreach (var method in current.GetMembers(setterName).OfType<IMethodSymbol>())
+            {
+                if (HasResolveByNameAttribute(method))
+                {
+                    return true;
+                }
+            }
+
+            foreach (var method in current.GetMembers(getterName).OfType<IMethodSymbol>())
+            {
+                if (HasResolveByNameAttribute(method))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasResolveByNameAttribute(ISymbol symbol)
+    {
+        foreach (var attribute in symbol.GetAttributes())
+        {
+            var attributeType = attribute.AttributeClass;
+            if (attributeType is null)
+            {
+                continue;
+            }
+
+            if (attributeType.Name.Equals("ResolveByNameAttribute", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (attributeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                .Equals("global::Avalonia.Controls.ResolveByNameAttribute", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryBuildResolveByNameLiteralExpression(
+        string rawValue,
+        ITypeSymbol? targetType,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!TryParseResolveByNameReferenceToken(rawValue, out var referenceToken))
+        {
+            return false;
+        }
+
+        var resolveExpression =
+            "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideReference(\"" +
+            Escape(referenceToken.Name) +
+            "\", " +
+            MarkupContextServiceProviderToken +
+            ", " +
+            MarkupContextRootObjectToken +
+            ", " +
+            MarkupContextIntermediateRootObjectToken +
+            ", " +
+            MarkupContextTargetObjectToken +
+            ", " +
+            MarkupContextTargetPropertyToken +
+            ", " +
+            MarkupContextBaseUriToken +
+            ", " +
+            MarkupContextParentStackToken +
+            ")";
+
+        expression = targetType is null
+            ? resolveExpression
+            : WrapWithTargetTypeCast(targetType, resolveExpression);
+        return true;
+    }
+
+    private static bool TryParseResolveByNameReferenceToken(
+        string rawValue,
+        out ResolveByNameReferenceToken referenceToken)
+    {
+        referenceToken = default;
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return false;
+        }
+
+        var trimmed = rawValue.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        if (TryParseMarkupExtension(trimmed, out var markup))
+        {
+            var markupName = markup.Name.Trim();
+            if (!markupName.Equals("x:Reference", StringComparison.OrdinalIgnoreCase) &&
+                !markupName.Equals("Reference", StringComparison.OrdinalIgnoreCase) &&
+                !markupName.Equals("ResolveByName", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var rawName = TryGetNamedMarkupArgument(markup, "Name", "ElementName") ??
+                          (markup.PositionalArguments.Length > 0 ? markup.PositionalArguments[0] : null);
+            if (!TryNormalizeReferenceName(rawName, out var normalizedName))
+            {
+                return false;
+            }
+
+            referenceToken = new ResolveByNameReferenceToken(normalizedName, FromMarkupExtension: true);
+            return true;
+        }
+
+        if (!TryNormalizeReferenceName(trimmed, out var literalName))
+        {
+            return false;
+        }
+
+        referenceToken = new ResolveByNameReferenceToken(literalName, FromMarkupExtension: false);
+        return true;
+    }
+
+    private static bool TryNormalizeReferenceName(string? rawName, out string normalizedName)
+    {
+        normalizedName = string.Empty;
         if (string.IsNullOrWhiteSpace(rawName))
         {
             return false;
         }
 
-        elementName = rawName!.Trim();
-        return elementName.Length > 0;
+        var unquoted = Unquote(rawName!).Trim();
+        if (unquoted.Length == 0 ||
+            unquoted.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
+        {
+            return false;
+        }
+
+        normalizedName = unquoted;
+        return true;
     }
 
     private static bool TryParseElementNameQuery(string path, out string elementName, out string normalizedPath)
@@ -6271,6 +6926,255 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                "global::Avalonia.Styling.Setter";
     }
 
+    private static bool IsBindingObjectType(INamedTypeSymbol? typeSymbol, Compilation compilation)
+    {
+        if (typeSymbol is null)
+        {
+            return false;
+        }
+
+        if (IsTypeByMetadataName(typeSymbol, "Avalonia.Data.Binding") ||
+            IsTypeByMetadataName(typeSymbol, "Avalonia.Data.MultiBinding") ||
+            IsTypeByMetadataName(typeSymbol, "Avalonia.Data.InstancedBinding") ||
+            IsTypeByMetadataName(typeSymbol, "Avalonia.Binding") ||
+            IsTypeByMetadataName(typeSymbol, "Avalonia.MultiBinding"))
+        {
+            return true;
+        }
+
+        var bindingBaseType = compilation.GetTypeByMetadataName("Avalonia.Data.BindingBase");
+        if (bindingBaseType is not null && IsTypeAssignableTo(typeSymbol, bindingBaseType))
+        {
+            return true;
+        }
+
+        var bindingInterfaceType = compilation.GetTypeByMetadataName("Avalonia.Data.IBinding");
+        if (bindingInterfaceType is not null && IsTypeAssignableTo(typeSymbol, bindingInterfaceType))
+        {
+            return true;
+        }
+
+        var bindingInterface2Type = compilation.GetTypeByMetadataName("Avalonia.Data.Core.IBinding2");
+        if (bindingInterface2Type is not null && IsTypeAssignableTo(typeSymbol, bindingInterface2Type))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsTypeByMetadataName(INamedTypeSymbol symbol, string metadataName)
+    {
+        return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            .Equals("global::" + metadataName, StringComparison.Ordinal);
+    }
+
+    private static ResolvedValueConversionResult CreateLiteralConversion(string expression)
+    {
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.Literal);
+    }
+
+    private static ResolvedValueConversionResult CreateMarkupExtensionConversion(
+        string expression,
+        bool requiresRuntimeServiceProvider = false,
+        bool requiresParentStack = false,
+        bool requiresStaticResourceResolver = false,
+        bool isRuntimeFallback = false,
+        ResolvedResourceKeyExpression? resourceKey = null)
+    {
+        var requirements = requiresRuntimeServiceProvider
+            ? ResolvedValueRequirements.ForMarkupExtensionRuntime(requiresParentStack)
+            : ResolvedValueRequirements.None;
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.MarkupExtension,
+            RequiresRuntimeServiceProvider: requiresRuntimeServiceProvider,
+            RequiresParentStack: requiresParentStack,
+            RequiresProvideValueTarget: requirements.NeedsProvideValueTarget,
+            RequiresRootObject: requirements.NeedsRootObject,
+            RequiresBaseUri: requirements.NeedsBaseUri,
+            RequiresStaticResourceResolver: requiresStaticResourceResolver,
+            IsRuntimeFallback: isRuntimeFallback,
+            ResourceKey: resourceKey,
+            ValueRequirements: requirements);
+    }
+
+    private static ResolvedValueConversionResult CreateBindingConversion(
+        string expression,
+        bool requiresRuntimeServiceProvider = false,
+        bool requiresParentStack = false)
+    {
+        var requirements = requiresRuntimeServiceProvider
+            ? ResolvedValueRequirements.ForMarkupExtensionRuntime(requiresParentStack)
+            : ResolvedValueRequirements.None;
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.Binding,
+            RequiresRuntimeServiceProvider: requiresRuntimeServiceProvider,
+            RequiresParentStack: requiresParentStack,
+            RequiresProvideValueTarget: requirements.NeedsProvideValueTarget,
+            RequiresRootObject: requirements.NeedsRootObject,
+            RequiresBaseUri: requirements.NeedsBaseUri,
+            ValueRequirements: requirements);
+    }
+
+    private static ResolvedValueConversionResult CreateTemplateBindingConversion(string expression)
+    {
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.TemplateBinding);
+    }
+
+    private static ResolvedValueConversionResult CreateDynamicResourceBindingConversion(
+        string expression,
+        bool requiresRuntimeServiceProvider,
+        bool requiresParentStack,
+        ResolvedResourceKeyExpression? resourceKey = null)
+    {
+        var requirements = requiresRuntimeServiceProvider
+            ? ResolvedValueRequirements.ForMarkupExtensionRuntime(requiresParentStack)
+            : ResolvedValueRequirements.None;
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.DynamicResourceBinding,
+            RequiresRuntimeServiceProvider: requiresRuntimeServiceProvider,
+            RequiresParentStack: requiresParentStack,
+            RequiresProvideValueTarget: requirements.NeedsProvideValueTarget,
+            RequiresRootObject: requirements.NeedsRootObject,
+            RequiresBaseUri: requirements.NeedsBaseUri,
+            ResourceKey: resourceKey,
+            ValueRequirements: requirements);
+    }
+
+    private static bool TryResolveSetterValueWithPolicy(
+        string rawValue,
+        ITypeSymbol conversionTargetType,
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol? setterTargetType,
+        BindingPriorityScope bindingPriorityScope,
+        bool strictMode,
+        bool preferTypedStaticResourceCoercion,
+        bool allowObjectStringLiteralFallbackDuringConversion,
+        bool allowCompatibilityStringLiteralFallback,
+        string propertyName,
+        string ownerDisplayName,
+        int line,
+        int column,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        out SetterValueResolutionResult resolution,
+        INamedTypeSymbol? selectorNestingTypeHint = null,
+        bool setterContext = true)
+    {
+        resolution = default;
+
+        if (TryBuildRuntimeXamlFragmentExpression(
+                rawValue,
+                conversionTargetType,
+                document,
+                out var runtimeXamlSetterValue))
+        {
+            resolution = new SetterValueResolutionResult(
+                Expression: runtimeXamlSetterValue,
+                ValueKind: ResolvedValueKind.RuntimeXamlFallback,
+                RequiresStaticResourceResolver: false,
+                ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+            return true;
+        }
+
+        if (TryConvertValueConversion(
+                rawValue,
+                conversionTargetType,
+                compilation,
+                document,
+                setterTargetType,
+                bindingPriorityScope,
+                out var convertedSetterValue,
+                preferTypedStaticResourceCoercion: preferTypedStaticResourceCoercion,
+                allowObjectStringLiteralFallback: allowObjectStringLiteralFallbackDuringConversion,
+                selectorNestingTypeHint: selectorNestingTypeHint))
+        {
+            resolution = new SetterValueResolutionResult(
+                Expression: convertedSetterValue.Expression,
+                ValueKind: convertedSetterValue.ValueKind,
+                RequiresStaticResourceResolver: convertedSetterValue.RequiresStaticResourceResolver,
+                ValueRequirements: convertedSetterValue.EffectiveRequirements);
+            return true;
+        }
+
+        if (conversionTargetType.SpecialType == SpecialType.System_String)
+        {
+            resolution = new SetterValueResolutionResult(
+                Expression: "\"" + Escape(rawValue) + "\"",
+                ValueKind: ResolvedValueKind.Literal,
+                RequiresStaticResourceResolver: false,
+                ValueRequirements: ResolvedValueRequirements.None);
+            return true;
+        }
+
+        if (strictMode)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0102",
+                $"Could not convert literal '{rawValue}' for '{propertyName}' on '{ownerDisplayName}'. Strategy=StrictError (no compatibility fallback).",
+                document.FilePath,
+                line,
+                column,
+                true));
+            return false;
+        }
+
+        if (TryGetAvaloniaUnsetValueExpression(compilation, out var unsetValueExpression))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0102",
+                $"Could not convert literal '{rawValue}' for '{propertyName}' on '{ownerDisplayName}'. Strategy=AvaloniaProperty.UnsetValueFallback.",
+                document.FilePath,
+                line,
+                column,
+                strictMode));
+
+            resolution = new SetterValueResolutionResult(
+                Expression: unsetValueExpression,
+                ValueKind: ResolvedValueKind.Literal,
+                RequiresStaticResourceResolver: false,
+                ValueRequirements: ResolvedValueRequirements.None);
+            return true;
+        }
+
+        if (allowCompatibilityStringLiteralFallback &&
+            conversionTargetType.SpecialType == SpecialType.System_Object)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0102",
+                $"Could not convert literal '{rawValue}' for '{propertyName}' on '{ownerDisplayName}'. Strategy=CompatibilityStringLiteralFallback.",
+                document.FilePath,
+                line,
+                column,
+                false));
+            resolution = new SetterValueResolutionResult(
+                Expression: "\"" + Escape(rawValue) + "\"",
+                ValueKind: ResolvedValueKind.Literal,
+                RequiresStaticResourceResolver: false,
+                ValueRequirements: ResolvedValueRequirements.None);
+            return true;
+        }
+
+        var skipMessage = setterContext
+            ? $"Could not convert literal '{rawValue}' for '{propertyName}' on '{ownerDisplayName}'. Setter was skipped."
+            : $"Could not convert literal '{rawValue}' for '{propertyName}' on '{ownerDisplayName}'.";
+        diagnostics.Add(new DiagnosticInfo(
+            "AXSG0102",
+            skipMessage,
+            document.FilePath,
+            line,
+            column,
+            strictMode));
+        return false;
+    }
+
     private static bool TryResolveAvaloniaPropertyValueTypeFromToken(
         string rawValue,
         Compilation compilation,
@@ -6421,22 +7325,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return inheritedScope;
         }
 
-        var typeName = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        if (typeName is "global::Avalonia.Styling.Style" or "global::Avalonia.Styling.ControlTheme")
+        if (IsStyleType(nodeType, compilation) || IsControlThemeType(nodeType, compilation))
         {
             return BindingPriorityScope.Style;
         }
 
-        if (typeName is "global::Avalonia.Markup.Xaml.Templates.ControlTemplate"
-            or "global::Avalonia.Markup.Xaml.Templates.ItemsPanelTemplate"
-            or "global::Avalonia.Markup.Xaml.Templates.Template")
-        {
-            return BindingPriorityScope.Template;
-        }
-
-        var iControlTemplate = compilation.GetTypeByMetadataName("Avalonia.Controls.Templates.IControlTemplate");
-        if (iControlTemplate is not null &&
-            IsTypeAssignableTo(nodeType, iControlTemplate))
+        if (IsTemplateScopeType(nodeType, compilation))
         {
             return BindingPriorityScope.Template;
         }
@@ -6525,7 +7419,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             KeyExpression: null,
             Name: null,
             TypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            IsBindingObjectNode: false,
             FactoryExpression: null,
+            FactoryValueRequirements: ResolvedValueRequirements.None,
             UseServiceProviderConstructor: false,
             UseTopDownInitialization: false,
             PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
@@ -6540,6 +7436,61 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         return true;
     }
 
+    private static ImmutableArray<ResolvedObjectNode> MaterializePropertyElementValuesForTargetTypeIfNeeded(
+        ITypeSymbol? targetType,
+        ImmutableArray<ResolvedObjectNode> values,
+        Compilation compilation,
+        XamlDocumentModel document,
+        int line,
+        int column)
+    {
+        if (targetType is not INamedTypeSymbol namedTargetType || values.IsDefaultOrEmpty)
+        {
+            return values;
+        }
+
+        var (attachmentMode, contentPropertyName) = DetermineChildAttachment(namedTargetType);
+        if (attachmentMode == ResolvedChildAttachmentMode.None)
+        {
+            return values;
+        }
+
+        if (values.Length == 1)
+        {
+            var resolvedValueType = ResolveTypeToken(
+                compilation,
+                document,
+                values[0].TypeName,
+                document.ClassNamespace);
+
+            if (resolvedValueType is null || IsTypeAssignableTo(resolvedValueType, namedTargetType))
+            {
+                return values;
+            }
+        }
+
+        var container = new ResolvedObjectNode(
+            KeyExpression: null,
+            Name: null,
+            TypeName: namedTargetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            IsBindingObjectNode: false,
+            FactoryExpression: null,
+            FactoryValueRequirements: ResolvedValueRequirements.None,
+            UseServiceProviderConstructor: false,
+            UseTopDownInitialization: false,
+            PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
+            PropertyElementAssignments: ImmutableArray<ResolvedPropertyElementAssignment>.Empty,
+            EventSubscriptions: ImmutableArray<ResolvedEventSubscription>.Empty,
+            Children: values,
+            ChildAttachmentMode: attachmentMode,
+            ContentPropertyName: contentPropertyName,
+            Line: line,
+            Column: column,
+            Condition: null);
+
+        return ImmutableArray.Create(container);
+    }
+
     private static bool CanAddToCollectionProperty(INamedTypeSymbol type, string propertyName)
     {
         var property = FindProperty(type, propertyName);
@@ -6550,6 +7501,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         var namedType = property.Type as INamedTypeSymbol;
         if (namedType is null)
+        {
+            return false;
+        }
+
+        if (HasDictionaryAddMethod(namedType))
         {
             return false;
         }
@@ -6587,7 +7543,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         out ResolvedPropertyElementAssignment? resolvedAssignment)
     {
         resolvedAssignment = null;
-        if (LooksLikeMarkupExtension(assignment.Value))
+        if (TryParseMarkupExtension(assignment.Value, out _))
         {
             return false;
         }
@@ -6616,7 +7572,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 KeyExpression: null,
                 Name: null,
                 TypeName: "global::System.String",
+                IsBindingObjectNode: false,
                 FactoryExpression: "\"" + Escape(classToken) + "\"",
+                FactoryValueRequirements: ResolvedValueRequirements.None,
                 UseServiceProviderConstructor: false,
                 UseTopDownInitialization: false,
                 PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
@@ -6684,6 +7642,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
         bool compileBindingsEnabled,
         INamedTypeSymbol? nodeDataType,
+        INamedTypeSymbol? setterTargetType,
         BindingPriorityScope bindingPriorityScope,
         INamedTypeSymbol? explicitOwnerType,
         string? explicitPropertyName,
@@ -6738,6 +7697,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             nodeDataType,
             fallbackValueType: null,
             bindingPriorityScope,
+            setterTargetType,
             out resolvedAssignment,
             allowCompiledBindingRegistration: true,
             explicitOwnerType: ownerType,
@@ -7040,6 +8000,61 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 options.StrictMode));
         }
 
+        var dataContextTypeName = nodeDataType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var rootTypeName = rootTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var compiledDataContextTargetPath = (string?)null;
+        var compiledRootTargetPath = (string?)null;
+        var compiledDataContextParameterPath = (string?)null;
+        var compiledRootParameterPath = (string?)null;
+
+        if (parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Command &&
+            IsSimpleEventBindingPath(parsedBinding.TargetPath))
+        {
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                nodeDataType is not null &&
+                TryResolveMemberPathType(nodeDataType, parsedBinding.TargetPath, out _))
+            {
+                compiledDataContextTargetPath = parsedBinding.TargetPath;
+            }
+
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext &&
+                TryResolveMemberPathType(rootTypeSymbol, parsedBinding.TargetPath, out _))
+            {
+                compiledRootTargetPath = parsedBinding.TargetPath;
+            }
+
+            if (parsedBinding.ParameterPath is { } parameterPath &&
+                IsSimpleEventBindingPath(parameterPath))
+            {
+                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                    nodeDataType is not null &&
+                    TryResolveMemberPathType(nodeDataType, parameterPath, out _))
+                {
+                    compiledDataContextParameterPath = parameterPath;
+                }
+
+                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext &&
+                    TryResolveMemberPathType(rootTypeSymbol, parameterPath, out _))
+                {
+                    compiledRootParameterPath = parameterPath;
+                }
+            }
+            else if (parsedBinding.ParameterPath is not null &&
+                     parsedBinding.ParameterPath.Trim().Equals(".", StringComparison.Ordinal))
+            {
+                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                    nodeDataType is not null)
+                {
+                    compiledDataContextParameterPath = ".";
+                }
+
+                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext)
+                {
+                    compiledRootParameterPath = ".";
+                }
+            }
+        }
+
         var methodName = BuildGeneratedEventBindingMethodName(eventName, assignment.Line, assignment.Column);
         eventBindingDefinition = new ResolvedEventBindingDefinition(
             GeneratedMethodName: methodName,
@@ -7052,6 +8067,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             ParameterValueExpression: parsedBinding.ParameterValueExpression,
             HasParameterValueExpression: parsedBinding.HasParameterValueExpression,
             PassEventArgs: parsedBinding.PassEventArgs,
+            DataContextTypeName: dataContextTypeName,
+            RootTypeName: rootTypeName,
+            CompiledDataContextTargetPath: compiledDataContextTargetPath,
+            CompiledRootTargetPath: compiledRootTargetPath,
+            CompiledDataContextParameterPath: compiledDataContextParameterPath,
+            CompiledRootParameterPath: compiledRootParameterPath,
             Line: assignment.Line,
             Column: assignment.Column);
         return true;
@@ -7248,15 +8269,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (TryParseBindingMarkup(token, out var bindingMarkup))
         {
-            if (bindingMarkup.HasSourceConflict)
+            if (!TryValidateEventBindingBindingSource(
+                    bindingMarkup,
+                    "EventBinding command path",
+                    out errorMessage))
             {
-                errorMessage = bindingMarkup.SourceConflictMessage ?? "EventBinding command binding source is invalid.";
-                return false;
-            }
-
-            if (HasExplicitBindingSource(bindingMarkup))
-            {
-                errorMessage = "EventBinding command path does not support explicit Binding Source/ElementName/RelativeSource.";
                 return false;
             }
 
@@ -7266,7 +8283,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        if (LooksLikeMarkupExtension(token))
+        if (TryParseMarkupExtension(token, out _))
         {
             errorMessage = "EventBinding command path supports only plain paths or Binding/CompiledBinding markup.";
             return false;
@@ -7304,15 +8321,11 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (TryParseBindingMarkup(parameterToken, out var bindingMarkup))
         {
-            if (bindingMarkup.HasSourceConflict)
+            if (!TryValidateEventBindingBindingSource(
+                    bindingMarkup,
+                    "EventBinding parameter path",
+                    out errorMessage))
             {
-                errorMessage = bindingMarkup.SourceConflictMessage ?? "EventBinding parameter binding source is invalid.";
-                return false;
-            }
-
-            if (HasExplicitBindingSource(bindingMarkup))
-            {
-                errorMessage = "EventBinding parameter path does not support explicit Binding Source/ElementName/RelativeSource.";
                 return false;
             }
 
@@ -7345,6 +8358,27 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         parameterValueExpression = literalExpression;
         hasParameterValueExpression = true;
+        return true;
+    }
+
+    private static bool TryValidateEventBindingBindingSource(
+        BindingMarkup bindingMarkup,
+        string contextName,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+        if (bindingMarkup.HasSourceConflict)
+        {
+            errorMessage = bindingMarkup.SourceConflictMessage ?? contextName + " binding source is invalid.";
+            return false;
+        }
+
+        if (HasExplicitBindingSource(bindingMarkup))
+        {
+            errorMessage = contextName + " does not support explicit Binding Source/ElementName/RelativeSource.";
+            return false;
+        }
+
         return true;
     }
 
@@ -7460,6 +8494,61 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         return true;
     }
 
+    private static bool IsSimpleEventBindingPath(string path)
+    {
+        var normalizedPath = path.Trim();
+        if (normalizedPath.Length == 0)
+        {
+            return false;
+        }
+
+        if (normalizedPath == ".")
+        {
+            return true;
+        }
+
+        var segments = normalizedPath.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            if (!IsSimpleEventBindingIdentifier(segments[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsSimpleEventBindingIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var start = value[0];
+        if (!(start == '_' || char.IsLetter(start)))
+        {
+            return false;
+        }
+
+        for (var index = 1; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (!(current == '_' || char.IsLetterOrDigit(current)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static string BuildGeneratedEventBindingMethodName(string eventName, int line, int column)
     {
         var chars = eventName.ToCharArray();
@@ -7502,6 +8591,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? nodeDataType,
         ITypeSymbol? fallbackValueType,
         BindingPriorityScope bindingPriorityScope,
+        INamedTypeSymbol? setterTargetType,
         out ResolvedPropertyAssignment? resolvedAssignment,
         bool allowCompiledBindingRegistration = true,
         INamedTypeSymbol? explicitOwnerType = null,
@@ -7561,7 +8651,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     bindingPriorityScope),
                 Line: assignment.Line,
                 Column: assignment.Column,
-                Condition: assignment.Condition);
+                Condition: assignment.Condition,
+                ValueKind: ResolvedValueKind.Binding,
+                ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
             return true;
         }
         if (isExpressionMarkup)
@@ -7645,7 +8737,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compilation,
                     document,
                     bindingMarkup,
-                    targetType,
+                    setterTargetType ?? targetType,
                     bindingPriorityScope,
                     out var bindingExpression))
             {
@@ -7663,21 +8755,55 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         bindingPriorityScope),
                     Line: assignment.Line,
                     Column: assignment.Column,
-                    Condition: assignment.Condition);
+                    Condition: assignment.Condition,
+                    ValueKind: ResolvedValueKind.Binding,
+                    ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
             }
 
             return shouldCompileBinding || resolvedAssignment is not null;
         }
 
-        if ((valueType is null || !TryConvertValueExpression(
+        if (HasResolveByNameSemantics(ownerType, propertyName) &&
+            TryBuildResolveByNameLiteralExpression(
+                assignment.Value,
+                valueType,
+                out var resolveByNameValueExpression))
+        {
+            resolvedAssignment = new ResolvedPropertyAssignment(
+                PropertyName: propertyName,
+                ValueExpression: resolveByNameValueExpression,
+                AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                AvaloniaPropertyFieldName: propertyField.Name,
+                ClrPropertyOwnerTypeName: null,
+                ClrPropertyTypeName: null,
+                BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                    targetType,
+                    propertyField,
+                    compilation,
+                    bindingPriorityScope),
+                Line: assignment.Line,
+                Column: assignment.Column,
+                Condition: assignment.Condition,
+                ValueKind: ResolvedValueKind.MarkupExtension,
+                ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+            return true;
+        }
+
+        var valueExpression = string.Empty;
+        var valueConversion = default(ResolvedValueConversionResult);
+        var valueKind = ResolvedValueKind.Literal;
+        var requiresStaticResourceResolver = false;
+        var valueRequirements = ResolvedValueRequirements.None;
+        if ((valueType is null || !TryConvertValueConversion(
                 assignment.Value,
                 valueType,
                 compilation,
                 document,
-                null,
+                setterTargetType,
                 bindingPriorityScope,
-                out var valueExpression,
-                preferTypedStaticResourceCoercion: false)) &&
+                out valueConversion,
+                preferTypedStaticResourceCoercion: false,
+                allowObjectStringLiteralFallback: !options.StrictMode)) &&
             !TryConvertUntypedValueExpression(assignment.Value, out valueExpression))
         {
             diagnostics.Add(new DiagnosticInfo(
@@ -7688,6 +8814,13 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 assignment.Column,
                 options.StrictMode));
             return true;
+        }
+        else if (!string.IsNullOrEmpty(valueConversion.Expression))
+        {
+            valueExpression = valueConversion.Expression;
+            valueKind = valueConversion.ValueKind;
+            requiresStaticResourceResolver = valueConversion.RequiresStaticResourceResolver;
+            valueRequirements = valueConversion.EffectiveRequirements;
         }
 
         resolvedAssignment = new ResolvedPropertyAssignment(
@@ -7704,7 +8837,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 bindingPriorityScope),
             Line: assignment.Line,
             Column: assignment.Column,
-            Condition: assignment.Condition);
+            Condition: assignment.Condition,
+            ValueKind: valueKind,
+            RequiresStaticResourceResolver: requiresStaticResourceResolver,
+            ValueRequirements: valueRequirements);
         return true;
     }
 
@@ -8220,6 +9356,95 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             out expression);
     }
 
+    private static bool TryBuildResourceKeyExpression(
+        string rawKeyToken,
+        Compilation compilation,
+        XamlDocumentModel document,
+        out ResolvedResourceKeyExpression expression)
+    {
+        expression = default;
+        var token = rawKeyToken.Trim();
+        if (token.Length == 0)
+        {
+            return false;
+        }
+
+        var unquotedToken = Unquote(token);
+        if (TryParseMarkupExtension(unquotedToken, out var markup))
+        {
+            switch (markup.Name.ToLowerInvariant())
+            {
+                case "x:type":
+                case "type":
+                {
+                    var typeToken = markup.NamedArguments.TryGetValue("Type", out var explicitType)
+                        ? explicitType
+                        : markup.NamedArguments.TryGetValue("TypeName", out var explicitTypeName)
+                            ? explicitTypeName
+                            : markup.PositionalArguments.Length > 0
+                                ? markup.PositionalArguments[0]
+                                : null;
+                    if (string.IsNullOrWhiteSpace(typeToken))
+                    {
+                        return false;
+                    }
+
+                    var resolvedType = ResolveTypeToken(compilation, document, Unquote(typeToken!), document.ClassNamespace);
+                    if (resolvedType is null)
+                    {
+                        return false;
+                    }
+
+                    expression = new ResolvedResourceKeyExpression(
+                        Expression: "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")",
+                        Kind: ResolvedResourceKeyKind.TypeReference);
+                    return true;
+                }
+                case "x:static":
+                case "static":
+                {
+                    var memberToken = markup.NamedArguments.TryGetValue("Member", out var explicitMember)
+                        ? explicitMember
+                        : markup.PositionalArguments.Length > 0
+                            ? markup.PositionalArguments[0]
+                            : null;
+                    if (string.IsNullOrWhiteSpace(memberToken))
+                    {
+                        return false;
+                    }
+
+                    return TryResolveStaticMemberExpression(
+                        compilation,
+                        document,
+                        Unquote(memberToken!),
+                        out var staticMemberExpression) &&
+                           TryCreateStaticMemberResourceKeyExpression(staticMemberExpression, out expression);
+                }
+            }
+        }
+
+        expression = new ResolvedResourceKeyExpression(
+            Expression: "\"" + Escape(unquotedToken) + "\"",
+            Kind: ResolvedResourceKeyKind.StringLiteral);
+        return true;
+    }
+
+    private static bool TryCreateStaticMemberResourceKeyExpression(
+        string staticMemberExpression,
+        out ResolvedResourceKeyExpression expression)
+    {
+        if (string.IsNullOrWhiteSpace(staticMemberExpression))
+        {
+            expression = default;
+            return false;
+        }
+
+        expression = new ResolvedResourceKeyExpression(
+            Expression: staticMemberExpression,
+            Kind: ResolvedResourceKeyKind.StaticMemberReference);
+        return true;
+    }
+
     private static void AddBindingInitializerPart(
         INamedTypeSymbol bindingType,
         string propertyName,
@@ -8529,6 +9754,27 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static bool TryGetAvaloniaUnsetValueExpression(Compilation compilation, out string expression)
+    {
+        expression = string.Empty;
+        var avaloniaPropertyType = compilation.GetTypeByMetadataName("Avalonia.AvaloniaProperty");
+        if (avaloniaPropertyType is null)
+        {
+            return false;
+        }
+
+        var hasUnsetMember =
+            avaloniaPropertyType.GetMembers("UnsetValue").OfType<IFieldSymbol>().Any(member => member.IsStatic) ||
+            avaloniaPropertyType.GetMembers("UnsetValue").OfType<IPropertySymbol>().Any(member => member.IsStatic);
+        if (!hasUnsetMember)
+        {
+            return false;
+        }
+
+        expression = "global::Avalonia.AvaloniaProperty.UnsetValue";
+        return true;
     }
 
     private static bool TryFindAvaloniaPropertyField(
@@ -8979,18 +10225,54 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? setterTargetType,
         BindingPriorityScope bindingPriorityScope,
         out string expression,
-        bool preferTypedStaticResourceCoercion = true)
+        bool preferTypedStaticResourceCoercion = true,
+        bool allowObjectStringLiteralFallback = true,
+        INamedTypeSymbol? selectorNestingTypeHint = null)
     {
-        expression = string.Empty;
-
-        if (TryConvertMarkupExtensionExpression(
+        if (TryConvertValueConversion(
                 value,
                 type,
                 compilation,
                 document,
                 setterTargetType,
                 bindingPriorityScope,
-                out expression,
+                out var conversion,
+                preferTypedStaticResourceCoercion: preferTypedStaticResourceCoercion,
+                allowObjectStringLiteralFallback: allowObjectStringLiteralFallback,
+                allowStaticParseMethodFallback: true,
+                selectorNestingTypeHint: selectorNestingTypeHint))
+        {
+            expression = conversion.Expression;
+            return true;
+        }
+
+        expression = string.Empty;
+        return false;
+    }
+
+    private static bool TryConvertValueConversion(
+        string value,
+        ITypeSymbol type,
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol? setterTargetType,
+        BindingPriorityScope bindingPriorityScope,
+        out ResolvedValueConversionResult conversion,
+        bool preferTypedStaticResourceCoercion = true,
+        bool allowObjectStringLiteralFallback = true,
+        bool allowStaticParseMethodFallback = true,
+        INamedTypeSymbol? selectorNestingTypeHint = null)
+    {
+        conversion = default;
+
+        if (TryConvertMarkupExtensionConversion(
+                value,
+                type,
+                compilation,
+                document,
+                setterTargetType,
+                bindingPriorityScope,
+                out conversion,
                 preferTypedStaticResourceCoercion))
         {
             return true;
@@ -9002,30 +10284,41 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             if (value.Trim().Equals("null", StringComparison.OrdinalIgnoreCase))
             {
-                expression = "null";
+                conversion = CreateLiteralConversion("null");
                 return true;
             }
 
-            return TryConvertValueExpression(
+            return TryConvertValueConversion(
                 value,
                 nullableType.TypeArguments[0],
                 compilation,
                 document,
                 setterTargetType,
                 bindingPriorityScope,
-                out expression,
-                preferTypedStaticResourceCoercion);
+                out conversion,
+                preferTypedStaticResourceCoercion,
+                allowObjectStringLiteralFallback,
+                allowStaticParseMethodFallback,
+                selectorNestingTypeHint);
         }
 
         if (IsAvaloniaPropertyType(type) &&
-            TryResolveAvaloniaPropertyReferenceExpression(value, compilation, document, setterTargetType, out expression))
+            TryResolveAvaloniaPropertyReferenceExpression(value, compilation, document, setterTargetType, out var propertyReferenceExpression))
         {
+            conversion = CreateLiteralConversion(propertyReferenceExpression);
             return true;
         }
 
         if (IsAvaloniaSelectorType(type) &&
-            TryBuildSimpleSelectorExpression(value, compilation, document, setterTargetType, out expression))
+            TryBuildSimpleSelectorExpression(
+                value,
+                compilation,
+                document,
+                setterTargetType,
+                selectorNestingTypeHint,
+                out var selectorExpression))
         {
+            conversion = CreateLiteralConversion(selectorExpression);
             return true;
         }
 
@@ -9034,7 +10327,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         var fullyQualifiedTypeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         if (fullyQualifiedTypeName is "global::System.Globalization.CultureInfo" or "global::System.Globalization.CultureInfo?")
         {
-            expression = "global::System.Globalization.CultureInfo.GetCultureInfo(\"" + escaped + "\")";
+            conversion = CreateLiteralConversion(
+                "global::System.Globalization.CultureInfo.GetCultureInfo(\"" + escaped + "\")");
             return true;
         }
 
@@ -9047,83 +10341,576 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 document.ClassNamespace);
             if (resolvedType is not null)
             {
-                expression = "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")";
+                conversion = CreateLiteralConversion(
+                    "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")");
                 return true;
             }
         }
 
         if (type.SpecialType == SpecialType.System_String)
         {
-            expression = "\"" + escaped + "\"";
+            conversion = CreateLiteralConversion("\"" + escaped + "\"");
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Boolean && bool.TryParse(value, out var boolValue))
         {
-            expression = boolValue ? "true" : "false";
+            conversion = CreateLiteralConversion(boolValue ? "true" : "false");
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Int32 && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
         {
-            expression = intValue.ToString(CultureInfo.InvariantCulture);
+            conversion = CreateLiteralConversion(intValue.ToString(CultureInfo.InvariantCulture));
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Int64 && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
         {
-            expression = longValue.ToString(CultureInfo.InvariantCulture) + "L";
+            conversion = CreateLiteralConversion(longValue.ToString(CultureInfo.InvariantCulture) + "L");
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Double && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
         {
-            expression = doubleValue.ToString("R", CultureInfo.InvariantCulture) + "d";
+            conversion = CreateLiteralConversion(doubleValue.ToString("R", CultureInfo.InvariantCulture) + "d");
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Single && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatValue))
         {
-            expression = floatValue.ToString("R", CultureInfo.InvariantCulture) + "f";
+            conversion = CreateLiteralConversion(floatValue.ToString("R", CultureInfo.InvariantCulture) + "f");
+            return true;
+        }
+
+        if (TryConvertStaticPropertyValueExpression(type, value, out var staticPropertyExpression))
+        {
+            conversion = CreateLiteralConversion(staticPropertyExpression);
+            return true;
+        }
+
+        if (TryConvertCollectionLiteralExpression(
+                type,
+                value,
+                compilation,
+                document,
+                setterTargetType,
+                bindingPriorityScope,
+                out var collectionExpression))
+        {
+            conversion = CreateLiteralConversion(collectionExpression);
             return true;
         }
 
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
         {
-            var enumMember = enumType.GetMembers().OfType<IFieldSymbol>().FirstOrDefault(member =>
-                member.HasConstantValue &&
-                member.Name.Equals(value, StringComparison.OrdinalIgnoreCase));
-
-            if (enumMember is not null)
+            if (TryConvertEnumValueExpression(enumType, value, out var enumExpression))
             {
-                expression = enumType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "." + enumMember.Name;
+                conversion = CreateLiteralConversion(enumExpression);
                 return true;
             }
         }
 
         if (fullyQualifiedTypeName is "global::System.Uri" or "global::System.Uri?")
         {
-            expression = "new global::System.Uri(\"" + escaped + "\", global::System.UriKind.RelativeOrAbsolute)";
+            conversion = CreateLiteralConversion(
+                "new global::System.Uri(\"" + escaped + "\", global::System.UriKind.RelativeOrAbsolute)");
             return true;
         }
 
-        if (TryConvertAvaloniaBrushExpression(type, value, compilation, out expression))
+        if (TryConvertAvaloniaBrushExpression(type, value, compilation, out var brushExpression))
         {
+            conversion = CreateLiteralConversion(brushExpression);
             return true;
         }
 
-        if (TryConvertByStaticParseMethod(type, value, out expression))
+        if (TryConvertAvaloniaTransformExpression(type, value, compilation, out var transformExpression))
         {
+            conversion = CreateLiteralConversion(transformExpression);
+            return true;
+        }
+
+        if (allowStaticParseMethodFallback &&
+            TryConvertByStaticParseMethod(type, value, out var parsedExpression))
+        {
+            conversion = CreateLiteralConversion(parsedExpression);
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Object)
         {
-            expression = "\"" + escaped + "\"";
+            if (!allowObjectStringLiteralFallback)
+            {
+                return false;
+            }
+
+            conversion = CreateLiteralConversion("\"" + escaped + "\"");
             return true;
         }
 
         return false;
+    }
+
+    private static bool TryConvertEnumValueExpression(
+        INamedTypeSymbol enumType,
+        string value,
+        out string expression)
+    {
+        expression = string.Empty;
+
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        if (long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericValue))
+        {
+            expression = "(" + enumType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")" +
+                         numericValue.ToString(CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        var separators = new[] { ',', '|' };
+        var tokens = trimmed.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return false;
+        }
+
+        var enumMembers = enumType.GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(static member => member.HasConstantValue)
+            .ToArray();
+        if (enumMembers.Length == 0)
+        {
+            return false;
+        }
+
+        var fullyQualifiedEnumTypeName = enumType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var shortEnumTypeName = enumType.Name;
+        var memberExpressions = ImmutableArray.CreateBuilder<string>(tokens.Length);
+        foreach (var token in tokens)
+        {
+            var normalizedToken = NormalizeEnumToken(token, shortEnumTypeName);
+            var enumMember = enumMembers.FirstOrDefault(member =>
+                member.Name.Equals(normalizedToken, StringComparison.OrdinalIgnoreCase));
+            if (enumMember is null)
+            {
+                return false;
+            }
+
+            memberExpressions.Add(fullyQualifiedEnumTypeName + "." + enumMember.Name);
+        }
+
+        if (memberExpressions.Count == 0)
+        {
+            return false;
+        }
+
+        expression = memberExpressions.Count == 1
+            ? memberExpressions[0]
+            : string.Join(" | ", memberExpressions);
+        return true;
+    }
+
+    private static bool TryConvertStaticPropertyValueExpression(
+        ITypeSymbol type,
+        string value,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        var token = value.Trim();
+        if (token.Length == 0)
+        {
+            return false;
+        }
+
+        var memberToken = token;
+        var separatorIndex = token.LastIndexOf('.');
+        if (separatorIndex > 0 && separatorIndex < token.Length - 1)
+        {
+            var ownerToken = token.Substring(0, separatorIndex).Trim();
+            var shortOwner = namedType.Name;
+            var fullyQualifiedOwner = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                .Replace("global::", string.Empty, StringComparison.Ordinal);
+            if (ownerToken.Equals(shortOwner, StringComparison.OrdinalIgnoreCase) ||
+                ownerToken.Equals(fullyQualifiedOwner, StringComparison.OrdinalIgnoreCase))
+            {
+                memberToken = token.Substring(separatorIndex + 1).Trim();
+            }
+        }
+
+        if (memberToken.Length == 0)
+        {
+            return false;
+        }
+
+        var staticProperty = namedType.GetMembers()
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(property =>
+                property.IsStatic &&
+                !property.IsIndexer &&
+                SymbolEqualityComparer.Default.Equals(property.Type, namedType) &&
+                property.Name.Equals(memberToken, StringComparison.OrdinalIgnoreCase));
+        if (staticProperty is not null)
+        {
+            expression = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                         "." +
+                         staticProperty.Name;
+            return true;
+        }
+
+        var staticField = namedType.GetMembers()
+            .OfType<IFieldSymbol>()
+            .FirstOrDefault(field =>
+                field.IsStatic &&
+                SymbolEqualityComparer.Default.Equals(field.Type, namedType) &&
+                field.Name.Equals(memberToken, StringComparison.OrdinalIgnoreCase));
+        if (staticField is null)
+        {
+            return false;
+        }
+
+        expression = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     "." +
+                     staticField.Name;
+        return true;
+    }
+
+    private static string NormalizeEnumToken(string token, string enumTypeName)
+    {
+        var trimmedToken = token.Trim();
+        var separatorIndex = trimmedToken.LastIndexOf('.');
+        if (separatorIndex > 0 && separatorIndex < trimmedToken.Length - 1)
+        {
+            var ownerToken = trimmedToken.Substring(0, separatorIndex).Trim();
+            var memberToken = trimmedToken.Substring(separatorIndex + 1).Trim();
+            if (ownerToken.Equals(enumTypeName, StringComparison.OrdinalIgnoreCase))
+            {
+                return memberToken;
+            }
+
+            return memberToken;
+        }
+
+        return trimmedToken;
+    }
+
+    private static bool TryConvertCollectionLiteralExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol? setterTargetType,
+        BindingPriorityScope bindingPriorityScope,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!TryGetCollectionElementType(
+                targetType,
+                out var elementType,
+                out var isArrayTarget,
+                out var collectionTypeForSplitConfig))
+        {
+            return false;
+        }
+
+        var trimEntriesFlag = (StringSplitOptions)2;
+        var splitOptions = StringSplitOptions.RemoveEmptyEntries | trimEntriesFlag;
+        var separators = new[] { "," };
+        if (collectionTypeForSplitConfig is not null)
+        {
+            TryGetCollectionSplitConfiguration(
+                collectionTypeForSplitConfig,
+                ref separators,
+                ref splitOptions,
+                trimEntriesFlag);
+        }
+
+        string[] items;
+        var trimmedValue = value.Trim();
+        var useTopLevelCommaSplit = separators.Length == 1 &&
+                                    separators[0] == ",";
+        if (trimmedValue.Length == 0)
+        {
+            items = Array.Empty<string>();
+        }
+        else if (useTopLevelCommaSplit)
+        {
+            items = SplitTopLevel(trimmedValue, ',').ToArray();
+            if ((splitOptions & trimEntriesFlag) != 0)
+            {
+                for (var index = 0; index < items.Length; index++)
+                {
+                    items[index] = items[index].Trim();
+                }
+            }
+
+            if ((splitOptions & StringSplitOptions.RemoveEmptyEntries) != 0)
+            {
+                items = items.Where(item => item.Length > 0).ToArray();
+            }
+        }
+        else
+        {
+            var effectiveSplitOptions = splitOptions & ~trimEntriesFlag;
+            items = trimmedValue.Split(separators, effectiveSplitOptions);
+            if ((splitOptions & trimEntriesFlag) != 0)
+            {
+                for (var index = 0; index < items.Length; index++)
+                {
+                    items[index] = items[index].Trim();
+                }
+            }
+
+            if ((splitOptions & StringSplitOptions.RemoveEmptyEntries) != 0)
+            {
+                items = items.Where(item => item.Length > 0).ToArray();
+            }
+        }
+
+        var itemExpressions = new List<string>(items.Length);
+        foreach (var item in items)
+        {
+            if (!TryConvertValueExpression(
+                    item,
+                    elementType,
+                    compilation,
+                    document,
+                    setterTargetType,
+                    bindingPriorityScope,
+                    out var itemExpression))
+            {
+                return false;
+            }
+
+            itemExpressions.Add(itemExpression);
+        }
+
+        var elementTypeName = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var listTypeName = "global::System.Collections.Generic.List<" + elementTypeName + ">";
+        var listExpression = itemExpressions.Count == 0
+            ? "new " + listTypeName + "()"
+            : "new " + listTypeName + " { " + string.Join(", ", itemExpressions) + " }";
+
+        if (isArrayTarget)
+        {
+            expression = "new " + elementTypeName + "[] { " + string.Join(", ", itemExpressions) + " }";
+            return true;
+        }
+
+        var listTypeDefinition = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
+        var listTypeSymbol = listTypeDefinition?.Construct(elementType);
+        if (listTypeSymbol is not null &&
+            IsTypeAssignableTo(listTypeSymbol, targetType))
+        {
+            expression = listExpression;
+            return true;
+        }
+
+        if (targetType is INamedTypeSymbol namedTargetType &&
+            !namedTargetType.IsAbstract)
+        {
+            var constructor = namedTargetType.Constructors
+                .FirstOrDefault(ctor =>
+                    !ctor.IsStatic &&
+                    ctor.Parameters.Length == 1 &&
+                    listTypeSymbol is not null &&
+                    IsTypeAssignableTo(listTypeSymbol, ctor.Parameters[0].Type));
+            if (constructor is not null)
+            {
+                expression = "new " + namedTargetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                             "(" +
+                             listExpression +
+                             ")";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetCollectionElementType(
+        ITypeSymbol targetType,
+        out ITypeSymbol elementType,
+        out bool isArrayTarget,
+        out INamedTypeSymbol? collectionTypeForSplitConfig)
+    {
+        elementType = null!;
+        isArrayTarget = false;
+        collectionTypeForSplitConfig = null;
+
+        if (targetType.SpecialType == SpecialType.System_String)
+        {
+            return false;
+        }
+
+        if (targetType is IArrayTypeSymbol arrayType)
+        {
+            elementType = arrayType.ElementType;
+            isArrayTarget = true;
+            return true;
+        }
+
+        if (targetType is not INamedTypeSymbol namedTargetType)
+        {
+            return false;
+        }
+
+        collectionTypeForSplitConfig = namedTargetType;
+
+        if (TryGetGenericCollectionElementType(namedTargetType, out elementType))
+        {
+            return true;
+        }
+
+        foreach (var interfaceType in namedTargetType.AllInterfaces)
+        {
+            if (interfaceType is not INamedTypeSymbol namedInterface ||
+                !TryGetGenericCollectionElementType(namedInterface, out elementType))
+            {
+                continue;
+            }
+
+            if (collectionTypeForSplitConfig is null)
+            {
+                collectionTypeForSplitConfig = namedInterface;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetGenericCollectionElementType(
+        INamedTypeSymbol type,
+        out ITypeSymbol elementType)
+    {
+        elementType = null!;
+        if (!type.IsGenericType || type.TypeArguments.Length != 1)
+        {
+            return false;
+        }
+
+        var definitionName = type.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (definitionName is
+            "global::System.Collections.Generic.IEnumerable<T>" or
+            "global::System.Collections.Generic.ICollection<T>" or
+            "global::System.Collections.Generic.IReadOnlyCollection<T>" or
+            "global::System.Collections.Generic.IList<T>" or
+            "global::System.Collections.Generic.IReadOnlyList<T>")
+        {
+            elementType = type.TypeArguments[0];
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void TryGetCollectionSplitConfiguration(
+        INamedTypeSymbol collectionType,
+        ref string[] separators,
+        ref StringSplitOptions splitOptions,
+        StringSplitOptions trimEntriesFlag)
+    {
+        var listAttribute = collectionType.GetAttributes()
+            .FirstOrDefault(attribute =>
+                attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ==
+                "global::Avalonia.Metadata.AvaloniaListAttribute");
+        if (listAttribute is null)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in listAttribute.NamedArguments)
+        {
+            if (key.Equals("Separators", StringComparison.Ordinal) &&
+                value.Kind == TypedConstantKind.Array &&
+                !value.IsNull)
+            {
+                var configuredSeparators = value.Values
+                    .Where(item => item.Kind == TypedConstantKind.Primitive && item.Value is string)
+                    .Select(item => (string)item.Value!)
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .ToArray();
+                if (configuredSeparators.Length > 0)
+                {
+                    separators = configuredSeparators;
+                }
+
+                continue;
+            }
+
+            if (key.Equals("SplitOptions", StringComparison.Ordinal) &&
+                value.Kind == TypedConstantKind.Enum &&
+                value.Value is int configuredSplitOptions)
+            {
+                splitOptions = (StringSplitOptions)configuredSplitOptions;
+            }
+        }
+
+        splitOptions |= trimEntriesFlag;
+    }
+
+    private static bool TryBuildRuntimeXamlFragmentExpression(
+        string value,
+        ITypeSymbol targetType,
+        XamlDocumentModel document,
+        out string expression)
+    {
+        expression = string.Empty;
+        var trimmed = value.Trim();
+        if (!IsLikelyXamlFragment(trimmed))
+        {
+            return false;
+        }
+
+        var baseUri = string.IsNullOrWhiteSpace(document.TargetPath)
+            ? document.FilePath
+            : document.TargetPath;
+        var escapedBaseUri = Escape(baseUri ?? string.Empty);
+        var escapedXaml = Escape(trimmed);
+
+        expression = WrapWithTargetTypeCast(
+            targetType,
+            "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideRuntimeXamlValue(\"" +
+            escapedXaml +
+            "\", " +
+            MarkupContextServiceProviderToken +
+            ", " +
+            MarkupContextRootObjectToken +
+            ", " +
+            MarkupContextIntermediateRootObjectToken +
+            ", " +
+            MarkupContextTargetObjectToken +
+            ", " +
+            MarkupContextTargetPropertyToken +
+            ", \"" +
+            escapedBaseUri +
+            "\", " +
+            MarkupContextParentStackToken +
+            ")");
+        return true;
+    }
+
+    private static bool IsLikelyXamlFragment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length >= 3 &&
+               trimmed[0] == '<' &&
+               trimmed[^1] == '>';
     }
 
     private static bool TryConvertAvaloniaBrushExpression(
@@ -9155,6 +10942,36 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         return true;
     }
 
+    private static bool TryConvertAvaloniaTransformExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        out string expression)
+    {
+        expression = string.Empty;
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0 || targetType.SpecialType == SpecialType.System_Object)
+        {
+            return false;
+        }
+
+        var transformOperationsType = compilation.GetTypeByMetadataName("Avalonia.Media.Transformation.TransformOperations");
+        if (transformOperationsType is null)
+        {
+            return false;
+        }
+
+        if (!IsTypeAssignableTo(transformOperationsType, targetType))
+        {
+            return false;
+        }
+
+        expression = "global::Avalonia.Media.Transformation.TransformOperations.Parse(\"" +
+                     Escape(trimmed) +
+                     "\")";
+        return true;
+    }
+
     private static bool IsAvaloniaSelectorType(ITypeSymbol type)
     {
         var display = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -9167,6 +10984,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         XamlDocumentModel document,
         INamedTypeSymbol? selectorTypeFallback,
+        INamedTypeSymbol? selectorNestingTypeHint,
         out string expression)
     {
         expression = string.Empty;
@@ -9190,6 +11008,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compilation,
                     document,
                     selectorTypeFallback,
+                    selectorNestingTypeHint,
                     out var branchExpression))
             {
                 return false;
@@ -9214,6 +11033,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         XamlDocumentModel document,
         INamedTypeSymbol? selectorTypeFallback,
+        INamedTypeSymbol? selectorNestingTypeHint,
         out string expression)
     {
         expression = string.Empty;
@@ -9254,6 +11074,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             while (index < segmentText.Length && segmentText[index] == '^')
             {
                 currentExpression = "global::Avalonia.Styling.Selectors.Nesting(" + (hasExpression ? currentExpression : "null") + ")";
+                if (selectorNestingTypeHint is not null)
+                {
+                    selectorTypeHint = selectorNestingTypeHint;
+                }
                 hasExpression = true;
                 segmentApplied = true;
                 index++;
@@ -9360,6 +11184,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compilation,
                             document,
                             selectorTypeFallback,
+                            selectorNestingTypeHint,
                             ref currentExpression,
                             ref hasExpression,
                             ref selectorTypeHint))
@@ -9505,6 +11330,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         XamlDocumentModel document,
         INamedTypeSymbol? selectorTypeFallback,
+        INamedTypeSymbol? selectorNestingTypeHint,
         ref string currentExpression,
         ref bool hasExpression,
         ref INamedTypeSymbol? selectorTypeHint)
@@ -9547,6 +11373,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compilation,
                     document,
                     selectorTypeHint ?? selectorTypeFallback,
+                    selectorNestingTypeHint,
                     out var argumentExpression))
             {
                 return false;
@@ -9677,16 +11504,38 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 compilation,
                 document,
                 defaultOwnerType,
-                out var propertyExpression))
+                out var propertyExpression,
+                out var propertyValueType))
         {
             return false;
         }
 
-        if (!TryConvertUntypedValueExpression(Unquote(rawValue), out var valueExpression))
+        var selectorValue = Unquote(rawValue);
+        var valueExpression = string.Empty;
+        if (propertyValueType is null)
+        {
+            if (!TryConvertUntypedValueExpression(selectorValue, out valueExpression))
+            {
+                return false;
+            }
+        }
+        else if (!TryConvertValueConversion(
+                     selectorValue,
+                     propertyValueType,
+                     compilation,
+                     document,
+                     defaultOwnerType,
+                     BindingPriorityScope.Style,
+                     out var typedValueConversion,
+                     allowObjectStringLiteralFallback: propertyValueType.SpecialType == SpecialType.System_Object,
+                     allowStaticParseMethodFallback: false))
         {
             return false;
         }
-
+        else
+        {
+            valueExpression = typedValueConversion.Expression;
+        }
         currentExpression = "global::Avalonia.Styling.Selectors.PropertyEquals(" +
                             (hasExpression ? currentExpression : "null") +
                             ", " +
@@ -9948,14 +11797,43 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string expression,
         bool preferTypedStaticResourceCoercion = true)
     {
+        if (TryConvertMarkupExtensionConversion(
+                value,
+                targetType,
+                compilation,
+                document,
+                setterTargetType,
+                bindingPriorityScope,
+                out var conversion,
+                preferTypedStaticResourceCoercion))
+        {
+            expression = conversion.Expression;
+            return true;
+        }
+
         expression = string.Empty;
+        return false;
+    }
+
+    private static bool TryConvertMarkupExtensionConversion(
+        string value,
+        ITypeSymbol targetType,
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol? setterTargetType,
+        BindingPriorityScope bindingPriorityScope,
+        out ResolvedValueConversionResult conversion,
+        bool preferTypedStaticResourceCoercion = true)
+    {
+        conversion = default;
         if (!TryParseMarkupExtension(value, out var markup))
         {
             return false;
         }
 
-        if (TryConvertXamlPrimitiveMarkupExtension(markup, targetType, out expression))
+        if (TryConvertXamlPrimitiveMarkupExtension(markup, targetType, out var primitiveExpression))
         {
+            conversion = CreateLiteralConversion(primitiveExpression);
             return true;
         }
 
@@ -9974,19 +11852,28 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                return TryBuildBindingValueExpression(
-                    compilation,
-                    document,
-                    bindingMarkup,
-                    targetType,
-                    setterTargetType,
-                    bindingPriorityScope,
-                    out expression);
+                if (!TryBuildBindingValueExpression(
+                        compilation,
+                        document,
+                        bindingMarkup,
+                        targetType,
+                        setterTargetType,
+                        bindingPriorityScope,
+                        out var bindingExpression))
+                {
+                    return false;
+                }
+
+                conversion = CreateBindingConversion(
+                    bindingExpression,
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true);
+                return true;
             }
             case "x:null":
             case "null":
             {
-                expression = "null";
+                conversion = CreateLiteralConversion("null");
                 return true;
             }
             case "x:type":
@@ -10010,7 +11897,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression = "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")";
+                conversion = CreateLiteralConversion(
+                    "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")");
                 return true;
             }
             case "x:static":
@@ -10026,11 +11914,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                if (!TryResolveStaticMemberExpression(compilation, document, Unquote(memberToken!), out expression))
+                if (!TryResolveStaticMemberExpression(compilation, document, Unquote(memberToken!), out var staticMemberExpression))
                 {
                     return false;
                 }
 
+                conversion = CreateLiteralConversion(staticMemberExpression);
                 return true;
             }
             case "staticresource":
@@ -10045,10 +11934,13 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                var keyExpression = "\"" + Escape(Unquote(keyToken!)) + "\"";
+                if (!TryBuildResourceKeyExpression(keyToken!, compilation, document, out var keyExpression))
+                {
+                    return false;
+                }
                 var staticResourceExpression =
                     "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideStaticResource(" +
-                    keyExpression +
+                    keyExpression.Expression +
                     ", " +
                     MarkupContextServiceProviderToken +
                     ", " +
@@ -10069,17 +11961,26 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 {
                     // Keep StaticResource values untyped for object/AP assignment paths so
                     // AvaloniaProperty.UnsetValue can flow without invalid cast exceptions.
-                    expression = staticResourceExpression;
+                    conversion = CreateMarkupExtensionConversion(
+                        staticResourceExpression,
+                        requiresRuntimeServiceProvider: true,
+                        requiresParentStack: true,
+                        requiresStaticResourceResolver: true,
+                        resourceKey: keyExpression);
                     return true;
                 }
 
                 var typedTargetExpression = targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                expression =
+                conversion = CreateMarkupExtensionConversion(
                     "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CoerceStaticResourceValue<" +
                     typedTargetExpression +
                     ">(" +
                     staticResourceExpression +
-                    ")";
+                    ")",
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true,
+                    requiresStaticResourceResolver: true,
+                    resourceKey: keyExpression);
                 return true;
             }
             case "dynamicresource":
@@ -10099,10 +12000,15 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression =
-                    "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideDynamicResource(\"" +
-                    Escape(Unquote(keyToken!)) +
-                    "\", " +
+                if (!TryBuildResourceKeyExpression(keyToken!, compilation, document, out var dynamicResourceKeyExpression))
+                {
+                    return false;
+                }
+
+                conversion = CreateDynamicResourceBindingConversion(
+                    "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideDynamicResource(" +
+                    dynamicResourceKeyExpression.Expression +
+                    ", " +
                     MarkupContextServiceProviderToken +
                     ", " +
                     MarkupContextRootObjectToken +
@@ -10116,7 +12022,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     MarkupContextBaseUriToken +
                     ", " +
                     MarkupContextParentStackToken +
-                    ")";
+                    ")",
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true,
+                    resourceKey: dynamicResourceKeyExpression);
                 return true;
             }
             case "reflectionbinding":
@@ -10138,7 +12047,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression =
+                conversion = CreateBindingConversion(
                     "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideReflectionBinding(" +
                     reflectionBindingExtensionExpression +
                     ", " +
@@ -10155,7 +12064,9 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     MarkupContextBaseUriToken +
                     ", " +
                     MarkupContextParentStackToken +
-                    ")";
+                    ")",
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true);
                 return true;
             }
             case "relativesource":
@@ -10166,7 +12077,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression = WrapWithTargetTypeCast(targetType, relativeSourceExpression);
+                conversion = CreateLiteralConversion(WrapWithTargetTypeCast(targetType, relativeSourceExpression));
                 return true;
             }
             case "onplatform":
@@ -10183,11 +12094,14 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         document,
                         setterTargetType,
                         bindingPriorityScope,
-                        out expression))
+                        out var onPlatformExpression))
                 {
                     return false;
                 }
 
+                conversion = CreateMarkupExtensionConversion(
+                    onPlatformExpression,
+                    requiresRuntimeServiceProvider: true);
                 return true;
             }
             case "onformfactor":
@@ -10204,11 +12118,14 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                         document,
                         setterTargetType,
                         bindingPriorityScope,
-                        out expression))
+                        out var onFormFactorExpression))
                 {
                     return false;
                 }
 
+                conversion = CreateMarkupExtensionConversion(
+                    onFormFactorExpression,
+                    requiresRuntimeServiceProvider: true);
                 return true;
             }
             case "x:reference":
@@ -10247,7 +12164,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression = WrapWithTargetTypeCast(targetType, resolveExpression);
+                conversion = CreateMarkupExtensionConversion(
+                    WrapWithTargetTypeCast(targetType, resolveExpression),
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true);
                 return true;
             }
             case "templatebinding":
@@ -10257,7 +12177,19 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     : markup.PositionalArguments.Length > 0
                         ? markup.PositionalArguments[0]
                         : null;
-                if (string.IsNullOrWhiteSpace(propertyToken) || setterTargetType is null)
+                if (string.IsNullOrWhiteSpace(propertyToken))
+                {
+                    if (compilation.GetTypeByMetadataName("Avalonia.Data.Binding") is null)
+                    {
+                        return false;
+                    }
+
+                    conversion = CreateBindingConversion(
+                        "new global::Avalonia.Data.Binding(\".\") { RelativeSource = new global::Avalonia.Data.RelativeSource(global::Avalonia.Data.RelativeSourceMode.TemplatedParent), Priority = global::Avalonia.Data.BindingPriority.Template }");
+                    return true;
+                }
+
+                if (setterTargetType is null)
                 {
                     return false;
                 }
@@ -10277,18 +12209,28 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expression = "new global::Avalonia.Data.TemplateBinding(" + propertyExpression + ")";
+                conversion = CreateTemplateBindingConversion(
+                    "new global::Avalonia.Data.TemplateBinding(" + propertyExpression + ")");
                 return true;
             }
             default:
-                return TryConvertGenericMarkupExtensionExpression(
-                    markup,
-                    targetType,
-                    compilation,
-                    document,
-                    setterTargetType,
-                    bindingPriorityScope,
-                    out expression);
+                if (!TryConvertGenericMarkupExtensionExpression(
+                        markup,
+                        targetType,
+                        compilation,
+                        document,
+                        setterTargetType,
+                        bindingPriorityScope,
+                        out var genericExpression))
+                {
+                    return false;
+                }
+
+                conversion = CreateMarkupExtensionConversion(
+                    genericExpression,
+                    requiresRuntimeServiceProvider: true,
+                    requiresParentStack: true);
+                return true;
         }
     }
 
@@ -10723,7 +12665,12 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return expression;
         }
 
-        return "(" + targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")" + expression;
+        var typedTargetExpression = targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<" +
+               typedTargetExpression +
+               ">(" +
+               expression +
+               ")";
     }
 
     private static bool TryConvertByStaticParseMethod(ITypeSymbol type, string value, out string expression)
@@ -10797,8 +12744,33 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? defaultOwnerType,
         out string expression)
     {
+        return TryResolveAvaloniaPropertyReferenceExpression(
+            rawValue,
+            compilation,
+            document,
+            defaultOwnerType,
+            out expression,
+            out _);
+    }
+
+    private static bool TryResolveAvaloniaPropertyReferenceExpression(
+        string rawValue,
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol? defaultOwnerType,
+        out string expression,
+        out ITypeSymbol? propertyValueType)
+    {
         expression = string.Empty;
+        propertyValueType = null;
         var token = rawValue.Trim();
+        if (token.Length > 2 &&
+            token[0] == '(' &&
+            token[^1] == ')')
+        {
+            token = token.Substring(1, token.Length - 2).Trim();
+        }
+
         if (token.Length == 0)
         {
             return false;
@@ -10822,6 +12794,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         expression = resolvedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "." + propertyField.Name;
+        propertyValueType = TryGetAvaloniaPropertyValueType(propertyField.Type);
         return true;
     }
 
@@ -10867,16 +12840,40 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         return false;
     }
 
-    private static bool RequiresStaticResourceResolver(ResolvedObjectNode root)
+    private static bool RequiresStaticResourceResolver(
+        ResolvedObjectNode root,
+        ImmutableArray<ResolvedStyleDefinition> styles,
+        ImmutableArray<ResolvedControlThemeDefinition> controlThemes)
     {
-        return HasStaticResourceExpression(root);
+        if (HasStaticResourceResolverRequirement(root))
+        {
+            return true;
+        }
+
+        foreach (var style in styles)
+        {
+            if (style.Setters.Any(static setter => setter.RequiresStaticResourceResolver))
+            {
+                return true;
+            }
+        }
+
+        foreach (var controlTheme in controlThemes)
+        {
+            if (controlTheme.Setters.Any(static setter => setter.RequiresStaticResourceResolver))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    private static bool HasStaticResourceExpression(ResolvedObjectNode node)
+    private static bool HasStaticResourceResolverRequirement(ResolvedObjectNode node)
     {
         foreach (var assignment in node.PropertyAssignments)
         {
-            if (assignment.ValueExpression.Contains("__ResolveStaticResource(", StringComparison.Ordinal))
+            if (assignment.RequiresStaticResourceResolver)
             {
                 return true;
             }
@@ -10886,7 +12883,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             foreach (var value in propertyElement.ObjectValues)
             {
-                if (HasStaticResourceExpression(value))
+                if (HasStaticResourceResolverRequirement(value))
                 {
                     return true;
                 }
@@ -10895,7 +12892,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         foreach (var child in node.Children)
         {
-            if (HasStaticResourceExpression(child))
+            if (HasStaticResourceResolverRequirement(child))
             {
                 return true;
             }
@@ -11091,8 +13088,14 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         XamlDocumentModel document)
     {
-        var token = ExtractMarkupHeadToken(expressionBody);
-        if (string.IsNullOrWhiteSpace(token))
+        var wrappedExpression = "{" + expressionBody + "}";
+        if (!TryParseMarkupExtension(wrappedExpression, out var markup))
+        {
+            return false;
+        }
+
+        var token = markup.Name;
+        if (token.Length == 0)
         {
             return false;
         }
@@ -11109,27 +13112,6 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return TryResolveMarkupExtensionType(compilation, document, token, out _);
-    }
-
-    private static string ExtractMarkupHeadToken(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var trimmed = value.Trim();
-        var headLength = 0;
-        while (headLength < trimmed.Length &&
-               !char.IsWhiteSpace(trimmed[headLength]) &&
-               trimmed[headLength] != ',' &&
-               trimmed[headLength] != '(' &&
-               trimmed[headLength] != ')')
-        {
-            headLength++;
-        }
-
-        return headLength == 0 ? string.Empty : trimmed.Substring(0, headLength);
     }
 
     private static bool ContainsImplicitExpressionOperator(string expression)
@@ -11739,90 +13721,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool TryParseMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
     {
-        markupExtension = default;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var trimmed = value.Trim();
-        if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
-            !trimmed.EndsWith("}", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var inner = trimmed.Substring(1, trimmed.Length - 2).Trim();
-        if (inner.Length == 0)
-        {
-            return false;
-        }
-
-        var headLength = 0;
-        while (headLength < inner.Length &&
-               !char.IsWhiteSpace(inner[headLength]) &&
-               inner[headLength] != ',')
-        {
-            headLength++;
-        }
-
-        var name = inner.Substring(0, headLength).Trim();
-        if (name.Length == 0)
-        {
-            return false;
-        }
-
-        var argumentsText = headLength < inner.Length ? inner.Substring(headLength).Trim() : string.Empty;
-        if (argumentsText.StartsWith(",", StringComparison.Ordinal))
-        {
-            argumentsText = argumentsText.Substring(1).TrimStart();
-        }
-
-        var positional = ImmutableArray.CreateBuilder<string>();
-        var named = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(argumentsText))
-        {
-            foreach (var token in SplitTopLevel(argumentsText, ','))
-            {
-                var argument = token.Trim();
-                if (argument.Length == 0)
-                {
-                    continue;
-                }
-
-                var equalsIndex = IndexOfTopLevel(argument, '=');
-                if (equalsIndex > 0)
-                {
-                    var key = argument.Substring(0, equalsIndex).Trim();
-                    var argumentValue = argument.Substring(equalsIndex + 1).Trim();
-                    if (key.Length == 0)
-                    {
-                        positional.Add(argument);
-                        continue;
-                    }
-
-                    named[key] = argumentValue;
-                    continue;
-                }
-
-                positional.Add(argument);
-            }
-        }
-
-        markupExtension = new MarkupExtensionInfo(name, positional.ToImmutable(), named.ToImmutable());
-        return true;
-    }
-
-    private static bool LooksLikeMarkupExtension(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var trimmed = value.Trim();
-        return trimmed.StartsWith("{", StringComparison.Ordinal) &&
-               trimmed.EndsWith("}", StringComparison.Ordinal);
+        return CanonicalMarkupExpressionParser.TryParseMarkupExtension(value, out markupExtension);
     }
 
     private static bool TryParseRelativeSourceMarkup(string value, out RelativeSourceMarkup relativeSourceMarkup)
@@ -12360,6 +14259,38 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         public ImmutableDictionary<string, ImmutableArray<string>> Map { get; }
     }
 
+    private sealed class SourceAssemblyNamespaceCacheEntry
+    {
+        public SourceAssemblyNamespaceCacheEntry(ImmutableArray<string> namespaces)
+        {
+            Namespaces = namespaces;
+        }
+
+        public ImmutableArray<string> Namespaces { get; }
+    }
+
+    private sealed class TypeResolutionDiagnosticContext
+    {
+        public TypeResolutionDiagnosticContext(
+            ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+            string filePath,
+            bool strictMode)
+        {
+            Diagnostics = diagnostics;
+            FilePath = filePath;
+            StrictMode = strictMode;
+            ReportedKeys = new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        public ImmutableArray<DiagnosticInfo>.Builder Diagnostics { get; }
+
+        public string FilePath { get; }
+
+        public bool StrictMode { get; }
+
+        public HashSet<string> ReportedKeys { get; }
+    }
+
     private static ImmutableArray<string> GetAvaloniaDefaultNamespaceCandidates(Compilation compilation)
     {
         return AvaloniaNamespaceCandidateCache
@@ -12493,6 +14424,110 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
     }
 
+    private static bool TryGetImplicitProjectNamespaceRoot(
+        Compilation compilation,
+        out string rootNamespace)
+    {
+        rootNamespace = string.Empty;
+        var options = ActiveGeneratorOptions.Value;
+        if (options is null || !options.ImplicitProjectNamespacesEnabled)
+        {
+            return false;
+        }
+
+        rootNamespace = options.RootNamespace
+                        ?? options.AssemblyName
+                        ?? compilation.AssemblyName
+                        ?? string.Empty;
+        rootNamespace = rootNamespace.Trim();
+        return true;
+    }
+
+    private static ImmutableArray<string> GetProjectNamespaceCandidates(
+        Compilation compilation,
+        string rootNamespace)
+    {
+        var allSourceNamespaces = SourceAssemblyNamespaceCache
+            .GetValue(
+                compilation,
+                static x => new SourceAssemblyNamespaceCacheEntry(BuildSourceAssemblyNamespaces(x)))
+            .Namespaces;
+
+        if (allSourceNamespaces.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var normalizedRoot = rootNamespace.Trim();
+        var hasRoot = normalizedRoot.Length > 0;
+        var orderedNamespaces = new List<string>(allSourceNamespaces.Length + 1);
+        var knownNamespaces = new HashSet<string>(StringComparer.Ordinal);
+
+        if (hasRoot)
+        {
+            AddNamespaceCandidate(normalizedRoot);
+        }
+
+        foreach (var candidate in allSourceNamespaces)
+        {
+            if (hasRoot &&
+                !candidate.Equals(normalizedRoot, StringComparison.Ordinal) &&
+                !candidate.StartsWith(normalizedRoot + ".", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            AddNamespaceCandidate(candidate);
+        }
+
+        return orderedNamespaces.ToImmutableArray();
+
+        void AddNamespaceCandidate(string namespacePrefix)
+        {
+            var normalized = namespacePrefix.Trim();
+            if (normalized.Length == 0)
+            {
+                return;
+            }
+
+            if (!normalized.EndsWith(".", StringComparison.Ordinal))
+            {
+                normalized += ".";
+            }
+
+            if (knownNamespaces.Add(normalized))
+            {
+                orderedNamespaces.Add(normalized);
+            }
+        }
+    }
+
+    private static ImmutableArray<string> BuildSourceAssemblyNamespaces(Compilation compilation)
+    {
+        var namespaces = new HashSet<string>(StringComparer.Ordinal);
+        CollectSourceAssemblyNamespaces(compilation.Assembly.GlobalNamespace, namespaces);
+        return namespaces
+            .OrderBy(static value => value.Count(static ch => ch == '.'))
+            .ThenBy(static value => value, StringComparer.Ordinal)
+            .ToImmutableArray();
+    }
+
+    private static void CollectSourceAssemblyNamespaces(
+        INamespaceSymbol namespaceSymbol,
+        HashSet<string> namespaces)
+    {
+        foreach (var childNamespace in namespaceSymbol.GetNamespaceMembers())
+        {
+            var displayName = childNamespace.ToDisplayString();
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                namespaces.Add(displayName);
+            }
+
+            CollectSourceAssemblyNamespaces(childNamespace, namespaces);
+        }
+    }
+
     private static IEnumerable<IAssemblySymbol> EnumerateAssemblies(Compilation compilation)
     {
         var visitedAssemblies = new HashSet<IAssemblySymbol>(SymbolEqualityComparer.Default);
@@ -12529,6 +14564,117 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         return string.Equals(xmlNamespace, AvaloniaDefaultXmlNamespace, StringComparison.Ordinal) ||
                string.Equals(xmlNamespace, AvaloniaDefaultXmlNamespaceWithSlash, StringComparison.Ordinal);
+    }
+
+    private static bool IsTypeResolutionCompatibilityFallbackEnabled()
+    {
+        var options = ActiveGeneratorOptions.Value;
+        return options?.TypeResolutionCompatibilityFallbackEnabled ?? true;
+    }
+
+    private static bool IsStrictTypeResolutionMode()
+    {
+        var options = ActiveGeneratorOptions.Value;
+        return options?.StrictMode ?? false;
+    }
+
+    private static ImmutableArray<INamedTypeSymbol> CollectTypeCandidatesFromNamespacePrefixes(
+        Compilation compilation,
+        IEnumerable<string> namespacePrefixes,
+        string typeName,
+        int? genericArity = null,
+        bool extensionSuffix = false)
+    {
+        var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
+        var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var effectiveTypeName = extensionSuffix
+            ? typeName + "Extension"
+            : AppendGenericArity(typeName, genericArity);
+
+        foreach (var namespacePrefix in namespacePrefixes)
+        {
+            var candidate = compilation.GetTypeByMetadataName(namespacePrefix + effectiveTypeName);
+            if (candidate is not null && seen.Add(candidate))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates.ToImmutable();
+    }
+
+    private static INamedTypeSymbol? SelectDeterministicTypeCandidate(
+        ImmutableArray<INamedTypeSymbol> candidates,
+        string token,
+        string strategy)
+    {
+        if (candidates.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        if (candidates.Length > 1)
+        {
+            ReportTypeResolutionAmbiguity(token, strategy, candidates);
+        }
+
+        return candidates[0];
+    }
+
+    private static void ReportTypeResolutionAmbiguity(
+        string token,
+        string strategy,
+        ImmutableArray<INamedTypeSymbol> candidates)
+    {
+        var context = ActiveTypeResolutionDiagnosticContext.Value;
+        if (context is null || candidates.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var candidateNames = candidates
+            .Select(static symbol => symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+            .ToImmutableArray();
+        var dedupeKey = token + "|" + strategy + "|" + string.Join("|", candidateNames);
+        if (!context.ReportedKeys.Add(dedupeKey))
+        {
+            return;
+        }
+
+        context.Diagnostics.Add(new DiagnosticInfo(
+            "AXSG0112",
+            $"Type resolution for '{token}' is ambiguous via {strategy}. Candidates: {string.Join(", ", candidateNames)}. Using '{candidateNames[0]}' deterministically.",
+            context.FilePath,
+            1,
+            1,
+            context.StrictMode));
+    }
+
+    private static void ReportTypeResolutionFallbackUsage(
+        string token,
+        string strategy,
+        INamedTypeSymbol selectedCandidate)
+    {
+        var context = ActiveTypeResolutionDiagnosticContext.Value;
+        if (context is null)
+        {
+            return;
+        }
+
+        var selectedName = selectedCandidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var dedupeKey = "fallback|" + token + "|" + strategy + "|" + selectedName;
+        if (!context.ReportedKeys.Add(dedupeKey))
+        {
+            return;
+        }
+
+        context.Diagnostics.Add(new DiagnosticInfo(
+            "AXSG0113",
+            $"Type resolution for '{token}' used compatibility fallback '{strategy}' and selected '{selectedName}'.",
+            context.FilePath,
+            1,
+            1,
+            false));
     }
 
     private static INamedTypeSymbol? ResolveTypeToken(
@@ -12627,23 +14773,86 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
         }
 
-        var defaultNamespaceCandidates = GetAvaloniaDefaultNamespaceCandidates(compilation);
-
-        foreach (var namespacePrefix in defaultNamespaceCandidates)
+        if (IsTypeResolutionCompatibilityFallbackEnabled())
         {
-            var candidate = compilation.GetTypeByMetadataName(namespacePrefix + normalized);
-            if (candidate is not null)
+            var defaultNamespaceCandidates = GetAvaloniaDefaultNamespaceCandidates(compilation);
+
+            var compatibilityMatch = SelectDeterministicTypeCandidate(
+                CollectTypeCandidatesFromNamespacePrefixes(
+                    compilation,
+                    defaultNamespaceCandidates,
+                    normalized),
+                normalized,
+                "Avalonia default namespace compatibility fallback");
+            if (compatibilityMatch is not null)
             {
-                return candidate;
+                ReportTypeResolutionFallbackUsage(
+                    normalized,
+                    "Avalonia default namespace compatibility fallback",
+                    compatibilityMatch);
+                return compatibilityMatch;
+            }
+
+            if (!IsStrictTypeResolutionMode())
+            {
+                var compatibilityExtensionMatch = SelectDeterministicTypeCandidate(
+                    CollectTypeCandidatesFromNamespacePrefixes(
+                        compilation,
+                        defaultNamespaceCandidates,
+                        normalized,
+                        extensionSuffix: true),
+                    normalized,
+                    "Avalonia default namespace extension compatibility fallback");
+                if (compatibilityExtensionMatch is not null)
+                {
+                    ReportTypeResolutionFallbackUsage(
+                        normalized,
+                        "Avalonia default namespace extension compatibility fallback",
+                        compatibilityExtensionMatch);
+                    return compatibilityExtensionMatch;
+                }
             }
         }
 
-        foreach (var namespacePrefix in defaultNamespaceCandidates)
+        if (TryGetImplicitProjectNamespaceRoot(compilation, out var rootNamespace))
         {
-            var extensionCandidate = compilation.GetTypeByMetadataName(namespacePrefix + normalized + "Extension");
-            if (extensionCandidate is not null)
+            var projectNamespaceCandidates = GetProjectNamespaceCandidates(compilation, rootNamespace);
+
+            var projectMatch = SelectDeterministicTypeCandidate(
+                CollectTypeCandidatesFromNamespacePrefixes(
+                    compilation,
+                    projectNamespaceCandidates,
+                    normalized),
+                normalized,
+                "implicit project namespace fallback");
+            if (projectMatch is not null)
             {
-                return extensionCandidate;
+                ReportTypeResolutionFallbackUsage(
+                    normalized,
+                    "implicit project namespace fallback",
+                    projectMatch);
+                return projectMatch;
+            }
+
+            if (IsTypeResolutionCompatibilityFallbackEnabled() &&
+                !IsStrictTypeResolutionMode())
+            {
+                var projectExtensionMatch = SelectDeterministicTypeCandidate(
+                    CollectTypeCandidatesFromNamespacePrefixes(
+                        compilation,
+                        projectNamespaceCandidates,
+                        normalized,
+                        extensionSuffix: true),
+                    normalized,
+                    "implicit project namespace extension compatibility fallback");
+                if (projectExtensionMatch is not null)
+                {
+                    ReportTypeResolutionFallbackUsage(
+                        normalized,
+                        "implicit project namespace extension compatibility fallback",
+                        projectExtensionMatch);
+                    return projectExtensionMatch;
+                }
             }
         }
 
@@ -12722,10 +14931,10 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return configuredAlias;
         }
 
-        var metadataName = TryBuildMetadataName(xmlNamespace, xmlTypeName, genericArity);
-        if (metadataName is not null)
+        var explicitClrMetadataName = TryBuildClrNamespaceMetadataName(xmlNamespace, xmlTypeName, genericArity);
+        if (explicitClrMetadataName is not null)
         {
-            var resolved = compilation.GetTypeByMetadataName(metadataName);
+            var resolved = compilation.GetTypeByMetadataName(explicitClrMetadataName);
             if (resolved is not null)
             {
                 return resolved;
@@ -12742,29 +14951,88 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             return xmlnsDefinitionResolved;
         }
 
-        if (IsAvaloniaDefaultXmlNamespace(xmlNamespace))
+        if (IsAvaloniaDefaultXmlNamespace(xmlNamespace) &&
+            IsTypeResolutionCompatibilityFallbackEnabled())
         {
             var defaultNamespaceCandidates = GetAvaloniaDefaultNamespaceCandidates(compilation);
-            foreach (var namespacePrefix in defaultNamespaceCandidates)
+
+            var compatibilityMatch = SelectDeterministicTypeCandidate(
+                CollectTypeCandidatesFromNamespacePrefixes(
+                    compilation,
+                    defaultNamespaceCandidates,
+                    xmlTypeName,
+                    genericArity),
+                xmlTypeName,
+                "Avalonia default xml namespace compatibility fallback");
+            if (compatibilityMatch is not null)
             {
-                var candidateName = genericArity.HasValue && genericArity.Value > 0
-                    ? namespacePrefix + AppendGenericArity(xmlTypeName, genericArity.Value)
-                    : namespacePrefix + xmlTypeName;
-                var candidate = compilation.GetTypeByMetadataName(candidateName);
-                if (candidate is not null)
+                ReportTypeResolutionFallbackUsage(
+                    xmlTypeName,
+                    "Avalonia default xml namespace compatibility fallback",
+                    compatibilityMatch);
+                return compatibilityMatch;
+            }
+
+            if ((!genericArity.HasValue || genericArity.Value <= 0) &&
+                !IsStrictTypeResolutionMode())
+            {
+                var compatibilityExtensionMatch = SelectDeterministicTypeCandidate(
+                    CollectTypeCandidatesFromNamespacePrefixes(
+                        compilation,
+                        defaultNamespaceCandidates,
+                        xmlTypeName,
+                        extensionSuffix: true),
+                    xmlTypeName,
+                    "Avalonia default xml namespace extension compatibility fallback");
+                if (compatibilityExtensionMatch is not null)
                 {
-                    return candidate;
+                    ReportTypeResolutionFallbackUsage(
+                        xmlTypeName,
+                        "Avalonia default xml namespace extension compatibility fallback",
+                        compatibilityExtensionMatch);
+                    return compatibilityExtensionMatch;
                 }
             }
 
-            if (!genericArity.HasValue || genericArity.Value <= 0)
+            if (TryGetImplicitProjectNamespaceRoot(compilation, out var projectRootNamespace))
             {
-                foreach (var namespacePrefix in defaultNamespaceCandidates)
+                var projectNamespaceCandidates = GetProjectNamespaceCandidates(compilation, projectRootNamespace);
+
+                var projectMatch = SelectDeterministicTypeCandidate(
+                    CollectTypeCandidatesFromNamespacePrefixes(
+                        compilation,
+                        projectNamespaceCandidates,
+                        xmlTypeName,
+                        genericArity),
+                    xmlTypeName,
+                    "implicit project namespace fallback");
+                if (projectMatch is not null)
                 {
-                    var extensionCandidate = compilation.GetTypeByMetadataName(namespacePrefix + xmlTypeName + "Extension");
-                    if (extensionCandidate is not null)
+                    ReportTypeResolutionFallbackUsage(
+                        xmlTypeName,
+                        "implicit project namespace fallback",
+                        projectMatch);
+                    return projectMatch;
+                }
+
+                if ((!genericArity.HasValue || genericArity.Value <= 0) &&
+                    !IsStrictTypeResolutionMode())
+                {
+                    var projectExtensionMatch = SelectDeterministicTypeCandidate(
+                        CollectTypeCandidatesFromNamespacePrefixes(
+                            compilation,
+                            projectNamespaceCandidates,
+                            xmlTypeName,
+                            extensionSuffix: true),
+                        xmlTypeName,
+                        "implicit project namespace extension compatibility fallback");
+                    if (projectExtensionMatch is not null)
                     {
-                        return extensionCandidate;
+                        ReportTypeResolutionFallbackUsage(
+                            xmlTypeName,
+                            "implicit project namespace extension compatibility fallback",
+                            projectExtensionMatch);
+                        return projectExtensionMatch;
                     }
                 }
             }
@@ -12786,6 +15054,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var typeName = AppendGenericArity(xmlTypeName, genericArity);
+        var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
+        var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         foreach (var clrNamespace in clrNamespaces)
         {
             if (string.IsNullOrWhiteSpace(clrNamespace))
@@ -12794,14 +15064,27 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var candidate = compilation.GetTypeByMetadataName(clrNamespace + "." + typeName);
-            if (candidate is not null)
+            if (candidate is not null && seen.Add(candidate))
             {
-                return candidate;
+                candidates.Add(candidate);
             }
         }
 
-        if (!genericArity.HasValue || genericArity.Value <= 0)
+        var resolved = SelectDeterministicTypeCandidate(
+            candidates.ToImmutable(),
+            xmlTypeName,
+            "XmlnsDefinitionAttribute map");
+        if (resolved is not null)
         {
+            return resolved;
+        }
+
+        if ((!genericArity.HasValue || genericArity.Value <= 0) &&
+            IsTypeResolutionCompatibilityFallbackEnabled() &&
+            !IsStrictTypeResolutionMode())
+        {
+            candidates.Clear();
+            seen.Clear();
             foreach (var clrNamespace in clrNamespaces)
             {
                 if (string.IsNullOrWhiteSpace(clrNamespace))
@@ -12810,10 +15093,23 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                 }
 
                 var extensionCandidate = compilation.GetTypeByMetadataName(clrNamespace + "." + xmlTypeName + "Extension");
-                if (extensionCandidate is not null)
+                if (extensionCandidate is not null && seen.Add(extensionCandidate))
                 {
-                    return extensionCandidate;
+                    candidates.Add(extensionCandidate);
                 }
+            }
+
+            var extensionResolved = SelectDeterministicTypeCandidate(
+                candidates.ToImmutable(),
+                xmlTypeName,
+                "XmlnsDefinitionAttribute extension compatibility fallback");
+            if (extensionResolved is not null)
+            {
+                ReportTypeResolutionFallbackUsage(
+                    xmlTypeName,
+                    "XmlnsDefinitionAttribute extension compatibility fallback",
+                    extensionResolved);
+                return extensionResolved;
             }
         }
 
@@ -12913,7 +15209,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         return symbol is not null;
     }
 
-    private static string? TryBuildMetadataName(string xmlNamespace, string xmlTypeName, int? genericArity)
+    private static string? TryBuildClrNamespaceMetadataName(string xmlNamespace, string xmlTypeName, int? genericArity)
     {
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal) ||
             xmlNamespace.StartsWith("using:", StringComparison.Ordinal))
@@ -12927,11 +15223,6 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             {
                 return clrNamespace + "." + AppendGenericArity(xmlTypeName, genericArity);
             }
-        }
-
-        if (IsAvaloniaDefaultXmlNamespace(xmlNamespace))
-        {
-            return "Avalonia.Controls." + AppendGenericArity(xmlTypeName, genericArity);
         }
 
         return null;
@@ -13387,25 +15678,6 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         public int Column { get; }
     }
 
-    private readonly struct MarkupExtensionInfo
-    {
-        public MarkupExtensionInfo(
-            string name,
-            ImmutableArray<string> positionalArguments,
-            ImmutableDictionary<string, string> namedArguments)
-        {
-            Name = name;
-            PositionalArguments = positionalArguments;
-            NamedArguments = namedArguments;
-        }
-
-        public string Name { get; }
-
-        public ImmutableArray<string> PositionalArguments { get; }
-
-        public ImmutableDictionary<string, string> NamedArguments { get; }
-    }
-
     private readonly struct CompiledPathSegment
     {
         public CompiledPathSegment(
@@ -13466,6 +15738,42 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         public int? AncestorLevel { get; }
 
         public string? Tree { get; }
+    }
+
+    private readonly struct ResolveByNameReferenceToken
+    {
+        public ResolveByNameReferenceToken(string Name, bool FromMarkupExtension)
+        {
+            this.Name = Name;
+            this.FromMarkupExtension = FromMarkupExtension;
+        }
+
+        public string Name { get; }
+
+        public bool FromMarkupExtension { get; }
+    }
+
+    private readonly struct SetterValueResolutionResult
+    {
+        public SetterValueResolutionResult(
+            string Expression,
+            ResolvedValueKind ValueKind,
+            bool RequiresStaticResourceResolver,
+            ResolvedValueRequirements ValueRequirements)
+        {
+            this.Expression = Expression;
+            this.ValueKind = ValueKind;
+            this.RequiresStaticResourceResolver = RequiresStaticResourceResolver;
+            this.ValueRequirements = ValueRequirements;
+        }
+
+        public string Expression { get; }
+
+        public ResolvedValueKind ValueKind { get; }
+
+        public bool RequiresStaticResourceResolver { get; }
+
+        public ResolvedValueRequirements ValueRequirements { get; }
     }
 
     private readonly struct EventBindingMarkup

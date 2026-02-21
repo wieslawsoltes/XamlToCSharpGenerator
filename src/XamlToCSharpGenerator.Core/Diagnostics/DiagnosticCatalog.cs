@@ -116,6 +116,22 @@ public static class DiagnosticCatalog
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor TypeResolutionAmbiguous = new(
+        id: "AXSG0112",
+        title: "Type resolution is ambiguous",
+        messageFormat: "{0}",
+        category: "AXSG.Semantic",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TypeResolutionFallbackUsed = new(
+        id: "AXSG0113",
+        title: "Type resolution compatibility fallback used",
+        messageFormat: "{0}",
+        category: "AXSG.Semantic",
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor ConditionalXamlExpressionInvalid = new(
         id: "AXSG0120",
         title: "Conditional XAML expression is invalid",

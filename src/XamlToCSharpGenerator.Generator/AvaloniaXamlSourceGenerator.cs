@@ -26,6 +26,9 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
     private const string AvaloniaXmlnsPrefixAttributeMetadataName = "Avalonia.Metadata.XmlnsPrefixAttribute";
     private const string SourceGenGlobalXmlnsPrefixAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenGlobalXmlnsPrefixAttribute";
     private const string SourceGenAllowImplicitXmlnsDeclarationAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenAllowImplicitXmlnsDeclarationAttribute";
+    private const string Xaml2006Namespace = "http://schemas.microsoft.com/winfx/2006/xaml";
+    private const string BlendDesignNamespace = "http://schemas.microsoft.com/expression/blend/2008";
+    private const string MarkupCompatibilityNamespace = "http://schemas.openxmlformats.org/markup-compatibility/2006";
     private static readonly ConcurrentDictionary<string, CachedGeneratedSource> LastGoodGeneratedSources =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -187,6 +190,7 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
 
                 return results.ToImmutable();
             });
+        var parsedDocumentsSnapshot = parsedDocuments.Collect();
 
         var globalGraphDiagnostics = parsedDocuments
             .Select(static (result, _) => result.Document)
@@ -219,12 +223,17 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             });
 
         context.RegisterSourceOutput(
-            parsedDocuments.Combine(context.CompilationProvider.Combine(optionsProvider).Combine(transformRules)),
+            parsedDocuments
+                .Combine(parsedDocumentsSnapshot)
+                .Combine(context.CompilationProvider.Combine(optionsProvider).Combine(transformRules)),
             static (sourceContext, payload) =>
             {
-                var (parsedDocument, ((compilation, options), transformRules)) = payload;
+                var ((parsedDocument, allParsedDocuments), ((compilation, options), transformRules)) = payload;
                 var parseResult = parsedDocument.Document;
-                var parseDiagnostics = parsedDocument.Diagnostics;
+                var parseDiagnostics = ApplyGlobalParityDiagnosticFilters(
+                    parsedDocument.Diagnostics,
+                    allParsedDocuments);
+                parseDiagnostics = ApplyDefaultDiagnosticPolicy(parseDiagnostics, options);
                 var resilienceEnabled = IsHotReloadErrorResilienceEnabled(options);
                 var cacheKey = BuildHotReloadCacheKey(
                     options.AssemblyName,
@@ -241,6 +250,13 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
 
                 try
                 {
+                    (parseResult, parseDiagnostics) = ApplyDocumentConventions(
+                        parsedDocument.Input,
+                        parseResult,
+                        parseDiagnostics,
+                        compilation,
+                        options);
+
                     ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                     if (parseResult is null)
                     {
@@ -260,6 +276,10 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                     IXamlSemanticBinder binder = new AvaloniaSemanticBinder();
                     var (viewModel, semanticDiagnostics) = binder.Bind(parseResult, compilation, options, transformRules.Configuration);
                     bindElapsed = Stopwatch.GetElapsedTime(bindStart);
+                    semanticDiagnostics = ApplyGlobalParityDiagnosticFilters(
+                        semanticDiagnostics,
+                        allParsedDocuments);
+                    semanticDiagnostics = ApplyDefaultDiagnosticPolicy(semanticDiagnostics, options);
                     semanticDiagnosticsCount = semanticDiagnostics.Length;
                     ReportDiagnostics(sourceContext, semanticDiagnostics, resilienceEnabled);
                     if (viewModel is null)
@@ -357,6 +377,8 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
                 "AXSG0108" => DiagnosticCatalog.ArrayConstructionInvalid,
                 "AXSG0110" => DiagnosticCatalog.CompiledBindingRequiresDataType,
                 "AXSG0111" => DiagnosticCatalog.CompiledBindingPathInvalid,
+                "AXSG0112" => DiagnosticCatalog.TypeResolutionAmbiguous,
+                "AXSG0113" => DiagnosticCatalog.TypeResolutionFallbackUsed,
                 "AXSG0120" => DiagnosticCatalog.ConditionalXamlExpressionInvalid,
                 "AXSG0300" => DiagnosticCatalog.StyleSelectorInvalid,
                 "AXSG0301" => DiagnosticCatalog.StyleSetterPropertyInvalid,
@@ -401,6 +423,127 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
 
             context.ReportDiagnostic(Diagnostic.Create(descriptor, location, diagnostic.Message));
         }
+    }
+
+    private static ImmutableArray<DiagnosticInfo> ApplyGlobalParityDiagnosticFilters(
+        ImmutableArray<DiagnosticInfo> diagnostics,
+        ImmutableArray<ParsedDocumentResult> allParsedDocuments)
+    {
+        if (diagnostics.IsDefaultOrEmpty ||
+            allParsedDocuments.IsDefaultOrEmpty)
+        {
+            return diagnostics;
+        }
+
+        var globalControlThemeKeys = BuildGlobalControlThemeKeySet(allParsedDocuments);
+        if (globalControlThemeKeys.Count == 0)
+        {
+            return diagnostics;
+        }
+
+        ImmutableArray<DiagnosticInfo>.Builder? filtered = null;
+        var suppressedAny = false;
+        for (var index = 0; index < diagnostics.Length; index++)
+        {
+            var diagnostic = diagnostics[index];
+            if (ShouldSuppressControlThemeBasedOnDiagnostic(diagnostic, globalControlThemeKeys))
+            {
+                suppressedAny = true;
+                continue;
+            }
+
+            filtered ??= ImmutableArray.CreateBuilder<DiagnosticInfo>(diagnostics.Length);
+            filtered.Add(diagnostic);
+        }
+
+        if (!suppressedAny)
+        {
+            return diagnostics;
+        }
+
+        if (filtered is null)
+        {
+            return ImmutableArray<DiagnosticInfo>.Empty;
+        }
+
+        return filtered.ToImmutable();
+    }
+
+    private static ImmutableArray<DiagnosticInfo> ApplyDefaultDiagnosticPolicy(
+        ImmutableArray<DiagnosticInfo> diagnostics,
+        GeneratorOptions options)
+    {
+        _ = options;
+        return diagnostics;
+    }
+
+    private static HashSet<string> BuildGlobalControlThemeKeySet(
+        ImmutableArray<ParsedDocumentResult> allParsedDocuments)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var parsed in allParsedDocuments)
+        {
+            var document = parsed.Document;
+            if (document is null || document.ControlThemes.IsDefaultOrEmpty)
+            {
+                continue;
+            }
+
+            foreach (var controlTheme in document.ControlThemes)
+            {
+                if (string.IsNullOrWhiteSpace(controlTheme.Key))
+                {
+                    continue;
+                }
+
+                keys.Add(NormalizeControlThemeKey(controlTheme.Key!));
+            }
+        }
+
+        return keys;
+    }
+
+    private static bool ShouldSuppressControlThemeBasedOnDiagnostic(
+        DiagnosticInfo diagnostic,
+        HashSet<string> globalControlThemeKeys)
+    {
+        if (!string.Equals(diagnostic.Id, "AXSG0305", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        const string marker = "key '";
+        var message = diagnostic.Message;
+        var markerIndex = message.LastIndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+        {
+            return false;
+        }
+
+        var start = markerIndex + marker.Length;
+        if (start >= message.Length)
+        {
+            return false;
+        }
+
+        var end = message.IndexOf('\'', start);
+        if (end <= start)
+        {
+            return false;
+        }
+
+        var key = message.Substring(start, end - start).Trim();
+        if (key.Length == 0)
+        {
+            return false;
+        }
+
+        return globalControlThemeKeys.Contains(NormalizeControlThemeKey(key));
+    }
+
+    private static string NormalizeControlThemeKey(string key)
+    {
+        return key.Trim();
     }
 
     private static void ReportGlobalMetrics(
@@ -643,6 +786,14 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
         }
 
         if (options.AllowImplicitXmlnsDeclaration &&
+            options.ImplicitStandardXmlnsPrefixesEnabled)
+        {
+            AddImplicitPrefix(globalPrefixes, "x", Xaml2006Namespace);
+            AddImplicitPrefix(globalPrefixes, "d", BlendDesignNamespace);
+            AddImplicitPrefix(globalPrefixes, "mc", MarkupCompatibilityNamespace);
+        }
+
+        if (options.AllowImplicitXmlnsDeclaration &&
             !string.IsNullOrWhiteSpace(options.ImplicitDefaultXmlns) &&
             !globalPrefixes.ContainsKey(string.Empty))
         {
@@ -653,6 +804,190 @@ public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
             globalPrefixes.ToImmutable(),
             options.AllowImplicitXmlnsDeclaration,
             options.ImplicitDefaultXmlns);
+    }
+
+    private static void AddImplicitPrefix(
+        ImmutableDictionary<string, string>.Builder globalPrefixes,
+        string prefix,
+        string xmlNamespace)
+    {
+        if (!globalPrefixes.ContainsKey(prefix))
+        {
+            globalPrefixes[prefix] = xmlNamespace;
+        }
+    }
+
+    private static (
+        XamlDocumentModel? Document,
+        ImmutableArray<DiagnosticInfo> Diagnostics) ApplyDocumentConventions(
+        XamlFileInput input,
+        XamlDocumentModel? document,
+        ImmutableArray<DiagnosticInfo> diagnostics,
+        Compilation compilation,
+        GeneratorOptions options)
+    {
+        if (document is null)
+        {
+            return (null, diagnostics);
+        }
+
+        if (!options.InferClassFromPath || document.IsClassBacked)
+        {
+            return (document, diagnostics);
+        }
+
+        var inferredClassName = TryInferClassNameFromTargetPath(input.TargetPath, options);
+        if (string.IsNullOrWhiteSpace(inferredClassName))
+        {
+            return (document, diagnostics);
+        }
+
+        if (compilation.GetTypeByMetadataName(inferredClassName) is null)
+        {
+            return (document, diagnostics);
+        }
+
+        var adjustedDocument = document with
+        {
+            ClassFullName = inferredClassName
+        };
+
+        var diagnosticsBuilder = diagnostics.ToBuilder();
+        RemoveDiagnosticsById(diagnosticsBuilder, "AXSG0002");
+
+        return (adjustedDocument, diagnosticsBuilder.ToImmutable());
+    }
+
+    private static void RemoveDiagnosticsById(
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        string diagnosticId)
+    {
+        for (var index = diagnostics.Count - 1; index >= 0; index--)
+        {
+            if (string.Equals(diagnostics[index].Id, diagnosticId, StringComparison.Ordinal))
+            {
+                diagnostics.RemoveAt(index);
+            }
+        }
+    }
+
+    private static string? TryInferClassNameFromTargetPath(string targetPath, GeneratorOptions options)
+    {
+        var rootNamespace = NormalizeRootNamespace(options.RootNamespace ?? options.AssemblyName);
+        if (string.IsNullOrWhiteSpace(rootNamespace))
+        {
+            return null;
+        }
+
+        var effectiveTargetPath = targetPath;
+        if (Path.IsPathRooted(effectiveTargetPath))
+        {
+            effectiveTargetPath = Path.GetFileName(effectiveTargetPath);
+        }
+
+        effectiveTargetPath = effectiveTargetPath.Replace('\\', '/').Trim();
+        if (effectiveTargetPath.StartsWith("./", StringComparison.Ordinal))
+        {
+            effectiveTargetPath = effectiveTargetPath.Substring(2);
+        }
+
+        if (effectiveTargetPath.StartsWith("/", StringComparison.Ordinal))
+        {
+            effectiveTargetPath = effectiveTargetPath.Substring(1);
+        }
+
+        var fileName = Path.GetFileNameWithoutExtension(effectiveTargetPath);
+        var normalizedClassName = NormalizeIdentifier(fileName, "GeneratedView");
+        if (string.IsNullOrWhiteSpace(normalizedClassName))
+        {
+            return null;
+        }
+
+        var namespaceSegments = NormalizeNamespaceSegments(rootNamespace).ToList();
+        var directory = Path.GetDirectoryName(effectiveTargetPath)?
+            .Replace('\\', '/');
+
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            foreach (var segment in directory
+                         .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var normalizedSegment = NormalizeIdentifier(segment, null);
+                if (!string.IsNullOrWhiteSpace(normalizedSegment))
+                {
+                    namespaceSegments.Add(normalizedSegment);
+                }
+            }
+        }
+
+        return namespaceSegments.Count == 0
+            ? normalizedClassName
+            : string.Join(".", namespaceSegments) + "." + normalizedClassName;
+    }
+
+    private static string NormalizeRootNamespace(string? rootNamespace)
+    {
+        if (string.IsNullOrWhiteSpace(rootNamespace))
+        {
+            return string.Empty;
+        }
+
+        var segments = NormalizeNamespaceSegments(rootNamespace);
+        return segments.Length == 0
+            ? string.Empty
+            : string.Join(".", segments);
+    }
+
+    private static ImmutableArray<string> NormalizeNamespaceSegments(string rawNamespace)
+    {
+        if (string.IsNullOrWhiteSpace(rawNamespace))
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var segments = ImmutableArray.CreateBuilder<string>();
+        foreach (var segment in rawNamespace
+                     .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var normalizedSegment = NormalizeIdentifier(segment, null);
+            if (!string.IsNullOrWhiteSpace(normalizedSegment))
+            {
+                segments.Add(normalizedSegment);
+            }
+        }
+
+        return segments.ToImmutable();
+    }
+
+    private static string? NormalizeIdentifier(string? token, string? fallback)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return fallback;
+        }
+
+        Span<char> buffer = stackalloc char[token.Length];
+        var length = 0;
+        foreach (var ch in token)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '_')
+            {
+                buffer[length++] = ch;
+            }
+        }
+
+        if (length == 0)
+        {
+            return fallback;
+        }
+
+        var normalized = new string(buffer.Slice(0, length));
+        if (char.IsDigit(normalized[0]))
+        {
+            normalized = "_" + normalized;
+        }
+
+        return normalized;
     }
 
     private static IEnumerable<IAssemblySymbol> EnumerateAssemblies(Compilation compilation)
