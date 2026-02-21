@@ -106,6 +106,9 @@
       <TabItem Header="Conditional XAML">
         <pages:ConditionalXamlPage DataContext="{Binding ConditionalXaml}" />
       </TabItem>
+      <TabItem Header="Runtime Loader">
+        <pages:RuntimeLoaderPage DataContext="{Binding RuntimeLoader}" />
+      </TabItem>
       <TabItem Header="Styles + Selectors">
         <pages:StylesSelectorsPage />
       </TabItem>

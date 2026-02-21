@@ -19,6 +19,10 @@ internal static class Program
             .UsePlatformDetect()
             .LogToTrace()
             .UseAvaloniaSourceGeneratedXaml()
+            .UseAvaloniaSourceGeneratedRuntimeXamlCompilation(enable: true, configure: options =>
+            {
+                options.TraceDiagnostics = true;
+            })
             .UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
             {
                 options.PersistChangesToSource = true;

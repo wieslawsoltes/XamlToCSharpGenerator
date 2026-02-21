@@ -11,7 +11,7 @@
     <RootNamespace>Avalonia.Themes.Fluent</RootNamespace>
 
     <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
-    <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
+    <AvaloniaSourceGenUseCompiledBindingsByDefault>false</AvaloniaSourceGenUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <ItemGroup>

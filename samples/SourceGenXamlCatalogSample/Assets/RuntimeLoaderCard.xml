@@ -1,0 +1,16 @@
+<Border xmlns="https://github.com/avaloniaui"
+        Padding="12"
+        CornerRadius="8"
+        BorderBrush="#4A2D7FF9"
+        BorderThickness="1"
+        Background="#142D7FF9">
+  <StackPanel Spacing="6">
+    <TextBlock FontWeight="SemiBold"
+               Foreground="#FF153A66"
+               Text="Loaded From AvaloniaResource XML" />
+    <TextBlock TextWrapping="Wrap"
+               Text="This visual tree was parsed at runtime from Assets/RuntimeLoaderCard.xml using the SourceGen runtime loader API." />
+    <Button HorizontalAlignment="Left"
+            Content="Runtime Loaded Button" />
+  </StackPanel>
+</Border>

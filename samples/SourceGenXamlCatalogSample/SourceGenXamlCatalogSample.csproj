@@ -23,7 +23,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
+    <!-- <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" /> -->
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
   </ItemGroup>
 
@@ -31,9 +31,11 @@
     <AvaloniaXaml Update="App.axaml;MainWindow.axaml;Pages\*.axaml;Resources\*.axaml"
                   SubType="Designer"
                   Visible="true" />
+    <AvaloniaResource Include="Assets\RuntimeLoaderCard.xml" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj"
                       OutputItemType="Analyzer"

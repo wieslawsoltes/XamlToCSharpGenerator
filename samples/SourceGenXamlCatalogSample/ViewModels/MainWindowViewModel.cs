@@ -30,6 +30,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ConditionalXamlPageViewModel ConditionalXaml { get; } = new();
 
+    public RuntimeLoaderPageViewModel RuntimeLoader { get; } = new();
+
     public TemplatesPageViewModel Templates { get; } = new();
 
     public ResourcesIncludesPageViewModel Resources { get; } = new();

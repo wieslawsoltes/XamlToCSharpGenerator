@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.RuntimeLoaderPage"
+             x:DataType="vm:RuntimeLoaderPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Runtime loader (SourceGen + fallback compiler)" />
+          <TextBlock TextWrapping="Wrap"
+                     Text="Load inline XAML or AvaloniaResource-backed XML at runtime through AvaloniaSourceGeneratedXamlLoader." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Load Inline Sample"
+                    Command="{Binding LoadInlineCommand}" />
+            <Button Content="Load XML Asset"
+                    Command="{Binding LoadAssetCommand}" />
+          </StackPanel>
+          <TextBlock Classes="catalog-muted" Text="{Binding Status}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Inline XAML Input" />
+          <TextBox AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   MinHeight="140"
+                   FontFamily="Consolas"
+                   Text="{Binding InlineXaml, Mode=TwoWay}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Runtime Output" />
+          <ContentControl Content="{Binding LoadedContent}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

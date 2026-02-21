@@ -1,52 +1,43 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SourceGenCrudSample.ViewModels"
-        xmlns:local="clr-namespace:SourceGenCrudSample"
         x:Class="SourceGenCrudSample.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:CompileBindings="True"
         Width="1080"
         Height="720"
         Title="Source Generator CRUD Sample">
-  <TabControl Margin="10">
-    <TabItem Header="CRUD Demo">
-      <ScrollViewer>
-        <StackPanel Spacing="12" Margin="0,0,0,8">
-          <TextBlock Text="People CRUD" FontSize="18" Foreground="#1A3FCA" FontWeight="Bold" />
-          <TextBlock Text="SourceGen backend + runtime source-generated loader" />
+  <ScrollViewer Margin="10">
+    <StackPanel Spacing="12" Margin="0,0,0,8">
+      <TextBlock Text="People CRUD" FontSize="18" Foreground="#1A3FCA" FontWeight="Bold" />
+      <TextBlock Text="SourceGen backend + runtime source-generated loader" />
 
-          <TextBlock Text="Name" />
-          <TextBox Text="{Binding DraftName, Mode=TwoWay}" />
+      <TextBlock Text="Name" />
+      <TextBox Text="{Binding DraftName, Mode=TwoWay}" />
 
-          <TextBlock Text="Email" />
-          <TextBox Text="{Binding DraftEmail, Mode=TwoWay}" Watermark="Write your email here:" />
+      <TextBlock Text="Email" />
+      <TextBox Text="{Binding DraftEmail, Mode=TwoWay}" Watermark="Write your email here:" />
 
-          <StackPanel Orientation="Horizontal" Spacing="20">
-            <Button Width="80" Content="Add" Command="{Binding AddCommand}" />
-            <Button Width="80" Content="Update" Command="{Binding UpdateCommand}" />
-            <Button Width="80" Content="Delete" Command="{Binding DeleteCommand}" />
-            <Button Width="80" Content="Clear" Command="{Binding ClearCommand}" />
-          </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="20">
+        <Button Width="80" Content="Add" Command="{Binding AddCommand}" />
+        <Button Width="80" Content="Update" Command="{Binding UpdateCommand}" />
+        <Button Width="80" Content="Delete" Command="{Binding DeleteCommand}" />
+        <Button Width="80" Content="Clear" Command="{Binding ClearCommand}" />
+      </StackPanel>
 
-          <TextBlock Text="{Binding StatusMessage}" />
+      <TextBlock Text="{Binding StatusMessage}" />
 
-          <ListBox ItemsSource="{Binding People}" SelectedItem="{Binding SelectedPerson, Mode=TwoWay}">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:PersonRecord">
-                <StackPanel Spacing="2">
-                  <TextBlock Text="{Binding Name}" />
-                  <TextBlock Text="{Binding Email}" />
-                  <TextBlock Text="{Binding Id}" />
-                </StackPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </StackPanel>
-      </ScrollViewer>
-    </TabItem>
-
-    <TabItem Header="Hot Design Studio">
-      <local:HotDesignStudioPage />
-    </TabItem>
-  </TabControl>
+      <ListBox ItemsSource="{Binding People}" SelectedItem="{Binding SelectedPerson, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:PersonRecord">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding Name}" />
+              <TextBlock Text="{Binding Email}" />
+              <TextBlock Text="{Binding Id}" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </StackPanel>
+  </ScrollViewer>
 </Window>
