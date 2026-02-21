@@ -12,8 +12,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Returns_Value_From_Transitive_Includes()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         XamlIncludeGraphRegistry.Register(
             "avares://Demo/Main.axaml",
@@ -48,8 +47,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Throws_When_Resource_Is_Missing()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         Assert.Throws<KeyNotFoundException>(() =>
             SourceGenStaticResourceResolver.Resolve(
@@ -59,10 +57,24 @@ public class SourceGenStaticResourceResolverTests
     }
 
     [Fact]
+    public void TryResolve_Returns_False_When_Resource_Is_Missing()
+    {
+        ResetRuntimeRegistries();
+
+        var found = SourceGenStaticResourceResolver.TryResolve(
+            anchor: null,
+            key: "Missing",
+            currentUri: "avares://Demo/Main.axaml",
+            value: out var resolved);
+
+        Assert.False(found);
+        Assert.Null(resolved);
+    }
+
+    [Fact]
     public void Resolve_Uses_Last_Merged_Dictionary_Precedence_For_Duplicate_Keys()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         XamlIncludeGraphRegistry.Register(
             "avares://Demo/Main.axaml",
@@ -98,8 +110,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Prefers_Later_CrossAssembly_Include_Order_For_Duplicate_Keys()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         XamlIncludeGraphRegistry.Register(
             "avares://Demo/Main.axaml",
@@ -134,8 +145,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Uses_Explicit_ParentStack_Before_Include_Graph()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         var parentStack = new object[]
         {
@@ -157,8 +167,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Uses_Anchor_ThemeVariant_For_Include_Graph_Theme_Dictionaries()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         XamlIncludeGraphRegistry.Register(
             "avares://Demo/Main.axaml",
@@ -188,8 +197,7 @@ public class SourceGenStaticResourceResolverTests
     [Fact]
     public void Resolve_Uses_Last_Merged_Dictionary_Precedence_For_ThemeVariant_Fallback_Collisions()
     {
-        XamlSourceGenRegistry.Clear();
-        XamlIncludeGraphRegistry.Clear();
+        ResetRuntimeRegistries();
 
         XamlIncludeGraphRegistry.Register(
             "avares://Demo/Main.axaml",
@@ -225,10 +233,161 @@ public class SourceGenStaticResourceResolverTests
         Assert.Equal("B-Default", resolved);
     }
 
+    [Fact]
+    public void Resolve_Uses_Ancestor_Owner_Merged_Dictionaries_For_Included_File()
+    {
+        ResetRuntimeRegistries();
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/BaseResources.axaml",
+            "MergedDictionaries");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/FluentControls.axaml",
+            "Styles");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/FluentControls.axaml",
+            "avares://Demo/RepeatButton.axaml",
+            "MergedDictionaries");
+
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/BaseResources.axaml",
+            static _ => new Hashtable
+            {
+                ["ButtonPadding"] = "8,5,8,6"
+            });
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/RepeatButton.axaml",
+            static _ => new Hashtable());
+
+        var resolved = SourceGenStaticResourceResolver.Resolve(
+            anchor: null,
+            key: "ButtonPadding",
+            currentUri: "avares://Demo/RepeatButton.axaml");
+
+        Assert.Equal("8,5,8,6", resolved);
+    }
+
+    [Fact]
+    public void Resolve_Does_Not_Materialize_Owner_Uri_When_Resource_Metadata_Proves_Miss()
+    {
+        ResetRuntimeRegistries();
+
+        var ownerMaterializations = 0;
+        var baseResourceMaterializations = 0;
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/BaseResources.axaml",
+            "MergedDictionaries");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/FluentControls.axaml",
+            "Styles");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/FluentControls.axaml",
+            "avares://Demo/RepeatButton.axaml",
+            "MergedDictionaries");
+
+        XamlResourceRegistry.Register(
+            "avares://Demo/BaseResources.axaml",
+            "ButtonPadding",
+            "Thickness",
+            "<Thickness x:Key=\"ButtonPadding\">8,5,8,6</Thickness>");
+        XamlResourceRegistry.Register(
+            "avares://Demo/RepeatButton.axaml",
+            "{x:Type RepeatButton}",
+            "ControlTheme",
+            "<ControlTheme x:Key=\"{x:Type RepeatButton}\" />");
+
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/FluentControls.axaml",
+            _ =>
+            {
+                ownerMaterializations++;
+                return new Hashtable();
+            });
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/BaseResources.axaml",
+            _ =>
+            {
+                baseResourceMaterializations++;
+                return new Hashtable
+                {
+                    ["ButtonPadding"] = "8,5,8,6"
+                };
+            });
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/RepeatButton.axaml",
+            static _ => new Hashtable());
+
+        var resolved = SourceGenStaticResourceResolver.Resolve(
+            anchor: null,
+            key: "ButtonPadding",
+            currentUri: "avares://Demo/RepeatButton.axaml");
+
+        Assert.Equal("8,5,8,6", resolved);
+        Assert.Equal(1, baseResourceMaterializations);
+        Assert.Equal(0, ownerMaterializations);
+    }
+
+    [Fact]
+    public void Resolve_Does_Not_StackOverflow_On_Reentrant_Include_Load()
+    {
+        ResetRuntimeRegistries();
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/Owner.axaml",
+            "MergedDictionaries");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Owner.axaml",
+            "avares://Demo/Leaf.axaml",
+            "MergedDictionaries");
+
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Main.axaml",
+            static _ => new Hashtable());
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Owner.axaml",
+            static _ => new Hashtable());
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Leaf.axaml",
+            static __ =>
+            {
+                try
+                {
+                    var __resolved = SourceGenStaticResourceResolver.Resolve(
+                        anchor: null,
+                        key: "Missing",
+                        currentUri: "avares://Demo/Main.axaml");
+                }
+                catch (KeyNotFoundException)
+                {
+                }
+
+                return new Hashtable();
+            });
+
+        Assert.Throws<KeyNotFoundException>(() =>
+            SourceGenStaticResourceResolver.Resolve(
+                anchor: null,
+                key: "Missing",
+                currentUri: "avares://Demo/Main.axaml"));
+    }
+
     private static ThemeVariantScope CreateThemeScope(ThemeVariant variant)
     {
         var scope = new ThemeVariantScope();
         scope.SetValue(ThemeVariantScope.ActualThemeVariantProperty, variant);
         return scope;
+    }
+
+    private static void ResetRuntimeRegistries()
+    {
+        XamlSourceGenRegistry.Clear();
+        XamlIncludeGraphRegistry.Clear();
+        XamlResourceRegistry.Clear();
     }
 }

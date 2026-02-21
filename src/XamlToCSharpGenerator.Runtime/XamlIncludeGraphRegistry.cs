@@ -77,6 +77,38 @@ public static class XamlIncludeGraphRegistry
         return result;
     }
 
+    public static IReadOnlyList<SourceGenIncludeEdgeDescriptor> GetIncoming(string includedUri, string? mergeTarget = null)
+    {
+        if (string.IsNullOrWhiteSpace(includedUri))
+        {
+            return Array.Empty<SourceGenIncludeEdgeDescriptor>();
+        }
+
+        var result = new List<SourceGenIncludeEdgeDescriptor>();
+        foreach (var bySource in Entries.Values)
+        {
+            foreach (var edge in bySource.Values)
+            {
+                if (!edge.IncludedUri.Equals(includedUri, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(mergeTarget) &&
+                    !edge.MergeTarget.Equals(mergeTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                result.Add(edge);
+            }
+        }
+
+        return result
+            .OrderBy(static edge => edge.Order)
+            .ToArray();
+    }
+
     private static void Visit(
         string sourceUri,
         string? mergeTarget,

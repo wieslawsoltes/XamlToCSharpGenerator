@@ -56,4 +56,24 @@ public class XamlIncludeGraphRegistryTests
         Assert.Equal("avares://Demo/A.axaml", includes[1].IncludedUri);
         Assert.True(includes[0].Order < includes[1].Order);
     }
+
+    [Fact]
+    public void GetIncoming_Returns_Include_Owners_In_Registration_Order()
+    {
+        XamlIncludeGraphRegistry.Clear();
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/Shared.axaml",
+            "Styles");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Theme.axaml",
+            "avares://Demo/Shared.axaml",
+            "MergedDictionaries");
+
+        var incoming = XamlIncludeGraphRegistry.GetIncoming("avares://Demo/Shared.axaml");
+
+        Assert.Equal(2, incoming.Count);
+        Assert.Equal("avares://Demo/Main.axaml", incoming[0].SourceUri);
+        Assert.Equal("avares://Demo/Theme.axaml", incoming[1].SourceUri);
+    }
 }

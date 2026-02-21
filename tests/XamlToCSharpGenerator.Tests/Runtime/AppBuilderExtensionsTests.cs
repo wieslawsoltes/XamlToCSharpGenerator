@@ -1,5 +1,7 @@
 using System;
+using System.Reflection;
 using Avalonia;
+using Avalonia.Markup.Xaml;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -36,6 +38,113 @@ public class AppBuilderExtensionsTests
 
         Assert.True(AvaloniaSourceGeneratedXamlLoader.IsEnabled);
         Assert.True(XamlSourceGenHotReloadManager.IsEnabled);
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedXaml_Registers_Avalonia_Runtime_Loader_Bridge()
+    {
+        var builder = AppBuilder.Configure<TestApp>();
+        builder.UseAvaloniaSourceGeneratedXaml();
+        builder.AfterSetupCallback(builder);
+
+        var runtimeLoaderInterface = typeof(AvaloniaXamlLoader)
+            .GetNestedType("IRuntimeXamlLoader", BindingFlags.NonPublic);
+        Assert.NotNull(runtimeLoaderInterface);
+
+        var currentResolver = typeof(AvaloniaLocator)
+            .GetProperty("Current", BindingFlags.Public | BindingFlags.Static)
+            ?.GetValue(null);
+        Assert.NotNull(currentResolver);
+
+        var getServiceMethod = currentResolver!.GetType()
+            .GetMethod("GetService", BindingFlags.Public | BindingFlags.Instance, [typeof(Type)]);
+        Assert.NotNull(getServiceMethod);
+
+        var runtimeLoader = getServiceMethod!.Invoke(currentResolver, [runtimeLoaderInterface!]);
+        Assert.NotNull(runtimeLoader);
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedXaml_RuntimeLoaderBridge_Invokes_Without_MethodAccessException()
+    {
+        var snapshot = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;
+        XamlSourceGenRegistry.Clear();
+        try
+        {
+            AvaloniaSourceGeneratedXamlLoader.ConfigureRuntimeCompilation(options =>
+            {
+                options.EnableRuntimeCompilationFallback = false;
+            });
+
+            var builder = AppBuilder.Configure<TestApp>();
+            builder.UseAvaloniaSourceGeneratedXaml();
+            builder.AfterSetupCallback(builder);
+
+            var runtimeLoaderInterface = typeof(AvaloniaXamlLoader)
+                .GetNestedType("IRuntimeXamlLoader", BindingFlags.NonPublic);
+            Assert.NotNull(runtimeLoaderInterface);
+
+            var currentResolver = typeof(AvaloniaLocator)
+                .GetProperty("Current", BindingFlags.Public | BindingFlags.Static)
+                ?.GetValue(null);
+            Assert.NotNull(currentResolver);
+
+            var getServiceMethod = currentResolver!.GetType()
+                .GetMethod("GetService", BindingFlags.Public | BindingFlags.Instance, [typeof(Type)]);
+            Assert.NotNull(getServiceMethod);
+
+            var runtimeLoader = getServiceMethod!.Invoke(currentResolver, [runtimeLoaderInterface!]);
+            Assert.NotNull(runtimeLoader);
+
+            var loadMethod = runtimeLoaderInterface!.GetMethod("Load");
+            Assert.NotNull(loadMethod);
+
+            var document = new RuntimeXamlLoaderDocument(
+                new Uri("avares://RuntimeTests/BridgeMissing.axaml"),
+                "<TextBlock xmlns='https://github.com/avaloniaui' Text='Missing' />");
+
+            var invocation = Assert.Throws<TargetInvocationException>(() =>
+                loadMethod!.Invoke(runtimeLoader, [document, new RuntimeXamlLoaderConfiguration()]));
+            Assert.NotNull(invocation.InnerException);
+            Assert.False(invocation.InnerException is MethodAccessException);
+            Assert.IsType<XamlLoadException>(invocation.InnerException);
+        }
+        finally
+        {
+            XamlSourceGenRegistry.Clear();
+            AvaloniaSourceGeneratedXamlLoader.ConfigureRuntimeCompilation(options =>
+            {
+                options.EnableRuntimeCompilationFallback = snapshot.EnableRuntimeCompilationFallback;
+                options.CacheCompiledDocuments = snapshot.CacheCompiledDocuments;
+                options.UseCompiledBindingsByDefault = snapshot.UseCompiledBindingsByDefault;
+                options.CreateSourceInfo = snapshot.CreateSourceInfo;
+                options.StrictMode = snapshot.StrictMode;
+                options.CSharpExpressionsEnabled = snapshot.CSharpExpressionsEnabled;
+                options.ImplicitCSharpExpressionsEnabled = snapshot.ImplicitCSharpExpressionsEnabled;
+                options.AllowImplicitXmlnsDeclaration = snapshot.AllowImplicitXmlnsDeclaration;
+                options.ImplicitStandardXmlnsPrefixesEnabled = snapshot.ImplicitStandardXmlnsPrefixesEnabled;
+                options.ImplicitDefaultXmlns = snapshot.ImplicitDefaultXmlns;
+                options.TraceDiagnostics = snapshot.TraceDiagnostics;
+            });
+        }
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedRuntimeXamlCompilation_Configures_Fallback()
+    {
+        var builder = AppBuilder.Configure<TestApp>();
+
+        builder.UseAvaloniaSourceGeneratedRuntimeXamlCompilation(enable: true, configure: options =>
+        {
+            options.CreateSourceInfo = true;
+            options.TraceDiagnostics = true;
+        });
+        builder.AfterSetupCallback(builder);
+
+        var options = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;
+        Assert.True(options.EnableRuntimeCompilationFallback);
+        Assert.True(options.CreateSourceInfo);
+        Assert.True(options.TraceDiagnostics);
     }
 
     [Fact]

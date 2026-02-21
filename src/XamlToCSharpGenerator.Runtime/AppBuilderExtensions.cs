@@ -18,6 +18,15 @@ public static class AppBuilderExtensions
         });
     }
 
+    public static AppBuilder UseAvaloniaSourceGeneratedRuntimeXamlCompilation(
+        this AppBuilder builder,
+        bool enable = true,
+        Action<SourceGenRuntimeXamlCompilationOptions>? configure = null)
+    {
+        ConfigureRuntimeCompilation(enable, configure);
+        return builder.AfterSetup(_ => ConfigureRuntimeCompilation(enable, configure));
+    }
+
     public static AppBuilder UseAvaloniaSourceGeneratedXamlHotReload(this AppBuilder builder, bool enable = true)
     {
         if (enable)
@@ -120,5 +129,17 @@ public static class AppBuilderExtensions
         }
 
         XamlSourceGenHotDesignManager.Disable();
+    }
+
+    private static void ConfigureRuntimeCompilation(
+        bool enable,
+        Action<SourceGenRuntimeXamlCompilationOptions>? configure)
+    {
+        AvaloniaSourceGeneratedXamlLoader.Enable();
+        AvaloniaSourceGeneratedXamlLoader.ConfigureRuntimeCompilation(options =>
+        {
+            options.EnableRuntimeCompilationFallback = enable;
+            configure?.Invoke(options);
+        });
     }
 }

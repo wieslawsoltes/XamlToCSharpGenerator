@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Core;
@@ -94,6 +95,45 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void ProvideStaticResource_Returns_UnsetValue_For_Control_Target_When_Resource_Is_Missing()
+    {
+        var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<BorderTarget, object?>(
+            nameof(BorderTarget.Value),
+            static (target, value) => target.Value = value);
+
+        var value = SourceGenMarkupExtensionRuntime.ProvideStaticResource(
+            resourceKey: "MissingResource",
+            parentServiceProvider: null,
+            rootObject: new object(),
+            intermediateRootObject: new object(),
+            targetObject: new BorderTarget(),
+            targetProperty: propertyInfo,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        Assert.Same(AvaloniaProperty.UnsetValue, value);
+    }
+
+    [Fact]
+    public void ProvideStaticResource_Throws_When_Resource_Is_Missing_And_Target_Is_Not_Control()
+    {
+        var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<TargetHolder, object?>(
+            nameof(TargetHolder.Value),
+            static (target, value) => target.Value = value);
+
+        Assert.Throws<KeyNotFoundException>(() =>
+            SourceGenMarkupExtensionRuntime.ProvideStaticResource(
+                resourceKey: "MissingResource",
+                parentServiceProvider: null,
+                rootObject: new object(),
+                intermediateRootObject: new object(),
+                targetObject: new TargetHolder(),
+                targetProperty: propertyInfo,
+                baseUri: "avares://Demo/MainView.axaml",
+                parentStack: null));
+    }
+
+    [Fact]
     public void ProvideDynamicResource_Returns_IBinding()
     {
         var value = SourceGenMarkupExtensionRuntime.ProvideDynamicResource(
@@ -162,6 +202,35 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void AttachBindingNameScope_Sets_NameScope_On_BindingBase()
+    {
+        var binding = new Binding("Text");
+        var nameScope = new NameScope();
+
+        var returned = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(binding, nameScope);
+
+        Assert.Same(binding, returned);
+        Assert.NotNull(binding.NameScope);
+        Assert.True(binding.NameScope!.TryGetTarget(out var resolvedNameScope));
+        Assert.Same(nameScope, resolvedNameScope);
+    }
+
+    [Fact]
+    public void AttachBindingNameScope_Configures_TypeResolver_For_Attached_Property_Paths()
+    {
+        var binding = new Binding("(ScrollViewer.IsScrollInertiaEnabled)")
+        {
+            ElementName = "PART_ContentPresenter"
+        };
+
+        SourceGenMarkupExtensionRuntime.AttachBindingNameScope(binding, new NameScope());
+
+        Assert.NotNull(binding.TypeResolver);
+        var resolvedType = binding.TypeResolver!(null, "ScrollViewer");
+        Assert.Equal(typeof(ScrollViewer), resolvedType);
+    }
+
+    [Fact]
     public void ProvideOnPlatform_Selects_Current_Platform_Option()
     {
         var expected = OperatingSystem.IsWindows() ? "Windows" :
@@ -198,6 +267,30 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void ProvideOnFormFactor_Uses_OsFallback_When_Default_Is_Missing()
+    {
+        var expected = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
+            ? "Mobile"
+            : "Desktop";
+
+        var value = SourceGenMarkupExtensionRuntime.ProvideOnFormFactor(
+            defaultValue: null,
+            desktop: "Desktop",
+            mobile: "Mobile",
+            tv: "TV",
+            parentServiceProvider: null);
+
+        Assert.Equal(expected, value);
+    }
+
+    [Fact]
+    public void CoerceMarkupExtensionValue_Returns_Default_For_Null_ValueType()
+    {
+        var value = SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<BindingMode>(null);
+        Assert.Equal(default, value);
+    }
+
+    [Fact]
     public void ProvideMarkupExtension_Exposes_ProvideValue_Context_Contracts()
     {
         var value = SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(
@@ -211,6 +304,33 @@ public class SourceGenMarkupExtensionRuntimeTests
             parentStack: [new object()]);
 
         Assert.Equal("True|True|True|avares|True", value);
+    }
+
+    [Fact]
+    public void ProvideMarkupExtension_Supports_StaticResourceExtension_Fallback_Resolution()
+    {
+        var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<BorderTarget, object?>(
+            nameof(BorderTarget.Value),
+            static (target, value) => target.Value = value);
+        var parentStack = new object[]
+        {
+            new Hashtable
+            {
+                ["AccentBrush"] = "Purple"
+            }
+        };
+
+        var value = SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(
+            extension: new StaticResourceExtension("AccentBrush"),
+            parentServiceProvider: null,
+            rootObject: new object(),
+            intermediateRootObject: new object(),
+            targetObject: new BorderTarget(),
+            targetProperty: propertyInfo,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: parentStack);
+
+        Assert.Equal("Purple", value);
     }
 
     private sealed class DictionaryServiceProvider : IServiceProvider

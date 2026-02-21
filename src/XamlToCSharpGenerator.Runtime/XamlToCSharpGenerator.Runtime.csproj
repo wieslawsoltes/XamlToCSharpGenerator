@@ -8,5 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../XamlToCSharpGenerator.Core/XamlToCSharpGenerator.Core.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.Avalonia/XamlToCSharpGenerator.Avalonia.csproj" />
   </ItemGroup>
 </Project>

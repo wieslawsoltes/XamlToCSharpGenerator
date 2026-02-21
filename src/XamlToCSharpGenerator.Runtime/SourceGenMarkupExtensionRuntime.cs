@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -12,6 +16,37 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public static class SourceGenMarkupExtensionRuntime
 {
+    private static readonly string[] BindingDefaultNamespaceCandidates =
+    [
+        "Avalonia.Controls.",
+        "Avalonia.Controls.Primitives.",
+        "Avalonia.Controls.Presenters.",
+        "Avalonia.Controls.Shapes.",
+        "Avalonia.Controls.Documents.",
+        "Avalonia.Controls.Chrome.",
+        "Avalonia.Controls.Embedding.",
+        "Avalonia.Controls.Notifications.",
+        "Avalonia.Controls.Converters.",
+        "Avalonia.Markup.Xaml.Templates.",
+        "Avalonia.Markup.Xaml.Styling.",
+        "Avalonia.Markup.Xaml.MarkupExtensions.",
+        "Avalonia.Styling.",
+        "Avalonia.Controls.Templates.",
+        "Avalonia.Input.",
+        "Avalonia.Automation.",
+        "Avalonia.Dialogs.",
+        "Avalonia.Dialogs.Internal.",
+        "Avalonia.Layout.",
+        "Avalonia.Media.",
+        "Avalonia.Media.Transformation.",
+        "Avalonia.Media.Imaging.",
+        "Avalonia.Animation.",
+        "Avalonia.Animation.Easings.",
+        "Avalonia."
+    ];
+
+    private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
+
     public static object? ProvideStaticResource(
         object resourceKey,
         IServiceProvider? parentServiceProvider,
@@ -31,36 +66,21 @@ public static class SourceGenMarkupExtensionRuntime
             baseUri,
             parentStack);
 
-        try
-        {
-            var extension = new StaticResourceExtension(resourceKey);
-            var value = extension.ProvideValue(contextProvider);
-            if (!ReferenceEquals(value, AvaloniaProperty.UnsetValue))
-            {
-                return value;
-            }
-
-            if (!string.IsNullOrWhiteSpace(baseUri))
-            {
-                try
-                {
-                    return SourceGenStaticResourceResolver.Resolve(targetObject, resourceKey, baseUri!, parentStack);
-                }
-                catch (KeyNotFoundException)
-                {
-                    // Keep Avalonia delayed-binding behavior if the fallback path cannot resolve yet.
-                }
-            }
-
-            return value;
-        }
-        catch (KeyNotFoundException) when (!string.IsNullOrWhiteSpace(baseUri))
-        {
-            return SourceGenStaticResourceResolver.Resolve(targetObject, resourceKey, baseUri!, parentStack);
-        }
+        var extension = new StaticResourceExtension(resourceKey);
+        return ProvideStaticResourceExtension(
+            extension,
+            targetObject,
+            baseUri,
+            parentStack,
+            contextProvider);
     }
 
     public static T CoerceStaticResourceValue<T>(object? value)
+    {
+        return CoerceMarkupExtensionValue<T>(value);
+    }
+
+    public static T CoerceMarkupExtensionValue<T>(object? value)
     {
         if (ReferenceEquals(value, AvaloniaProperty.UnsetValue) || value is null)
         {
@@ -75,8 +95,51 @@ public static class SourceGenMarkupExtensionRuntime
         return (T)value;
     }
 
+    public static object? ProvideRuntimeXamlValue(
+        string xaml,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        if (string.IsNullOrWhiteSpace(xaml))
+        {
+            return null;
+        }
+
+        var normalizedXaml = NormalizeRuntimeXamlValue(xaml);
+        if (string.IsNullOrWhiteSpace(normalizedXaml))
+        {
+            return null;
+        }
+
+        var localAssembly = ResolveLocalAssembly(rootObject, intermediateRootObject, targetObject)
+            ?? Assembly.GetEntryAssembly()
+            ?? typeof(SourceGenMarkupExtensionRuntime).Assembly;
+        var resolvedBaseUri = ResolveRuntimeBaseUri(parentServiceProvider, baseUri, localAssembly);
+
+        var options = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;
+        options.EnableRuntimeCompilationFallback = true;
+        options.StrictMode = false;
+
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = localAssembly
+        };
+
+        var document = new RuntimeXamlLoaderDocument(resolvedBaseUri, rootInstance: null, normalizedXaml)
+        {
+            ServiceProvider = parentServiceProvider
+        };
+
+        return SourceGenRuntimeXamlCompiler.Load(document, configuration, options);
+    }
+
     public static IBinding? ProvideDynamicResource(
-        string resourceKey,
+        object resourceKey,
         IServiceProvider? parentServiceProvider,
         object rootObject,
         object intermediateRootObject,
@@ -96,6 +159,168 @@ public static class SourceGenMarkupExtensionRuntime
 
         var extension = new DynamicResourceExtension(resourceKey);
         return extension.ProvideValue(contextProvider);
+    }
+
+    public static T? AttachBindingNameScope<T>(T? binding, object? nameScope)
+        where T : class
+    {
+        if (binding is Binding dataBinding && dataBinding.TypeResolver is null)
+        {
+            dataBinding.TypeResolver = ResolveBindingType;
+        }
+
+        if (binding is BindingBase bindingBase &&
+            nameScope is INameScope typedNameScope)
+        {
+            bindingBase.NameScope = new WeakReference<INameScope?>(typedNameScope);
+        }
+
+        return binding;
+    }
+
+    public static void ApplyBinding(object? target, AvaloniaProperty property, object? value)
+    {
+        if (target is not AvaloniaObject avaloniaObject || property is null)
+        {
+            return;
+        }
+
+        if (value is IBinding binding)
+        {
+            avaloniaObject.Bind(property, binding);
+            return;
+        }
+
+        avaloniaObject.SetValue(property, value);
+    }
+
+    private static Type ResolveBindingType(string? xmlNamespace, string name)
+    {
+        var key = (xmlNamespace ?? string.Empty) + "|" + name;
+        var resolvedType = BindingTypeCache.GetOrAdd(key, static cacheKey =>
+        {
+            var separatorIndex = cacheKey.IndexOf('|');
+            var namespacePart = separatorIndex >= 0 ? cacheKey[..separatorIndex] : string.Empty;
+            var typeNamePart = separatorIndex >= 0 ? cacheKey[(separatorIndex + 1)..] : cacheKey;
+            return ResolveBindingTypeCore(namespacePart, typeNamePart);
+        });
+
+        if (resolvedType is not null)
+        {
+            return resolvedType;
+        }
+
+        throw new InvalidOperationException($"Unable to resolve type '{xmlNamespace}:{name}'.");
+    }
+
+    private static Type? ResolveBindingTypeCore(string? xmlNamespace, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var normalizedName = name.Trim();
+        var normalizedXmlNamespace = xmlNamespace?.Trim();
+
+        if (normalizedName.Contains('.'))
+        {
+            var direct = FindTypeAcrossAssemblies(normalizedName);
+            if (direct is not null)
+            {
+                return direct;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedXmlNamespace) &&
+            normalizedXmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
+        {
+            if (TryResolveClrNamespaceType(normalizedXmlNamespace, normalizedName, out var clrNamespaceType))
+            {
+                return clrNamespaceType;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedXmlNamespace) ||
+            string.Equals(normalizedXmlNamespace, "https://github.com/avaloniaui", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var namespacePrefix in BindingDefaultNamespaceCandidates)
+            {
+                var candidate = FindTypeAcrossAssemblies(namespacePrefix + normalizedName);
+                if (candidate is not null)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return FindTypeAcrossAssemblies(normalizedName);
+    }
+
+    private static bool TryResolveClrNamespaceType(string xmlns, string typeName, out Type? resolvedType)
+    {
+        resolvedType = null;
+        var payload = xmlns["clr-namespace:".Length..];
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        string? clrNamespace = null;
+        string? assemblyName = null;
+        foreach (var segment in payload.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.StartsWith("assembly=", StringComparison.OrdinalIgnoreCase))
+            {
+                assemblyName = trimmed["assembly=".Length..].Trim();
+                continue;
+            }
+
+            if (clrNamespace is null)
+            {
+                clrNamespace = trimmed;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(clrNamespace))
+        {
+            return false;
+        }
+
+        var fullName = clrNamespace + "." + typeName;
+        if (!string.IsNullOrWhiteSpace(assemblyName))
+        {
+            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, assemblyName, StringComparison.Ordinal));
+            if (assembly is not null)
+            {
+                resolvedType = assembly.GetType(fullName, throwOnError: false, ignoreCase: false);
+                return resolvedType is not null;
+            }
+        }
+
+        resolvedType = FindTypeAcrossAssemblies(fullName);
+        return resolvedType is not null;
+    }
+
+    private static Type? FindTypeAcrossAssemblies(string fullName)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly.IsDynamic)
+            {
+                continue;
+            }
+
+            var candidate = assembly.GetType(fullName, throwOnError: false, ignoreCase: false);
+            if (candidate is not null)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     public static IBinding? ProvideReflectionBinding(
@@ -174,7 +399,7 @@ public static class SourceGenMarkupExtensionRuntime
     }
 
     public static object? ProvideMarkupExtension(
-        MarkupExtension extension,
+        object extension,
         IServiceProvider? parentServiceProvider,
         object rootObject,
         object intermediateRootObject,
@@ -183,6 +408,8 @@ public static class SourceGenMarkupExtensionRuntime
         string? baseUri,
         IReadOnlyList<object>? parentStack)
     {
+        ArgumentNullException.ThrowIfNull(extension);
+
         var contextProvider = CreateContextProvider(
             parentServiceProvider,
             rootObject,
@@ -192,7 +419,23 @@ public static class SourceGenMarkupExtensionRuntime
             baseUri,
             parentStack);
 
-        return extension.ProvideValue(contextProvider);
+        return extension switch
+        {
+            StaticResourceExtension staticResourceExtension => ProvideStaticResourceExtension(
+                staticResourceExtension,
+                targetObject,
+                baseUri,
+                parentStack,
+                contextProvider),
+            DynamicResourceExtension dynamicResourceExtension => dynamicResourceExtension.ProvideValue(contextProvider),
+            ResolveByNameExtension resolveByNameExtension => resolveByNameExtension.ProvideValue(contextProvider),
+            RelativeSourceExtension relativeSourceExtension => relativeSourceExtension.ProvideValue(contextProvider),
+            ReflectionBindingExtension reflectionBindingExtension => reflectionBindingExtension.ProvideValue(contextProvider),
+            CompiledBindingExtension compiledBindingExtension => compiledBindingExtension.ProvideValue(contextProvider),
+            MarkupExtension markupExtension => markupExtension.ProvideValue(contextProvider),
+            _ => throw new NotSupportedException(
+                $"Unsupported markup extension type '{extension.GetType().FullName}'.")
+        };
     }
 
     public static object? ProvideReference(
@@ -286,7 +529,147 @@ public static class SourceGenMarkupExtensionRuntime
             return mobile;
         }
 
+        if (defaultValue is null)
+        {
+            if (desktop is not null &&
+                (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() || OperatingSystem.IsLinux()))
+            {
+                return desktop;
+            }
+
+            if (mobile is not null &&
+                (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()))
+            {
+                return mobile;
+            }
+
+            if (tv is not null && desktop is null && mobile is null)
+            {
+                return tv;
+            }
+
+            return desktop ?? mobile ?? tv;
+        }
+
         return defaultValue;
+    }
+
+    private static bool TryResolveStaticResourceFallback(
+        object resourceKey,
+        object targetObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack,
+        out object? resolved)
+    {
+        if (resourceKey is null ||
+            ReferenceEquals(resourceKey, AvaloniaProperty.UnsetValue))
+        {
+            resolved = null;
+            return false;
+        }
+
+        if (SourceGenStaticResourceResolver.TryResolve(
+                targetObject,
+                resourceKey,
+                baseUri,
+                out resolved,
+                parentStack))
+        {
+            return true;
+        }
+
+        resolved = null;
+        return false;
+    }
+
+    private static object? ProvideStaticResourceExtension(
+        StaticResourceExtension extension,
+        object targetObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack,
+        IServiceProvider serviceProvider)
+    {
+        var resourceKey = extension.ResourceKey ?? AvaloniaProperty.UnsetValue;
+        var effectiveParentStack = BuildEffectiveParentStack(serviceProvider, parentStack);
+
+        try
+        {
+            var value = extension.ProvideValue(serviceProvider);
+            if (!ReferenceEquals(value, AvaloniaProperty.UnsetValue))
+            {
+                return value;
+            }
+
+            if (TryResolveStaticResourceFallback(
+                    resourceKey,
+                    targetObject,
+                    baseUri,
+                    effectiveParentStack,
+                    out var resolvedFallback))
+            {
+                return resolvedFallback;
+            }
+
+            // Keep delayed resource-resolution behavior for control target properties.
+            return AvaloniaProperty.UnsetValue;
+        }
+        catch (KeyNotFoundException)
+        {
+            if (TryResolveStaticResourceFallback(
+                    resourceKey,
+                    targetObject,
+                    baseUri,
+                    effectiveParentStack,
+                    out var resolvedFallback))
+            {
+                return resolvedFallback;
+            }
+
+            throw;
+        }
+    }
+
+    private static IReadOnlyList<object>? BuildEffectiveParentStack(
+        IServiceProvider? parentServiceProvider,
+        IReadOnlyList<object>? explicitParentStack)
+    {
+        List<object>? parents = null;
+        HashSet<object>? seen = null;
+
+        void AddParent(object? parent)
+        {
+            if (parent is null)
+            {
+                return;
+            }
+
+            seen ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+            if (!seen.Add(parent))
+            {
+                return;
+            }
+
+            parents ??= new List<object>();
+            parents.Add(parent);
+        }
+
+        if (explicitParentStack is not null)
+        {
+            for (var index = 0; index < explicitParentStack.Count; index++)
+            {
+                AddParent(explicitParentStack[index]);
+            }
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) is IAvaloniaXamlIlParentStackProvider upstreamStack)
+        {
+            foreach (var upstreamParent in upstreamStack.Parents)
+            {
+                AddParent(upstreamParent);
+            }
+        }
+
+        return parents;
     }
 
     private static MarkupExtensionServiceProvider CreateContextProvider(
@@ -338,6 +721,85 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return stack;
+    }
+
+    private static string NormalizeRuntimeXamlValue(string xaml)
+    {
+        var trimmed = xaml.Trim();
+        if (trimmed.Length == 0 || trimmed[0] != '<')
+        {
+            return trimmed;
+        }
+
+        try
+        {
+            var element = XElement.Parse(trimmed, LoadOptions.PreserveWhitespace);
+            if (element.Name.LocalName.EndsWith(".Value", StringComparison.Ordinal) &&
+                element.Elements().FirstOrDefault() is { } innerValue)
+            {
+                return innerValue.ToString(SaveOptions.DisableFormatting);
+            }
+        }
+        catch
+        {
+            // Keep original value when fragment parsing fails; downstream loader reports details.
+        }
+
+        return trimmed;
+    }
+
+    private static Uri ResolveRuntimeBaseUri(
+        IServiceProvider? parentServiceProvider,
+        string? baseUri,
+        Assembly localAssembly)
+    {
+        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext parentUriContext)
+        {
+            return parentUriContext.BaseUri;
+        }
+
+        if (!string.IsNullOrWhiteSpace(baseUri))
+        {
+            var trimmed = baseUri.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.RelativeOrAbsolute, out var resolved))
+            {
+                if (resolved.IsAbsoluteUri)
+                {
+                    return resolved;
+                }
+
+                var normalizedPath = trimmed.Replace('\\', '/').TrimStart('/');
+                if (normalizedPath.Length > 0)
+                {
+                    return new Uri("avares://" + localAssembly.GetName().Name + "/" + normalizedPath);
+                }
+            }
+        }
+
+        return new Uri("avares://" + localAssembly.GetName().Name + "/");
+    }
+
+    private static Assembly? ResolveLocalAssembly(
+        object? rootObject,
+        object? intermediateRootObject,
+        object? targetObject)
+    {
+        if (rootObject is not null)
+        {
+            return rootObject.GetType().Assembly;
+        }
+
+        if (intermediateRootObject is not null)
+        {
+            return intermediateRootObject.GetType().Assembly;
+        }
+
+        if (targetObject is not null)
+        {
+            return targetObject.GetType().Assembly;
+        }
+
+        return null;
     }
 
     private sealed class MarkupExtensionServiceProvider :

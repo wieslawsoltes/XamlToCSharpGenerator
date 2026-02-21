@@ -37,6 +37,26 @@ public static class XamlResourceRegistry
         return byKey.TryGetValue(key, out descriptor);
     }
 
+    public static bool ContainsKey(string uri, string key)
+    {
+        if (string.IsNullOrWhiteSpace(uri) || string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        return Entries.TryGetValue(uri, out var byKey) && byKey.ContainsKey(key);
+    }
+
+    public static bool HasEntries(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return false;
+        }
+
+        return Entries.TryGetValue(uri, out var byKey) && !byKey.IsEmpty;
+    }
+
     public static IReadOnlyCollection<SourceGenResourceDescriptor> GetAll(string uri)
     {
         if (!Entries.TryGetValue(uri, out var byKey))
@@ -55,5 +75,10 @@ public static class XamlResourceRegistry
         }
 
         Entries.TryRemove(uri, out _);
+    }
+
+    public static void Clear()
+    {
+        Entries.Clear();
     }
 }
