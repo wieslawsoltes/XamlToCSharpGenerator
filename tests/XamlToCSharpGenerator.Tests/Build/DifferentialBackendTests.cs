@@ -19,8 +19,7 @@ public class DifferentialBackendTests
         var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
         var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "XamlToCSharpGenerator.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "backend-diff");
 
         try
         {
@@ -110,7 +109,7 @@ public class DifferentialBackendTests
         {
             try
             {
-                Directory.Delete(tempDir, recursive: true);
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
             }
             catch
             {

@@ -84,19 +84,27 @@ public class BuildIntegrationTests
             StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void SourceGen_Backend_Honors_CompiledBindings_And_SourceInfo_Knobs()
+    {
+        var output = RunEvaluation(sourceGenBackend: true, setSourceGenKnobs: true);
+
+        Assert.Contains("CFG|true|true|true|false", output, StringComparison.Ordinal);
+    }
+
     private static string RunEvaluation(
         bool sourceGenBackend,
         bool seedAdditionalFile = false,
         bool watchMode = false,
         bool duplicateAvaloniaXaml = false,
-        bool runFromRepositoryRoot = false)
+        bool runFromRepositoryRoot = false,
+        bool setSourceGenKnobs = false)
     {
         var repositoryRoot = GetRepositoryRoot();
         var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
         var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "XamlToCSharpGenerator.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-integration");
 
         try
         {
@@ -109,6 +117,7 @@ public class BuildIntegrationTests
                 seedAdditionalFile,
                 watchMode,
                 duplicateAvaloniaXaml,
+                setSourceGenKnobs,
                 NormalizeForMsBuild(propsPath),
                 NormalizeForMsBuild(targetsPath)));
 
@@ -143,7 +152,7 @@ public class BuildIntegrationTests
         {
             try
             {
-                Directory.Delete(tempDir, recursive: true);
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
             }
             catch
             {
@@ -157,6 +166,7 @@ public class BuildIntegrationTests
         bool seedAdditionalFile,
         bool watchMode,
         bool duplicateAvaloniaXaml,
+        bool setSourceGenKnobs,
         string propsPath,
         string targetsPath)
     {
@@ -172,11 +182,14 @@ public class BuildIntegrationTests
         var duplicateAvaloniaXamlItem = duplicateAvaloniaXaml
             ? "\n    <AvaloniaXaml Include=\"MainView.axaml\" Link=\"Views/MainView.axaml\" />"
             : string.Empty;
+        var sourceGenKnobs = setSourceGenKnobs
+            ? "\n    <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>\n    <AvaloniaSourceGenCreateSourceInfo>true</AvaloniaSourceGenCreateSourceInfo>\n    <AvaloniaSourceGenStrictMode>true</AvaloniaSourceGenStrictMode>"
+            : string.Empty;
 
         return $"""
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>{backendProperty}{watchProperty}
+    <TargetFramework>net10.0</TargetFramework>{backendProperty}{watchProperty}{sourceGenKnobs}
   </PropertyGroup>
 
   <ItemGroup>
@@ -191,6 +204,7 @@ public class BuildIntegrationTests
   <Target Name="PrintState" DependsOnTargets="XamlToCSharpGenerator_InjectAdditionalFiles;XamlToCSharpGenerator_PrepareCoreCompileInputs;XamlToCSharpGenerator_CollectUpToDateCheckInputDesignTime">
     <Message Importance="high" Text="PROJDIR|$(MSBuildProjectDirectory)" />
     <Message Importance="high" Text="STATE|$(AvaloniaSourceGenCompilerEnabled)|$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)|@(AdditionalFiles->Count())|@(AvaloniaXaml->Count())" />
+    <Message Importance="high" Text="CFG|$(AvaloniaSourceGenUseCompiledBindingsByDefault)|$(AvaloniaSourceGenCreateSourceInfo)|$(AvaloniaSourceGenStrictMode)|$(EnableAvaloniaXamlCompilation)" />
     <Message Importance="high" Condition="'@(AdditionalFiles)' != ''" Text="AF|%(AdditionalFiles.SourceItemGroup)|%(AdditionalFiles.TargetPath)" />
     <Message Importance="high" Condition="'@(Watch)' != '' and '%(Watch.XamlToCSharpGenerator)' == 'true'" Text="WATCH|%(Watch.Identity)" />
     <Message Importance="high" Condition="'@(CustomAdditionalCompileInputs)' != '' and '%(CustomAdditionalCompileInputs.XamlToCSharpGenerator)' == 'true'" Text="CACI|%(CustomAdditionalCompileInputs.Identity)" />

@@ -7,6 +7,7 @@
   <PropertyGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
     <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
     <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+    <DefineConstants>$(DefineConstants);AXAML_SOURCEGEN_BACKEND</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true' and '$(AvaloniaSourceGenTransformRules)' != ''">

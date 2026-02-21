@@ -25,6 +25,11 @@ public class DifferentialRuntimeBehaviorTests
         yield return new object[] { CreateDeferredTemplateNestedResourceFixture() };
         yield return new object[] { CreateConstructionGrammarRuntimeFixture() };
         yield return new object[] { CreateMarkupExtensionContextRuntimeFixture() };
+        yield return new object[] { CreateMissingStaticResourceRuntimeFixture() };
+        yield return new object[] { CreateTemplatePropertyElementRuntimeFixture() };
+        yield return new object[] { CreateStyleElementNameBindingRuntimeFixture() };
+        yield return new object[] { CreateTemplateElementNameBindingRuntimeFixture() };
+        yield return new object[] { CreateResolveByNameRuntimeFixture() };
     }
 
     [Theory]
@@ -39,8 +44,7 @@ public class DifferentialRuntimeBehaviorTests
         var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
         var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "XamlToCSharpGenerator.Tests.Runtime", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "runtime-diff");
 
         try
         {
@@ -90,7 +94,7 @@ public class DifferentialRuntimeBehaviorTests
         {
             try
             {
-                Directory.Delete(tempDir, recursive: true);
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
             }
             catch
             {
@@ -428,24 +432,171 @@ public class DifferentialRuntimeBehaviorTests
         return new DifferentialRuntimeFixture("markup-extension-context-runtime", "runtime-markup-extension-context", files);
     }
 
-    private static DifferentialRuntimeFixture CreateConstructionFactoryArrayRuntimeFixture()
+    private static DifferentialRuntimeFixture CreateMissingStaticResourceRuntimeFixture()
     {
         var files = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["MainView.axaml"] = """
                 <UserControl xmlns="https://github.com/avaloniaui"
                              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialRuntimeFixture.MainView">
+                    <Border Background="{StaticResource MissingBrush}" />
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialRuntimeFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        InitializeComponent();
+                    }
+                }
+                """,
+            ["Program.cs"] = """
+                using System;
+
+                try
+                {
+                    _ = new DifferentialRuntimeFixture.MainView();
+                    Console.WriteLine("RESULT:OK");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("RESULT:EX|" + ex.GetType().FullName);
+                }
+                """
+        };
+
+        return new DifferentialRuntimeFixture(
+            "missing-static-resource-runtime",
+            "runtime-missing-static-resource",
+            files);
+    }
+
+    private static DifferentialRuntimeFixture CreateTemplatePropertyElementRuntimeFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls"
+                             xmlns:primitives="clr-namespace:Avalonia.Controls.Primitives;assembly=Avalonia.Controls"
                              xmlns:local="clr-namespace:DifferentialRuntimeFixture"
                              x:Class="DifferentialRuntimeFixture.MainView">
-                    <StackPanel>
-                        <local:GenericFactoryHolder x:Name="FactoryHolder"
-                                                    x:TypeArguments="local:Payload"
-                                                    x:FactoryMethod="Create">
-                            <x:Arguments>
-                                <local:Payload Value="FromFactory" />
-                            </x:Arguments>
-                        </local:GenericFactoryHolder>
-                    </StackPanel>
+                  <UserControl.Resources>
+                    <ControlTheme x:Key="{x:Type local:TemplateHostControl}" TargetType="local:TemplateHostControl">
+                      <Setter Property="Template">
+                        <ControlTemplate>
+                          <primitives:VisualLayerManager>
+                            <primitives:VisualLayerManager.ChromeOverlayLayer>
+                              <chrome:TitleBar />
+                            </primitives:VisualLayerManager.ChromeOverlayLayer>
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Tag}" />
+                          </primitives:VisualLayerManager>
+                        </ControlTemplate>
+                      </Setter>
+                    </ControlTheme>
+                  </UserControl.Resources>
+                  <local:TemplateHostControl x:Name="Host"
+                                             Theme="{StaticResource {x:Type local:TemplateHostControl}}"
+                                             Tag="Hello" />
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using System.Linq;
+                using Avalonia.Controls;
+                using Avalonia.Controls.Chrome;
+                using Avalonia.Controls.Primitives;
+                using Avalonia.Controls.Templates;
+
+                namespace DifferentialRuntimeFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        InitializeComponent();
+                    }
+
+                    public string GetReport()
+                    {
+                        var host = this.FindControl<TemplateHostControl>("Host");
+                        var theme = host?.Theme as Avalonia.Styling.ControlTheme;
+                        var template = theme?.Setters
+                            .OfType<Avalonia.Styling.Setter>()
+                            .FirstOrDefault(static setter => setter.Property == TemplatedControl.TemplateProperty)?
+                            .Value as IControlTemplate;
+                        if (host is null || template is null)
+                        {
+                            return "<missing>";
+                        }
+
+                        var templateResult = template.Build(host);
+                        if (templateResult.Result is not VisualLayerManager manager)
+                        {
+                            return templateResult.Result?.GetType().FullName ?? "<null>";
+                        }
+
+                        var overlayLayer = manager.ChromeOverlayLayer;
+                        var overlayChild = overlayLayer?.Children.OfType<TitleBar>().FirstOrDefault();
+                        return $"{overlayLayer is not null}|{overlayChild is not null}";
+                    }
+                }
+                """,
+            ["TemplateHostControl.cs"] = """
+                using Avalonia.Controls.Primitives;
+
+                namespace DifferentialRuntimeFixture;
+
+                public sealed class TemplateHostControl : TemplatedControl
+                {
+                }
+                """,
+            ["Program.cs"] = """
+                using System;
+
+                try
+                {
+                    var view = new DifferentialRuntimeFixture.MainView();
+                    Console.WriteLine("RESULT:" + view.GetReport());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("RESULT:EX|" + ex.GetType().FullName);
+                }
+                """
+        };
+
+        return new DifferentialRuntimeFixture(
+            "template-property-element-runtime",
+            "runtime-template-property-element",
+            files);
+    }
+
+    private static DifferentialRuntimeFixture CreateStyleElementNameBindingRuntimeFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialRuntimeFixture.MainView">
+                  <UserControl.Styles>
+                    <Style Selector="TextBlock.anchor-bound">
+                      <Setter Property="Text" Value="{Binding #Anchor.Tag}" />
+                    </Style>
+                  </UserControl.Styles>
+
+                  <StackPanel>
+                    <Border x:Name="Anchor" Tag="anchor-value" />
+                    <TextBlock x:Name="Output" Classes="anchor-bound" />
+                  </StackPanel>
                 </UserControl>
                 """,
             ["MainView.axaml.cs"] = """
@@ -462,44 +613,187 @@ public class DifferentialRuntimeBehaviorTests
 
                     public string GetReport()
                     {
-                        var holder = this.FindControl<GenericFactoryHolder<Payload>>("FactoryHolder");
-                        return holder?.Value?.Value ?? "<none>";
+                        var output = this.FindControl<TextBlock>("Output");
+                        return output?.Text ?? "<null>";
                     }
-                }
-                """,
-            ["ConstructionTypes.cs"] = """
-                using Avalonia.Controls;
-
-                namespace DifferentialRuntimeFixture;
-
-                public sealed class Payload
-                {
-                    public string Value { get; set; } = string.Empty;
-                }
-
-                public sealed class GenericFactoryHolder<T> : Control
-                {
-                    public GenericFactoryHolder(T value)
-                    {
-                        Value = value;
-                    }
-
-                    public T Value { get; }
-
-                    public static GenericFactoryHolder<T> Create(T value) => new(value);
                 }
                 """,
             ["Program.cs"] = """
                 using System;
 
-                var view = new DifferentialRuntimeFixture.MainView();
-                Console.WriteLine("RESULT:" + view.GetReport());
+                try
+                {
+                    var view = new DifferentialRuntimeFixture.MainView();
+                    Console.WriteLine("RESULT:" + view.GetReport());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("RESULT:EX|" + ex.GetType().FullName);
+                }
                 """
         };
 
         return new DifferentialRuntimeFixture(
-            "construction-factory-runtime",
-            "runtime-construction-factory",
+            "style-element-name-binding-runtime",
+            "runtime-style-element-name-binding",
+            files);
+    }
+
+    private static DifferentialRuntimeFixture CreateTemplateElementNameBindingRuntimeFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:local="clr-namespace:DifferentialRuntimeFixture"
+                             x:Class="DifferentialRuntimeFixture.MainView">
+                  <UserControl.Resources>
+                    <ControlTheme x:Key="{x:Type local:TemplateHostControl}" TargetType="local:TemplateHostControl">
+                      <Setter Property="Template">
+                        <ControlTemplate>
+                          <StackPanel>
+                            <Border x:Name="Anchor" Tag="anchor-value" />
+                            <TextBlock x:Name="Output" Text="{Binding #Anchor.Tag}" />
+                          </StackPanel>
+                        </ControlTemplate>
+                      </Setter>
+                    </ControlTheme>
+                  </UserControl.Resources>
+                  <local:TemplateHostControl x:Name="Host"
+                                             Theme="{StaticResource {x:Type local:TemplateHostControl}}" />
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using System.Linq;
+                using Avalonia.Controls;
+                using Avalonia.Controls.Templates;
+                using Avalonia.Styling;
+
+                namespace DifferentialRuntimeFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        InitializeComponent();
+                    }
+
+                    public string GetReport()
+                    {
+                        var host = this.FindControl<TemplateHostControl>("Host");
+                        var theme = host?.Theme as ControlTheme;
+                        var template = theme?.Setters
+                            .OfType<Setter>()
+                            .FirstOrDefault(static setter => setter.Property == Avalonia.Controls.Primitives.TemplatedControl.TemplateProperty)?
+                            .Value as IControlTemplate;
+                        if (host is null || template is null)
+                        {
+                            return "<missing>";
+                        }
+
+                        var templateResult = template.Build(host);
+                        var panel = templateResult.Result as StackPanel;
+                        var output = panel?.Children.OfType<TextBlock>().FirstOrDefault(static text => text.Name == "Output");
+                        return output?.Text ?? "<null>";
+                    }
+                }
+                """,
+            ["TemplateHostControl.cs"] = """
+                using Avalonia.Controls.Primitives;
+
+                namespace DifferentialRuntimeFixture;
+
+                public sealed class TemplateHostControl : TemplatedControl
+                {
+                }
+                """,
+            ["Program.cs"] = """
+                using System;
+
+                try
+                {
+                    var view = new DifferentialRuntimeFixture.MainView();
+                    Console.WriteLine("RESULT:" + view.GetReport());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("RESULT:EX|" + ex.GetType().FullName);
+                }
+                """
+        };
+
+        return new DifferentialRuntimeFixture(
+            "template-element-name-binding-runtime",
+            "runtime-template-element-name-binding",
+            files);
+    }
+
+    private static DifferentialRuntimeFixture CreateResolveByNameRuntimeFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:local="clr-namespace:DifferentialRuntimeFixture"
+                             x:Class="DifferentialRuntimeFixture.MainView">
+                    <StackPanel>
+                        <TextBlock x:Name="Anchor" Text="ResolveMe" />
+                        <local:ResolveByNameHost x:Name="Host" Target="Anchor" />
+                    </StackPanel>
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using System;
+                using Avalonia.Controls;
+
+                namespace DifferentialRuntimeFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        InitializeComponent();
+                    }
+
+                    public string GetReport()
+                    {
+                        var host = this.FindControl<ResolveByNameHost>("Host");
+                        var anchor = this.FindControl<TextBlock>("Anchor");
+                        return Convert.ToString(ReferenceEquals(host?.Target, anchor));
+                    }
+                }
+                """,
+            ["ResolveByNameHost.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialRuntimeFixture;
+
+                public sealed class ResolveByNameHost : Control
+                {
+                    [ResolveByName]
+                    public object? Target { get; set; }
+                }
+                """,
+            ["Program.cs"] = """
+                using System;
+
+                try
+                {
+                    var view = new DifferentialRuntimeFixture.MainView();
+                    Console.WriteLine("RESULT:" + view.GetReport());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("RESULT:EX|" + ex.GetType().FullName);
+                }
+                """
+        };
+
+        return new DifferentialRuntimeFixture(
+            "resolve-by-name-runtime",
+            "runtime-resolve-by-name",
             files);
     }
 

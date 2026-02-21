@@ -15,15 +15,20 @@ public class PackageIntegrationTests
     {
         var repositoryRoot = GetRepositoryRoot();
         var packageProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator", "XamlToCSharpGenerator.csproj");
-        var outputDir = Path.Combine(Path.GetTempPath(), "XamlToCSharpGenerator.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(outputDir);
+        var outputDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "package-integration");
 
         try
         {
+            var restore = RunProcess(
+                repositoryRoot,
+                "dotnet",
+                $"restore \"{packageProject}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+            Assert.True(restore.ExitCode == 0, restore.Output);
+
             var result = RunProcess(
                 repositoryRoot,
                 "dotnet",
-                $"pack \"{packageProject}\" --nologo --no-restore -c Debug -m:1 /nodeReuse:false --disable-build-servers -o \"{outputDir}\"");
+                $"pack \"{packageProject}\" --nologo -c Debug -m:1 /nodeReuse:false --disable-build-servers -o \"{outputDir}\"");
 
             Assert.True(result.ExitCode == 0, result.Output);
 
@@ -46,7 +51,7 @@ public class PackageIntegrationTests
         {
             try
             {
-                Directory.Delete(outputDir, recursive: true);
+                BuildTestWorkspacePaths.TryDeleteDirectory(outputDir);
             }
             catch
             {

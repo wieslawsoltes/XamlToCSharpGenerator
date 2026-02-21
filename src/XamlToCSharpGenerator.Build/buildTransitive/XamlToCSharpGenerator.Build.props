@@ -14,8 +14,12 @@
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
     <AvaloniaSourceGenMetricsEnabled Condition="'$(AvaloniaSourceGenMetricsEnabled)' == ''">false</AvaloniaSourceGenMetricsEnabled>
     <AvaloniaSourceGenMetricsDetailed Condition="'$(AvaloniaSourceGenMetricsDetailed)' == ''">false</AvaloniaSourceGenMetricsDetailed>
+    <AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled Condition="'$(AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled)' == ''">true</AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled>
     <AvaloniaSourceGenAllowImplicitXmlnsDeclaration Condition="'$(AvaloniaSourceGenAllowImplicitXmlnsDeclaration)' == ''">false</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
+    <AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled Condition="'$(AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled)' == ''">true</AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>
     <AvaloniaSourceGenImplicitDefaultXmlns Condition="'$(AvaloniaSourceGenImplicitDefaultXmlns)' == ''">https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
+    <AvaloniaSourceGenInferClassFromPath Condition="'$(AvaloniaSourceGenInferClassFromPath)' == ''">false</AvaloniaSourceGenInferClassFromPath>
+    <AvaloniaSourceGenImplicitProjectNamespacesEnabled Condition="'$(AvaloniaSourceGenImplicitProjectNamespacesEnabled)' == ''">false</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
     <AvaloniaSourceGenGlobalXmlnsPrefixes Condition="'$(AvaloniaSourceGenGlobalXmlnsPrefixes)' == ''"></AvaloniaSourceGenGlobalXmlnsPrefixes>
     <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == ''"></AvaloniaSourceGenTransformRules>
   </PropertyGroup>
@@ -37,10 +41,15 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsDetailed" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenAllowImplicitXmlnsDeclaration" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitDefaultXmlns" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenInferClassFromPath" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitProjectNamespacesEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenGlobalXmlnsPrefixes" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTransformRules" />
+    <CompilerVisibleProperty Include="RootNamespace" />
     <CompilerVisibleProperty Include="DotNetWatchBuild" />
     <CompilerVisibleProperty Include="BuildingInsideVisualStudio" />
     <CompilerVisibleProperty Include="BuildingByReSharper" />

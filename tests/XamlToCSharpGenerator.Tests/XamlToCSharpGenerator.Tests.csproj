@@ -21,6 +21,10 @@
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('..\..\src\XamlToCSharpGenerator.LanguageServer\XamlToCSharpGenerator.LanguageServer.csproj')">
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.LanguageServer\XamlToCSharpGenerator.LanguageServer.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>

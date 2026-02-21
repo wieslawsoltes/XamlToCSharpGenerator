@@ -28,6 +28,15 @@ public class DifferentialFeatureCorpusTests
         yield return new object[] { CreateDeferredTemplateResourceFixture() };
         yield return new object[] { CreateConstructionGrammarFixture() };
         yield return new object[] { CreateMarkupExtensionFallbackFixture() };
+        yield return new object[] { CreateResolveByNameFixture() };
+        yield return new object[] { CreateSelectorPredicateFixture() };
+        yield return new object[] { CreateSetterPropertyElementFixture() };
+        yield return new object[] { CreateDeferredTemplateNameScopeFixture() };
+    }
+
+    public static IEnumerable<object[]> WarningFeatureFixtures()
+    {
+        yield return new object[] { CreateBindingSourceConflictFixture() };
     }
 
     [Theory]
@@ -42,8 +51,7 @@ public class DifferentialFeatureCorpusTests
         var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
         var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "XamlToCSharpGenerator.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "feature-diff");
 
         try
         {
@@ -109,7 +117,68 @@ public class DifferentialFeatureCorpusTests
         {
             try
             {
-                Directory.Delete(tempDir, recursive: true);
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best-effort test cleanup.
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(WarningFeatureFixtures))]
+    public void Warning_Feature_Fixture_Emits_SourceGen_Diagnostic_Without_Build_Break(DifferentialFixture fixture)
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
+        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
+        var runtimeProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime", "XamlToCSharpGenerator.Runtime.csproj");
+        var coreProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Core", "XamlToCSharpGenerator.Core.csproj");
+        var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
+        var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
+
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "feature-diff-invalid");
+
+        try
+        {
+            var projectPath = Path.Combine(tempDir, "DifferentialFeatureFixture.csproj");
+            File.WriteAllText(projectPath, BuildProjectText(
+                NormalizeForMsBuild(propsPath),
+                NormalizeForMsBuild(targetsPath),
+                NormalizeForMsBuild(runtimeProject),
+                NormalizeForMsBuild(coreProject),
+                NormalizeForMsBuild(avaloniaProject),
+                NormalizeForMsBuild(generatorProject)));
+
+            foreach (var file in fixture.Files)
+            {
+                File.WriteAllText(Path.Combine(tempDir, file.Key), file.Value);
+            }
+
+            var restore = RunProcess(tempDir, "dotnet", $"restore \"{projectPath}\" --nologo");
+            Assert.True(restore.ExitCode == 0, restore.Output);
+
+            var sourceGenBuild = BuildFixture(projectPath, tempDir, backend: "SourceGen");
+            Assert.True(sourceGenBuild.ExitCode == 0, sourceGenBuild.Output);
+            Assert.Contains("AXSG0111", sourceGenBuild.Output, StringComparison.Ordinal);
+
+            var clean = RunProcess(
+                tempDir,
+                "dotnet",
+                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+            Assert.True(clean.ExitCode == 0, clean.Output);
+
+            var xamlIlBuild = BuildFixture(projectPath, tempDir, backend: "XamlIl");
+            Assert.True(xamlIlBuild.ExitCode == 0, xamlIlBuild.Output);
+
+            _output.WriteLine($"DIFF-WARNING|{fixture.FeatureTag}|sourcegen_axsg0111=true|xamlil_exit={xamlIlBuild.ExitCode}");
+        }
+        finally
+        {
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
             }
             catch
             {
@@ -602,6 +671,311 @@ public class DifferentialFeatureCorpusTests
         };
 
         return new DifferentialFixture("markup-extension-fallback", "markup-extension-fallback", files);
+    }
+
+    private static DifferentialFixture CreateResolveByNameFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.App">
+                  <Application.Styles />
+                </Application>
+                """,
+            ["App.axaml.cs"] = """
+                using Avalonia;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class App : Application
+                {
+                    public override void Initialize()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:local="clr-namespace:DifferentialFeatureFixture"
+                             x:Class="DifferentialFeatureFixture.MainView">
+                    <StackPanel>
+                        <TextBlock x:Name="Anchor" Text="ResolveMe" />
+                        <local:ResolveByNameHost Target="Anchor" />
+                    </StackPanel>
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["ResolveByNameHost.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public sealed class ResolveByNameHost : Control
+                {
+                    [ResolveByName]
+                    public object? Target { get; set; }
+                }
+                """
+        };
+
+        return new DifferentialFixture("resolve-by-name", "resolve-by-name", files);
+    }
+
+    private static DifferentialFixture CreateSelectorPredicateFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.App">
+                  <Application.Styles>
+                    <Style Selector="TextBlock[Tag='ProbeTag']">
+                      <Setter Property="FontSize" Value="22" />
+                    </Style>
+                  </Application.Styles>
+                </Application>
+                """,
+            ["App.axaml.cs"] = """
+                using Avalonia;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class App : Application
+                {
+                    public override void Initialize()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.MainView">
+                    <StackPanel>
+                        <TextBlock Tag="ProbeTag" Text="SelectorProbe" />
+                    </StackPanel>
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """
+        };
+
+        return new DifferentialFixture("selector-predicate", "selector-predicate", files);
+    }
+
+    private static DifferentialFixture CreateSetterPropertyElementFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.App">
+                  <Application.Styles />
+                </Application>
+                """,
+            ["App.axaml.cs"] = """
+                using Avalonia;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class App : Application
+                {
+                    public override void Initialize()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls"
+                             xmlns:primitives="clr-namespace:Avalonia.Controls.Primitives;assembly=Avalonia.Controls"
+                             xmlns:local="clr-namespace:DifferentialFeatureFixture"
+                             x:Class="DifferentialFeatureFixture.MainView">
+                  <UserControl.Resources>
+                    <ControlTheme x:Key="{x:Type local:TemplateHostControl}" TargetType="local:TemplateHostControl">
+                      <Setter Property="Template">
+                        <ControlTemplate>
+                          <primitives:VisualLayerManager>
+                            <primitives:VisualLayerManager.ChromeOverlayLayer>
+                              <chrome:TitleBar />
+                            </primitives:VisualLayerManager.ChromeOverlayLayer>
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Tag}" />
+                          </primitives:VisualLayerManager>
+                        </ControlTemplate>
+                      </Setter>
+                    </ControlTheme>
+                  </UserControl.Resources>
+                  <local:TemplateHostControl Theme="{StaticResource {x:Type local:TemplateHostControl}}" />
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["TemplateHostControl.cs"] = """
+                using Avalonia.Controls.Primitives;
+
+                namespace DifferentialFeatureFixture;
+
+                public sealed class TemplateHostControl : TemplatedControl
+                {
+                }
+                """
+        };
+
+        return new DifferentialFixture("setter-property-element", "setter-property-element", files);
+    }
+
+    private static DifferentialFixture CreateDeferredTemplateNameScopeFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.App">
+                  <Application.Styles />
+                </Application>
+                """,
+            ["App.axaml.cs"] = """
+                using Avalonia;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class App : Application
+                {
+                    public override void Initialize()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.MainView">
+                    <ContentControl Content="TemplateValue">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock x:Name="Anchor" Text="{Binding}" />
+                                    <TextBlock Text="{Binding Text, ElementName=Anchor}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """
+        };
+
+        return new DifferentialFixture("deferred-template-namescope", "deferred-template-namescope", files);
+    }
+
+    private static DifferentialFixture CreateBindingSourceConflictFixture()
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["App.axaml"] = """
+                <Application xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.App">
+                  <Application.Styles />
+                </Application>
+                """,
+            ["App.axaml.cs"] = """
+                using Avalonia;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class App : Application
+                {
+                    public override void Initialize()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """,
+            ["MainView.axaml"] = """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                             x:Class="DifferentialFeatureFixture.MainView">
+                    <StackPanel>
+                        <TextBox x:Name="SearchBox" Text="value" />
+                        <TextBlock Text="{Binding #SearchBox.Text, ElementName=Other}" />
+                    </StackPanel>
+                </UserControl>
+                """,
+            ["MainView.axaml.cs"] = """
+                using Avalonia.Controls;
+
+                namespace DifferentialFeatureFixture;
+
+                public partial class MainView : UserControl
+                {
+                    public MainView()
+                    {
+                        // Build-only differential fixture.
+                    }
+                }
+                """
+        };
+
+        return new DifferentialFixture("binding-source-conflict", "binding-source-conflict", files);
     }
 
     private static DifferentialFixture CreateConstructionGrammarExtendedFixture()
