@@ -10,4 +10,7 @@ public sealed record ResolvedPropertyAssignment(
     string? BindingPriorityExpression,
     int Line,
     int Column,
-    ConditionalXamlExpression? Condition = null);
+    ConditionalXamlExpression? Condition = null,
+    ResolvedValueKind ValueKind = ResolvedValueKind.Unknown,
+    bool RequiresStaticResourceResolver = false,
+    ResolvedValueRequirements ValueRequirements = default);

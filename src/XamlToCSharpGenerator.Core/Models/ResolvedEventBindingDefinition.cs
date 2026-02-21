@@ -30,5 +30,11 @@ public sealed record ResolvedEventBindingDefinition(
     string? ParameterValueExpression,
     bool HasParameterValueExpression,
     bool PassEventArgs,
+    string? DataContextTypeName,
+    string? RootTypeName,
+    string? CompiledDataContextTargetPath,
+    string? CompiledRootTargetPath,
+    string? CompiledDataContextParameterPath,
+    string? CompiledRootParameterPath,
     int Line,
     int Column);

@@ -74,13 +74,16 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             string? classFullName = null;
             if (classAttribute is null || string.IsNullOrWhiteSpace(classAttribute.Value) || !classAttribute.Value.Contains('.'))
             {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0002",
-                    $"File '{input.FilePath}' is missing x:Class. Emitting classless source-generated artifact.",
-                    input.FilePath,
-                    1,
-                    1,
-                    false));
+                if (ShouldReportMissingClassDirective(root))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0002",
+                        $"File '{input.FilePath}' is missing x:Class. Emitting classless source-generated artifact.",
+                        input.FilePath,
+                        1,
+                        1,
+                        false));
+                }
             }
             else
             {
@@ -155,6 +158,18 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 true));
             return (null, diagnostics.ToImmutable());
         }
+    }
+
+    private static bool ShouldReportMissingClassDirective(XElement root)
+    {
+        var localName = root.Name.LocalName;
+        return localName is not (
+            "ResourceDictionary" or
+            "Styles" or
+            "Style" or
+            "ControlTheme" or
+            "DataTemplate" or
+            "TreeDataTemplate");
     }
 
     private XamlObjectNode ParseObjectNode(
@@ -708,7 +723,17 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
         if (value is null)
         {
-            value = setter.Elements().FirstOrDefault()?.ToString(SaveOptions.DisableFormatting) ?? string.Empty;
+            var firstValueElement = setter.Elements().FirstOrDefault();
+            if (firstValueElement is not null &&
+                firstValueElement.Name.LocalName.EndsWith(".Value", StringComparison.Ordinal) &&
+                firstValueElement.Elements().FirstOrDefault() is { } innerValueElement)
+            {
+                value = innerValueElement.ToString(SaveOptions.DisableFormatting);
+            }
+            else
+            {
+                value = firstValueElement?.ToString(SaveOptions.DisableFormatting) ?? string.Empty;
+            }
         }
 
         var lineInfo = (IXmlLineInfo)setter;

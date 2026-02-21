@@ -19,9 +19,14 @@ public sealed record GeneratorOptions(
     bool TracePasses,
     bool MetricsEnabled,
     bool MetricsDetailed,
+    bool TypeResolutionCompatibilityFallbackEnabled,
     bool AllowImplicitXmlnsDeclaration,
+    bool ImplicitStandardXmlnsPrefixesEnabled,
     string ImplicitDefaultXmlns,
+    bool InferClassFromPath,
+    bool ImplicitProjectNamespacesEnabled,
     string? GlobalXmlnsPrefixes,
+    string? RootNamespace,
     string Backend,
     string? AssemblyName)
 {
@@ -47,9 +52,14 @@ public sealed record GeneratorOptions(
             TracePasses: GetBool(globalOptions, "build_property.AvaloniaSourceGenTracePasses", false),
             MetricsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsEnabled", false),
             MetricsDetailed: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsDetailed", false),
+            TypeResolutionCompatibilityFallbackEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", true),
             AllowImplicitXmlnsDeclaration: GetBool(globalOptions, "build_property.AvaloniaSourceGenAllowImplicitXmlnsDeclaration", false),
+            ImplicitStandardXmlnsPrefixesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled", true),
             ImplicitDefaultXmlns: GetOrDefault(globalOptions, "build_property.AvaloniaSourceGenImplicitDefaultXmlns", "https://github.com/avaloniaui"),
+            InferClassFromPath: GetBool(globalOptions, "build_property.AvaloniaSourceGenInferClassFromPath", false),
+            ImplicitProjectNamespacesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitProjectNamespacesEnabled", false),
             GlobalXmlnsPrefixes: GetNullable(globalOptions, "build_property.AvaloniaSourceGenGlobalXmlnsPrefixes"),
+            RootNamespace: GetNullable(globalOptions, "build_property.RootNamespace"),
             Backend: backend,
             AssemblyName: assemblyName);
     }

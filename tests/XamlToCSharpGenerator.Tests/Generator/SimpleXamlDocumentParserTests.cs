@@ -176,7 +176,7 @@ public class SimpleXamlDocumentParserTests
     }
 
     [Fact]
-    public void Parse_Classless_Document_Continues_With_Warning()
+    public void Parse_Classless_ResourceDictionary_Document_Does_Not_Report_Missing_Class()
     {
         var parser = new SimpleXamlDocumentParser();
         var input = new XamlFileInput(
@@ -193,7 +193,7 @@ public class SimpleXamlDocumentParserTests
         var (document, diagnostics) = parser.Parse(input);
 
         Assert.NotNull(document);
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0002");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0002");
         Assert.Equal("XamlToCSharpGenerator.Generated", document!.ClassNamespace);
         Assert.StartsWith("GeneratedXaml_Colors_", document.ClassName, StringComparison.Ordinal);
         Assert.Single(document.Resources);
