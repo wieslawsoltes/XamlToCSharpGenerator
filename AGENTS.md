@@ -143,12 +143,32 @@ Reference: https://github.com/wieslawsoltes/ProDataGrid
   allocations in render/update loops.
 - Profile before and after optimizations; document expected gains.
 
-## 11) Reflection and source generation (required)
+## 11) Reflection, source generation, and AOT compatibility (required)
 
-- Avoid reflection whenever possible.
-- Prefer source generators (incremental generators required) before any reflection-based
-  approach.
-- If reflection is the only viable option, ask the user explicitly before introducing it.
+These rules are non-negotiable for production compiler/runtime paths.
+
+### Reflection usage policy (strict)
+- No reflection in source-generator emitted code. This is mandatory.
+- No reflection in runtime helpers executed by emitted code (loader, markup-extension
+  runtime, binding/runtime assignment helpers, hot-reload apply paths).
+- Forbidden in emitted/runtime paths: `Type.GetType`, `GetProperty`/`GetField`/`GetMethod`,
+  `PropertyInfo.SetValue`, `MethodInfo.Invoke`, `Activator.CreateInstance`, `dynamic`,
+  runtime expression compilation, runtime IL emit, or any equivalent late-bound invocation.
+- Implement behavior through compile-time semantic binding and strongly typed emitted calls,
+  delegates, and registries.
+- Any change introducing reflection into emitted/runtime paths must be rejected in review.
+
+### AOT and trimming policy (strict)
+- Generated code and runtime support code must be fully NativeAOT/trimming compatible.
+- Do not depend on dynamic code generation or runtime assembly scanning/loading in emitted/runtime paths.
+- Do not add production-path dependencies on APIs requiring dynamic code or unreferenced
+  member preservation unless the call site is fully compile-time guarded away from AOT targets.
+- Compiler parity work must preserve this contract: feature completeness cannot be achieved by
+  falling back to reflection.
+
+### Allowed scope for reflection
+- Reflection is allowed only in tests, diagnostics tooling, or development-only utilities that
+  are outside production runtime and emitted-code execution paths.
 
 ## 12) Testing and validation
 
@@ -267,3 +287,83 @@ These rules prevent regressions in the source-generator compiler pipeline.
   original baseline.
 - For app-specific side effects outside generated graph, use explicit hot-reload handler
   policies rather than implicit best-effort cleanup.
+
+## 17) XAML compiler and semantic-binder implementation standard (required)
+
+These rules are mandatory for parser, semantic model, transforms, binder, emitter, and
+runtime contracts. They apply to all new features and all refactors.
+
+### Normative behavior baseline
+- Language semantics must follow the XAML standard and preserve behavioral parity with mature
+  compile-time XAML compilers.
+- Framework-specific behavior (for example Avalonia property systems, selectors, templates)
+  must be implemented as framework adapters over a framework-neutral semantic core.
+- Never implement feature parity using string-shape hacks, reflection, or runtime guesswork.
+
+### Mandatory anti-hack rules (pattern -> required implementation)
+- Markup extension detection:
+  - Forbidden: lexical head-token heuristics on raw text.
+  - Required: parser-first structured markup parsing, then semantic dispatch by parsed
+    extension name/type.
+- Value classification:
+  - Forbidden: inferring semantic kind from emitted C# expression text.
+  - Required: typed conversion results carrying explicit value kind and runtime requirements.
+- Template/style/control-theme classification:
+  - Forbidden: suffix checks such as `EndsWith("Template")`.
+  - Required: symbol-based or node-kind-based classification.
+- Static resource resolver usage:
+  - Forbidden: deciding resolver requirements by scanning generated expression strings.
+  - Required: explicit semantic flags propagated from conversion/binding results.
+- Template validation:
+  - Forbidden: reparsing `RawXaml` in binder validation paths.
+  - Required: validate from parsed document-model nodes with source line/column from nodes.
+- Property-element and setter resolution:
+  - Forbidden: early missing-property diagnostics before attached/Avalonia-property resolution.
+  - Required: resolve owner-qualified/attached/Avalonia property metadata first, then emit
+    missing-property diagnostics only when all typed resolution paths fail.
+- Fallback conversion policy:
+  - Forbidden: untracked implicit fallback that changes behavior silently.
+  - Required: policy-driven fallback (`strict` vs `compatibility`) with explicit diagnostics
+    where applicable and deterministic emission behavior.
+- Type resolution:
+  - Forbidden: unordered probing and unstable candidate selection.
+  - Required: deterministic ordered resolution with ambiguity diagnostics and explicit
+    compatibility switches for legacy fallback behavior.
+
+### Semantic pipeline contracts
+- Pipeline stages must stay explicit and ordered:
+  1. Parse to immutable model.
+  2. Semantic bind to typed symbols/contracts.
+  3. Run transforms on typed model.
+  4. Emit deterministic C# from typed model only.
+- Every stage must be deterministic for identical inputs (including diagnostics ordering).
+- Binder output models must be sufficient for emission without reparsing raw XAML text.
+- Any framework-specific feature must be represented in typed semantic models first, then
+  projected by framework emitter/runtime adapters.
+
+### Reusability and framework-neutral design
+- Keep core semantic abstractions free of Avalonia runtime types whenever possible.
+- Isolate framework-specific constructs in adapter layers (`*.Avalonia`), not in core parser
+  or core semantic model.
+- When adding a new XAML feature, define:
+  - framework-neutral semantic representation in Core,
+  - framework adapter mapping in Avalonia layer,
+  - runtime contract only if strictly required.
+- Do not introduce Avalonia-only assumptions into generic parsing/tokenization logic.
+
+### Diagnostics quality requirements
+- Diagnostics must be actionable, deterministic, and source-accurate.
+- Ambiguity diagnostics must list candidates and deterministic selection result.
+- Strict-mode diagnostics must not be downgraded to hide unsupported semantics.
+- Compatibility-mode behavior must be explicit and test-covered.
+
+### Test gates (mandatory for each semantic change)
+- Add/adjust unit tests for:
+  - parser output shape,
+  - binder semantic resolution,
+  - emitted C# contract,
+  - diagnostics IDs/messages/locations.
+- Add differential tests for representative framework cases (templates, resources, bindings,
+  setters, includes) against expected runtime behavior.
+- Add guard tests preventing regression to prohibited patterns (raw-XAML reparse in binder,
+  suffix heuristics, expression-text scanning for semantic decisions).
