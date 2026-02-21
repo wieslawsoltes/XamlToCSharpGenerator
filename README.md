@@ -37,6 +37,10 @@ Optional backend knobs:
   <AvaloniaSourceGenHotDesignEnabled>true</AvaloniaSourceGenHotDesignEnabled>
   <AvaloniaSourceGenMetricsEnabled>true</AvaloniaSourceGenMetricsEnabled>
   <AvaloniaSourceGenMetricsDetailed>true</AvaloniaSourceGenMetricsDetailed>
+  <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
+  <AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>true</AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>
+  <AvaloniaSourceGenInferClassFromPath>true</AvaloniaSourceGenInferClassFromPath>
+  <AvaloniaSourceGenImplicitProjectNamespacesEnabled>true</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
 </PropertyGroup>
 ```
 
@@ -122,11 +126,33 @@ using XamlToCSharpGenerator.Runtime;
 
 With implicit mode enabled, AXAML can omit the default `xmlns="https://github.com/avaloniaui"` declaration.
 
+When `AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled=true`, SourceGen also pre-seeds:
+
+- `x -> http://schemas.microsoft.com/winfx/2006/xaml`
+- `d -> http://schemas.microsoft.com/expression/blend/2008`
+- `mc -> http://schemas.openxmlformats.org/markup-compatibility/2006`
+
 Notes:
 - File-local `xmlns:*` declarations still win over global mappings.
 - `using:` namespace URIs are supported in resolver paths.
 - Generic XML URI -> CLR namespace resolution now honors `XmlnsDefinition` attributes beyond Avalonia default URI.
 - Under default Avalonia build integration, AXAML still needs to remain XML-valid for Avalonia resource preprocessing (for example prefixed element names may still require a declaration even when SourceGen globals are configured).
+
+## Convention-Based Class And Type Resolution
+
+Optional conventions inspired by Avalonia issue `#11906`:
+
+```xml
+<PropertyGroup>
+  <AvaloniaSourceGenInferClassFromPath>true</AvaloniaSourceGenInferClassFromPath>
+  <AvaloniaSourceGenImplicitProjectNamespacesEnabled>true</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
+</PropertyGroup>
+```
+
+Behavior:
+
+- `AvaloniaSourceGenInferClassFromPath=true` infers `x:Class` from `RootNamespace + TargetPath` when `x:Class` is omitted, and applies it when the partial class already exists in compilation.
+- `AvaloniaSourceGenImplicitProjectNamespacesEnabled=true` lets unprefixed controls resolve from project namespaces (scoped by `RootNamespace`) under the default Avalonia XML namespace.
 
 ## Conditional XAML
 
@@ -163,6 +189,30 @@ public static AppBuilder BuildAvaloniaApp() =>
     AppBuilder.Configure<App>()
         .UsePlatformDetect()
         .UseAvaloniaSourceGeneratedXaml();
+```
+
+Enable runtime compilation fallback for dynamic URI/string loads:
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+public static AppBuilder BuildAvaloniaApp() =>
+    AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml()
+        .UseAvaloniaSourceGeneratedRuntimeXamlCompilation(enable: true, configure: options =>
+        {
+            options.TraceDiagnostics = true;
+        });
+```
+
+Runtime load APIs:
+
+```csharp
+var fromUri = AvaloniaXamlLoader.Load(new Uri("avares://MyApp/Assets/RuntimeCard.xml"));
+var fromInline = AvaloniaSourceGeneratedXamlLoader.Load(
+    "<TextBlock xmlns='https://github.com/avaloniaui' Text='Runtime SourceGen' />",
+    localAssembly: typeof(App).Assembly);
 ```
 
 Optional Rider/IDE fallback poller (only needed when native metadata callback is unreliable in a specific IDE session):
@@ -307,6 +357,85 @@ When `AvaloniaXamlCompilerBackend=SourceGen`:
 4. Hot reload error resilience is enabled in `dotnet watch` and IDE build sessions by default (`AvaloniaSourceGenIdeHotReloadEnabled=true`).
 5. Runtime hot reload pipeline maps replacement types to original types and serializes reentrant updates.
 6. Runtime emits `HotReloadRudeEditDetected` when CLR/metadata shape changes are not patchable via Edit-and-Continue and require rebuild/restart.
+
+## Language Service (LSP)
+
+SourceGen now includes a standalone LSP server:
+
+- Project:
+  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer`
+- Tool command:
+  `axsg-lsp --workspace <workspace-root>`
+
+Supported LSP features:
+- `initialize`, `shutdown`, `exit`
+- `textDocument/didOpen`, `didChange`, `didSave`, `didClose`
+- `textDocument/publishDiagnostics`
+- `textDocument/completion`
+- `textDocument/hover`
+- `textDocument/definition` (Go To Definition from XAML element/property tokens)
+
+Diagnostics reuse SourceGen compiler semantics (`SimpleXamlDocumentParser` + `AvaloniaSemanticBinder`) and publish existing `AXSG####` codes directly in editor diagnostics.
+
+### Package and Install `axsg-lsp`
+
+Pack locally:
+
+```bash
+dotnet pack /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj -c Release -o /tmp/axsg-pack
+```
+
+Install/update globally from local package output:
+
+```bash
+dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --add-source /tmp/axsg-pack
+dotnet tool update --global XamlToCSharpGenerator.LanguageServer.Tool --add-source /tmp/axsg-pack
+```
+
+Publishable package id:
+- `XamlToCSharpGenerator.LanguageServer.Tool`
+
+### VS Code Local Install
+
+VS Code language-client wrapper project:
+- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/tools/vscode/axsg-language-server`
+
+Build a local VSIX:
+
+```bash
+cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/tools/vscode/axsg-language-server
+npm install
+npx @vscode/vsce package
+```
+
+Then install the generated VSIX via:
+- Extensions panel
+- `...` menu
+- `Install from VSIX...`
+
+Client wiring requirements (VS Code and other IDEs):
+- Start server process over stdio with the command above (or a custom configured command path).
+- Register language IDs/extensions for `*.axaml` and `*.xaml`.
+- Use full document sync (`textDocumentSync.change = 1`).
+- Pass workspace root (`--workspace`) so project resolution can locate nearest `*.csproj`.
+
+Example Neovim `lspconfig` wiring:
+
+```lua
+require('lspconfig').axsg = {
+  cmd = {
+    'dotnet',
+    'run',
+    '--project',
+    '/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj',
+    '--',
+    '--workspace',
+    vim.fn.getcwd(),
+  },
+  filetypes = { 'xml', 'xaml', 'axaml' },
+  root_dir = require('lspconfig.util').root_pattern('*.sln', '*.csproj', '.git'),
+}
+```
 
 ## Migration Guide (XamlIl -> SourceGen)
 
