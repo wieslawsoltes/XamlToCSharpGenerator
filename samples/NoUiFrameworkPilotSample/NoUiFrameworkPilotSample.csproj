@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NoUiFrameworkPilotSample</AssemblyName>
+    <RootNamespace>NoUiFrameworkPilotSample</RootNamespace>
+    <XamlSourceGenBackend>SourceGen</XamlSourceGenBackend>
+    <XamlSourceGenEnabled>true</XamlSourceGenEnabled>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="MainView.xaml"
+                     SourceItemGroup="NoUiXaml"
+                     TargetPath="MainView.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="SourceItemGroup" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="TargetPath" />
+    <CompilerVisibleProperty Include="XamlSourceGenBackend" />
+    <CompilerVisibleProperty Include="XamlSourceGenEnabled" />
+    <CompilerVisibleProperty Include="RootNamespace" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj"
+                      OutputItemType="Analyzer" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>
