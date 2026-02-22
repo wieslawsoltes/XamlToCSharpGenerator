@@ -1,12 +1,12 @@
 using Microsoft.CodeAnalysis;
-using XamlToCSharpGenerator.Avalonia.Framework;
+using XamlToCSharpGenerator.NoUi.Framework;
 
 namespace XamlToCSharpGenerator.Generator;
 
 [Generator(LanguageNames.CSharp)]
-public sealed class AvaloniaXamlSourceGenerator : IIncrementalGenerator
+public sealed class NoUiXamlSourceGenerator : IIncrementalGenerator
 {
-    private readonly FrameworkXamlSourceGenerator _inner = new(AvaloniaFrameworkProfile.Instance);
+    private readonly FrameworkXamlSourceGenerator _inner = new(NoUiFrameworkProfile.Instance);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {

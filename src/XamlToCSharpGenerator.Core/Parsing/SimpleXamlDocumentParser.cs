@@ -37,15 +37,18 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
     private readonly ImmutableDictionary<string, string> _globalXmlNamespaces;
     private readonly bool _allowImplicitDefaultXmlns;
     private readonly string? _implicitDefaultXmlns;
+    private readonly ImmutableArray<IXamlDocumentEnricher> _documentEnrichers;
 
     public SimpleXamlDocumentParser(
         ImmutableDictionary<string, string>? globalXmlNamespaces = null,
         bool allowImplicitDefaultXmlns = false,
-        string? implicitDefaultXmlns = null)
+        string? implicitDefaultXmlns = null,
+        ImmutableArray<IXamlDocumentEnricher>? documentEnrichers = null)
     {
         _globalXmlNamespaces = globalXmlNamespaces ?? ImmutableDictionary<string, string>.Empty;
         _allowImplicitDefaultXmlns = allowImplicitDefaultXmlns;
         _implicitDefaultXmlns = implicitDefaultXmlns;
+        _documentEnrichers = documentEnrichers ?? ImmutableArray<IXamlDocumentEnricher>.Empty;
     }
 
     public (XamlDocumentModel? Document, ImmutableArray<DiagnosticInfo> Diagnostics) Parse(XamlFileInput input)
@@ -123,12 +126,6 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             var ignoredNamespaces = CollectIgnoredNamespaces(root, xmlNamespaces);
             var rootObject = ParseObjectNode(root, ignoredNamespaces, conditionalNamespacesByRawUri);
             var namedElements = CollectNamedElements(rootObject);
-            var resources = CollectResources(root, ignoredNamespaces, conditionalNamespacesByRawUri);
-            var templates = CollectTemplates(root, ignoredNamespaces, conditionalNamespacesByRawUri);
-            var styles = CollectStyles(root, ignoredNamespaces, conditionalNamespacesByRawUri);
-            var controlThemes = CollectControlThemes(root, ignoredNamespaces, conditionalNamespacesByRawUri);
-            var includes = CollectIncludes(root, ignoredNamespaces, conditionalNamespacesByRawUri);
-
             var model = new XamlDocumentModel(
                 FilePath: input.FilePath,
                 TargetPath: NormalizeTargetPath(input.TargetPath),
@@ -138,12 +135,39 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 XmlNamespaces: xmlNamespaces,
                 RootObject: rootObject,
                 NamedElements: namedElements,
-                Resources: resources,
-                Templates: templates,
-                Styles: styles,
-                ControlThemes: controlThemes,
-                Includes: includes,
+                Resources: ImmutableArray<XamlResourceDefinition>.Empty,
+                Templates: ImmutableArray<XamlTemplateDefinition>.Empty,
+                Styles: ImmutableArray<XamlStyleDefinition>.Empty,
+                ControlThemes: ImmutableArray<XamlControlThemeDefinition>.Empty,
+                Includes: ImmutableArray<XamlIncludeDefinition>.Empty,
                 IsValid: true);
+
+            if (_documentEnrichers.Length > 0)
+            {
+                var parseContext = new XamlDocumentParseContext(
+                    root,
+                    ignoredNamespaces,
+                    conditionalNamespacesByRawUri);
+                foreach (var documentEnricher in _documentEnrichers)
+                {
+                    try
+                    {
+                        var (enrichedModel, enrichmentDiagnostics) = documentEnricher.Enrich(model, parseContext);
+                        model = enrichedModel;
+                        diagnostics.AddRange(enrichmentDiagnostics);
+                    }
+                    catch (Exception ex)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0001",
+                            $"XAML document enricher '{documentEnricher.GetType().FullName}' failed: {ex.Message}",
+                            input.FilePath,
+                            1,
+                            1,
+                            true));
+                    }
+                }
+            }
 
             return (model, diagnostics.ToImmutable());
         }
@@ -181,8 +205,10 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         var childObjects = ImmutableArray.CreateBuilder<XamlObjectNode>();
         var propertyElements = ImmutableArray.CreateBuilder<XamlPropertyElement>();
         var constructorArguments = ImmutableArray.CreateBuilder<XamlObjectNode>();
-        var elementXmlNamespace = NormalizeXmlNamespace(element.Name.NamespaceName);
-        var elementCondition = TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri);
+        var elementXmlNamespace = XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(element.Name.NamespaceName);
+        var elementCondition = XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
+            element.Name.NamespaceName,
+            conditionalNamespacesByRawUri);
 
         var key = TryGetDirectiveValue(element, "Key");
         var name = TryGetName(element);
@@ -203,13 +229,16 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
             var lineInfo = (IXmlLineInfo)attribute;
             var propertyName = attribute.Name.LocalName;
-            var normalizedAttributeNamespace = NormalizeXmlNamespace(attribute.Name.NamespaceName);
+            var normalizedAttributeNamespace = XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(
+                attribute.Name.NamespaceName);
             propertyAssignments.Add(new XamlPropertyAssignment(
                 PropertyName: propertyName,
                 XmlNamespace: normalizedAttributeNamespace,
                 Value: attribute.Value,
                 IsAttached: propertyName.IndexOf('.') >= 0,
-                Condition: TryGetConditionalExpression(attribute.Name.NamespaceName, conditionalNamespacesByRawUri),
+                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
+                    attribute.Name.NamespaceName,
+                    conditionalNamespacesByRawUri),
                 Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
                 Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
         }
@@ -248,7 +277,9 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 propertyElements.Add(new XamlPropertyElement(
                     PropertyName: ExtractPropertyElementName(child.Name.LocalName),
                     ObjectValues: objectValues.ToImmutable(),
-                    Condition: TryGetConditionalExpression(child.Name.NamespaceName, conditionalNamespacesByRawUri),
+                    Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
+                        child.Name.NamespaceName,
+                        conditionalNamespacesByRawUri),
                     Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
                     Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
                 continue;
@@ -360,7 +391,10 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
             var line = 1;
             var column = 1;
-            if (TrySplitConditionalNamespaceUri(globalNamespace.Value, out var normalizedNamespace, out var rawCondition))
+            if (XamlConditionalNamespaceUtilities.TrySplitConditionalNamespaceUri(
+                    globalNamespace.Value,
+                    out var normalizedNamespace,
+                    out var rawCondition))
             {
                 if (TryParseConditionalExpression(rawCondition!, line, column, out var condition, out var errorMessage))
                 {
@@ -389,7 +423,10 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             !string.IsNullOrWhiteSpace(_implicitDefaultXmlns) &&
             !map.ContainsKey(string.Empty))
         {
-            if (TrySplitConditionalNamespaceUri(_implicitDefaultXmlns!, out var normalizedDefaultXmlNamespace, out var rawDefaultCondition))
+            if (XamlConditionalNamespaceUtilities.TrySplitConditionalNamespaceUri(
+                    _implicitDefaultXmlns!,
+                    out var normalizedDefaultXmlNamespace,
+                    out var rawDefaultCondition))
             {
                 if (TryParseConditionalExpression(rawDefaultCondition!, 1, 1, out var defaultCondition, out var errorMessage))
                 {
@@ -422,7 +459,10 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             }
 
             var prefix = attribute.Name.LocalName == "xmlns" ? string.Empty : attribute.Name.LocalName;
-            if (TrySplitConditionalNamespaceUri(attribute.Value, out var normalizedAttributeNamespace, out var rawCondition))
+            if (XamlConditionalNamespaceUtilities.TrySplitConditionalNamespaceUri(
+                    attribute.Value,
+                    out var normalizedAttributeNamespace,
+                    out var rawCondition))
             {
                 var lineInfo = (IXmlLineInfo)attribute;
                 var line = lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1;
@@ -527,335 +567,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         }
     }
 
-    private static ImmutableArray<XamlResourceDefinition> CollectResources(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var resources = ImmutableArray.CreateBuilder<XamlResourceDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf())
-        {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var key = TryGetDirectiveValue(element, "Key");
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                continue;
-            }
-
-            var lineInfo = (IXmlLineInfo)element;
-            resources.Add(new XamlResourceDefinition(
-                Key: key!,
-                XmlNamespace: NormalizeXmlNamespace(element.Name.NamespaceName),
-                XmlTypeName: element.Name.LocalName,
-                Condition: TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-        }
-
-        return resources.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlTemplateDefinition> CollectTemplates(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var templates = ImmutableArray.CreateBuilder<XamlTemplateDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf())
-        {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            if (!IsTemplateElement(element.Name.LocalName))
-            {
-                continue;
-            }
-
-            var lineInfo = (IXmlLineInfo)element;
-            templates.Add(new XamlTemplateDefinition(
-                Kind: element.Name.LocalName,
-                Key: TryGetDirectiveValue(element, "Key"),
-                TargetType: element.Attributes().FirstOrDefault(attribute =>
-                    attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "TargetType")?.Value,
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                Condition: TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-        }
-
-        return templates.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlStyleDefinition> CollectStyles(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var styles = ImmutableArray.CreateBuilder<XamlStyleDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf().Where(x => x.Name.LocalName == "Style"))
-        {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var selectorAttribute = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Selector");
-            var selector = selectorAttribute?.Value;
-
-            var lineInfo = (IXmlLineInfo)element;
-            var selectorLineInfo = selectorAttribute is null
-                ? lineInfo
-                : (IXmlLineInfo)selectorAttribute;
-            styles.Add(new XamlStyleDefinition(
-                Key: TryGetDirectiveValue(element, "Key"),
-                Selector: selector ?? string.Empty,
-                SelectorLine: selectorLineInfo.HasLineInfo() ? selectorLineInfo.LineNumber : (lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1),
-                SelectorColumn: selectorLineInfo.HasLineInfo() ? selectorLineInfo.LinePosition : (lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1),
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                CompileBindings: TryGetBoolDirectiveValue(element, "CompileBindings"),
-                Setters: CollectSetters(element, conditionalNamespacesByRawUri),
-                Condition: TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-        }
-
-        return styles.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlControlThemeDefinition> CollectControlThemes(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var themes = ImmutableArray.CreateBuilder<XamlControlThemeDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf().Where(x => x.Name.LocalName == "ControlTheme"))
-        {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var targetType = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "TargetType")?.Value;
-            var basedOn = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "BasedOn")?.Value;
-            var themeVariant = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "ThemeVariant")?.Value;
-
-            var lineInfo = (IXmlLineInfo)element;
-            themes.Add(new XamlControlThemeDefinition(
-                Key: TryGetDirectiveValue(element, "Key"),
-                TargetType: targetType,
-                BasedOn: basedOn,
-                ThemeVariant: themeVariant,
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                CompileBindings: TryGetBoolDirectiveValue(element, "CompileBindings"),
-                Setters: CollectSetters(element, conditionalNamespacesByRawUri),
-                Condition: TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-        }
-
-        return themes.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlSetterDefinition> CollectSetters(
-        XElement scope,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var setters = ImmutableArray.CreateBuilder<XamlSetterDefinition>();
-
-        foreach (var element in scope.Elements())
-        {
-            if (element.Name.LocalName == "Setter")
-            {
-                AddSetterDefinition(element, setters, conditionalNamespacesByRawUri);
-                continue;
-            }
-
-            if (IsSettersPropertyElement(scope, element))
-            {
-                foreach (var nestedSetter in element.Elements().Where(x => x.Name.LocalName == "Setter"))
-                {
-                    AddSetterDefinition(nestedSetter, setters, conditionalNamespacesByRawUri);
-                }
-            }
-        }
-
-        return setters.ToImmutable();
-    }
-
-    private static bool IsSettersPropertyElement(XElement scope, XElement element)
-    {
-        return element.Name.LocalName.Equals(scope.Name.LocalName + ".Setters", StringComparison.Ordinal);
-    }
-
-    private static void AddSetterDefinition(
-        XElement setter,
-        ImmutableArray<XamlSetterDefinition>.Builder setters,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var propertyName = setter.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Property")?.Value;
-
-        if (string.IsNullOrWhiteSpace(propertyName))
-        {
-            return;
-        }
-
-        var value = setter.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Value")?.Value;
-
-        if (value is null)
-        {
-            var firstValueElement = setter.Elements().FirstOrDefault();
-            if (firstValueElement is not null &&
-                firstValueElement.Name.LocalName.EndsWith(".Value", StringComparison.Ordinal) &&
-                firstValueElement.Elements().FirstOrDefault() is { } innerValueElement)
-            {
-                value = innerValueElement.ToString(SaveOptions.DisableFormatting);
-            }
-            else
-            {
-                value = firstValueElement?.ToString(SaveOptions.DisableFormatting) ?? string.Empty;
-            }
-        }
-
-        var lineInfo = (IXmlLineInfo)setter;
-        setters.Add(new XamlSetterDefinition(
-            PropertyName: propertyName!,
-            Value: value,
-            Condition: TryGetConditionalExpression(setter.Name.NamespaceName, conditionalNamespacesByRawUri),
-            Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-            Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-    }
-
-    private static ImmutableArray<XamlIncludeDefinition> CollectIncludes(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var includes = ImmutableArray.CreateBuilder<XamlIncludeDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf())
-        {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var kind = element.Name.LocalName;
-            if (kind != "ResourceInclude" && kind != "StyleInclude" && kind != "MergeResourceInclude")
-            {
-                continue;
-            }
-
-            var source = element.Attributes()
-                .FirstOrDefault(attribute => attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Source")
-                ?.Value;
-            var sourceValue = string.IsNullOrWhiteSpace(source) ? string.Empty : source;
-
-            var lineInfo = (IXmlLineInfo)element;
-            includes.Add(new XamlIncludeDefinition(
-                Kind: kind,
-                Source: sourceValue!,
-                MergeTarget: ResolveMergeTarget(element),
-                Condition: TryGetConditionalExpression(element.Name.NamespaceName, conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
-        }
-
-        return includes.ToImmutable();
-    }
-
-    private static string ResolveMergeTarget(XElement includeElement)
-    {
-        XElement? current = includeElement;
-        while (current is not null)
-        {
-            var localName = current.Name.LocalName;
-            if (localName.EndsWith(".MergedDictionaries", StringComparison.Ordinal) || localName == "MergedDictionaries")
-            {
-                return "MergedDictionaries";
-            }
-
-            if (localName.EndsWith(".Styles", StringComparison.Ordinal) || localName == "Styles")
-            {
-                return "Styles";
-            }
-
-            current = current.Parent;
-        }
-
-        return "Unknown";
-    }
-
-    private static string NormalizeXmlNamespace(string rawNamespace)
-    {
-        if (TrySplitConditionalNamespaceUri(rawNamespace, out var normalizedNamespace, out _))
-        {
-            return normalizedNamespace;
-        }
-
-        return rawNamespace;
-    }
-
-    private static ConditionalXamlExpression? TryGetConditionalExpression(
-        string rawNamespace,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        return conditionalNamespacesByRawUri.TryGetValue(rawNamespace, out var condition)
-            ? condition
-            : null;
-    }
-
-    private static bool TrySplitConditionalNamespaceUri(
-        string rawNamespace,
-        out string normalizedNamespace,
-        out string? conditionExpression)
-    {
-        normalizedNamespace = rawNamespace;
-        conditionExpression = null;
-
-        if (string.IsNullOrWhiteSpace(rawNamespace))
-        {
-            return false;
-        }
-
-        var separatorIndex = rawNamespace.IndexOf('?');
-        if (separatorIndex <= 0 || separatorIndex >= rawNamespace.Length - 1)
-        {
-            return false;
-        }
-
-        var candidateCondition = rawNamespace.Substring(separatorIndex + 1).Trim();
-        if (candidateCondition.Length == 0 ||
-            !candidateCondition.EndsWith(")", StringComparison.Ordinal) ||
-            candidateCondition.IndexOf('(') <= 0)
-        {
-            return false;
-        }
-
-        normalizedNamespace = rawNamespace.Substring(0, separatorIndex);
-        conditionExpression = candidateCondition;
-        return true;
-    }
+    
 
     private static bool TryParseConditionalExpression(
         string rawExpression,
@@ -1038,14 +750,6 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         return localName;
     }
 
-    private static bool IsTemplateElement(string localName)
-    {
-        return localName == "DataTemplate"
-               || localName == "ControlTemplate"
-               || localName == "ItemsPanelTemplate"
-               || localName == "TreeDataTemplate";
-    }
-
     private static string NormalizeTargetPath(string targetPath)
     {
         var normalized = targetPath.Replace('\\', '/');
@@ -1130,12 +834,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
     private static bool ShouldIgnoreAttribute(XAttribute attribute, ImmutableHashSet<string> ignoredNamespaces)
     {
-        return ignoredNamespaces.Contains(NormalizeXmlNamespace(attribute.Name.NamespaceName));
+        return ignoredNamespaces.Contains(XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(attribute.Name.NamespaceName));
     }
 
     private static bool ShouldIgnoreElement(XElement element, ImmutableHashSet<string> ignoredNamespaces)
     {
-        return ignoredNamespaces.Contains(NormalizeXmlNamespace(element.Name.NamespaceName));
+        return ignoredNamespaces.Contains(XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(element.Name.NamespaceName));
     }
 
     private static bool IsXamlDirectiveElement(XElement element, string localName)

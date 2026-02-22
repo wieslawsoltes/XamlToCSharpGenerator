@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using XamlToCSharpGenerator.Avalonia.Parsing;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 
@@ -10,7 +11,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Extracts_XClass_And_Named_Elements()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -82,7 +83,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Extracts_ControlTemplate_TargetType()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -109,7 +110,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Does_Not_Assign_Nested_Style_Setters_To_Parent_Style()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -146,7 +147,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Extracts_ControlTheme_Setters_From_Setters_Property_Element()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -178,7 +179,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Classless_ResourceDictionary_Document_Does_Not_Report_Missing_Class()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "Colors.axaml",
             TargetPath: "Styles/Colors.axaml",
@@ -202,7 +203,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Captures_Inline_Text_Content_On_Object_Node()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -228,7 +229,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Extracts_Construction_Directives_And_Array_Item_Type()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "MainView.axaml",
             TargetPath: "MainView.axaml",
@@ -273,7 +274,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Supports_Global_Prefixes_And_Implicit_Default_Namespace()
     {
-        var parser = new SimpleXamlDocumentParser(
+        var parser = CreateAvaloniaParser(
             ImmutableDictionary<string, string>.Empty
                 .Add("x", "http://schemas.microsoft.com/winfx/2006/xaml")
                 .Add("local", "using:Demo.Controls"),
@@ -304,7 +305,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Applies_Global_Prefixes_To_Directive_Values()
     {
-        var parser = new SimpleXamlDocumentParser(
+        var parser = CreateAvaloniaParser(
             ImmutableDictionary<string, string>.Empty
                 .Add("vm", "using:Demo.ViewModels"),
             allowImplicitDefaultXmlns: false,
@@ -333,7 +334,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Extracts_Conditional_Namespace_Metadata_For_Elements_And_Attributes()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "ConditionalView.axaml",
             TargetPath: "ConditionalView.axaml",
@@ -366,7 +367,7 @@ public class SimpleXamlDocumentParserTests
     [Fact]
     public void Parse_Reports_Invalid_Conditional_Namespace_Expression()
     {
-        var parser = new SimpleXamlDocumentParser();
+        var parser = CreateAvaloniaParser();
         var input = new XamlFileInput(
             FilePath: "ConditionalView.axaml",
             TargetPath: "ConditionalView.axaml",
@@ -384,5 +385,51 @@ public class SimpleXamlDocumentParserTests
 
         Assert.NotNull(document);
         Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0120");
+    }
+
+    [Fact]
+    public void Parse_Without_Framework_Enrichers_Leaves_Framework_Collections_Empty()
+    {
+        var parser = new SimpleXamlDocumentParser();
+        var input = new XamlFileInput(
+            FilePath: "MainView.axaml",
+            TargetPath: "MainView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.MainView">
+                      <UserControl.Resources>
+                          <SolidColorBrush x:Key="AccentBrush" Color="Blue" />
+                      </UserControl.Resources>
+                      <UserControl.Styles>
+                          <Style Selector="TextBlock">
+                              <Setter Property="Text" Value="Hello" />
+                          </Style>
+                      </UserControl.Styles>
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        Assert.Empty(document!.Resources);
+        Assert.Empty(document.Templates);
+        Assert.Empty(document.Styles);
+        Assert.Empty(document.ControlThemes);
+        Assert.Empty(document.Includes);
+    }
+
+    private static SimpleXamlDocumentParser CreateAvaloniaParser(
+        ImmutableDictionary<string, string>? globalXmlNamespaces = null,
+        bool allowImplicitDefaultXmlns = false,
+        string? implicitDefaultXmlns = null)
+    {
+        return new SimpleXamlDocumentParser(
+            globalXmlNamespaces,
+            allowImplicitDefaultXmlns,
+            implicitDefaultXmlns,
+            [AvaloniaDocumentFeatureEnricher.Instance]);
     }
 }

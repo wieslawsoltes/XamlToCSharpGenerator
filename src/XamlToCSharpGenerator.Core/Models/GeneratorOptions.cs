@@ -32,8 +32,14 @@ public sealed record GeneratorOptions(
 {
     public static GeneratorOptions From(AnalyzerConfigOptions globalOptions, string? assemblyName)
     {
-        var backend = GetOrDefault(globalOptions, "build_property.AvaloniaXamlCompilerBackend", "XamlIl");
-        var explicitEnable = GetBool(globalOptions, "build_property.AvaloniaSourceGenCompilerEnabled", false);
+        var backend = GetOrDefault(
+            globalOptions,
+            "build_property.XamlSourceGenBackend",
+            GetOrDefault(globalOptions, "build_property.AvaloniaXamlCompilerBackend", "XamlIl"));
+        var explicitEnable = GetBool(
+            globalOptions,
+            "build_property.XamlSourceGenEnabled",
+            GetBool(globalOptions, "build_property.AvaloniaSourceGenCompilerEnabled", false));
 
         return new GeneratorOptions(
             IsEnabled: explicitEnable || backend.Equals("SourceGen", System.StringComparison.OrdinalIgnoreCase),

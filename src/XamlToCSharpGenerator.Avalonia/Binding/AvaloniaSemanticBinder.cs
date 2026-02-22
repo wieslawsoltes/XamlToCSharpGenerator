@@ -507,15 +507,19 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             INamedTypeSymbol? avaloniaOwnerTypeSymbol = null;
             string? avaloniaOwnerTypeName = null;
-            if (!string.IsNullOrWhiteSpace(propertyAlias.AvaloniaPropertyOwnerTypeName))
+            var avaloniaPropertyOwnerTypeFromPayload =
+                propertyAlias.GetFrameworkPropertyOwnerTypeName(FrameworkProfileIds.Avalonia);
+            var avaloniaPropertyFieldFromPayload =
+                propertyAlias.GetFrameworkPropertyFieldName(FrameworkProfileIds.Avalonia);
+            if (!string.IsNullOrWhiteSpace(avaloniaPropertyOwnerTypeFromPayload))
             {
-                avaloniaOwnerTypeName = NormalizeMetadataTypeName(propertyAlias.AvaloniaPropertyOwnerTypeName!);
+                avaloniaOwnerTypeName = NormalizeMetadataTypeName(avaloniaPropertyOwnerTypeFromPayload!);
                 avaloniaOwnerTypeSymbol = compilation.GetTypeByMetadataName(avaloniaOwnerTypeName);
                 if (avaloniaOwnerTypeSymbol is null)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0902",
-                        $"Property alias '{propertyAlias.TargetTypeName}:{propertyAlias.XamlPropertyName}' targets unknown Avalonia property owner type '{propertyAlias.AvaloniaPropertyOwnerTypeName}'.",
+                        $"Property alias '{propertyAlias.TargetTypeName}:{propertyAlias.XamlPropertyName}' targets unknown Avalonia property owner type '{avaloniaPropertyOwnerTypeFromPayload}'.",
                         propertyAlias.Source,
                         propertyAlias.Line,
                         propertyAlias.Column,
@@ -526,7 +530,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (string.IsNullOrWhiteSpace(propertyAlias.ClrPropertyName) &&
                 (avaloniaOwnerTypeSymbol is null ||
-                 string.IsNullOrWhiteSpace(propertyAlias.AvaloniaPropertyFieldName)))
+                 string.IsNullOrWhiteSpace(avaloniaPropertyFieldFromPayload)))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0901",
@@ -548,7 +552,7 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
                     : NormalizePropertyName(propertyAlias.ClrPropertyName),
                 avaloniaOwnerTypeName,
                 avaloniaOwnerTypeSymbol,
-                propertyAlias.AvaloniaPropertyFieldName,
+                avaloniaPropertyFieldFromPayload,
                 propertyAlias.Source,
                 propertyAlias.Line,
                 propertyAlias.Column);

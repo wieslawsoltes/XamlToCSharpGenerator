@@ -2,8 +2,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>true</IsPackable>
-    <PackageId>XamlToCSharpGenerator.Avalonia</PackageId>
-    <Description>Avalonia semantic binder and emitter passes for the standalone source generator compiler.</Description>
+    <PackageId>XamlToCSharpGenerator.NoUi</PackageId>
+    <Description>NoUI pilot framework profile used to validate framework-agnostic source generator host reuse.</Description>
   </PropertyGroup>
 
   <ItemGroup>
