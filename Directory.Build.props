@@ -12,6 +12,15 @@
     <PackageReadmeFile Condition="'$(PackageReadmeFile)' == ''">README.md</PackageReadmeFile>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Core' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Compiler' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Generator' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Runtime.Core'">
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Core' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Compiler' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Generator' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Runtime.Core'">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)eng/analyzers/BannedSymbols.Reflection.txt" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)README.md') and '$(IsPackable)' != 'false'">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" />
   </ItemGroup>

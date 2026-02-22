@@ -14,7 +14,7 @@ public class BuildIntegrationTests
     {
         var output = RunEvaluation(sourceGenBackend: true);
 
-        Assert.Contains("STATE|true|false|false|", output, StringComparison.Ordinal);
+        Assert.Contains("STATE|SourceGen|true|true|false|false|", output, StringComparison.Ordinal);
         var afMatches = CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml");
         var watchMatches = CountMatches(output, "WATCH|");
         var caciMatches = CountMatches(output, "CACI|");
@@ -37,7 +37,7 @@ public class BuildIntegrationTests
     {
         var output = RunEvaluation(sourceGenBackend: false);
 
-        Assert.Contains("STATE|false|", output, StringComparison.Ordinal);
+        Assert.Contains("STATE|XamlIl|false|false|", output, StringComparison.Ordinal);
         Assert.DoesNotContain("AF|AvaloniaXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
     }
 
@@ -46,7 +46,7 @@ public class BuildIntegrationTests
     {
         var output = RunEvaluation(sourceGenBackend: true, seedAdditionalFile: true, watchMode: true);
 
-        Assert.Contains("STATE|true|false|false|1|1", output, StringComparison.Ordinal);
+        Assert.Contains("STATE|SourceGen|true|true|false|false|1|1", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
         Assert.True(CountMatches(output, "WATCH|") == 1, output);
         Assert.True(CountMatches(output, "CACI|") == 1, output);
@@ -58,7 +58,7 @@ public class BuildIntegrationTests
     {
         var output = RunEvaluation(sourceGenBackend: true, duplicateAvaloniaXaml: true);
 
-        Assert.Contains("STATE|true|false|false|1|2", output, StringComparison.Ordinal);
+        Assert.Contains("STATE|SourceGen|true|true|false|false|1|2", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
         Assert.True(CountMatches(output, "WATCH|") == 1, output);
         Assert.True(CountMatches(output, "CACI|") == 1, output);
@@ -92,13 +92,70 @@ public class BuildIntegrationTests
         Assert.Contains("CFG|true|true|true|false", output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Neutral_Backend_Property_Disables_Avalonia_Xaml_Compilation_And_Injects_AdditionalFiles()
+    {
+        var output = RunEvaluation(sourceGenBackend: true, useNeutralBackendProperty: true);
+
+        Assert.Contains("STATE|SourceGen|true|true|false|false|", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void Neutral_Enable_Flag_Enables_SourceGen_Without_Backend_Switch()
+    {
+        var output = RunEvaluation(sourceGenBackend: false, useNeutralEnableFlag: true);
+
+        Assert.Contains("STATE|XamlIl|true|true|false|false|", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void Neutral_Input_Item_Group_Projects_Custom_Xaml_Items_Without_Duplicates()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            useNeutralBackendProperty: true,
+            customInputItemGroup: "CustomXaml",
+            duplicateAvaloniaXaml: true,
+            watchMode: true);
+
+        Assert.Contains("STATE|SourceGen|true|true|false|false|1|0", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void Legacy_Backend_Property_Works_With_Sdk_Style_Import_Order()
+    {
+        var output = RunEvaluation(sourceGenBackend: true, simulateSdkImportOrder: true);
+
+        Assert.Contains("STATE|SourceGen|true|true|false|false|", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
     private static string RunEvaluation(
         bool sourceGenBackend,
         bool seedAdditionalFile = false,
         bool watchMode = false,
         bool duplicateAvaloniaXaml = false,
         bool runFromRepositoryRoot = false,
-        bool setSourceGenKnobs = false)
+        bool setSourceGenKnobs = false,
+        bool useNeutralBackendProperty = false,
+        bool useNeutralEnableFlag = false,
+        string? customInputItemGroup = null,
+        bool simulateSdkImportOrder = false)
     {
         var repositoryRoot = GetRepositoryRoot();
         var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
@@ -118,6 +175,10 @@ public class BuildIntegrationTests
                 watchMode,
                 duplicateAvaloniaXaml,
                 setSourceGenKnobs,
+                useNeutralBackendProperty,
+                useNeutralEnableFlag,
+                customInputItemGroup,
+                simulateSdkImportOrder,
                 NormalizeForMsBuild(propsPath),
                 NormalizeForMsBuild(targetsPath)));
 
@@ -167,43 +228,74 @@ public class BuildIntegrationTests
         bool watchMode,
         bool duplicateAvaloniaXaml,
         bool setSourceGenKnobs,
+        bool useNeutralBackendProperty,
+        bool useNeutralEnableFlag,
+        string? customInputItemGroup,
+        bool simulateSdkImportOrder,
         string propsPath,
         string targetsPath)
     {
         var backendProperty = sourceGenBackend
-            ? "\n    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>"
+            ? useNeutralBackendProperty
+                ? "\n    <XamlSourceGenBackend>SourceGen</XamlSourceGenBackend>"
+                : "\n    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>"
             : string.Empty;
+        var enableProperty = useNeutralEnableFlag
+            ? "\n    <XamlSourceGenEnabled>true</XamlSourceGenEnabled>"
+            : string.Empty;
+        var inputItemGroupProperty = string.IsNullOrWhiteSpace(customInputItemGroup)
+            ? string.Empty
+            : $"\n    <XamlSourceGenInputItemGroup>{customInputItemGroup}</XamlSourceGenInputItemGroup>";
         var watchProperty = watchMode
             ? "\n    <DotNetWatchBuild>true</DotNetWatchBuild>"
             : string.Empty;
         var seededAdditionalFiles = seedAdditionalFile
             ? "\n    <AdditionalFiles Include=\"MainView.axaml\" SourceItemGroup=\"AvaloniaXaml\" TargetPath=\"Views/MainView.axaml\" />"
             : string.Empty;
+        var sourceItemGroupName = string.IsNullOrWhiteSpace(customInputItemGroup) ? "AvaloniaXaml" : customInputItemGroup;
+        var sourceXamlItem = $"    <{sourceItemGroupName} Include=\"MainView.axaml\" Link=\"Views/MainView.axaml\" />";
         var duplicateAvaloniaXamlItem = duplicateAvaloniaXaml
-            ? "\n    <AvaloniaXaml Include=\"MainView.axaml\" Link=\"Views/MainView.axaml\" />"
+            ? $"\n    <{sourceItemGroupName} Include=\"MainView.axaml\" Link=\"Views/MainView.axaml\" />"
             : string.Empty;
         var sourceGenKnobs = setSourceGenKnobs
             ? "\n    <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>\n    <AvaloniaSourceGenCreateSourceInfo>true</AvaloniaSourceGenCreateSourceInfo>\n    <AvaloniaSourceGenStrictMode>true</AvaloniaSourceGenStrictMode>"
             : string.Empty;
-
-        return $"""
-<Project Sdk="Microsoft.NET.Sdk">
+        var propertyGroup = $"""
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>{backendProperty}{watchProperty}{sourceGenKnobs}
+    <TargetFramework>net10.0</TargetFramework>{backendProperty}{enableProperty}{inputItemGroupProperty}{watchProperty}{sourceGenKnobs}
   </PropertyGroup>
-
+""";
+        var xamlItemGroup = $"""
   <ItemGroup>
-    <AvaloniaXaml Include="MainView.axaml" Link="Views/MainView.axaml" />
+{sourceXamlItem}
 {duplicateAvaloniaXamlItem}
 {seededAdditionalFiles}
   </ItemGroup>
-
+""";
+        var importsBeforeProjectContent = simulateSdkImportOrder
+            ? $"""
+  <Import Project="{propsPath}" />
+"""
+            : string.Empty;
+        var importsAfterProjectContent = simulateSdkImportOrder
+            ? $"""
+  <Import Project="{targetsPath}" />
+"""
+            : $"""
   <Import Project="{propsPath}" />
   <Import Project="{targetsPath}" />
+""";
+
+        return $"""
+<Project Sdk="Microsoft.NET.Sdk">
+{importsBeforeProjectContent}
+{propertyGroup}
+{xamlItemGroup}
+{importsAfterProjectContent}
 
   <Target Name="PrintState" DependsOnTargets="XamlToCSharpGenerator_InjectAdditionalFiles;XamlToCSharpGenerator_PrepareCoreCompileInputs;XamlToCSharpGenerator_CollectUpToDateCheckInputDesignTime">
     <Message Importance="high" Text="PROJDIR|$(MSBuildProjectDirectory)" />
-    <Message Importance="high" Text="STATE|$(AvaloniaSourceGenCompilerEnabled)|$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)|@(AdditionalFiles->Count())|@(AvaloniaXaml->Count())" />
+    <Message Importance="high" Text="STATE|$(XamlSourceGenBackend)|$(XamlSourceGenEnabled)|$(AvaloniaSourceGenCompilerEnabled)|$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)|@(AdditionalFiles->Count())|@(AvaloniaXaml->Count())" />
     <Message Importance="high" Text="CFG|$(AvaloniaSourceGenUseCompiledBindingsByDefault)|$(AvaloniaSourceGenCreateSourceInfo)|$(AvaloniaSourceGenStrictMode)|$(EnableAvaloniaXamlCompilation)" />
     <Message Importance="high" Condition="'@(AdditionalFiles)' != ''" Text="AF|%(AdditionalFiles.SourceItemGroup)|%(AdditionalFiles.TargetPath)" />
     <Message Importance="high" Condition="'@(Watch)' != '' and '%(Watch.XamlToCSharpGenerator)' == 'true'" Text="WATCH|%(Watch.Identity)" />

@@ -1,0 +1,19 @@
+N:System.Reflection; Reflection APIs are banned in framework-agnostic compiler/runtime projects. Use generated delegates, typed contracts, or framework adapters.
+N:System.Reflection.Emit; Dynamic reflection emit is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetType(System.String); Runtime type lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetType(System.String,System.Boolean); Runtime type lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetType(System.String,System.Boolean,System.Boolean); Runtime type lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetMethod(System.String); Runtime method lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetMethod(System.String,System.Type[]); Runtime method lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetMethod(System.String,System.Reflection.BindingFlags); Runtime method lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetMethods(); Runtime method lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetMethods(System.Reflection.BindingFlags); Runtime method lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetProperty(System.String); Runtime property lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetProperty(System.String,System.Reflection.BindingFlags); Runtime property lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetField(System.String); Runtime field lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Type.GetField(System.String,System.Reflection.BindingFlags); Runtime field lookup is banned in framework-agnostic compiler/runtime projects.
+M:System.Activator.CreateInstance(System.Type); Runtime activation by Type is banned in framework-agnostic compiler/runtime projects.
+M:System.Activator.CreateInstance(System.Type,System.Object[]); Runtime activation by Type is banned in framework-agnostic compiler/runtime projects.
+M:System.Activator.CreateInstance(System.Type,System.Boolean); Runtime activation by Type is banned in framework-agnostic compiler/runtime projects.
+M:System.Reflection.MethodBase.Invoke(System.Object,System.Object[]); Runtime reflection invocation is banned in framework-agnostic compiler/runtime projects.
+M:System.Reflection.MethodInfo.Invoke(System.Object,System.Object[]); Runtime reflection invocation is banned in framework-agnostic compiler/runtime projects.

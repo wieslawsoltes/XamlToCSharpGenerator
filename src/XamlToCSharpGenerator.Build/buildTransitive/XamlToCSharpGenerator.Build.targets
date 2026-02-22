@@ -1,53 +1,59 @@
 <Project>
   <!-- Resolve SourceGen backend switches in .targets so project-level properties are already available. -->
   <PropertyGroup>
-    <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'">true</AvaloniaSourceGenCompilerEnabled>
+    <XamlSourceGenBackend Condition="'$(XamlSourceGenBackend)' == '' and '$(AvaloniaXamlCompilerBackend)' != ''">$(AvaloniaXamlCompilerBackend)</XamlSourceGenBackend>
+    <XamlSourceGenBackend Condition="'$(XamlSourceGenBackend)' == ''">XamlIl</XamlSourceGenBackend>
+    <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == '' and '$(AvaloniaSourceGenCompilerEnabled)' != ''">$(AvaloniaSourceGenCompilerEnabled)</XamlSourceGenEnabled>
+    <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == ''">false</XamlSourceGenEnabled>
+    <XamlSourceGenEnabled Condition="'$(XamlSourceGenBackend)' == 'SourceGen'">true</XamlSourceGenEnabled>
+    <AvaloniaXamlCompilerBackend>$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
+    <AvaloniaSourceGenCompilerEnabled>$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
+  <PropertyGroup Condition="'$(XamlSourceGenEnabled)' == 'true'">
     <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
     <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
     <DefineConstants>$(DefineConstants);AXAML_SOURCEGEN_BACKEND</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true' and '$(AvaloniaSourceGenTransformRules)' != ''">
+  <ItemGroup Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(AvaloniaSourceGenTransformRules)' != ''">
     <AvaloniaSourceGenTransformRule Include="$(AvaloniaSourceGenTransformRules)" />
   </ItemGroup>
 
   <!-- Keep AXAML visible to Roslyn/project-system even when certain design-time IDE pipelines don't execute _InjectAdditionalFiles. -->
-  <ItemGroup Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
-    <_XamlToCSharpGeneratorAvaloniaXamlProjected Include="@(AvaloniaXaml)">
+  <ItemGroup Condition="'$(XamlSourceGenEnabled)' == 'true'">
+    <_XamlToCSharpGeneratorXamlProjected Include="@($(XamlSourceGenInputItemGroup))">
       <NormalizedFullPath>%(FullPath)</NormalizedFullPath>
-    </_XamlToCSharpGeneratorAvaloniaXamlProjected>
+    </_XamlToCSharpGeneratorXamlProjected>
 
     <_XamlToCSharpGeneratorTransformRuleProjected Include="@(AvaloniaSourceGenTransformRule)">
       <NormalizedFullPath>%(FullPath)</NormalizedFullPath>
     </_XamlToCSharpGeneratorTransformRuleProjected>
-    <Watch Include="@(_XamlToCSharpGeneratorAvaloniaXamlProjected->'%(NormalizedFullPath)'->Distinct())">
+    <Watch Include="@(_XamlToCSharpGeneratorXamlProjected->'%(NormalizedFullPath)'->Distinct())">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </Watch>
     <Watch Include="@(_XamlToCSharpGeneratorTransformRuleProjected->'%(NormalizedFullPath)'->Distinct())">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </Watch>
 
-    <CustomAdditionalCompileInputs Include="@(AvaloniaXaml)">
+    <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlProjected)">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </CustomAdditionalCompileInputs>
-    <UpToDateCheckInput Include="@(AvaloniaXaml)">
+    <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlProjected)">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </UpToDateCheckInput>
   </ItemGroup>
 
   <Target Name="XamlToCSharpGenerator_PrepareCoreCompileInputs"
           BeforeTargets="CoreCompile"
-          Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
-    <RemoveDuplicates Inputs="@(AvaloniaXaml)">
-      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorAvaloniaXamlCompileInputDistinct" />
+          Condition="'$(XamlSourceGenEnabled)' == 'true'">
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorXamlProjected)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorXamlCompileInputDistinct" />
     </RemoveDuplicates>
 
     <ItemGroup>
       <CustomAdditionalCompileInputs Remove="@(CustomAdditionalCompileInputs)" Condition="'%(CustomAdditionalCompileInputs.XamlToCSharpGenerator)' == 'true'" />
-      <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorAvaloniaXamlCompileInputDistinct)">
+      <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlCompileInputDistinct)">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </CustomAdditionalCompileInputs>
     </ItemGroup>
@@ -55,14 +61,14 @@
 
   <Target Name="XamlToCSharpGenerator_CollectUpToDateCheckInputDesignTime"
           BeforeTargets="CollectUpToDateCheckInputDesignTime"
-          Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
-    <RemoveDuplicates Inputs="@(AvaloniaXaml)">
-      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorAvaloniaXamlUpToDateDistinct" />
+          Condition="'$(XamlSourceGenEnabled)' == 'true'">
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorXamlProjected)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorXamlUpToDateDistinct" />
     </RemoveDuplicates>
 
     <ItemGroup>
       <UpToDateCheckInput Remove="@(UpToDateCheckInput)" Condition="'%(UpToDateCheckInput.XamlToCSharpGenerator)' == 'true'" />
-      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorAvaloniaXamlUpToDateDistinct)">
+      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlUpToDateDistinct)">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </UpToDateCheckInput>
     </ItemGroup>
@@ -71,19 +77,22 @@
   <Target Name="XamlToCSharpGenerator_InjectAdditionalFiles"
           AfterTargets="_InjectAdditionalFiles"
           BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun"
-          Condition="'$(AvaloniaSourceGenCompilerEnabled)' == 'true'">
+          Condition="'$(XamlSourceGenEnabled)' == 'true'">
     <ItemGroup>
-      <!-- Normalize all AvaloniaXaml entries into AdditionalFiles exactly once.
+      <!-- Normalize all configured XAML input entries into AdditionalFiles exactly once.
            This prevents duplicate AdditionalFiles under watch/re-evaluation flows. -->
-      <_XamlToCSharpGeneratorAvaloniaXamlRaw Include="@(AvaloniaXaml)">
-        <NormalizedIdentity>%(FullPath)</NormalizedIdentity>
-      </_XamlToCSharpGeneratorAvaloniaXamlRaw>
+      <_XamlToCSharpGeneratorXamlRaw Include="@(_XamlToCSharpGeneratorXamlProjected)">
+        <NormalizedIdentity>%(_XamlToCSharpGeneratorXamlProjected.FullPath)</NormalizedIdentity>
+        <OriginalIdentity>%(_XamlToCSharpGeneratorXamlProjected.Identity)</OriginalIdentity>
+        <Link>%(_XamlToCSharpGeneratorXamlProjected.Link)</Link>
+        <TargetPath>%(_XamlToCSharpGeneratorXamlProjected.TargetPath)</TargetPath>
+      </_XamlToCSharpGeneratorXamlRaw>
 
-      <_XamlToCSharpGeneratorAvaloniaXaml Include="@(_XamlToCSharpGeneratorAvaloniaXamlRaw->'%(NormalizedIdentity)')">
-        <OriginalIdentity>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.Identity)</OriginalIdentity>
-        <Link>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.Link)</Link>
-        <TargetPath>%(_XamlToCSharpGeneratorAvaloniaXamlRaw.TargetPath)</TargetPath>
-      </_XamlToCSharpGeneratorAvaloniaXaml>
+      <_XamlToCSharpGeneratorXaml Include="@(_XamlToCSharpGeneratorXamlRaw->'%(NormalizedIdentity)')">
+        <OriginalIdentity>%(_XamlToCSharpGeneratorXamlRaw.OriginalIdentity)</OriginalIdentity>
+        <Link>%(_XamlToCSharpGeneratorXamlRaw.Link)</Link>
+        <TargetPath>%(_XamlToCSharpGeneratorXamlRaw.TargetPath)</TargetPath>
+      </_XamlToCSharpGeneratorXaml>
 
       <_XamlToCSharpGeneratorTransformRuleRaw Include="@(AvaloniaSourceGenTransformRule)">
         <NormalizedIdentity>%(FullPath)</NormalizedIdentity>
@@ -96,8 +105,8 @@
       </_XamlToCSharpGeneratorTransformRule>
     </ItemGroup>
 
-    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorAvaloniaXaml)">
-      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorAvaloniaXamlDistinct" />
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorXaml)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorXamlDistinct" />
     </RemoveDuplicates>
 
     <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorTransformRule)">
@@ -108,21 +117,21 @@
 
       <!-- Drop any existing AXAML AdditionalFiles projections before re-adding deterministic entries. -->
       <AdditionalFiles Remove="@(AdditionalFiles)" Condition="'%(AdditionalFiles.SourceItemGroup)' == 'AvaloniaXaml'" />
-      <AdditionalFiles Remove="@(AvaloniaXaml)" />
-      <AdditionalFiles Remove="@(AvaloniaXaml->'%(FullPath)')" />
-      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorAvaloniaXaml->'%(NormalizedIdentity)')" />
-      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorAvaloniaXamlDistinct)" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected)" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected->'%(FullPath)')" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXaml->'%(NormalizedIdentity)')" />
+      <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlDistinct)" />
       <AdditionalFiles Remove="@(AdditionalFiles)" Condition="'%(AdditionalFiles.SourceItemGroup)' == 'AvaloniaSourceGenTransformRule'" />
       <AdditionalFiles Remove="@(AvaloniaSourceGenTransformRule)" />
       <AdditionalFiles Remove="@(AvaloniaSourceGenTransformRule->'%(FullPath)')" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorTransformRule->'%(NormalizedIdentity)')" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorTransformRuleDistinct)" />
-      <AdditionalFiles Include="@(_XamlToCSharpGeneratorAvaloniaXamlDistinct)" SourceItemGroup="AvaloniaXaml">
+      <AdditionalFiles Include="@(_XamlToCSharpGeneratorXamlDistinct)" SourceItemGroup="AvaloniaXaml">
         <Watch>false</Watch>
-        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)</TargetPath>
-        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)</TargetPath>
-        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)' != ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)</TargetPath>
-        <TargetPath Condition="'%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.OriginalIdentity)' == ''">%(_XamlToCSharpGeneratorAvaloniaXamlDistinct.Identity)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorXamlDistinct.Link)' != ''">%(_XamlToCSharpGeneratorXamlDistinct.Link)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorXamlDistinct.TargetPath)' != ''">%(_XamlToCSharpGeneratorXamlDistinct.TargetPath)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorXamlDistinct.OriginalIdentity)' != ''">%(_XamlToCSharpGeneratorXamlDistinct.OriginalIdentity)</TargetPath>
+        <TargetPath Condition="'%(_XamlToCSharpGeneratorXamlDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorXamlDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorXamlDistinct.OriginalIdentity)' == ''">%(_XamlToCSharpGeneratorXamlDistinct.Identity)</TargetPath>
       </AdditionalFiles>
       <AdditionalFiles Include="@(_XamlToCSharpGeneratorTransformRuleDistinct)" SourceItemGroup="AvaloniaSourceGenTransformRule">
         <Watch>false</Watch>
@@ -132,11 +141,11 @@
         <TargetPath Condition="'%(_XamlToCSharpGeneratorTransformRuleDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorTransformRuleDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorTransformRuleDistinct.OriginalIdentity)' == ''">%(_XamlToCSharpGeneratorTransformRuleDistinct.Identity)</TargetPath>
       </AdditionalFiles>
 
-      <_XamlToCSharpGeneratorAvaloniaWatch Include="@(_XamlToCSharpGeneratorAvaloniaXamlDistinct)" />
+      <_XamlToCSharpGeneratorXamlWatch Include="@(_XamlToCSharpGeneratorXamlDistinct)" />
       <_XamlToCSharpGeneratorTransformRuleWatch Include="@(_XamlToCSharpGeneratorTransformRuleDistinct)" />
-      <Watch Remove="@(_XamlToCSharpGeneratorAvaloniaWatch)" />
+      <Watch Remove="@(_XamlToCSharpGeneratorXamlWatch)" />
       <Watch Remove="@(_XamlToCSharpGeneratorTransformRuleWatch)" />
-      <Watch Include="@(_XamlToCSharpGeneratorAvaloniaWatch)">
+      <Watch Include="@(_XamlToCSharpGeneratorXamlWatch)">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </Watch>
       <Watch Include="@(_XamlToCSharpGeneratorTransformRuleWatch)">

@@ -1,5 +1,10 @@
 <Project>
   <PropertyGroup>
+    <XamlSourceGenBackend Condition="'$(XamlSourceGenBackend)' == '' and '$(AvaloniaXamlCompilerBackend)' != ''">$(AvaloniaXamlCompilerBackend)</XamlSourceGenBackend>
+    <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == '' and '$(AvaloniaSourceGenCompilerEnabled)' != ''">$(AvaloniaSourceGenCompilerEnabled)</XamlSourceGenEnabled>
+    <XamlSourceGenInputItemGroup Condition="'$(XamlSourceGenInputItemGroup)' == ''">AvaloniaXaml</XamlSourceGenInputItemGroup>
+    <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == '' and '$(XamlSourceGenBackend)' != ''">$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
+    <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == '' and '$(XamlSourceGenEnabled)' != ''">$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == ''">XamlIl</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == ''">false</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaSourceGenUseCompiledBindingsByDefault Condition="'$(AvaloniaSourceGenUseCompiledBindingsByDefault)' == ''">false</AvaloniaSourceGenUseCompiledBindingsByDefault>
@@ -27,6 +32,9 @@
   <ItemGroup>
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="SourceItemGroup" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="TargetPath" />
+    <CompilerVisibleProperty Include="XamlSourceGenBackend" />
+    <CompilerVisibleProperty Include="XamlSourceGenEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenInputItemGroup" />
     <CompilerVisibleProperty Include="AvaloniaXamlCompilerBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCompilerEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenUseCompiledBindingsByDefault" />

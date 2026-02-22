@@ -41,6 +41,8 @@ public class DifferentialRuntimeBehaviorTests
         var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
         var runtimeProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime", "XamlToCSharpGenerator.Runtime.csproj");
         var coreProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Core", "XamlToCSharpGenerator.Core.csproj");
+        var compilerProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Compiler", "XamlToCSharpGenerator.Compiler.csproj");
+        var frameworkProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Framework.Abstractions", "XamlToCSharpGenerator.Framework.Abstractions.csproj");
         var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
         var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
 
@@ -54,6 +56,8 @@ public class DifferentialRuntimeBehaviorTests
                 NormalizeForMsBuild(targetsPath),
                 NormalizeForMsBuild(runtimeProject),
                 NormalizeForMsBuild(coreProject),
+                NormalizeForMsBuild(compilerProject),
+                NormalizeForMsBuild(frameworkProject),
                 NormalizeForMsBuild(avaloniaProject),
                 NormalizeForMsBuild(generatorProject)));
 
@@ -829,6 +833,8 @@ public class DifferentialRuntimeBehaviorTests
         string targetsPath,
         string runtimeProject,
         string coreProject,
+        string compilerProject,
+        string frameworkProject,
         string avaloniaProject,
         string generatorProject)
     {
@@ -852,6 +858,8 @@ public class DifferentialRuntimeBehaviorTests
   <ItemGroup Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'">
     <ProjectReference Include="{runtimeProject}" />
     <ProjectReference Include="{coreProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="{compilerProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="{frameworkProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{avaloniaProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{generatorProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
