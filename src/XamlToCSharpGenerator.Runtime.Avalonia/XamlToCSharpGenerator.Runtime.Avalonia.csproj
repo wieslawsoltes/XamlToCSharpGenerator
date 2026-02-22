@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.Runtime.Avalonia</PackageId>
+    <Description>Avalonia runtime loader, bootstrap, and hot-reload integration for source-generated XAML.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+  </ItemGroup>
+</Project>

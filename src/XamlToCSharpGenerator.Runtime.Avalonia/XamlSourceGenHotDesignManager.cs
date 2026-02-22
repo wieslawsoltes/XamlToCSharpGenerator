@@ -489,7 +489,7 @@ public static class XamlSourceGenHotDesignManager
             }
         }
 
-        XamlSourceGenHotReloadManager.HotReloadPipelineCompleted += OnCompleted;
+        XamlSourceGenHotReloadEventBus.Instance.HotReloadPipelineCompleted += OnCompleted;
         try
         {
             using var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -504,7 +504,7 @@ public static class XamlSourceGenHotDesignManager
         }
         finally
         {
-            XamlSourceGenHotReloadManager.HotReloadPipelineCompleted -= OnCompleted;
+            XamlSourceGenHotReloadEventBus.Instance.HotReloadPipelineCompleted -= OnCompleted;
         }
     }
 

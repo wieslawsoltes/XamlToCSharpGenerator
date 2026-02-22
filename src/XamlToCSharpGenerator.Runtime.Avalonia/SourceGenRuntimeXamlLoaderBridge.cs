@@ -1,44 +1,63 @@
 using System;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
 
 public static class SourceGenRuntimeXamlLoaderBridge
 {
+    private const string DisableDynamicBridgeSwitchName = "XamlToCSharpGenerator.Runtime.DisableDynamicBridge";
     private static readonly object Sync = new();
     private static bool _registered;
+    private static SourceGenRuntimeXamlLoaderBridgeRegistrationStatus _registrationStatus =
+        SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.NotAttempted;
 
     public static void EnsureRegistered()
     {
         lock (Sync)
         {
-            if (_registered)
-            {
-                return;
-            }
+            EnsureRegisteredCore();
+        }
+    }
 
-            var runtimeLoaderInterface = ResolveRuntimeLoaderInterface();
-            if (runtimeLoaderInterface is null)
+    public static SourceGenRuntimeXamlLoaderBridgeRegistrationStatus RegistrationStatus
+    {
+        get
+        {
+            lock (Sync)
             {
-                return;
+                return _registrationStatus;
             }
+        }
+    }
 
-            var locator = ResolveMutableLocator();
-            if (locator is null)
+    public static bool IsRegistered
+    {
+        get
+        {
+            lock (Sync)
             {
-                return;
+                return _registered;
             }
+        }
+    }
 
-            var proxyInstance = CreateProxyInstance(runtimeLoaderInterface);
-            BindRuntimeLoader(locator, runtimeLoaderInterface, proxyInstance);
-            _registered = true;
+    internal static void ResetForTests()
+    {
+        lock (Sync)
+        {
+            _registered = false;
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.NotAttempted;
         }
     }
 
     public static object DispatchLoad(object document, object configuration)
     {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(configuration);
+
         if (document is not RuntimeXamlLoaderDocument runtimeDocument)
         {
             throw new ArgumentException(
@@ -148,5 +167,62 @@ public static class SourceGenRuntimeXamlLoaderBridge
             ?? throw new InvalidOperationException("Unable to create runtime loader proxy type.");
         return Activator.CreateInstance(proxyType)
             ?? throw new InvalidOperationException("Unable to instantiate runtime loader proxy type.");
+    }
+
+    private static void EnsureRegisteredCore()
+    {
+        if (_registered)
+        {
+            return;
+        }
+
+        var runtimeLoaderInterface = ResolveRuntimeLoaderInterface();
+        if (runtimeLoaderInterface is null)
+        {
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.RuntimeLoaderInterfaceMissing;
+            return;
+        }
+
+        var locator = ResolveMutableLocator();
+        if (locator is null)
+        {
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.LocatorUnavailable;
+            return;
+        }
+
+        if (IsDynamicBridgeDisabled())
+        {
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.DynamicBridgeDisabledBySwitch;
+            return;
+        }
+
+        if (!RuntimeFeature.IsDynamicCodeSupported || !RuntimeFeature.IsDynamicCodeCompiled)
+        {
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.DynamicCodeUnsupported;
+            return;
+        }
+
+        try
+        {
+            var proxyInstance = CreateProxyInstance(runtimeLoaderInterface);
+            BindRuntimeLoader(locator, runtimeLoaderInterface, proxyInstance);
+            _registered = true;
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.RegisteredDynamicProxy;
+        }
+        catch (Exception ex) when (
+            ex is NotSupportedException ||
+            ex is PlatformNotSupportedException ||
+            ex is TypeLoadException ||
+            ex is MissingMethodException ||
+            ex is MemberAccessException)
+        {
+            // Explicit AOT-safe path: keep app startup alive when dynamic proxy emission is unavailable.
+            _registrationStatus = SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.DynamicProxyUnavailable;
+        }
+    }
+
+    private static bool IsDynamicBridgeDisabled()
+    {
+        return AppContext.TryGetSwitch(DisableDynamicBridgeSwitchName, out var disabled) && disabled;
     }
 }

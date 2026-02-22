@@ -250,10 +250,12 @@ public static class XamlSourceGenHotReloadManager
 
     private static void UpdateApplicationCore(Type[]? types, SourceGenHotReloadTrigger trigger)
     {
+        var eventBus = XamlSourceGenHotReloadEventBus.Instance;
         var normalizedTypes = NormalizeUpdatedTypes(types);
         if (!IsEnabled)
         {
             HotReloaded?.Invoke(normalizedTypes);
+            eventBus.PublishHotReloaded(normalizedTypes);
             return;
         }
 
@@ -283,7 +285,9 @@ public static class XamlSourceGenHotReloadManager
 
                 RefreshIdePollingWatcherSnapshots(currentTypes);
                 HotReloaded?.Invoke(currentTypes);
+                eventBus.PublishHotReloaded(currentTypes);
                 HotReloadPipelineCompleted?.Invoke(context);
+                eventBus.PublishPipelineCompleted(context);
 
                 lock (Sync)
                 {
@@ -731,6 +735,7 @@ public static class XamlSourceGenHotReloadManager
     {
         var handlers = SnapshotHandlers();
         HotReloadPipelineStarted?.Invoke(context);
+        XamlSourceGenHotReloadEventBus.Instance.PublishPipelineStarted(context);
 
         void RunPipeline()
         {
@@ -869,10 +874,12 @@ public static class XamlSourceGenHotReloadManager
         {
             Debug.WriteLine($"XAML source generator hot reload failed for '{operation.Type.FullName}': {ex}");
             HotReloadFailed?.Invoke(operation.Type, ex);
+            XamlSourceGenHotReloadEventBus.Instance.PublishHotReloadFailed(operation.Type, ex);
             if (IsRudeEditException(ex))
             {
                 Trace("Detected rude-edit constrained hot reload failure for type '" + operation.Type.FullName + "'. A rebuild/restart may be required.");
                 HotReloadRudeEditDetected?.Invoke(operation.Type, ex);
+                XamlSourceGenHotReloadEventBus.Instance.PublishHotReloadRudeEditDetected(operation.Type, ex);
             }
         }
         finally
@@ -994,6 +1001,7 @@ public static class XamlSourceGenHotReloadManager
     private static void ReportHandlerFailure(Type type, string phase, Exception exception)
     {
         HotReloadHandlerFailed?.Invoke(type, phase, exception);
+        XamlSourceGenHotReloadEventBus.Instance.PublishHotReloadHandlerFailed(type, phase, exception);
         Trace("Hot reload handler failed in phase '" + phase + "' for type '" + type.FullName + "': " + exception.Message);
     }
 

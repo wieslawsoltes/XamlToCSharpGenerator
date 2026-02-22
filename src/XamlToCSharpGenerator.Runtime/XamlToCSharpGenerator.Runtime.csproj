@@ -3,16 +3,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime</PackageId>
-    <Description>Runtime registry and bootstrap extensions for source-generated Avalonia XAML.</Description>
+    <Description>Compatibility runtime package that composes Runtime.Core and Runtime.Avalonia.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.12" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="../XamlToCSharpGenerator.Core/XamlToCSharpGenerator.Core.csproj" />
-    <ProjectReference Include="../XamlToCSharpGenerator.Avalonia/XamlToCSharpGenerator.Avalonia.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" />
   </ItemGroup>
 </Project>

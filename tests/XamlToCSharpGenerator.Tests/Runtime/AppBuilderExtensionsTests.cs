@@ -43,6 +43,8 @@ public class AppBuilderExtensionsTests
     [Fact]
     public void UseAvaloniaSourceGeneratedXaml_Registers_Avalonia_Runtime_Loader_Bridge()
     {
+        SourceGenRuntimeXamlLoaderBridge.ResetForTests();
+        AppContext.SetSwitch("XamlToCSharpGenerator.Runtime.DisableDynamicBridge", false);
         var builder = AppBuilder.Configure<TestApp>();
         builder.UseAvaloniaSourceGeneratedXaml();
         builder.AfterSetupCallback(builder);
@@ -62,6 +64,33 @@ public class AppBuilderExtensionsTests
 
         var runtimeLoader = getServiceMethod!.Invoke(currentResolver, [runtimeLoaderInterface!]);
         Assert.NotNull(runtimeLoader);
+        Assert.Equal(
+            SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.RegisteredDynamicProxy,
+            SourceGenRuntimeXamlLoaderBridge.RegistrationStatus);
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedXaml_RuntimeLoaderBridge_Uses_Explicit_Aot_Safe_Path_When_Dynamic_Bridge_Disabled()
+    {
+        SourceGenRuntimeXamlLoaderBridge.ResetForTests();
+        AppContext.SetSwitch("XamlToCSharpGenerator.Runtime.DisableDynamicBridge", true);
+
+        try
+        {
+            var builder = AppBuilder.Configure<TestApp>();
+            builder.UseAvaloniaSourceGeneratedXaml();
+            builder.AfterSetupCallback(builder);
+
+            Assert.False(SourceGenRuntimeXamlLoaderBridge.IsRegistered);
+            Assert.Equal(
+                SourceGenRuntimeXamlLoaderBridgeRegistrationStatus.DynamicBridgeDisabledBySwitch,
+                SourceGenRuntimeXamlLoaderBridge.RegistrationStatus);
+        }
+        finally
+        {
+            AppContext.SetSwitch("XamlToCSharpGenerator.Runtime.DisableDynamicBridge", false);
+            SourceGenRuntimeXamlLoaderBridge.ResetForTests();
+        }
     }
 
     [Fact]

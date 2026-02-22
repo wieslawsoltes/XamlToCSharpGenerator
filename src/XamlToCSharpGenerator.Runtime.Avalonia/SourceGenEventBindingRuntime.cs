@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using System.Windows.Input;
@@ -16,6 +17,7 @@ public enum SourceGenEventBindingSourceMode
 public static class SourceGenEventBindingRuntime
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> DataContextPropertyCache = new();
 
     public static void InvokeCommand(
         object rootObject,
@@ -177,12 +179,19 @@ public static class SourceGenEventBindingRuntime
             return null;
         }
 
+        if (value is IDataContextProvider provider)
+        {
+            return provider.DataContext;
+        }
+
         if (value is StyledElement styledElement)
         {
             return styledElement.DataContext;
         }
 
-        var property = value.GetType().GetProperty("DataContext", InstanceFlags);
+        var property = DataContextPropertyCache.GetOrAdd(
+            value.GetType(),
+            static type => type.GetProperty("DataContext", InstanceFlags));
         if (property is null)
         {
             return null;
