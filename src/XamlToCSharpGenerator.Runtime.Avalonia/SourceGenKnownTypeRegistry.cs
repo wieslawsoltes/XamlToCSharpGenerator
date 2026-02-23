@@ -56,7 +56,6 @@ public static class SourceGenKnownTypeRegistry
         }
 
         SeedBuiltInAvaloniaTypes();
-        SeedAvaloniaPropertyOwnerTypes();
     }
 
     public static void RegisterType(Type type)
