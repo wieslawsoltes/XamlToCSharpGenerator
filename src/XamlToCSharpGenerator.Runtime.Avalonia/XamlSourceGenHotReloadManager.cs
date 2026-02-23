@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Reflection.Metadata;
 using System.Threading;
 using Avalonia.Threading;
@@ -16,12 +15,10 @@ public static class XamlSourceGenHotReloadManager
 {
     private const int SourcePathReloadRetryCount = 5;
     private const string TraceEnvVarName = "AXSG_HOTRELOAD_TRACE";
-    private const string MetadataUpdateOriginalTypeAttributeFullName = "System.Runtime.CompilerServices.MetadataUpdateOriginalTypeAttribute";
 
     private static readonly object Sync = new();
     private static readonly Dictionary<Type, List<WeakReference<object>>> Instances = new();
     private static readonly Dictionary<Type, ReloadRegistration> Registrations = new();
-    private static readonly Dictionary<Type, MethodTokenSnapshot[]> IdePollingWatchers = new();
     private static readonly Dictionary<Type, SourcePathWatchState> IdeSourcePathWatchers = new();
     private static readonly Dictionary<Type, Type> ReplacementTypeMap = new();
     private static readonly List<RegisteredHandler> Handlers = new();
@@ -33,8 +30,6 @@ public static class XamlSourceGenHotReloadManager
     private static bool? TraceEnabledCached;
     private static bool ReloadInProgress;
     private static bool PendingReloadAllTypes;
-    private static bool HandlersLoadedFromAssemblies;
-    private static bool AssemblyLoadHookRegistered;
 
     static XamlSourceGenHotReloadManager()
     {
@@ -122,11 +117,20 @@ public static class XamlSourceGenHotReloadManager
                     Trace("Registered source path watcher for type '" + type.FullName + "': " + normalizedSourcePath);
                 }
             }
+        }
+    }
 
-            if (IsIdePollingFallbackEnabled)
-            {
-                EnsureIdePollingWatcherLocked(type);
-            }
+    public static void RegisterReplacementTypeMapping(Type replacementType, Type originalType)
+    {
+        ArgumentNullException.ThrowIfNull(replacementType);
+        ArgumentNullException.ThrowIfNull(originalType);
+
+        var normalizedReplacementType = NormalizeType(replacementType);
+        var normalizedOriginalType = NormalizeType(originalType);
+        lock (Sync)
+        {
+            ReplacementTypeMap[normalizedReplacementType] = normalizedOriginalType;
+            ReplacementTypeMap[normalizedOriginalType] = normalizedOriginalType;
         }
     }
 
@@ -146,7 +150,6 @@ public static class XamlSourceGenHotReloadManager
         {
             Handlers.Clear();
             HandlerKeys.Clear();
-            HandlersLoadedFromAssemblies = false;
             AddDefaultHandlersLocked();
         }
     }
@@ -157,7 +160,6 @@ public static class XamlSourceGenHotReloadManager
         {
             Instances.Clear();
             Registrations.Clear();
-            IdePollingWatchers.Clear();
             IdeSourcePathWatchers.Clear();
             ReplacementTypeMap.Clear();
             PendingReloadTypes.Clear();
@@ -177,12 +179,6 @@ public static class XamlSourceGenHotReloadManager
             IdePollingIntervalMs = intervalMs;
             IsIdePollingFallbackEnabled = true;
             Trace("IDE polling fallback enabled (interval " + intervalMs + "ms).");
-
-            foreach (var type in Instances.Keys)
-            {
-                EnsureIdePollingWatcherLocked(type);
-            }
-
             StartIdePollingTimerLocked();
         }
     }
@@ -282,8 +278,6 @@ public static class XamlSourceGenHotReloadManager
                 Trace("UpdateApplication invoked. Trigger: " + currentTrigger + ". Candidate operations: " + operations.Count + ".");
 
                 ExecuteReloadPipeline(context, operations);
-
-                RefreshIdePollingWatcherSnapshots(currentTypes);
                 HotReloaded?.Invoke(currentTypes);
                 eventBus.PublishHotReloaded(currentTypes);
                 HotReloadPipelineCompleted?.Invoke(context);
@@ -335,7 +329,6 @@ public static class XamlSourceGenHotReloadManager
     private static void DisableIdePollingFallbackLocked()
     {
         IsIdePollingFallbackEnabled = false;
-        IdePollingWatchers.Clear();
         IdeSourcePathWatchers.Clear();
         StopIdePollingTimerLocked();
     }
@@ -346,7 +339,7 @@ public static class XamlSourceGenHotReloadManager
 
         lock (Sync)
         {
-            if (!IsIdePollingFallbackEnabled || IdePollingWatchers.Count == 0)
+            if (!IsIdePollingFallbackEnabled || IdeSourcePathWatchers.Count == 0)
             {
                 return;
             }
@@ -354,7 +347,7 @@ public static class XamlSourceGenHotReloadManager
             var changed = new HashSet<Type>();
             var toRemove = new List<Type>();
 
-            foreach (var pair in IdePollingWatchers)
+            foreach (var pair in IdeSourcePathWatchers)
             {
                 var type = pair.Key;
 
@@ -364,23 +357,8 @@ public static class XamlSourceGenHotReloadManager
                     continue;
                 }
 
-                var snapshots = pair.Value;
-                for (var index = 0; index < snapshots.Length; index++)
-                {
-                    var snapshot = snapshots[index];
-                    var currentSignature = ReadMethodBodySignature(snapshot.Method);
-                    if (currentSignature == snapshot.Signature)
-                    {
-                        continue;
-                    }
-
-                    snapshot.Signature = currentSignature;
-                    changed.Add(type);
-                    break;
-                }
-
-                if (IdeSourcePathWatchers.TryGetValue(type, out var sourcePathState) &&
-                    sourcePathState.TryConsumeReloadSignal())
+                var sourcePathState = pair.Value;
+                if (sourcePathState.TryConsumeReloadSignal())
                 {
                     changed.Add(type);
                 }
@@ -388,7 +366,7 @@ public static class XamlSourceGenHotReloadManager
 
             foreach (var type in toRemove)
             {
-                IdePollingWatchers.Remove(type);
+                IdeSourcePathWatchers.Remove(type);
             }
 
             if (changed.Count == 0)
@@ -407,34 +385,6 @@ public static class XamlSourceGenHotReloadManager
         }
     }
 
-    private static void EnsureIdePollingWatcherLocked(Type type)
-    {
-        if (IdePollingWatchers.ContainsKey(type))
-        {
-            return;
-        }
-
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-        var snapshots = new List<MethodTokenSnapshot>(methods.Length);
-        foreach (var method in methods)
-        {
-            var signature = ReadMethodBodySignature(method);
-            if (signature == long.MinValue)
-            {
-                continue;
-            }
-
-            snapshots.Add(new MethodTokenSnapshot(method, signature));
-        }
-
-        IdePollingWatchers[type] = snapshots.ToArray();
-        Trace("Prepared " + snapshots.Count + " method snapshots for type '" + type.FullName + "'.");
-        if (IdeSourcePathWatchers.TryGetValue(type, out var sourcePathState))
-        {
-            sourcePathState.RefreshLastWriteTicks();
-        }
-    }
-
     private static string? NormalizeSourcePath(string sourcePath)
     {
         try
@@ -444,84 +394,6 @@ public static class XamlSourceGenHotReloadManager
         catch
         {
             return null;
-        }
-    }
-
-    private static void RefreshIdePollingWatcherSnapshots(Type[]? types)
-    {
-        lock (Sync)
-        {
-            if (!IsIdePollingFallbackEnabled || IdePollingWatchers.Count == 0)
-            {
-                return;
-            }
-
-            if (types is null || types.Length == 0)
-            {
-                var trackedTypes = new Type[IdePollingWatchers.Count];
-                IdePollingWatchers.Keys.CopyTo(trackedTypes, 0);
-                foreach (var type in trackedTypes)
-                {
-                    RefreshIdePollingWatcherSnapshotLocked(type);
-                }
-
-                return;
-            }
-
-            foreach (var type in types)
-            {
-                RefreshIdePollingWatcherSnapshotLocked(NormalizeType(type));
-            }
-        }
-    }
-
-    private static void RefreshIdePollingWatcherSnapshotLocked(Type type)
-    {
-        EnsureIdePollingWatcherLocked(type);
-        if (!IdePollingWatchers.TryGetValue(type, out var snapshots))
-        {
-            return;
-        }
-
-        for (var index = 0; index < snapshots.Length; index++)
-        {
-            var snapshot = snapshots[index];
-            snapshot.Signature = ReadMethodBodySignature(snapshot.Method);
-        }
-    }
-
-    private static long ReadMethodBodySignature(MethodInfo method)
-    {
-        try
-        {
-            var body = method.GetMethodBody();
-            if (body is null)
-            {
-                return long.MinValue;
-            }
-
-            unchecked
-            {
-                var hash = 17L;
-                hash = (hash * 31) + body.MaxStackSize;
-                hash = (hash * 31) + (body.InitLocals ? 1 : 0);
-                hash = (hash * 31) + body.LocalVariables.Count;
-
-                var il = body.GetILAsByteArray();
-                if (il is not null)
-                {
-                    for (var i = 0; i < il.Length; i++)
-                    {
-                        hash = (hash * 31) + il[i];
-                    }
-                }
-
-                return hash;
-            }
-        }
-        catch
-        {
-            return long.MinValue;
         }
     }
 
@@ -563,72 +435,28 @@ public static class XamlSourceGenHotReloadManager
             {
                 return mappedType;
             }
-        }
 
-        if (TryResolveOriginalTypeFromAttribute(type, out var originalType))
-        {
-            var normalizedOriginalType = NormalizeType(originalType);
-            lock (Sync)
+            foreach (var trackedType in Instances.Keys)
             {
-                ReplacementTypeMap[normalizedType] = normalizedOriginalType;
-                ReplacementTypeMap[normalizedOriginalType] = normalizedOriginalType;
-            }
-
-            Trace("Mapped replacement type '" + normalizedType.FullName + "' to original type '" + normalizedOriginalType.FullName + "'.");
-            return normalizedOriginalType;
-        }
-
-        lock (Sync)
-        {
-            ReplacementTypeMap[normalizedType] = normalizedType;
-        }
-
-        return normalizedType;
-    }
-
-    private static bool TryResolveOriginalTypeFromAttribute(Type type, out Type originalType)
-    {
-        originalType = type;
-        try
-        {
-            var attributes = type.GetCustomAttributesData();
-            foreach (var attribute in attributes)
-            {
-                if (!string.Equals(attribute.AttributeType.FullName, MetadataUpdateOriginalTypeAttributeFullName, StringComparison.Ordinal))
+                if (!string.Equals(trackedType.FullName, normalizedType.FullName, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                if (attribute.ConstructorArguments.Count > 0 &&
-                    attribute.ConstructorArguments[0].Value is Type ctorType)
-                {
-                    originalType = ctorType;
-                    return true;
-                }
-
-                foreach (var namedArgument in attribute.NamedArguments)
-                {
-                    if (namedArgument.TypedValue.Value is Type namedType)
-                    {
-                        originalType = namedType;
-                        return true;
-                    }
-                }
+                ReplacementTypeMap[normalizedType] = trackedType;
+                ReplacementTypeMap[trackedType] = trackedType;
+                return trackedType;
             }
-        }
-        catch
-        {
-            // Best effort mapping only.
-        }
 
-        return false;
+            ReplacementTypeMap[normalizedType] = normalizedType;
+            return normalizedType;
+        }
     }
 
     private static List<ReloadOperation> CollectReloadOperations(Type[]? types)
     {
         lock (Sync)
         {
-            EnsureHandlersLoadedLocked();
             var operations = new List<ReloadOperation>();
 
             if (types is null || types.Length == 0)
@@ -789,7 +617,6 @@ public static class XamlSourceGenHotReloadManager
     {
         lock (Sync)
         {
-            EnsureHandlersLoadedLocked();
             return Handlers.ToArray();
         }
     }
@@ -1047,84 +874,6 @@ public static class XamlSourceGenHotReloadManager
         return true;
     }
 
-    private static void EnsureHandlersLoadedLocked()
-    {
-        if (!AssemblyLoadHookRegistered)
-        {
-            AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
-            AssemblyLoadHookRegistered = true;
-        }
-
-        if (HandlersLoadedFromAssemblies)
-        {
-            return;
-        }
-
-        HandlersLoadedFromAssemblies = true;
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            RegisterHandlersFromAssemblyLocked(assembly);
-        }
-    }
-
-    private static void OnAssemblyLoad(object? sender, AssemblyLoadEventArgs eventArgs)
-    {
-        lock (Sync)
-        {
-            RegisterHandlersFromAssemblyLocked(eventArgs.LoadedAssembly);
-        }
-    }
-
-    private static void RegisterHandlersFromAssemblyLocked(Assembly assembly)
-    {
-        object[] rawAttributes;
-        try
-        {
-            rawAttributes = assembly.GetCustomAttributes(typeof(SourceGenHotReloadHandlerAttribute), false);
-        }
-        catch
-        {
-            return;
-        }
-
-        if (rawAttributes.Length == 0)
-        {
-            return;
-        }
-
-        foreach (var rawAttribute in rawAttributes)
-        {
-            if (rawAttribute is not SourceGenHotReloadHandlerAttribute attribute)
-            {
-                continue;
-            }
-
-            if (!typeof(ISourceGenHotReloadHandler).IsAssignableFrom(attribute.HandlerType) ||
-                attribute.HandlerType.IsAbstract ||
-                attribute.HandlerType.GetConstructor(Type.EmptyTypes) is null)
-            {
-                continue;
-            }
-
-            ISourceGenHotReloadHandler? handler = null;
-            try
-            {
-                handler = (ISourceGenHotReloadHandler?)Activator.CreateInstance(attribute.HandlerType);
-            }
-            catch (Exception ex)
-            {
-                Trace("Failed to create hot reload handler '" + attribute.HandlerType.FullName + "': " + ex.Message);
-            }
-
-            if (handler is null)
-            {
-                continue;
-            }
-
-            AddHandlerLocked(handler, attribute.ElementType, assembly.GetName().Name ?? "assembly");
-        }
-    }
-
     private static void AddDefaultHandlersLocked()
     {
         AddHandlerLocked(new StyledElementDataContextHotReloadHandler(), typeof(global::Avalonia.StyledElement), "default");
@@ -1213,13 +962,6 @@ public static class XamlSourceGenHotReloadManager
         public object? State { get; } = state;
     }
 
-    private sealed class MethodTokenSnapshot(MethodInfo method, long signature)
-    {
-        public MethodInfo Method { get; } = method;
-
-        public long Signature { get; set; } = signature;
-    }
-
     private sealed class SourcePathWatchState
     {
         private readonly string _sourcePath;
@@ -1235,12 +977,6 @@ public static class XamlSourceGenHotReloadManager
         public static SourcePathWatchState Create(string sourcePath)
         {
             return new SourcePathWatchState(sourcePath, ReadLastWriteTicks(sourcePath));
-        }
-
-        public void RefreshLastWriteTicks()
-        {
-            _lastWriteTicks = ReadLastWriteTicks(_sourcePath);
-            _remainingReloadAttempts = 0;
         }
 
         public bool TryConsumeReloadSignal()
@@ -1321,14 +1057,6 @@ public static class XamlSourceGenHotReloadManager
 
     private sealed class VisualTemplateRematerializationHotReloadHandler : ISourceGenHotReloadHandler
     {
-        private static readonly MethodInfo? InvalidateStylesMethod =
-            typeof(global::Avalonia.StyledElement).GetMethod(
-                "InvalidateStyles",
-                BindingFlags.Instance | BindingFlags.NonPublic,
-                binder: null,
-                types: [typeof(bool)],
-                modifiers: null);
-
         public int Priority => -200;
 
         public bool CanHandle(Type reloadType, object instance)
@@ -1351,7 +1079,6 @@ public static class XamlSourceGenHotReloadManager
                 {
                     if (visuals[index] is global::Avalonia.StyledElement styledElement)
                     {
-                        TryInvalidateStyles(styledElement, recurse: false);
                         TryApplyStyling(styledElement);
                     }
                 }
@@ -1382,23 +1109,6 @@ public static class XamlSourceGenHotReloadManager
             }
 
             return visuals;
-        }
-
-        private static void TryInvalidateStyles(global::Avalonia.StyledElement styledElement, bool recurse)
-        {
-            if (InvalidateStylesMethod is null)
-            {
-                return;
-            }
-
-            try
-            {
-                InvalidateStylesMethod.Invoke(styledElement, [recurse]);
-            }
-            catch
-            {
-                // Best effort style invalidation only.
-            }
         }
 
         private static void TryApplyStyling(global::Avalonia.StyledElement styledElement)

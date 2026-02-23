@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Xml.Linq;
 using System.Xml;
@@ -897,9 +896,29 @@ public static class XamlSourceGenHotDesignCoreTools
         };
 
         var projectControlTypes = new HashSet<Type>();
+        var projectAssemblyNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var document in XamlSourceGenHotDesignManager.GetRegisteredDocuments())
         {
-            TryCollectProjectControls(document.RootType.Assembly, projectControlTypes);
+            AddProjectControlType(projectControlTypes, document.RootType);
+            var assemblyName = document.RootType.Assembly.GetName().Name;
+            if (!string.IsNullOrWhiteSpace(assemblyName))
+            {
+                projectAssemblyNames.Add(assemblyName);
+            }
+        }
+
+        var registeredTypes = SourceGenKnownTypeRegistry.GetRegisteredTypes();
+        for (var index = 0; index < registeredTypes.Count; index++)
+        {
+            var candidate = registeredTypes[index];
+            var candidateAssemblyName = candidate.Assembly.GetName().Name;
+            if (string.IsNullOrWhiteSpace(candidateAssemblyName) ||
+                !projectAssemblyNames.Contains(candidateAssemblyName))
+            {
+                continue;
+            }
+
+            AddProjectControlType(projectControlTypes, candidate);
         }
 
         foreach (var projectType in projectControlTypes.OrderBy(static type => type.Name, StringComparer.OrdinalIgnoreCase))
@@ -933,36 +952,22 @@ public static class XamlSourceGenHotDesignCoreTools
             .ToArray();
     }
 
-    private static void TryCollectProjectControls(Assembly assembly, ISet<Type> collector)
+    private static void AddProjectControlType(ISet<Type> collector, Type type)
     {
-        Type[] types;
-        try
-        {
-            types = assembly.GetTypes();
-        }
-        catch
+        if (!typeof(Control).IsAssignableFrom(type) ||
+            type.IsAbstract ||
+            !type.IsPublic)
         {
             return;
         }
 
-        for (var index = 0; index < types.Length; index++)
+        if (type.Namespace is not null &&
+            type.Namespace.StartsWith("Avalonia.", StringComparison.Ordinal))
         {
-            var type = types[index];
-            if (!typeof(Control).IsAssignableFrom(type) ||
-                type.IsAbstract ||
-                !type.IsPublic)
-            {
-                continue;
-            }
-
-            if (type.Namespace is not null &&
-                type.Namespace.StartsWith("Avalonia.", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            collector.Add(type);
+            return;
         }
+
+        collector.Add(type);
     }
 
     private static bool TryResolveDocument(string? buildUri, Type? targetType, string? targetTypeName, out SourceGenHotDesignDocumentDescriptor? document)
@@ -1190,160 +1195,51 @@ public static class XamlSourceGenHotDesignCoreTools
 
     private static Type? ResolveElementTypeCore(string namespaceUri, string localName)
     {
-        if (string.IsNullOrWhiteSpace(namespaceUri))
+        if (string.IsNullOrWhiteSpace(namespaceUri) ||
+            string.IsNullOrWhiteSpace(localName))
         {
             return null;
         }
 
-        if (string.Equals(namespaceUri, "https://github.com/avaloniaui", StringComparison.OrdinalIgnoreCase))
-        {
-            var candidateNamespaces = new[]
-            {
-                "Avalonia.Controls",
-                "Avalonia.Controls.Primitives",
-                "Avalonia.Controls.Shapes",
-                "Avalonia.Controls.Documents",
-                "Avalonia.Media",
-                "Avalonia.Layout"
-            };
-
-            foreach (var candidateNamespace in candidateNamespaces)
-            {
-                var type = FindTypeAcrossLoadedAssemblies(candidateNamespace + "." + localName);
-                if (type is not null)
-                {
-                    return type;
-                }
-            }
-        }
-        else if (namespaceUri.StartsWith("clr-namespace:", StringComparison.Ordinal))
-        {
-            if (TryParseClrNamespace(namespaceUri, out var clrNamespace, out var assemblyName))
-            {
-                var fullName = clrNamespace + "." + localName;
-                if (!string.IsNullOrWhiteSpace(assemblyName))
-                {
-                    var qualified = fullName + ", " + assemblyName;
-                    var type = Type.GetType(qualified, throwOnError: false);
-                    if (type is not null)
-                    {
-                        return type;
-                    }
-                }
-
-                return FindTypeAcrossLoadedAssemblies(fullName);
-            }
-        }
-        else if (namespaceUri.StartsWith("using:", StringComparison.Ordinal))
-        {
-            var clrNamespace = namespaceUri["using:".Length..].Trim();
-            if (!string.IsNullOrWhiteSpace(clrNamespace))
-            {
-                var fullName = clrNamespace + "." + localName;
-                return FindTypeAcrossLoadedAssemblies(fullName);
-            }
-        }
-
-        return null;
-    }
-
-    private static bool TryParseClrNamespace(string namespaceUri, out string clrNamespace, out string? assemblyName)
-    {
-        clrNamespace = string.Empty;
-        assemblyName = null;
-
-        var payload = namespaceUri["clr-namespace:".Length..];
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return false;
-        }
-
-        var segments = payload.Split(';', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0)
-        {
-            return false;
-        }
-
-        clrNamespace = segments[0].Trim();
-        for (var index = 1; index < segments.Length; index++)
-        {
-            var segment = segments[index].Trim();
-            if (!segment.StartsWith("assembly=", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            assemblyName = segment["assembly=".Length..].Trim();
-            break;
-        }
-
-        return !string.IsNullOrWhiteSpace(clrNamespace);
-    }
-
-    private static Type? FindTypeAcrossLoadedAssemblies(string fullName)
-    {
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (var index = 0; index < assemblies.Length; index++)
-        {
-            var assembly = assemblies[index];
-            Type? type;
-            try
-            {
-                type = assembly.GetType(fullName, throwOnError: false, ignoreCase: false);
-            }
-            catch
-            {
-                continue;
-            }
-
-            if (type is not null)
-            {
-                return type;
-            }
-        }
-
-        return null;
+        return SourceGenKnownTypeRegistry.TryResolve(namespaceUri, localName, out var type)
+            ? type
+            : null;
     }
 
     private static IReadOnlyList<AvaloniaPropertyDescriptor> EnumerateAvaloniaProperties(Type type)
     {
         var descriptors = new Dictionary<string, AvaloniaPropertyDescriptor>(StringComparer.OrdinalIgnoreCase);
-        var currentType = type;
-        while (currentType is not null && currentType != typeof(object))
+
+        foreach (var property in AvaloniaPropertyRegistry.Instance.GetRegistered(type))
         {
-            var fields = currentType.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            for (var fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
-            {
-                var field = fields[fieldIndex];
-                if (!typeof(AvaloniaProperty).IsAssignableFrom(field.FieldType))
-                {
-                    continue;
-                }
+            AddAvaloniaPropertyDescriptor(descriptors, property);
+        }
 
-                if (field.GetValue(null) is not AvaloniaProperty property)
-                {
-                    continue;
-                }
-
-                var propertyName = field.Name.EndsWith("Property", StringComparison.Ordinal)
-                    ? field.Name[..^"Property".Length]
-                    : field.Name;
-
-                if (!descriptors.ContainsKey(propertyName))
-                {
-                    descriptors[propertyName] = new AvaloniaPropertyDescriptor(
-                        propertyName,
-                        property.PropertyType,
-                        property is AvaloniaProperty<object?>);
-                }
-            }
-
-            currentType = currentType.BaseType;
+        foreach (var attachedProperty in AvaloniaPropertyRegistry.Instance.GetRegisteredAttached(type))
+        {
+            AddAvaloniaPropertyDescriptor(descriptors, attachedProperty);
         }
 
         return descriptors.Values
             .OrderBy(static descriptor => descriptor.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static void AddAvaloniaPropertyDescriptor(
+        IDictionary<string, AvaloniaPropertyDescriptor> descriptors,
+        AvaloniaProperty property)
+    {
+        var propertyName = property.Name;
+        if (string.IsNullOrWhiteSpace(propertyName) ||
+            descriptors.ContainsKey(propertyName))
+        {
+            return;
+        }
+
+        descriptors[propertyName] = new AvaloniaPropertyDescriptor(
+            propertyName,
+            property.PropertyType,
+            property.IsAttached);
     }
 
     private static IReadOnlyList<SourceGenHotDesignPropertyQuickSet> GetQuickSets(string propertyName)

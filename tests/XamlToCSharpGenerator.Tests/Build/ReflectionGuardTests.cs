@@ -2,11 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
 public class ReflectionGuardTests
 {
+    private const string RuntimeAvaloniaReflectionPattern =
+        @"\b(System\.Reflection\.(?!Metadata\b)|using\s+System\.Reflection(?:\.Emit)?\s*;|Type\.GetType\(|Activator\.CreateInstance\(|GetMethod\(|GetProperty\(|GetField\()";
+
     [Fact]
     public void DirectoryBuildProps_Enables_BannedApiAnalyzer_For_FrameworkAgnosticProjects()
     {
@@ -90,6 +94,77 @@ public class ReflectionGuardTests
         Assert.True(
             violations.Count == 0,
             "Framework-agnostic projects contain reflection API usage:\n" + string.Join('\n', violations.OrderBy(static x => x, StringComparer.Ordinal)));
+    }
+
+    [Fact]
+    public void RuntimeAvalonia_ReflectionUsage_IsConfined_To_Tracked_AllowList()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var runtimeAvaloniaDirectory = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime.Avalonia");
+
+        var allowedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var reflectionPattern = new Regex(RuntimeAvaloniaReflectionPattern, RegexOptions.CultureInvariant | RegexOptions.Multiline);
+
+        var violatingFiles = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(runtimeAvaloniaDirectory, "*.cs", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(repositoryRoot, file);
+            if (relativePath.Contains("/obj/", StringComparison.Ordinal) ||
+                relativePath.Contains("/bin/", StringComparison.Ordinal) ||
+                relativePath.Contains("\\obj\\", StringComparison.Ordinal) ||
+                relativePath.Contains("\\bin\\", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var content = File.ReadAllText(file);
+            if (!reflectionPattern.IsMatch(content))
+            {
+                continue;
+            }
+
+            if (!allowedFiles.Contains(relativePath))
+            {
+                violatingFiles.Add(relativePath);
+            }
+        }
+
+        Assert.True(
+            violatingFiles.Count == 0,
+            "Untracked reflection usage found in Runtime.Avalonia:\n" +
+            string.Join('\n', violatingFiles.OrderBy(static x => x, StringComparer.Ordinal)));
+    }
+
+    [Fact]
+    public void Wave7_Eliminated_Runtime_Files_Are_ReflectionFree()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var targetFiles = new[]
+        {
+            Path.Combine("src", "XamlToCSharpGenerator.Runtime.Avalonia", "SourceGenRuntimeXamlLoaderBridge.cs"),
+            Path.Combine("src", "XamlToCSharpGenerator.Runtime.Avalonia", "XamlSourceGenHotReloadStateTracker.cs"),
+            Path.Combine("src", "XamlToCSharpGenerator.Runtime.Avalonia", "XamlSourceGenHotReloadManager.cs"),
+            Path.Combine("src", "XamlToCSharpGenerator.Runtime.Avalonia", "SourceGenEventBindingRuntime.cs")
+        };
+
+        var reflectionPattern = new Regex(RuntimeAvaloniaReflectionPattern, RegexOptions.CultureInvariant | RegexOptions.Multiline);
+        var violations = new List<string>();
+        for (var index = 0; index < targetFiles.Length; index++)
+        {
+            var relativePath = targetFiles[index];
+            var fullPath = Path.Combine(repositoryRoot, relativePath);
+            var content = File.ReadAllText(fullPath);
+            if (reflectionPattern.IsMatch(content))
+            {
+                violations.Add(relativePath);
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            "Wave 7 target files regressed to reflection usage:\n" +
+            string.Join('\n', violations.OrderBy(static x => x, StringComparer.Ordinal)));
     }
 
     private static string GetRepositoryRoot()

@@ -7,9 +7,6 @@ public static class AppBuilderExtensions
 {
     public static AppBuilder UseAvaloniaSourceGeneratedXaml(this AppBuilder builder)
     {
-        AvaloniaSourceGeneratedXamlLoader.Enable();
-        XamlSourceGenHotReloadManager.Enable();
-        XamlSourceGenHotReloadManager.TryEnableIdePollingFallbackFromEnvironment();
         return builder.AfterSetup(_ =>
         {
             AvaloniaSourceGeneratedXamlLoader.Enable();
@@ -23,23 +20,11 @@ public static class AppBuilderExtensions
         bool enable = true,
         Action<SourceGenRuntimeXamlCompilationOptions>? configure = null)
     {
-        ConfigureRuntimeCompilation(enable, configure);
         return builder.AfterSetup(_ => ConfigureRuntimeCompilation(enable, configure));
     }
 
     public static AppBuilder UseAvaloniaSourceGeneratedXamlHotReload(this AppBuilder builder, bool enable = true)
     {
-        if (enable)
-        {
-            XamlSourceGenHotReloadManager.Enable();
-            XamlSourceGenHotReloadManager.TryEnableIdePollingFallbackFromEnvironment();
-        }
-        else
-        {
-            XamlSourceGenHotReloadManager.Disable();
-            XamlSourceGenHotReloadManager.DisableIdePollingFallback();
-        }
-
         return builder.AfterSetup(_ =>
         {
             if (enable)
@@ -60,15 +45,6 @@ public static class AppBuilderExtensions
         bool enable = true,
         int pollingIntervalMs = 1000)
     {
-        if (enable)
-        {
-            XamlSourceGenHotReloadManager.EnableIdePollingFallback(pollingIntervalMs);
-        }
-        else
-        {
-            XamlSourceGenHotReloadManager.DisableIdePollingFallback();
-        }
-
         return builder.AfterSetup(_ =>
         {
             if (enable)
@@ -87,7 +63,6 @@ public static class AppBuilderExtensions
         ISourceGenHotReloadHandler handler,
         Type? elementType = null)
     {
-        XamlSourceGenHotReloadManager.RegisterHandler(handler, elementType);
         return builder.AfterSetup(_ =>
         {
             XamlSourceGenHotReloadManager.RegisterHandler(handler, elementType);
@@ -100,7 +75,6 @@ public static class AppBuilderExtensions
         Action<SourceGenHotDesignOptions>? configure = null,
         ISourceGenHotDesignUpdateApplier? applier = null)
     {
-        ConfigureHotDesign(enable, configure, applier);
         return builder.AfterSetup(_ => ConfigureHotDesign(enable, configure, applier));
     }
 

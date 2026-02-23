@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Input;
+using Avalonia.Controls;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -7,187 +8,84 @@ namespace XamlToCSharpGenerator.Tests.Runtime;
 public class SourceGenEventBindingRuntimeTests
 {
     [Fact]
-    public void InvokeCommand_Executes_Command_From_DataContext()
+    public void InvokeCommand_Executes_Root_Command_For_Dot_Path()
     {
         var command = new RecordingCommand();
-        var viewModel = new EventBindingViewModel
-        {
-            SaveCommand = command
-        };
-        var root = new EventBindingRoot
-        {
-            DataContext = viewModel
-        };
 
         SourceGenEventBindingRuntime.InvokeCommand(
-            root,
-            sender: null,
-            eventArgs: null,
-            SourceGenEventBindingSourceMode.DataContextThenRoot,
-            commandPath: "SaveCommand",
-            parameterPath: null,
-            parameterValue: null,
-            hasParameterValue: false,
-            passEventArgs: false);
-
-        Assert.Equal(1, command.ExecuteCount);
-        Assert.Null(command.LastParameter);
-    }
-
-    [Fact]
-    public void InvokeCommand_Resolves_Parameter_Path_From_DataContext()
-    {
-        var command = new RecordingCommand();
-        var viewModel = new EventBindingViewModel
-        {
-            SaveCommand = command,
-            SelectedItem = "Item-42"
-        };
-        var root = new EventBindingRoot
-        {
-            DataContext = viewModel
-        };
-
-        SourceGenEventBindingRuntime.InvokeCommand(
-            root,
-            sender: null,
-            eventArgs: null,
-            SourceGenEventBindingSourceMode.DataContextThenRoot,
-            commandPath: "SaveCommand",
-            parameterPath: "SelectedItem",
-            parameterValue: null,
-            hasParameterValue: false,
-            passEventArgs: false);
-
-        Assert.Equal(1, command.ExecuteCount);
-        Assert.Equal("Item-42", command.LastParameter);
-    }
-
-    [Fact]
-    public void InvokeMethod_Uses_Root_Source_Mode()
-    {
-        var root = new EventBindingRoot();
-
-        SourceGenEventBindingRuntime.InvokeMethod(
-            root,
+            rootObject: command,
             sender: null,
             eventArgs: null,
             SourceGenEventBindingSourceMode.Root,
-            methodPath: "RootSave",
+            commandPath: ".",
             parameterPath: null,
-            parameterValue: null,
-            hasParameterValue: false,
+            parameterValue: "payload",
+            hasParameterValue: true,
             passEventArgs: false);
 
-        Assert.Equal(1, root.RootMethodInvocations);
+        Assert.Equal(1, command.ExecuteCount);
+        Assert.Equal("payload", command.LastParameter);
     }
 
     [Fact]
-    public void InvokeMethod_Passes_Event_Args_When_Requested()
+    public void InvokeCommand_Uses_DataContext_When_Source_Mode_Is_DataContext()
     {
-        var viewModel = new EventBindingViewModel();
-        var root = new EventBindingRoot
+        var command = new RecordingCommand();
+        var sender = new Button
         {
-            DataContext = viewModel
+            DataContext = command
         };
-        var sender = new object();
-        var eventArgs = new EventArgs();
 
-        SourceGenEventBindingRuntime.InvokeMethod(
-            root,
-            sender,
-            eventArgs,
-            SourceGenEventBindingSourceMode.DataContextThenRoot,
-            methodPath: "SaveWithArgs",
+        SourceGenEventBindingRuntime.InvokeCommand(
+            rootObject: new object(),
+            sender: sender,
+            eventArgs: new EventArgs(),
+            SourceGenEventBindingSourceMode.DataContext,
+            commandPath: ".",
             parameterPath: null,
             parameterValue: null,
             hasParameterValue: false,
             passEventArgs: true);
 
-        Assert.Equal(1, viewModel.SaveWithArgsInvocations);
-        Assert.Same(sender, viewModel.LastSender);
-        Assert.Same(eventArgs, viewModel.LastEventArgs);
+        Assert.Equal(1, command.ExecuteCount);
+        Assert.IsType<EventArgs>(command.LastParameter);
     }
 
     [Fact]
-    public void InvokeCommand_Falls_Back_To_Root_When_DataContext_Missing_Command_Path()
+    public void InvokeCommand_Ignores_Non_Dot_Path_In_Compatibility_Mode()
     {
         var command = new RecordingCommand();
-        var viewModel = new EventBindingViewModel();
-        var root = new EventBindingRoot
-        {
-            DataContext = viewModel,
-            RootCommand = command
-        };
 
         SourceGenEventBindingRuntime.InvokeCommand(
-            root,
+            rootObject: command,
             sender: null,
             eventArgs: null,
-            SourceGenEventBindingSourceMode.DataContextThenRoot,
-            commandPath: "RootCommand",
+            SourceGenEventBindingSourceMode.Root,
+            commandPath: "SaveCommand",
             parameterPath: null,
             parameterValue: null,
             hasParameterValue: false,
             passEventArgs: false);
 
-        Assert.Equal(1, command.ExecuteCount);
+        Assert.Equal(0, command.ExecuteCount);
     }
 
     [Fact]
-    public void InvokeMethod_Falls_Back_To_Root_When_DataContext_Missing_Method_Path()
+    public void InvokeMethod_Does_Not_Throw_In_Compatibility_Mode()
     {
-        var root = new EventBindingRoot
-        {
-            DataContext = new EventBindingViewModel()
-        };
+        var exception = Record.Exception(() =>
+            SourceGenEventBindingRuntime.InvokeMethod(
+                rootObject: new object(),
+                sender: new object(),
+                eventArgs: new EventArgs(),
+                SourceGenEventBindingSourceMode.DataContextThenRoot,
+                methodPath: "Save",
+                parameterPath: "SelectedItem",
+                parameterValue: null,
+                hasParameterValue: false,
+                passEventArgs: true));
 
-        SourceGenEventBindingRuntime.InvokeMethod(
-            root,
-            sender: null,
-            eventArgs: null,
-            SourceGenEventBindingSourceMode.DataContextThenRoot,
-            methodPath: "RootSave",
-            parameterPath: null,
-            parameterValue: null,
-            hasParameterValue: false,
-            passEventArgs: false);
-
-        Assert.Equal(1, root.RootMethodInvocations);
-    }
-
-    private sealed class EventBindingRoot
-    {
-        public object? DataContext { get; set; }
-
-        public ICommand RootCommand { get; set; } = new RecordingCommand();
-
-        public int RootMethodInvocations { get; private set; }
-
-        public void RootSave()
-        {
-            RootMethodInvocations++;
-        }
-    }
-
-    private sealed class EventBindingViewModel
-    {
-        public ICommand SaveCommand { get; set; } = new RecordingCommand();
-
-        public object? SelectedItem { get; set; }
-
-        public int SaveWithArgsInvocations { get; private set; }
-
-        public object? LastSender { get; private set; }
-
-        public object? LastEventArgs { get; private set; }
-
-        public void SaveWithArgs(object? sender, object? args)
-        {
-            SaveWithArgsInvocations++;
-            LastSender = sender;
-            LastEventArgs = args;
-        }
+        Assert.Null(exception);
     }
 
     private sealed class RecordingCommand : ICommand

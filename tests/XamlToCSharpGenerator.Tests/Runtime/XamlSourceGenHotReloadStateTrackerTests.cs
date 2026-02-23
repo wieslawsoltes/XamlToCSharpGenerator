@@ -11,6 +11,9 @@ namespace XamlToCSharpGenerator.Tests.Runtime;
 [Collection("RuntimeStateful")]
 public class XamlSourceGenHotReloadStateTrackerTests
 {
+    private static readonly SourceGenHotReloadCleanupDescriptor[] EmptyDescriptors =
+        Array.Empty<SourceGenHotReloadCleanupDescriptor>();
+
     [Fact]
     public void Reconcile_Clears_Removed_Collection_Members_Including_ResourceDictionaries()
     {
@@ -24,9 +27,20 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            ["Styles", "Resources"],
-            [],
-            [],
+            [
+                new SourceGenHotReloadCleanupDescriptor("Styles", static instance =>
+                {
+                    var typed = (CollectionStateTarget)instance;
+                    XamlSourceGenHotReloadStateTracker.TryClearCollection(typed.Styles);
+                }),
+                new SourceGenHotReloadCleanupDescriptor("Resources", static instance =>
+                {
+                    var typed = (CollectionStateTarget)instance;
+                    XamlSourceGenHotReloadStateTracker.TryClearCollection(typed.Resources);
+                })
+            ],
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         target.Styles.Add("warning");
@@ -35,9 +49,9 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Empty(target.Styles);
@@ -54,9 +68,15 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            ["Styles"],
-            [],
-            [],
+            [
+                new SourceGenHotReloadCleanupDescriptor("Styles", static instance =>
+                {
+                    var typed = (StyledElementStateTarget)instance;
+                    XamlSourceGenHotReloadStateTracker.TryClearCollection(typed.Styles);
+                })
+            ],
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         target.Styles.Add(new Style());
@@ -64,9 +84,9 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Empty(target.Styles);
@@ -80,18 +100,23 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            ["Title"],
-            [],
+            EmptyDescriptors,
+            [
+                new SourceGenHotReloadCleanupDescriptor("Title", static instance =>
+                {
+                    ((CollectionStateTarget)instance).Title = default;
+                })
+            ],
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         target.Title = "Updated";
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Null(target.Title);
@@ -108,9 +133,18 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            ["Title", "Count"],
-            [],
+            EmptyDescriptors,
+            [
+                new SourceGenHotReloadCleanupDescriptor("Title", static instance =>
+                {
+                    ((FieldStateTarget)instance).Title = default;
+                }),
+                new SourceGenHotReloadCleanupDescriptor("Count", static instance =>
+                {
+                    ((FieldStateTarget)instance).Count = default;
+                })
+            ],
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         target.Title = "Updated";
@@ -118,9 +152,9 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Null(target.Title);
@@ -138,18 +172,26 @@ public class XamlSourceGenHotReloadStateTrackerTests
         var token = "global::" + typeof(AvaloniaStateTarget).FullName + ".TextProperty";
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [token],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            [
+                new SourceGenHotReloadCleanupDescriptor(token, static instance =>
+                {
+                    if (instance is AvaloniaObject avaloniaObject)
+                    {
+                        avaloniaObject.ClearValue(AvaloniaStateTarget.TextProperty);
+                    }
+                })
+            ],
             clearSelfCollection: false);
 
         target.Text = "Updated";
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Null(target.Text);
@@ -159,21 +201,20 @@ public class XamlSourceGenHotReloadStateTrackerTests
     public void Reconcile_Detaches_Removed_Root_Clr_Event_Subscriptions()
     {
         var target = new EventSubscriptionTarget();
-        var descriptor = new SourceGenHotReloadEventDescriptor(
-            EventName: nameof(EventSubscriptionTarget.Tick),
-            HandlerMethodName: "OnTick",
-            IsRoutedEvent: false,
-            RoutedEventOwnerTypeName: null,
-            RoutedEventFieldName: null,
-            RoutedEventHandlerTypeName: null);
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false,
-            rootEventSubscriptions: [descriptor]);
+            rootEventSubscriptions:
+            [
+                new SourceGenHotReloadCleanupDescriptor("C|Tick|OnTick|||", static instance =>
+                {
+                    ((EventSubscriptionTarget)instance).Detach();
+                })
+            ]);
 
         target.Attach();
         target.RaiseTick();
@@ -181,11 +222,11 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false,
-            rootEventSubscriptions: []);
+            rootEventSubscriptions: EmptyDescriptors);
 
         target.RaiseTick();
         Assert.Equal(1, target.Invocations);
@@ -199,16 +240,21 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            ["Tokens"],
-            [],
-            [],
+            [
+                new SourceGenHotReloadCleanupDescriptor("Tokens", static instance =>
+                {
+                    ((CustomCollectionTarget)instance).Tokens.Clear();
+                })
+            ],
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Equal(1, target.Tokens.ClearCalls);
@@ -222,17 +268,23 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            ["Items"],
-            [],
-            [],
+            [
+                new SourceGenHotReloadCleanupDescriptor("Items", static instance =>
+                {
+                    var typed = (ThrowingListTarget)instance;
+                    XamlSourceGenHotReloadStateTracker.TryClearCollection(typed.Items);
+                })
+            ],
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         var exception = Record.Exception(() =>
             XamlSourceGenHotReloadStateTracker.Reconcile(
                 target,
-                [],
-                [],
-                [],
+                EmptyDescriptors,
+                EmptyDescriptors,
+                EmptyDescriptors,
                 clearSelfCollection: false));
 
         Assert.Null(exception);
@@ -249,18 +301,18 @@ public class XamlSourceGenHotReloadStateTrackerTests
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: true);
 
         target.Add("C");
 
         XamlSourceGenHotReloadStateTracker.Reconcile(
             target,
-            [],
-            [],
-            [],
+            EmptyDescriptors,
+            EmptyDescriptors,
+            EmptyDescriptors,
             clearSelfCollection: false);
 
         Assert.Empty(target);
@@ -371,6 +423,11 @@ public class XamlSourceGenHotReloadStateTrackerTests
         public void Attach()
         {
             Tick += OnTick;
+        }
+
+        public void Detach()
+        {
+            Tick -= OnTick;
         }
 
         public void RaiseTick()

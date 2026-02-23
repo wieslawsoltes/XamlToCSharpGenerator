@@ -90,6 +90,9 @@ public class XamlSourceGenHotReloadManagerTests
         var reloadCount = 0;
         var instance = new MetadataOriginalReloadTarget();
         XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            typeof(MetadataReplacementReloadTarget),
+            typeof(MetadataOriginalReloadTarget));
 
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(MetadataReplacementReloadTarget)]);
 
@@ -302,12 +305,13 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
-    public void UpdateApplication_Loads_AssemblyLevel_HotReload_Handler_Registration()
+    public void UpdateApplication_Uses_Explicitly_Registered_HotReload_Handler()
     {
         ResetManager();
         AssemblyLevelHotReloadHandler.Reset();
         XamlSourceGenHotReloadManager.Enable();
         var target = new AssemblyLevelHandlerReloadTarget();
+        XamlSourceGenHotReloadManager.RegisterHandler(new AssemblyLevelHotReloadHandler());
 
         XamlSourceGenHotReloadManager.Register(target, _ => { });
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(AssemblyLevelHandlerReloadTarget)]);

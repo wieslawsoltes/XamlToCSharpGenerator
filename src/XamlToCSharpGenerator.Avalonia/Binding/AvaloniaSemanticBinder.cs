@@ -8008,8 +8008,44 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
         var rootTypeName = rootTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var compiledDataContextTargetPath = (string?)null;
         var compiledRootTargetPath = (string?)null;
+        var compiledDataContextMethodCall = (ResolvedEventBindingMethodCallPlan?)null;
+        var compiledRootMethodCall = (ResolvedEventBindingMethodCallPlan?)null;
         var compiledDataContextParameterPath = (string?)null;
         var compiledRootParameterPath = (string?)null;
+        var delegateParameterTypes = GetEventBindingDelegateParameterTypes(eventHandlerType);
+        var objectType = compilation.GetSpecialType(SpecialType.System_Object);
+        var hasParameterToken = parsedBinding.HasParameterValueExpression || !string.IsNullOrWhiteSpace(parsedBinding.ParameterPath);
+
+        if (parsedBinding.ParameterPath is { } parameterPath &&
+            IsSimpleEventBindingPath(parameterPath))
+        {
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                nodeDataType is not null &&
+                TryResolveMemberPathType(nodeDataType, parameterPath, out _))
+            {
+                compiledDataContextParameterPath = parameterPath;
+            }
+
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext &&
+                TryResolveMemberPathType(rootTypeSymbol, parameterPath, out _))
+            {
+                compiledRootParameterPath = parameterPath;
+            }
+        }
+        else if (parsedBinding.ParameterPath is not null &&
+                 parsedBinding.ParameterPath.Trim().Equals(".", StringComparison.Ordinal))
+        {
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                nodeDataType is not null)
+            {
+                compiledDataContextParameterPath = ".";
+            }
+
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext)
+            {
+                compiledRootParameterPath = ".";
+            }
+        }
 
         if (parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Command &&
             IsSimpleEventBindingPath(parsedBinding.TargetPath))
@@ -8026,37 +8062,71 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             {
                 compiledRootTargetPath = parsedBinding.TargetPath;
             }
-
-            if (parsedBinding.ParameterPath is { } parameterPath &&
-                IsSimpleEventBindingPath(parameterPath))
+        }
+        else if (parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Method &&
+                 IsSimpleEventBindingPath(parsedBinding.TargetPath))
+        {
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                nodeDataType is not null)
             {
-                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
-                    nodeDataType is not null &&
-                    TryResolveMemberPathType(nodeDataType, parameterPath, out _))
+                if (TryResolveEventBindingParameterType(
+                        nodeDataType,
+                        hasParameterToken,
+                        compiledDataContextParameterPath,
+                        parsedBinding.HasParameterValueExpression,
+                        objectType,
+                        out var dataContextParameterType) &&
+                    TryResolveEventBindingMethodCallPlan(
+                        nodeDataType,
+                        parsedBinding.TargetPath,
+                        delegateParameterTypes,
+                        hasParameterToken,
+                        parsedBinding.PassEventArgs,
+                        dataContextParameterType,
+                        out compiledDataContextMethodCall))
                 {
-                    compiledDataContextParameterPath = parameterPath;
-                }
-
-                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext &&
-                    TryResolveMemberPathType(rootTypeSymbol, parameterPath, out _))
-                {
-                    compiledRootParameterPath = parameterPath;
+                    compiledDataContextTargetPath = parsedBinding.TargetPath;
                 }
             }
-            else if (parsedBinding.ParameterPath is not null &&
-                     parsedBinding.ParameterPath.Trim().Equals(".", StringComparison.Ordinal))
-            {
-                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.Root &&
-                    nodeDataType is not null)
-                {
-                    compiledDataContextParameterPath = ".";
-                }
 
-                if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext)
+            if (parsedBinding.SourceMode != ResolvedEventBindingSourceMode.DataContext)
+            {
+                if (TryResolveEventBindingParameterType(
+                        rootTypeSymbol,
+                        hasParameterToken,
+                        compiledRootParameterPath,
+                        parsedBinding.HasParameterValueExpression,
+                        objectType,
+                        out var rootParameterType) &&
+                    TryResolveEventBindingMethodCallPlan(
+                        rootTypeSymbol,
+                        parsedBinding.TargetPath,
+                        delegateParameterTypes,
+                        hasParameterToken,
+                        parsedBinding.PassEventArgs,
+                        rootParameterType,
+                        out compiledRootMethodCall))
                 {
-                    compiledRootParameterPath = ".";
+                    compiledRootTargetPath = parsedBinding.TargetPath;
                 }
             }
+        }
+
+        var hasCompiledDataContextTarget = parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Command
+            ? !string.IsNullOrWhiteSpace(compiledDataContextTargetPath)
+            : compiledDataContextMethodCall is not null;
+        var hasCompiledRootTarget = parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Command
+            ? !string.IsNullOrWhiteSpace(compiledRootTargetPath)
+            : compiledRootMethodCall is not null;
+        if (!HasCompiledEventBindingCoverage(parsedBinding.SourceMode, hasCompiledDataContextTarget, hasCompiledRootTarget))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0600",
+                $"EventBinding {(parsedBinding.TargetKind == ResolvedEventBindingTargetKind.Command ? "command" : "method")} path '{parsedBinding.TargetPath}' requires compile-time resolvable members for source mode '{parsedBinding.SourceMode}'.",
+                document.FilePath,
+                assignment.Line,
+                assignment.Column,
+                options.StrictMode));
         }
 
         var methodName = BuildGeneratedEventBindingMethodName(eventName, assignment.Line, assignment.Column);
@@ -8075,6 +8145,8 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
             RootTypeName: rootTypeName,
             CompiledDataContextTargetPath: compiledDataContextTargetPath,
             CompiledRootTargetPath: compiledRootTargetPath,
+            CompiledDataContextMethodCall: compiledDataContextMethodCall,
+            CompiledRootMethodCall: compiledRootMethodCall,
             CompiledDataContextParameterPath: compiledDataContextParameterPath,
             CompiledRootParameterPath: compiledRootParameterPath,
             Line: assignment.Line,
@@ -8109,6 +8181,285 @@ public sealed class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         parameters = builder.ToImmutable();
         return true;
+    }
+
+    private static ImmutableArray<ITypeSymbol> GetEventBindingDelegateParameterTypes(ITypeSymbol eventHandlerType)
+    {
+        if (eventHandlerType is not INamedTypeSymbol namedDelegate ||
+            namedDelegate.TypeKind != TypeKind.Delegate ||
+            namedDelegate.DelegateInvokeMethod is not { } invokeMethod)
+        {
+            return ImmutableArray<ITypeSymbol>.Empty;
+        }
+
+        if (invokeMethod.Parameters.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<ITypeSymbol>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<ITypeSymbol>(invokeMethod.Parameters.Length);
+        for (var index = 0; index < invokeMethod.Parameters.Length; index++)
+        {
+            builder.Add(invokeMethod.Parameters[index].Type);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool HasCompiledEventBindingCoverage(
+        ResolvedEventBindingSourceMode sourceMode,
+        bool hasDataContextTarget,
+        bool hasRootTarget)
+    {
+        return sourceMode switch
+        {
+            ResolvedEventBindingSourceMode.DataContext => hasDataContextTarget,
+            ResolvedEventBindingSourceMode.Root => hasRootTarget,
+            _ => hasDataContextTarget || hasRootTarget
+        };
+    }
+
+    private static bool TryResolveEventBindingParameterType(
+        INamedTypeSymbol sourceType,
+        bool hasParameterToken,
+        string? compiledParameterPath,
+        bool hasParameterValueExpression,
+        ITypeSymbol objectType,
+        out ITypeSymbol parameterType)
+    {
+        parameterType = objectType;
+        if (!hasParameterToken)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(compiledParameterPath))
+        {
+            if (compiledParameterPath.Equals(".", StringComparison.Ordinal))
+            {
+                parameterType = sourceType;
+                return true;
+            }
+
+            return TryResolveMemberPathType(sourceType, compiledParameterPath, out parameterType);
+        }
+
+        if (hasParameterValueExpression)
+        {
+            parameterType = objectType;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveEventBindingMethodCallPlan(
+        INamedTypeSymbol sourceType,
+        string methodPath,
+        ImmutableArray<ITypeSymbol> delegateParameterTypes,
+        bool hasParameterToken,
+        bool passEventArgs,
+        ITypeSymbol parameterType,
+        out ResolvedEventBindingMethodCallPlan? methodCallPlan)
+    {
+        methodCallPlan = null;
+        if (!TrySplitEventBindingMethodPath(methodPath, out var targetPath, out var methodName))
+        {
+            return false;
+        }
+
+        INamedTypeSymbol? targetType = sourceType;
+        if (!targetPath.Equals(".", StringComparison.Ordinal))
+        {
+            if (!TryResolveMemberPathType(sourceType, targetPath, out var resolvedTargetType) ||
+                resolvedTargetType is not INamedTypeSymbol namedTargetType)
+            {
+                return false;
+            }
+
+            targetType = namedTargetType;
+        }
+
+        if (targetType is null)
+        {
+            return false;
+        }
+
+        var candidateMethods = EnumerateEventBindingMethods(targetType, methodName)
+            .OrderBy(static method => method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (candidateMethods.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        var argumentSets = BuildEventBindingMethodArgumentSets(hasParameterToken, passEventArgs);
+        for (var setIndex = 0; setIndex < argumentSets.Length; setIndex++)
+        {
+            var argumentSet = argumentSets[setIndex];
+            for (var methodIndex = 0; methodIndex < candidateMethods.Length; methodIndex++)
+            {
+                var candidateMethod = candidateMethods[methodIndex];
+                if (candidateMethod.Parameters.Length != argumentSet.Length)
+                {
+                    continue;
+                }
+
+                var arguments = ImmutableArray.CreateBuilder<ResolvedEventBindingMethodArgument>(argumentSet.Length);
+                var compatible = true;
+                for (var parameterIndex = 0; parameterIndex < candidateMethod.Parameters.Length; parameterIndex++)
+                {
+                    var argumentKind = argumentSet[parameterIndex];
+                    var argumentType = GetEventBindingMethodArgumentType(argumentKind, delegateParameterTypes, parameterType);
+                    if (argumentType is null ||
+                        !IsEventBindingMethodArgumentCompatible(argumentType, candidateMethod.Parameters[parameterIndex].Type))
+                    {
+                        compatible = false;
+                        break;
+                    }
+
+                    arguments.Add(new ResolvedEventBindingMethodArgument(
+                        argumentKind,
+                        candidateMethod.Parameters[parameterIndex].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                }
+
+                if (!compatible)
+                {
+                    continue;
+                }
+
+                methodCallPlan = new ResolvedEventBindingMethodCallPlan(
+                    TargetPath: targetPath,
+                    MethodName: candidateMethod.Name,
+                    Arguments: arguments.ToImmutable());
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<IMethodSymbol> EnumerateEventBindingMethods(INamedTypeSymbol type, string methodName)
+    {
+        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        {
+            foreach (var method in current.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (method.IsStatic ||
+                    method.MethodKind != MethodKind.Ordinary ||
+                    !method.ReturnsVoid ||
+                    method.IsGenericMethod ||
+                    method.Parameters.Any(parameter => parameter.RefKind != RefKind.None))
+                {
+                    continue;
+                }
+
+                if (string.Equals(method.Name, methodName, StringComparison.Ordinal) ||
+                    string.Equals(method.Name, methodName, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return method;
+                }
+            }
+        }
+    }
+
+    private static bool TrySplitEventBindingMethodPath(string methodPath, out string targetPath, out string methodName)
+    {
+        targetPath = ".";
+        methodName = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(methodPath))
+        {
+            return false;
+        }
+
+        var normalized = methodPath.Trim();
+        if (!IsSimpleEventBindingPath(normalized))
+        {
+            return false;
+        }
+
+        var lastDot = normalized.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot >= normalized.Length - 1)
+        {
+            methodName = normalized;
+            return IsSimpleEventBindingIdentifier(methodName);
+        }
+
+        targetPath = normalized[..lastDot];
+        methodName = normalized[(lastDot + 1)..];
+        return targetPath.Length > 0 &&
+               methodName.Length > 0 &&
+               IsSimpleEventBindingPath(targetPath) &&
+               IsSimpleEventBindingIdentifier(methodName);
+    }
+
+    private static ImmutableArray<ImmutableArray<ResolvedEventBindingMethodArgumentKind>> BuildEventBindingMethodArgumentSets(
+        bool hasParameterToken,
+        bool passEventArgs)
+    {
+        if (hasParameterToken)
+        {
+            return
+            [
+                [ResolvedEventBindingMethodArgumentKind.Parameter],
+                [ResolvedEventBindingMethodArgumentKind.Sender, ResolvedEventBindingMethodArgumentKind.Parameter],
+                [ResolvedEventBindingMethodArgumentKind.Sender, ResolvedEventBindingMethodArgumentKind.EventArgs, ResolvedEventBindingMethodArgumentKind.Parameter]
+            ];
+        }
+
+        if (passEventArgs)
+        {
+            return
+            [
+                [ResolvedEventBindingMethodArgumentKind.Sender, ResolvedEventBindingMethodArgumentKind.EventArgs],
+                [ResolvedEventBindingMethodArgumentKind.EventArgs],
+                [ResolvedEventBindingMethodArgumentKind.Sender],
+                ImmutableArray<ResolvedEventBindingMethodArgumentKind>.Empty
+            ];
+        }
+
+        return
+        [
+            ImmutableArray<ResolvedEventBindingMethodArgumentKind>.Empty,
+            [ResolvedEventBindingMethodArgumentKind.Sender],
+            [ResolvedEventBindingMethodArgumentKind.EventArgs],
+            [ResolvedEventBindingMethodArgumentKind.Sender, ResolvedEventBindingMethodArgumentKind.EventArgs]
+        ];
+    }
+
+    private static ITypeSymbol? GetEventBindingMethodArgumentType(
+        ResolvedEventBindingMethodArgumentKind argumentKind,
+        ImmutableArray<ITypeSymbol> delegateParameterTypes,
+        ITypeSymbol parameterType)
+    {
+        return argumentKind switch
+        {
+            ResolvedEventBindingMethodArgumentKind.Sender => delegateParameterTypes.Length > 0 ? delegateParameterTypes[0] : null,
+            ResolvedEventBindingMethodArgumentKind.EventArgs => delegateParameterTypes.Length > 1 ? delegateParameterTypes[1] : null,
+            ResolvedEventBindingMethodArgumentKind.Parameter => parameterType,
+            _ => null
+        };
+    }
+
+    private static bool IsEventBindingMethodArgumentCompatible(ITypeSymbol argumentType, ITypeSymbol parameterType)
+    {
+        if (IsTypeAssignableTo(argumentType, parameterType))
+        {
+            return true;
+        }
+
+        if (argumentType.SpecialType == SpecialType.System_Object)
+        {
+            return true;
+        }
+
+        if (parameterType is ITypeParameterSymbol)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsEventBindingMarkupExtension(MarkupExtensionInfo markupExtension)

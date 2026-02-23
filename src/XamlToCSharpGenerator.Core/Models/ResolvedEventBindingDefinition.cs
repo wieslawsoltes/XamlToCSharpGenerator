@@ -15,9 +15,25 @@ public enum ResolvedEventBindingSourceMode
     Root = 2
 }
 
+public enum ResolvedEventBindingMethodArgumentKind
+{
+    Sender = 0,
+    EventArgs = 1,
+    Parameter = 2
+}
+
 public sealed record ResolvedEventBindingParameter(
     string Name,
     string TypeName);
+
+public sealed record ResolvedEventBindingMethodArgument(
+    ResolvedEventBindingMethodArgumentKind Kind,
+    string TypeName);
+
+public sealed record ResolvedEventBindingMethodCallPlan(
+    string TargetPath,
+    string MethodName,
+    ImmutableArray<ResolvedEventBindingMethodArgument> Arguments);
 
 public sealed record ResolvedEventBindingDefinition(
     string GeneratedMethodName,
@@ -34,6 +50,8 @@ public sealed record ResolvedEventBindingDefinition(
     string? RootTypeName,
     string? CompiledDataContextTargetPath,
     string? CompiledRootTargetPath,
+    ResolvedEventBindingMethodCallPlan? CompiledDataContextMethodCall,
+    ResolvedEventBindingMethodCallPlan? CompiledRootMethodCall,
     string? CompiledDataContextParameterPath,
     string? CompiledRootParameterPath,
     int Line,

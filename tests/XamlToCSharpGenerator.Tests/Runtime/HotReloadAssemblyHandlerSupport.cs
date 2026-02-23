@@ -1,8 +1,6 @@
 using System.Threading;
 using XamlToCSharpGenerator.Runtime;
 
-[assembly: SourceGenHotReloadHandler(typeof(XamlToCSharpGenerator.Tests.Runtime.AssemblyLevelHotReloadHandler))]
-
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 public sealed class AssemblyLevelHotReloadHandler : ISourceGenHotReloadHandler

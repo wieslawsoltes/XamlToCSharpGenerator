@@ -4689,6 +4689,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlControlThemeRegistry.Register", generated);
         Assert.Contains("XamlIncludeRegistry.Register", generated);
         Assert.Contains("XamlIncludeGraphRegistry.Register", generated);
+        Assert.Contains("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
+        Assert.Contains("if (item is global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude &&", generated);
+        Assert.Contains("global::XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader.TryLoad(null, includeUri, out var loaded)", generated);
         Assert.Contains("\"Text\"", generated);
         Assert.Contains("\"Content\"", generated);
         Assert.Contains("\"Caption\"", generated);
@@ -6159,9 +6162,10 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("__n0.Click += __root.__AXSG_EventBinding_Click_", generated);
         Assert.Contains("private void __AXSG_EventBinding_Click_", generated);
-        Assert.Contains("SourceGenEventBindingRuntime.InvokeMethod(this, __arg0, __arg1", generated);
-        Assert.Contains("\"SaveWithArgs\"", generated);
-        Assert.Contains("true);", generated);
+        Assert.DoesNotContain("SourceGenEventBindingRuntime.InvokeMethod(", generated);
+        Assert.Contains("__axsgDataContextTyped.SaveWithArgs(", generated);
+        Assert.Contains("__arg0", generated);
+        Assert.Contains("__arg1", generated);
     }
 
     [Fact]
