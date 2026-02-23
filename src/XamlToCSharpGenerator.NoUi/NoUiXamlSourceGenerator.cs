@@ -1,15 +1,14 @@
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Compiler;
 using XamlToCSharpGenerator.NoUi.Framework;
 
-namespace XamlToCSharpGenerator.Generator;
+namespace XamlToCSharpGenerator.NoUi;
 
 [Generator(LanguageNames.CSharp)]
 public sealed class NoUiXamlSourceGenerator : IIncrementalGenerator
 {
-    private readonly FrameworkXamlSourceGenerator _inner = new(NoUiFrameworkProfile.Instance);
-
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        _inner.Initialize(context);
+        XamlSourceGeneratorCompilerHost.Initialize(context, NoUiFrameworkProfile.Instance);
     }
 }

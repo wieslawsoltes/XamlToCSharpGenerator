@@ -2,12 +2,14 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>true</IsPackable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <PackageId>XamlToCSharpGenerator.NoUi</PackageId>
     <Description>NoUI pilot framework profile used to validate framework-agnostic source generator host reuse.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
   </ItemGroup>
 

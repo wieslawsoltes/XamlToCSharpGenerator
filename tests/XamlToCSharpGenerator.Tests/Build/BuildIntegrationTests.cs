@@ -134,6 +134,31 @@ public class BuildIntegrationTests
     }
 
     [Fact]
+    public void Neutral_AdditionalFiles_SourceItemGroup_Property_Overrides_Default_Group()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            useNeutralBackendProperty: true,
+            customAdditionalFilesSourceItemGroup: "CustomFrameworkXaml");
+
+        Assert.True(CountMatches(output, "AF|CustomFrameworkXaml|Views/MainView.axaml") == 1, output);
+        Assert.DoesNotContain("AF|AvaloniaXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Neutral_TransformRule_Properties_Project_Transform_Files_Into_AdditionalFiles()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            useNeutralBackendProperty: true,
+            includeTransformRule: true,
+            useNeutralTransformRulesProperty: true,
+            customTransformRuleItemGroup: "CustomTransformRule");
+
+        Assert.True(CountMatches(output, "AF|CustomTransformRule|transform-rules.json") == 1, output);
+    }
+
+    [Fact]
     public void Legacy_Backend_Property_Works_With_Sdk_Style_Import_Order()
     {
         var output = RunEvaluation(sourceGenBackend: true, simulateSdkImportOrder: true);
@@ -155,6 +180,10 @@ public class BuildIntegrationTests
         bool useNeutralBackendProperty = false,
         bool useNeutralEnableFlag = false,
         string? customInputItemGroup = null,
+        string? customAdditionalFilesSourceItemGroup = null,
+        bool includeTransformRule = false,
+        bool useNeutralTransformRulesProperty = false,
+        string? customTransformRuleItemGroup = null,
         bool simulateSdkImportOrder = false)
     {
         var repositoryRoot = GetRepositoryRoot();
@@ -168,6 +197,10 @@ public class BuildIntegrationTests
             var projectFile = Path.Combine(tempDir, "BuildIntegration.csproj");
             var xamlFile = Path.Combine(tempDir, "MainView.axaml");
             File.WriteAllText(xamlFile, "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+            if (includeTransformRule)
+            {
+                File.WriteAllText(Path.Combine(tempDir, "transform-rules.json"), "{ }");
+            }
 
             File.WriteAllText(projectFile, BuildProjectText(
                 sourceGenBackend,
@@ -178,6 +211,10 @@ public class BuildIntegrationTests
                 useNeutralBackendProperty,
                 useNeutralEnableFlag,
                 customInputItemGroup,
+                customAdditionalFilesSourceItemGroup,
+                includeTransformRule,
+                useNeutralTransformRulesProperty,
+                customTransformRuleItemGroup,
                 simulateSdkImportOrder,
                 NormalizeForMsBuild(propsPath),
                 NormalizeForMsBuild(targetsPath)));
@@ -231,6 +268,10 @@ public class BuildIntegrationTests
         bool useNeutralBackendProperty,
         bool useNeutralEnableFlag,
         string? customInputItemGroup,
+        string? customAdditionalFilesSourceItemGroup,
+        bool includeTransformRule,
+        bool useNeutralTransformRulesProperty,
+        string? customTransformRuleItemGroup,
         bool simulateSdkImportOrder,
         string propsPath,
         string targetsPath)
@@ -246,6 +287,17 @@ public class BuildIntegrationTests
         var inputItemGroupProperty = string.IsNullOrWhiteSpace(customInputItemGroup)
             ? string.Empty
             : $"\n    <XamlSourceGenInputItemGroup>{customInputItemGroup}</XamlSourceGenInputItemGroup>";
+        var additionalFilesSourceItemGroupProperty = string.IsNullOrWhiteSpace(customAdditionalFilesSourceItemGroup)
+            ? string.Empty
+            : $"\n    <XamlSourceGenAdditionalFilesSourceItemGroup>{customAdditionalFilesSourceItemGroup}</XamlSourceGenAdditionalFilesSourceItemGroup>";
+        var transformRulesProperty = includeTransformRule
+            ? useNeutralTransformRulesProperty
+                ? "\n    <XamlSourceGenTransformRules>transform-rules.json</XamlSourceGenTransformRules>"
+                : "\n    <AvaloniaSourceGenTransformRules>transform-rules.json</AvaloniaSourceGenTransformRules>"
+            : string.Empty;
+        var transformRuleItemGroupProperty = string.IsNullOrWhiteSpace(customTransformRuleItemGroup)
+            ? string.Empty
+            : $"\n    <XamlSourceGenTransformRuleItemGroup>{customTransformRuleItemGroup}</XamlSourceGenTransformRuleItemGroup>";
         var watchProperty = watchMode
             ? "\n    <DotNetWatchBuild>true</DotNetWatchBuild>"
             : string.Empty;
@@ -262,7 +314,7 @@ public class BuildIntegrationTests
             : string.Empty;
         var propertyGroup = $"""
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>{backendProperty}{enableProperty}{inputItemGroupProperty}{watchProperty}{sourceGenKnobs}
+    <TargetFramework>net10.0</TargetFramework>{backendProperty}{enableProperty}{inputItemGroupProperty}{additionalFilesSourceItemGroupProperty}{transformRulesProperty}{transformRuleItemGroupProperty}{watchProperty}{sourceGenKnobs}
   </PropertyGroup>
 """;
         var xamlItemGroup = $"""

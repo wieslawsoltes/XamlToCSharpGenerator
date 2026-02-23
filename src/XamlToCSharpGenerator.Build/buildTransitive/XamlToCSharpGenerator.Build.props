@@ -3,8 +3,13 @@
     <XamlSourceGenBackend Condition="'$(XamlSourceGenBackend)' == '' and '$(AvaloniaXamlCompilerBackend)' != ''">$(AvaloniaXamlCompilerBackend)</XamlSourceGenBackend>
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == '' and '$(AvaloniaSourceGenCompilerEnabled)' != ''">$(AvaloniaSourceGenCompilerEnabled)</XamlSourceGenEnabled>
     <XamlSourceGenInputItemGroup Condition="'$(XamlSourceGenInputItemGroup)' == ''">AvaloniaXaml</XamlSourceGenInputItemGroup>
+    <XamlSourceGenAdditionalFilesSourceItemGroup Condition="'$(XamlSourceGenAdditionalFilesSourceItemGroup)' == ''">AvaloniaXaml</XamlSourceGenAdditionalFilesSourceItemGroup>
+    <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == '' and '$(AvaloniaSourceGenTransformRules)' != ''">$(AvaloniaSourceGenTransformRules)</XamlSourceGenTransformRules>
+    <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == ''"></XamlSourceGenTransformRules>
+    <XamlSourceGenTransformRuleItemGroup Condition="'$(XamlSourceGenTransformRuleItemGroup)' == ''">AvaloniaSourceGenTransformRule</XamlSourceGenTransformRuleItemGroup>
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == '' and '$(XamlSourceGenBackend)' != ''">$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == '' and '$(XamlSourceGenEnabled)' != ''">$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
+    <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == '' and '$(XamlSourceGenTransformRules)' != ''">$(XamlSourceGenTransformRules)</AvaloniaSourceGenTransformRules>
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == ''">XamlIl</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == ''">false</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaSourceGenUseCompiledBindingsByDefault Condition="'$(AvaloniaSourceGenUseCompiledBindingsByDefault)' == ''">false</AvaloniaSourceGenUseCompiledBindingsByDefault>
@@ -35,6 +40,9 @@
     <CompilerVisibleProperty Include="XamlSourceGenBackend" />
     <CompilerVisibleProperty Include="XamlSourceGenEnabled" />
     <CompilerVisibleProperty Include="XamlSourceGenInputItemGroup" />
+    <CompilerVisibleProperty Include="XamlSourceGenAdditionalFilesSourceItemGroup" />
+    <CompilerVisibleProperty Include="XamlSourceGenTransformRules" />
+    <CompilerVisibleProperty Include="XamlSourceGenTransformRuleItemGroup" />
     <CompilerVisibleProperty Include="AvaloniaXamlCompilerBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCompilerEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenUseCompiledBindingsByDefault" />

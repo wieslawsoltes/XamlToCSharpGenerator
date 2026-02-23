@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.Generator;
+using XamlToCSharpGenerator.NoUi;
 
 namespace XamlToCSharpGenerator.Tests.Generator;
 

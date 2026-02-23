@@ -14,7 +14,6 @@
     <ProjectReference Include="..\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
-    <ProjectReference Include="..\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +26,5 @@
     <None Include="$(OutputPath)XamlToCSharpGenerator.Compiler.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None Include="$(OutputPath)XamlToCSharpGenerator.Framework.Abstractions.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <None Include="$(OutputPath)XamlToCSharpGenerator.Avalonia.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Include="$(OutputPath)XamlToCSharpGenerator.NoUi.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 </Project>
