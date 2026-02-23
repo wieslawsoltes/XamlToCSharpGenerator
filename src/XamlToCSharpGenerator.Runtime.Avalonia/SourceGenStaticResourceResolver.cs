@@ -20,9 +20,10 @@ public static class SourceGenStaticResourceResolver
         object? anchor,
         object key,
         string currentUri,
+        IServiceProvider? serviceProvider = null,
         IReadOnlyList<object>? parentStack = null)
     {
-        if (TryResolve(anchor, key, currentUri, out var resolvedValue, parentStack))
+        if (TryResolve(anchor, key, currentUri, out var resolvedValue, serviceProvider, parentStack))
         {
             return resolvedValue;
         }
@@ -35,6 +36,7 @@ public static class SourceGenStaticResourceResolver
         object key,
         string? currentUri,
         out object? value,
+        IServiceProvider? serviceProvider = null,
         IReadOnlyList<object>? parentStack = null)
     {
         var uri = currentUri ?? string.Empty;
@@ -71,13 +73,13 @@ public static class SourceGenStaticResourceResolver
 
             if (enteredResolutionFrame && enteredResolutionUri)
             {
-                if (TryResolveFromIncludeGraph(key, uri, themeVariant, out resolved))
+                if (TryResolveFromIncludeGraph(key, uri, themeVariant, serviceProvider, out resolved))
                 {
                     value = resolved;
                     return true;
                 }
 
-                if (TryResolveFromOwningIncludeGraphs(key, uri, themeVariant, out resolved))
+                if (TryResolveFromOwningIncludeGraphs(key, uri, themeVariant, serviceProvider, out resolved))
                 {
                     value = resolved;
                     return true;
@@ -222,6 +224,7 @@ public static class SourceGenStaticResourceResolver
         object key,
         string currentUri,
         ThemeVariant? themeVariant,
+        IServiceProvider? serviceProvider,
         out object? value)
     {
         if (string.IsNullOrWhiteSpace(currentUri))
@@ -241,7 +244,7 @@ public static class SourceGenStaticResourceResolver
                 continue;
             }
 
-            if (TryMaterializeInclude(include.IncludedUri, out var includedRoot) &&
+            if (TryMaterializeInclude(include.IncludedUri, serviceProvider, out var includedRoot) &&
                 TryResolveFromContainer(includedRoot, key, themeVariant, out value))
             {
                 return true;
@@ -256,6 +259,7 @@ public static class SourceGenStaticResourceResolver
         object key,
         string currentUri,
         ThemeVariant? themeVariant,
+        IServiceProvider? serviceProvider,
         out object? value)
     {
         if (string.IsNullOrWhiteSpace(currentUri))
@@ -282,7 +286,7 @@ public static class SourceGenStaticResourceResolver
 
             if (probedUris.Add(ownerUri) &&
                 ShouldProbeUriForResourceKey(ownerUri, key) &&
-                TryMaterializeInclude(ownerUri, out var ownerRoot) &&
+                TryMaterializeInclude(ownerUri, serviceProvider, out var ownerRoot) &&
                 TryResolveFromContainer(ownerRoot, key, themeVariant, out value))
             {
                 return true;
@@ -298,7 +302,7 @@ public static class SourceGenStaticResourceResolver
                     continue;
                 }
 
-                if (TryMaterializeInclude(include.IncludedUri, out var includedRoot) &&
+                if (TryMaterializeInclude(include.IncludedUri, serviceProvider, out var includedRoot) &&
                     TryResolveFromContainer(includedRoot, key, themeVariant, out value))
                 {
                     return true;
@@ -371,7 +375,7 @@ public static class SourceGenStaticResourceResolver
         return false;
     }
 
-    private static bool TryMaterializeInclude(string uri, out object? value)
+    private static bool TryMaterializeInclude(string uri, IServiceProvider? serviceProvider, out object? value)
     {
         value = null;
         if (string.IsNullOrWhiteSpace(uri))
@@ -388,7 +392,7 @@ public static class SourceGenStaticResourceResolver
 
         try
         {
-            return XamlSourceGenRegistry.TryCreate(null, uri, out value);
+            return XamlSourceGenRegistry.TryCreate(serviceProvider, uri, out value);
         }
         finally
         {

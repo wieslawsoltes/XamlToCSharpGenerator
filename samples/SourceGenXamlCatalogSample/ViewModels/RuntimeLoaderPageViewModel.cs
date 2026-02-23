@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using SourceGenXamlCatalogSample.Infrastructure;
@@ -62,7 +61,7 @@ public sealed class RuntimeLoaderPageViewModel : ViewModelBase
         {
             var loaded = AvaloniaSourceGeneratedXamlLoader.Load(
                 InlineXaml,
-                localAssembly: Assembly.GetExecutingAssembly(),
+                localAssemblyAnchorType: typeof(RuntimeLoaderPageViewModel),
                 baseUri: new Uri("avares://SourceGenXamlCatalogSample/Runtime/Inline.axaml"));
 
             LoadedContent = EnsureControl(loaded);
@@ -86,7 +85,7 @@ public sealed class RuntimeLoaderPageViewModel : ViewModelBase
 
             var loaded = AvaloniaSourceGeneratedXamlLoader.Load(
                 xaml,
-                localAssembly: Assembly.GetExecutingAssembly(),
+                localAssemblyAnchorType: typeof(RuntimeLoaderPageViewModel),
                 baseUri: uri);
 
             LoadedContent = EnsureControl(loaded);

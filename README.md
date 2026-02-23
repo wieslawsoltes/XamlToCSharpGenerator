@@ -212,7 +212,7 @@ Runtime load APIs:
 var fromUri = AvaloniaXamlLoader.Load(new Uri("avares://MyApp/Assets/RuntimeCard.xml"));
 var fromInline = AvaloniaSourceGeneratedXamlLoader.Load(
     "<TextBlock xmlns='https://github.com/avaloniaui' Text='Runtime SourceGen' />",
-    localAssembly: typeof(App).Assembly);
+    localAssemblyAnchorType: typeof(App));
 ```
 
 Optional Rider/IDE fallback poller (only needed when native metadata callback is unreliable in a specific IDE session):

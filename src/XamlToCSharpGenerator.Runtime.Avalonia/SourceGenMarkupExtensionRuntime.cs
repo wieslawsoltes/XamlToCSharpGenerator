@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,35 +15,6 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public static class SourceGenMarkupExtensionRuntime
 {
-    private static readonly string[] BindingDefaultNamespaceCandidates =
-    [
-        "Avalonia.Controls.",
-        "Avalonia.Controls.Primitives.",
-        "Avalonia.Controls.Presenters.",
-        "Avalonia.Controls.Shapes.",
-        "Avalonia.Controls.Documents.",
-        "Avalonia.Controls.Chrome.",
-        "Avalonia.Controls.Embedding.",
-        "Avalonia.Controls.Notifications.",
-        "Avalonia.Controls.Converters.",
-        "Avalonia.Markup.Xaml.Templates.",
-        "Avalonia.Markup.Xaml.Styling.",
-        "Avalonia.Markup.Xaml.MarkupExtensions.",
-        "Avalonia.Styling.",
-        "Avalonia.Controls.Templates.",
-        "Avalonia.Input.",
-        "Avalonia.Automation.",
-        "Avalonia.Dialogs.",
-        "Avalonia.Dialogs.Internal.",
-        "Avalonia.Layout.",
-        "Avalonia.Media.",
-        "Avalonia.Media.Transformation.",
-        "Avalonia.Media.Imaging.",
-        "Avalonia.Animation.",
-        "Avalonia.Animation.Easings.",
-        "Avalonia."
-    ];
-
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
 
     public static object? ProvideStaticResource(
@@ -116,10 +86,12 @@ public static class SourceGenMarkupExtensionRuntime
             return null;
         }
 
-        var localAssembly = ResolveLocalAssembly(rootObject, intermediateRootObject, targetObject)
-            ?? Assembly.GetEntryAssembly()
+        var localAssembly = rootObject?.GetType().Assembly
+            ?? intermediateRootObject?.GetType().Assembly
+            ?? targetObject?.GetType().Assembly
             ?? typeof(SourceGenMarkupExtensionRuntime).Assembly;
-        var resolvedBaseUri = ResolveRuntimeBaseUri(parentServiceProvider, baseUri, localAssembly);
+        var localAssemblyName = localAssembly.GetName().Name ?? "sourcegen";
+        var resolvedBaseUri = ResolveRuntimeBaseUri(parentServiceProvider, baseUri, localAssemblyName);
 
         var options = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;
         options.EnableRuntimeCompilationFallback = true;
@@ -215,112 +187,9 @@ public static class SourceGenMarkupExtensionRuntime
 
     private static Type? ResolveBindingTypeCore(string? xmlNamespace, string name)
     {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        var normalizedName = name.Trim();
-        var normalizedXmlNamespace = xmlNamespace?.Trim();
-
-        if (normalizedName.Contains('.'))
-        {
-            var direct = FindTypeAcrossAssemblies(normalizedName);
-            if (direct is not null)
-            {
-                return direct;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(normalizedXmlNamespace) &&
-            normalizedXmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
-        {
-            if (TryResolveClrNamespaceType(normalizedXmlNamespace, normalizedName, out var clrNamespaceType))
-            {
-                return clrNamespaceType;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(normalizedXmlNamespace) ||
-            string.Equals(normalizedXmlNamespace, "https://github.com/avaloniaui", StringComparison.OrdinalIgnoreCase))
-        {
-            foreach (var namespacePrefix in BindingDefaultNamespaceCandidates)
-            {
-                var candidate = FindTypeAcrossAssemblies(namespacePrefix + normalizedName);
-                if (candidate is not null)
-                {
-                    return candidate;
-                }
-            }
-        }
-
-        return FindTypeAcrossAssemblies(normalizedName);
-    }
-
-    private static bool TryResolveClrNamespaceType(string xmlns, string typeName, out Type? resolvedType)
-    {
-        resolvedType = null;
-        var payload = xmlns["clr-namespace:".Length..];
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return false;
-        }
-
-        string? clrNamespace = null;
-        string? assemblyName = null;
-        foreach (var segment in payload.Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmed = segment.Trim();
-            if (trimmed.StartsWith("assembly=", StringComparison.OrdinalIgnoreCase))
-            {
-                assemblyName = trimmed["assembly=".Length..].Trim();
-                continue;
-            }
-
-            if (clrNamespace is null)
-            {
-                clrNamespace = trimmed;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(clrNamespace))
-        {
-            return false;
-        }
-
-        var fullName = clrNamespace + "." + typeName;
-        if (!string.IsNullOrWhiteSpace(assemblyName))
-        {
-            var assembly = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, assemblyName, StringComparison.Ordinal));
-            if (assembly is not null)
-            {
-                resolvedType = assembly.GetType(fullName, throwOnError: false, ignoreCase: false);
-                return resolvedType is not null;
-            }
-        }
-
-        resolvedType = FindTypeAcrossAssemblies(fullName);
-        return resolvedType is not null;
-    }
-
-    private static Type? FindTypeAcrossAssemblies(string fullName)
-    {
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            if (assembly.IsDynamic)
-            {
-                continue;
-            }
-
-            var candidate = assembly.GetType(fullName, throwOnError: false, ignoreCase: false);
-            if (candidate is not null)
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        return SourceGenKnownTypeRegistry.TryResolve(xmlNamespace, name, out var resolvedType)
+            ? resolvedType
+            : null;
     }
 
     public static IBinding? ProvideReflectionBinding(
@@ -558,6 +427,7 @@ public static class SourceGenMarkupExtensionRuntime
         object resourceKey,
         object targetObject,
         string? baseUri,
+        IServiceProvider? serviceProvider,
         IReadOnlyList<object>? parentStack,
         out object? resolved)
     {
@@ -573,6 +443,7 @@ public static class SourceGenMarkupExtensionRuntime
                 resourceKey,
                 baseUri,
                 out resolved,
+                serviceProvider,
                 parentStack))
         {
             return true;
@@ -592,6 +463,17 @@ public static class SourceGenMarkupExtensionRuntime
         var resourceKey = extension.ResourceKey ?? AvaloniaProperty.UnsetValue;
         var effectiveParentStack = BuildEffectiveParentStack(serviceProvider, parentStack);
 
+        if (TryResolveStaticResourceFallback(
+                resourceKey,
+                targetObject,
+                baseUri,
+                serviceProvider,
+                effectiveParentStack,
+                out var eagerlyResolved))
+        {
+            return eagerlyResolved;
+        }
+
         try
         {
             var value = extension.ProvideValue(serviceProvider);
@@ -604,6 +486,7 @@ public static class SourceGenMarkupExtensionRuntime
                     resourceKey,
                     targetObject,
                     baseUri,
+                    serviceProvider,
                     effectiveParentStack,
                     out var resolvedFallback))
             {
@@ -619,6 +502,7 @@ public static class SourceGenMarkupExtensionRuntime
                     resourceKey,
                     targetObject,
                     baseUri,
+                    serviceProvider,
                     effectiveParentStack,
                     out var resolvedFallback))
             {
@@ -751,7 +635,7 @@ public static class SourceGenMarkupExtensionRuntime
     private static Uri ResolveRuntimeBaseUri(
         IServiceProvider? parentServiceProvider,
         string? baseUri,
-        Assembly localAssembly)
+        string localAssemblyName)
     {
         if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext parentUriContext)
         {
@@ -771,35 +655,12 @@ public static class SourceGenMarkupExtensionRuntime
                 var normalizedPath = trimmed.Replace('\\', '/').TrimStart('/');
                 if (normalizedPath.Length > 0)
                 {
-                    return new Uri("avares://" + localAssembly.GetName().Name + "/" + normalizedPath);
+                    return new Uri("avares://" + localAssemblyName + "/" + normalizedPath);
                 }
             }
         }
 
-        return new Uri("avares://" + localAssembly.GetName().Name + "/");
-    }
-
-    private static Assembly? ResolveLocalAssembly(
-        object? rootObject,
-        object? intermediateRootObject,
-        object? targetObject)
-    {
-        if (rootObject is not null)
-        {
-            return rootObject.GetType().Assembly;
-        }
-
-        if (intermediateRootObject is not null)
-        {
-            return intermediateRootObject.GetType().Assembly;
-        }
-
-        if (targetObject is not null)
-        {
-            return targetObject.GetType().Assembly;
-        }
-
-        return null;
+        return new Uri("avares://" + localAssemblyName + "/");
     }
 
     private sealed class MarkupExtensionServiceProvider :

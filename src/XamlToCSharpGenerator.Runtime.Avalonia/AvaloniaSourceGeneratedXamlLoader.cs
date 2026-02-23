@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
@@ -55,6 +54,7 @@ public static class AvaloniaSourceGeneratedXamlLoader
     {
         ArgumentNullException.ThrowIfNull(document);
         configuration ??= new RuntimeXamlLoaderConfiguration();
+        EnsureLocalAssemblyFromDocumentBaseUri(document, configuration);
 
         if (document.BaseUri is not null &&
             TryLoad(document.ServiceProvider, document.BaseUri, out var registeredValue) &&
@@ -77,12 +77,24 @@ public static class AvaloniaSourceGeneratedXamlLoader
 
     public static object Load(
         string xaml,
-        Assembly? localAssembly = null,
+        Type? localAssemblyAnchorType = null,
+        string? localAssemblyName = null,
         object? rootInstance = null,
         Uri? baseUri = null,
         bool designMode = false)
     {
         ArgumentNullException.ThrowIfNull(xaml);
+
+        var localAssembly = localAssemblyAnchorType?.Assembly ?? rootInstance?.GetType().Assembly;
+        if (localAssembly is null &&
+            !string.IsNullOrWhiteSpace(localAssemblyName))
+        {
+            var anchorType = ResolveAssemblyAnchorType(localAssemblyName.Trim());
+            if (anchorType is not null)
+            {
+                localAssembly = anchorType.Assembly;
+            }
+        }
 
         var configuration = new RuntimeXamlLoaderConfiguration
         {
@@ -93,5 +105,48 @@ public static class AvaloniaSourceGeneratedXamlLoader
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xaml));
         var document = new RuntimeXamlLoaderDocument(baseUri, rootInstance, stream);
         return Load(document, configuration);
+    }
+
+    private static void EnsureLocalAssemblyFromDocumentBaseUri(
+        RuntimeXamlLoaderDocument document,
+        RuntimeXamlLoaderConfiguration configuration)
+    {
+        if (configuration.LocalAssembly is not null ||
+            document.BaseUri is null ||
+            !document.BaseUri.IsAbsoluteUri ||
+            !string.Equals(document.BaseUri.Scheme, "avares", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var assemblyName = document.BaseUri.Host;
+        if (string.IsNullOrWhiteSpace(assemblyName))
+        {
+            return;
+        }
+
+        var anchorType = ResolveAssemblyAnchorType(assemblyName);
+        if (anchorType is not null)
+        {
+            configuration.LocalAssembly = anchorType.Assembly;
+        }
+    }
+
+    private static Type? ResolveAssemblyAnchorType(string assemblyName)
+    {
+        var registeredTypes = SourceGenKnownTypeRegistry.GetRegisteredTypes();
+        for (var index = 0; index < registeredTypes.Count; index++)
+        {
+            var candidate = registeredTypes[index];
+            if (string.Equals(
+                    candidate.Assembly.GetName().Name,
+                    assemblyName,
+                    StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 }

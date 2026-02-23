@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Avalonia.Controls;
@@ -377,6 +378,34 @@ public class SourceGenStaticResourceResolverTests
                 currentUri: "avares://Demo/Main.axaml"));
     }
 
+    [Fact]
+    public void Resolve_Forwards_ServiceProvider_To_Include_Materialization()
+    {
+        ResetRuntimeRegistries();
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Main.axaml",
+            "avares://Demo/Palette.axaml",
+            "MergedDictionaries");
+
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Palette.axaml",
+            static serviceProvider => new Hashtable
+            {
+                ["AccentBrush"] = serviceProvider is MarkerServiceProvider
+                    ? "FromMarkerProvider"
+                    : "WithoutProvider"
+            });
+
+        var resolved = SourceGenStaticResourceResolver.Resolve(
+            anchor: null,
+            key: "AccentBrush",
+            currentUri: "avares://Demo/Main.axaml",
+            serviceProvider: new MarkerServiceProvider());
+
+        Assert.Equal("FromMarkerProvider", resolved);
+    }
+
     private static ThemeVariantScope CreateThemeScope(ThemeVariant variant)
     {
         var scope = new ThemeVariantScope();
@@ -389,5 +418,13 @@ public class SourceGenStaticResourceResolverTests
         XamlSourceGenRegistry.Clear();
         XamlIncludeGraphRegistry.Clear();
         XamlResourceRegistry.Clear();
+    }
+
+    private sealed class MarkerServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 }
