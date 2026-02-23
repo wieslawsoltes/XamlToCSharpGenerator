@@ -1,7 +1,7 @@
 # Wave 7 Reflection Elimination Inventory and Execution Report
 
 Date: 2026-02-22  
-Status: In progress (execution started)
+Status: Completed (all tracked Wave 7 reflection items closed)
 
 ## Scope
 
@@ -21,18 +21,13 @@ Wave 7 from `plan/69-framework-agnostic-refactor-spec-and-plan.md`:
 
 ## 1.2 Avalonia adapter/runtime edge (`Runtime.Avalonia`)
 
-Reflection remains in these files:
+Reflection exceptions are explicitly tracked and must match the allowlist in:
 
-- `src/XamlToCSharpGenerator.Runtime.Avalonia/SourceGenRuntimeXamlLoaderBridge.cs`  
-  Uses reflection and `Reflection.Emit` to bind Avalonia internal `IRuntimeXamlLoader`.
-- `src/XamlToCSharpGenerator.Runtime.Avalonia/XamlSourceGenHotReloadStateTracker.cs`  
-  Uses reflection to clear/reset removed members and detach handlers for generated root graphs.
-- `src/XamlToCSharpGenerator.Runtime.Avalonia/SourceGenEventBindingRuntime.cs`  
-  Uses reflection fallback for method/command path dispatch when fully typed compile-time dispatch is not available.
-- `src/XamlToCSharpGenerator.Runtime.Avalonia/XamlSourceGenHotReloadManager.cs`  
-  Uses reflection for style invalidation/internal update probes and handler activation.
-- `src/XamlToCSharpGenerator.Runtime.Avalonia/SourceGenMarkupExtensionRuntime.cs`  
-  Uses runtime type discovery for late-bound runtime-compiled markup extension scenarios.
+- `tests/XamlToCSharpGenerator.Tests/Build/ReflectionGuardTests.cs`
+
+Current exception set:
+
+- none
 
 ## 2) Wave 7 actions executed in this slice
 
@@ -59,38 +54,42 @@ Reflection remains in these files:
 - Added regression test coverage in:
   - `tests/XamlToCSharpGenerator.Tests/Runtime/SourceGenEventBindingRuntimeTests.cs`
 
+## 2.4 Markup-extension and hot-design de-reflection closure
+
+- `src/XamlToCSharpGenerator.Runtime.Avalonia/SourceGenMarkupExtensionRuntime.cs`
+  - Removed runtime assembly/type scanning (`assembly.GetType`/cross-assembly lookup) from binding type resolver.
+  - Switched to `SourceGenKnownTypeRegistry` for resolver lookup.
+- `src/XamlToCSharpGenerator.Runtime.Avalonia/XamlSourceGenHotDesignCoreTools.cs`
+  - Removed `Type.GetType`/`assembly.GetType`/`GetFields` paths.
+  - Switched element type resolution to `SourceGenKnownTypeRegistry`.
+  - Switched property enumeration to `AvaloniaPropertyRegistry`.
+- `src/XamlToCSharpGenerator.Avalonia/Emission/AvaloniaCodeEmitter.cs`
+  - Added generated registration of known types through `SourceGenKnownTypeRegistry.RegisterType(typeof(...))` in module initializer, keeping resolver coverage without reflection.
+
 ## 3) Temporary reflection exception list (tracked)
 
-These are temporary and confined to `Runtime.Avalonia`.
+Active exceptions:
 
-1. `SourceGenRuntimeXamlLoaderBridge`
-   - Reason: Avalonia `AvaloniaXamlLoader.IRuntimeXamlLoader` is internal and requires adapter binding.
-   - Target removal date: 2026-05-31.
-   - Planned replacement: typed loader registration seam via public Avalonia runtime loader contract (or source-generated compile-time bridge in adapter package).
+- none
 
-2. `XamlSourceGenHotReloadStateTracker`
-   - Reason: generic state cleanup for removed members/events currently works from string descriptors.
-   - Target removal date: 2026-06-30.
-   - Planned replacement: generated typed cleanup/restoration delegates per root type, no runtime member lookup.
+Closed exceptions:
 
-3. `SourceGenEventBindingRuntime`
-   - Reason: runtime fallback for non-simple method paths and non-typed data contexts.
-   - Target removal date: 2026-06-30.
-   - Planned replacement: emitter-generated typed invokers for method bindings; reflection fallback only for explicit opt-in dynamic mode.
-
-4. `XamlSourceGenHotReloadManager` internal probes
-   - Reason: internal style invalidation and rude-edit probes currently use method reflection.
-   - Target removal date: 2026-06-30.
-   - Planned replacement: public API path or adapter abstraction with compile-time binding.
-
-5. `SourceGenMarkupExtensionRuntime` late-bound type resolution
-   - Reason: runtime-compiled XAML fallback may require dynamic type lookup from XML namespace/type name.
-   - Target removal date: 2026-07-31.
-   - Planned replacement: generated namespace/type map registry per assembly with explicit resolver interfaces.
+- `SourceGenMarkupExtensionRuntime` late-bound type resolution  
+  Closed on: 2026-02-22 (replaced with `SourceGenKnownTypeRegistry` path).
+- `XamlSourceGenHotDesignCoreTools` type/property reflection paths  
+  Closed on: 2026-02-22 (registry- and AvaloniaPropertyRegistry-based resolution).
+- `SourceGenRuntimeXamlLoaderBridge` dynamic-bridge reflection paths  
+  Closed on: 2026-02-22 (bridge left in AOT-safe non-reflective mode; no runtime reflection APIs).
+- `XamlSourceGenHotReloadStateTracker` member cleanup reflection paths  
+  Closed on: 2026-02-22 (typed cleanup descriptor path).
+- `XamlSourceGenHotReloadManager` handler/style reflection probes  
+  Closed on: 2026-02-22 (typed handlers and no reflection probes).
+- `SourceGenEventBindingRuntime` method/command reflection fallback  
+  Closed on: 2026-02-22 (typed/no-op compatibility path without reflection APIs).
+- `AvaloniaSourceGeneratedXamlLoader` assembly-identity reflection surface  
+  Closed on: 2026-02-22 (public `Assembly` API removed; assembly resolved through anchor type/registered-type mapping).
 
 ## 4) Next implementation steps (remaining Wave 7)
 
-1. Replace `SourceGenEventBindingRuntime.InvokeMethod` reflection fallback with emitter-generated typed method invocation paths for validated simple method bindings.
-2. Introduce generated cleanup delegates in generated roots and switch `XamlSourceGenHotReloadStateTracker` from member-name reflection to typed descriptors.
-3. Move `XamlSourceGenHotReloadManager` reflection probes behind adapter interfaces and remove direct `MethodInfo.Invoke` usage.
-4. Keep `Runtime.Core`/`Core`/`Compiler`/`Generator` reflection-free under enforced RS0030 guardrail.
+1. Keep `Runtime.Core`/`Core`/`Compiler`/`Generator` reflection-free under enforced RS0030 guardrail.
+2. Keep `Runtime.Avalonia` reflection usage confined to the empty allowlist via `ReflectionGuardTests`.
