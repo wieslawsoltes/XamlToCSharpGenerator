@@ -17,7 +17,6 @@
 - `Templates`: `DataTemplate`, inline deferred templates, and `ControlTemplate` + `TemplateBinding`.
 - `Resources + Dictionaries`: merged dictionary precedence, `StaticResource` and `DynamicResource`.
 - `Construction Grammar`: `x:Arguments`, `x:FactoryMethod`, `x:TypeArguments`, and `x:Array`.
-- `Hot Design Studio`: runtime design workspace with toolbar/elements/toolbox/canvas/properties panels, property editing, element insert/remove, and undo/redo.
 
 ## Run
 

@@ -124,9 +124,6 @@
       <TabItem Header="Construction Grammar">
         <pages:ConstructionPage />
       </TabItem>
-      <TabItem Header="Hot Design Studio">
-        <pages:HotDesignStudioPage DataContext="{Binding HotDesign}" />
-      </TabItem>
     </TabControl>
   </Grid>
 </Window>

@@ -35,6 +35,4 @@ public sealed class MainWindowViewModel : ViewModelBase
     public TemplatesPageViewModel Templates { get; } = new();
 
     public ResourcesIncludesPageViewModel Resources { get; } = new();
-
-    public HotDesignStudioViewModel HotDesign { get; } = new();
 }
