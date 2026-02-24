@@ -16,6 +16,8 @@ public static class XamlSourceGenHotReloadManager
 {
     private const int SourcePathReloadRetryCount = 5;
     private const string TraceEnvVarName = "AXSG_HOTRELOAD_TRACE";
+    private static readonly TimeSpan DuplicateReloadWindow = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MetadataVsPollingDedupWindow = TimeSpan.FromSeconds(2);
 
     private static readonly object Sync = new();
     private static readonly Dictionary<Type, List<WeakReference<object>>> Instances = new();
@@ -33,6 +35,9 @@ public static class XamlSourceGenHotReloadManager
     private static bool? TraceEnabledCached;
     private static bool ReloadInProgress;
     private static bool PendingReloadAllTypes;
+    private static string? LastAcceptedReloadKey;
+    private static SourceGenHotReloadTrigger? LastAcceptedReloadTrigger;
+    private static DateTimeOffset LastAcceptedReloadTimestampUtc;
 
     static XamlSourceGenHotReloadManager()
     {
@@ -173,6 +178,9 @@ public static class XamlSourceGenHotReloadManager
             ReplacementTypeMap.Clear();
             PendingReloadTypes.Clear();
             PendingReloadAllTypes = false;
+            LastAcceptedReloadKey = null;
+            LastAcceptedReloadTrigger = null;
+            LastAcceptedReloadTimestampUtc = default;
         }
     }
 
@@ -257,6 +265,12 @@ public static class XamlSourceGenHotReloadManager
     {
         var eventBus = XamlSourceGenHotReloadEventBus.Instance;
         var normalizedTypes = NormalizeUpdatedTypes(types);
+        if (ShouldSuppressDuplicateReloadRequest(trigger, normalizedTypes))
+        {
+            Trace("Suppressed duplicate hot reload request. Trigger: " + trigger + ", Requested types: " + FormatTypeList(normalizedTypes) + ".");
+            return;
+        }
+
         if (!IsEnabled)
         {
             HotReloaded?.Invoke(normalizedTypes);
@@ -298,6 +312,11 @@ public static class XamlSourceGenHotReloadManager
                 eventBus.PublishHotReloaded(currentTypes);
                 HotReloadPipelineCompleted?.Invoke(context);
                 eventBus.PublishPipelineCompleted(context);
+
+                if (currentTrigger == SourceGenHotReloadTrigger.MetadataUpdate)
+                {
+                    TryDisableIdePollingFallbackAfterMetadataUpdate();
+                }
 
                 lock (Sync)
                 {
@@ -479,6 +498,130 @@ public static class XamlSourceGenHotReloadManager
         var result = new Type[normalized.Count];
         normalized.CopyTo(result);
         return result;
+    }
+
+    private static bool ShouldSuppressDuplicateReloadRequest(SourceGenHotReloadTrigger trigger, Type[]? normalizedTypes)
+    {
+        if (trigger == SourceGenHotReloadTrigger.Queued)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        lock (Sync)
+        {
+            if (ReloadInProgress)
+            {
+                return false;
+            }
+
+            var dedupKey = BuildReloadDedupKey(normalizedTypes);
+            if (string.IsNullOrWhiteSpace(dedupKey))
+            {
+                return false;
+            }
+
+            if (LastAcceptedReloadKey is null || LastAcceptedReloadTrigger is null)
+            {
+                LastAcceptedReloadKey = dedupKey;
+                LastAcceptedReloadTrigger = trigger;
+                LastAcceptedReloadTimestampUtc = now;
+                return false;
+            }
+
+            if (!string.Equals(LastAcceptedReloadKey, dedupKey, StringComparison.Ordinal))
+            {
+                LastAcceptedReloadKey = dedupKey;
+                LastAcceptedReloadTrigger = trigger;
+                LastAcceptedReloadTimestampUtc = now;
+                return false;
+            }
+
+            var elapsed = now - LastAcceptedReloadTimestampUtc;
+            var previousTrigger = LastAcceptedReloadTrigger.Value;
+            if (elapsed <= DuplicateReloadWindow &&
+                previousTrigger == trigger)
+            {
+                return true;
+            }
+
+            if (elapsed <= MetadataVsPollingDedupWindow &&
+                ((previousTrigger == SourceGenHotReloadTrigger.MetadataUpdate &&
+                  trigger == SourceGenHotReloadTrigger.IdePollingFallback) ||
+                 (previousTrigger == SourceGenHotReloadTrigger.IdePollingFallback &&
+                  trigger == SourceGenHotReloadTrigger.MetadataUpdate)))
+            {
+                return true;
+            }
+
+            LastAcceptedReloadKey = dedupKey;
+            LastAcceptedReloadTrigger = trigger;
+            LastAcceptedReloadTimestampUtc = now;
+            return false;
+        }
+    }
+
+    private static string BuildReloadDedupKey(Type[]? normalizedTypes)
+    {
+        var typeKeys = new SortedSet<string>(StringComparer.Ordinal);
+        var uriKeys = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (normalizedTypes is { Length: > 0 })
+        {
+            for (var index = 0; index < normalizedTypes.Length; index++)
+            {
+                var type = normalizedTypes[index];
+                if (type is null)
+                {
+                    continue;
+                }
+
+                var fullName = type.FullName;
+                if (!string.IsNullOrWhiteSpace(fullName))
+                {
+                    typeKeys.Add(fullName);
+                }
+
+                if (TryGetBuildUriForTypeLocked(type, out var buildUri) &&
+                    !string.IsNullOrWhiteSpace(buildUri))
+                {
+                    uriKeys.Add(buildUri);
+                }
+            }
+        }
+
+        if (typeKeys.Count == 0 && uriKeys.Count == 0)
+        {
+            return "<all>";
+        }
+
+        var typePart = typeKeys.Count == 0
+            ? string.Empty
+            : string.Join("|", typeKeys);
+        var uriPart = uriKeys.Count == 0
+            ? string.Empty
+            : string.Join("|", uriKeys);
+        return typePart + ":" + uriPart;
+    }
+
+    private static void TryDisableIdePollingFallbackAfterMetadataUpdate()
+    {
+        var disabled = false;
+        lock (Sync)
+        {
+            if (!IsIdePollingFallbackEnabled)
+            {
+                return;
+            }
+
+            DisableIdePollingFallbackLocked();
+            disabled = true;
+        }
+
+        if (disabled)
+        {
+            Trace("Disabled IDE polling fallback after first metadata update in current session.");
+        }
     }
 
     private static Type NormalizeUpdatedType(Type type)
@@ -1267,11 +1410,8 @@ public static class XamlSourceGenHotReloadManager
         {
             TryNotifyHostedResourcesChanged(instance);
             TryNotifyApplicationHostedResourcesChanged();
-            TryReinsertStyleIntoApplicationHost(instance);
-            TryReattachApplicationStyles();
             var affectedThemeTargetTypes = ResolveAffectedControlThemeTargetTypes(_requestedTypes);
-            VisualTreeRematerializationUtilities.RefreshAffectedImplicitControlThemes(affectedThemeTargetTypes);
-            VisualTreeRematerializationUtilities.RefreshApplicationVisualTreeAfterThemeUpdate();
+            VisualTreeRematerializationUtilities.ScheduleThemeRefresh(affectedThemeTargetTypes);
         }
 
         private static IReadOnlyCollection<Type> ResolveAffectedControlThemeTargetTypes(IReadOnlyList<Type>? requestedTypes)
@@ -1370,76 +1510,6 @@ public static class XamlSourceGenHotReloadManager
             }
         }
 
-        private static void TryReinsertStyleIntoApplicationHost(object instance)
-        {
-            if (instance is not global::Avalonia.Styling.IStyle style)
-            {
-                return;
-            }
-
-            try
-            {
-                if (global::Avalonia.Application.Current is not global::Avalonia.Styling.IStyleHost styleHost ||
-                    !styleHost.IsStylesInitialized)
-                {
-                    return;
-                }
-
-                var styles = styleHost.Styles;
-                for (var index = 0; index < styles.Count; index++)
-                {
-                    if (!ReferenceEquals(styles[index], style))
-                    {
-                        continue;
-                    }
-
-                    styles.RemoveAt(index);
-                    styles.Insert(index, style);
-                    Trace("Reinserted style instance into application style host at index " + index + ".");
-                    return;
-                }
-            }
-            catch
-            {
-                // Best effort style-host reinsert only.
-            }
-        }
-
-        private static void TryReattachApplicationStyles()
-        {
-            try
-            {
-                if (global::Avalonia.Application.Current is not global::Avalonia.Styling.IStyleHost styleHost ||
-                    !styleHost.IsStylesInitialized)
-                {
-                    return;
-                }
-
-                var styles = styleHost.Styles;
-                if (styles.Count == 0)
-                {
-                    return;
-                }
-
-                var snapshot = new List<global::Avalonia.Styling.IStyle>(styles.Count);
-                for (var index = 0; index < styles.Count; index++)
-                {
-                    snapshot.Add(styles[index]);
-                }
-
-                styles.Clear();
-                for (var index = 0; index < snapshot.Count; index++)
-                {
-                    styles.Add(snapshot[index]);
-                }
-
-                Trace("Reattached application styles collection after style/resource reload. Count: " + snapshot.Count + ".");
-            }
-            catch
-            {
-                // Best effort style-host reattachment only.
-            }
-        }
     }
 
     private static class VisualTreeRematerializationUtilities
@@ -1448,6 +1518,9 @@ public static class XamlSourceGenHotReloadManager
         {
         }
 
+        private static readonly object ThemeRefreshSync = new();
+        private static readonly HashSet<Type> PendingAffectedControlThemeTargetTypes = new();
+        private static int ThemeRefreshScheduled;
         private static readonly ConditionalWeakTable<global::Avalonia.Controls.Control, ThemeOverrideMarker> ManagedThemeOverrides = new();
 
         public static void RematerializeApplicationVisualRoots()
@@ -1487,6 +1560,68 @@ public static class XamlSourceGenHotReloadManager
             {
                 var root = roots[rootIndex];
                 TryInvalidateRootVisual(root);
+            }
+        }
+
+        public static void ScheduleThemeRefresh(IReadOnlyCollection<Type> affectedTargetTypes)
+        {
+            lock (ThemeRefreshSync)
+            {
+                if (affectedTargetTypes.Count > 0)
+                {
+                    foreach (var targetType in affectedTargetTypes)
+                    {
+                        PendingAffectedControlThemeTargetTypes.Add(targetType);
+                    }
+                }
+            }
+
+            if (Interlocked.Exchange(ref ThemeRefreshScheduled, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                global::Avalonia.Threading.Dispatcher.UIThread.Post(
+                    ApplyScheduledThemeRefresh,
+                    global::Avalonia.Threading.DispatcherPriority.Background);
+            }
+            catch
+            {
+                ApplyScheduledThemeRefresh();
+            }
+        }
+
+        private static void ApplyScheduledThemeRefresh()
+        {
+            Type[] affectedTargetTypes;
+            lock (ThemeRefreshSync)
+            {
+                affectedTargetTypes = PendingAffectedControlThemeTargetTypes.ToArray();
+                PendingAffectedControlThemeTargetTypes.Clear();
+                Interlocked.Exchange(ref ThemeRefreshScheduled, 0);
+            }
+
+            if (affectedTargetTypes.Length > 0)
+            {
+                try
+                {
+                    RefreshAffectedImplicitControlThemes(affectedTargetTypes);
+                }
+                catch
+                {
+                    // Best effort control-theme refresh only.
+                }
+            }
+
+            try
+            {
+                RefreshApplicationVisualTreeAfterThemeUpdate();
+            }
+            catch
+            {
+                // Best effort root invalidation only.
             }
         }
 

@@ -481,7 +481,7 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
-    public void UpdateApplication_NativeCallback_Keeps_IdePollingFallback_Enabled()
+    public void UpdateApplication_MetadataUpdate_Disables_IdePollingFallback_After_First_Success()
     {
         ResetManager();
         XamlSourceGenHotReloadManager.Enable();
@@ -492,7 +492,23 @@ public class XamlSourceGenHotReloadManagerTests
 
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReloadTargetA)]);
 
-        Assert.True(XamlSourceGenHotReloadManager.IsIdePollingFallbackEnabled);
+        Assert.False(XamlSourceGenHotReloadManager.IsIdePollingFallbackEnabled);
+    }
+
+    [Fact]
+    public void UpdateApplication_Coalesces_Duplicate_Metadata_Requests_In_Short_Window()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new DuplicateCoalesceTarget();
+        XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(DuplicateCoalesceTarget)]);
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(DuplicateCoalesceTarget)]);
+
+        Assert.Equal(1, reloadCount);
     }
 
     [Fact]
@@ -599,6 +615,10 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     private sealed class ArtifactRefreshTarget
+    {
+    }
+
+    private sealed class DuplicateCoalesceTarget
     {
     }
 
