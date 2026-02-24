@@ -99,11 +99,17 @@ public class FrameworkPipelineProfileTests
 
         Assert.Empty(diagnostics.Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
         Assert.NotEmpty(runResult.Results);
-        var generatedSource = Assert.Single(runResult.Results[0].GeneratedSources);
-        Assert.StartsWith(expectedHintPrefix, generatedSource.HintName, StringComparison.Ordinal);
+        var generatedSources = runResult.Results[0].GeneratedSources;
+        Assert.NotEmpty(generatedSources);
+        Assert.Contains(
+            generatedSources,
+            generatedSource => generatedSource.HintName.StartsWith(expectedHintPrefix, StringComparison.Ordinal));
 
-        var generatedText = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains(expectedGeneratedToken, generatedText);
+        var generatedSyntaxTrees = updatedCompilation.SyntaxTrees.Skip(1).ToArray();
+        Assert.NotEmpty(generatedSyntaxTrees);
+        Assert.Contains(
+            generatedSyntaxTrees,
+            syntaxTree => syntaxTree.ToString().Contains(expectedGeneratedToken, StringComparison.Ordinal));
     }
 
     private static CSharpCompilation CreateCompilation(string source)

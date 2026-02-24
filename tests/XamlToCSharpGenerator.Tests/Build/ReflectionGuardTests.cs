@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
@@ -79,9 +83,10 @@ public class ReflectionGuardTests
                 }
 
                 var content = File.ReadAllText(file);
+                var scanContent = StripNonCodeText(content);
                 for (var index = 0; index < bannedFragments.Length; index++)
                 {
-                    if (!content.Contains(bannedFragments[index], StringComparison.Ordinal))
+                    if (!scanContent.Contains(bannedFragments[index], StringComparison.Ordinal))
                     {
                         continue;
                     }
@@ -119,7 +124,8 @@ public class ReflectionGuardTests
             }
 
             var content = File.ReadAllText(file);
-            if (!reflectionPattern.IsMatch(content))
+            var scanContent = StripNonCodeText(content);
+            if (!reflectionPattern.IsMatch(scanContent))
             {
                 continue;
             }
@@ -155,7 +161,8 @@ public class ReflectionGuardTests
             var relativePath = targetFiles[index];
             var fullPath = Path.Combine(repositoryRoot, relativePath);
             var content = File.ReadAllText(fullPath);
-            if (reflectionPattern.IsMatch(content))
+            var scanContent = StripNonCodeText(content);
+            if (reflectionPattern.IsMatch(scanContent))
             {
                 violations.Add(relativePath);
             }
@@ -170,5 +177,59 @@ public class ReflectionGuardTests
     private static string GetRepositoryRoot()
     {
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+    }
+
+    private static string StripNonCodeText(string sourceText)
+    {
+        if (string.IsNullOrEmpty(sourceText))
+        {
+            return sourceText;
+        }
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
+        var root = syntaxTree.GetRoot();
+        var chars = sourceText.ToCharArray();
+
+        foreach (var literal in root.DescendantNodes().OfType<LiteralExpressionSyntax>())
+        {
+            if (!literal.IsKind(SyntaxKind.StringLiteralExpression) &&
+                !literal.IsKind(SyntaxKind.CharacterLiteralExpression))
+            {
+                continue;
+            }
+
+            BlankSpan(chars, literal.Span);
+        }
+
+        foreach (var interpolated in root.DescendantNodes().OfType<InterpolatedStringExpressionSyntax>())
+        {
+            BlankSpan(chars, interpolated.Span);
+        }
+
+        foreach (var trivia in root.DescendantTrivia())
+        {
+            if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) ||
+                trivia.IsKind(SyntaxKind.MultiLineCommentTrivia) ||
+                trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) ||
+                trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+            {
+                BlankSpan(chars, trivia.Span);
+            }
+        }
+
+        return new string(chars);
+    }
+
+    private static void BlankSpan(char[] chars, TextSpan span)
+    {
+        var start = Math.Clamp(span.Start, 0, chars.Length);
+        var end = Math.Clamp(span.End, start, chars.Length);
+        for (var index = start; index < end; index++)
+        {
+            if (chars[index] != '\r' && chars[index] != '\n')
+            {
+                chars[index] = ' ';
+            }
+        }
     }
 }

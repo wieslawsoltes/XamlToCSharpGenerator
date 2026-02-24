@@ -84,7 +84,7 @@ public class DifferentialRuntimeBehaviorTests
             var clean = RunProcess(
                 tempDir,
                 "dotnet",
-                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
             Assert.True(clean.ExitCode == 0, clean.Output);
 
             var xamlIlBuild = BuildFixture(projectPath, tempDir, backend: "XamlIl");
@@ -809,7 +809,9 @@ public class DifferentialRuntimeBehaviorTests
     {
         var arguments =
             $"build \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers " +
-            $"-p:AvaloniaXamlCompilerBackend={backend}";
+            $"-p:AvaloniaXamlCompilerBackend={backend} " +
+            "-p:UseSharedCompilation=false " +
+            "-p:ProduceReferenceAssembly=false";
         return RunProcess(workingDirectory, "dotnet", arguments);
     }
 

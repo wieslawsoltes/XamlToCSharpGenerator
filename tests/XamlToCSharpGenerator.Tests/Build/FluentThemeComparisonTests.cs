@@ -12,6 +12,7 @@ namespace XamlToCSharpGenerator.Tests.Build;
 public class FluentThemeComparisonTests
 {
     private const int ProcessTimeoutMilliseconds = 300_000;
+    private const string RoslynTransientFailureMarker = "BoundStepThroughSequencePoint.<Span>k__BackingField";
 
     [Fact]
     public void FluentTheme_Rebuild_Has_No_Selector_Conversion_Or_CrossFile_ControlTheme_BasedOn_Warnings()
@@ -278,10 +279,21 @@ public class FluentThemeComparisonTests
 
     private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
     {
+        return RunProcess(workingDirectory, fileName, arguments, allowRetry: true);
+    }
+
+    private static (int ExitCode, string Output) RunProcess(
+        string workingDirectory,
+        string fileName,
+        string arguments,
+        bool allowRetry)
+    {
+        var effectiveArguments = NormalizeDotnetBuildArguments(fileName, arguments);
+
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
-            Arguments = arguments,
+            Arguments = effectiveArguments,
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -305,7 +317,7 @@ public class FluentThemeComparisonTests
                 // Best-effort cleanup for timed-out process.
             }
 
-            return (-1, $"Timed out after {ProcessTimeoutMilliseconds}ms while running: {fileName} {arguments}");
+            return (-1, $"Timed out after {ProcessTimeoutMilliseconds}ms while running: {fileName} {effectiveArguments}");
         }
 
         System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
@@ -313,7 +325,58 @@ public class FluentThemeComparisonTests
         var outputBuilder = new StringBuilder();
         outputBuilder.Append(stdoutTask.Result);
         outputBuilder.Append(stderrTask.Result);
-        return (process.ExitCode, outputBuilder.ToString());
+        var output = outputBuilder.ToString();
+
+        if (allowRetry &&
+            ShouldRetryAfterTransientRoslynFailure(fileName, effectiveArguments, process.ExitCode, output))
+        {
+            var retry = RunProcess(workingDirectory, fileName, arguments, allowRetry: false);
+            var retryOutput = new StringBuilder(output.Length + retry.Output.Length + 128);
+            retryOutput.AppendLine("[Transient Roslyn compiler failure detected; retrying once.]");
+            retryOutput.AppendLine(output);
+            retryOutput.AppendLine("[Retry result follows:]");
+            retryOutput.Append(retry.Output);
+            return (retry.ExitCode, retryOutput.ToString());
+        }
+
+        return (process.ExitCode, output);
+    }
+
+    private static string NormalizeDotnetBuildArguments(string fileName, string arguments)
+    {
+        if (!string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase) ||
+            !arguments.Contains("build", StringComparison.OrdinalIgnoreCase) ||
+            (arguments.Contains("UseSharedCompilation", StringComparison.OrdinalIgnoreCase) &&
+             arguments.Contains("ProduceReferenceAssembly", StringComparison.OrdinalIgnoreCase)))
+        {
+            return arguments;
+        }
+
+        var normalized = arguments;
+        if (!normalized.Contains("UseSharedCompilation", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized += " -p:UseSharedCompilation=false";
+        }
+
+        if (!normalized.Contains("ProduceReferenceAssembly", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized += " -p:ProduceReferenceAssembly=false";
+        }
+
+        return normalized;
+    }
+
+    private static bool ShouldRetryAfterTransientRoslynFailure(
+        string fileName,
+        string arguments,
+        int exitCode,
+        string output)
+    {
+        return exitCode != 0 &&
+               string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase) &&
+               arguments.Contains("build", StringComparison.OrdinalIgnoreCase) &&
+               output.Contains("MissingFieldException", StringComparison.Ordinal) &&
+               output.Contains(RoslynTransientFailureMarker, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()

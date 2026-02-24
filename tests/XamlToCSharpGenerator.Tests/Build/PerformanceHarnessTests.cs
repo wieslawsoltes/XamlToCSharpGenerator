@@ -110,7 +110,7 @@ public class PerformanceHarnessTests
             var clean = RunProcess(
                 tempDir,
                 "dotnet",
-                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
             Assert.True(clean.ExitCode == 0, clean.Output);
 
             var fullBuild = TimedBuild(projectPath, tempDir);
@@ -176,7 +176,9 @@ public class PerformanceHarnessTests
     {
         return
             $"build \"{projectPath}\" --nologo --no-restore -m:1 /nodeReuse:false --disable-build-servers " +
-            "-p:AvaloniaXamlCompilerBackend=SourceGen";
+            "-p:AvaloniaXamlCompilerBackend=SourceGen " +
+            "-p:UseSharedCompilation=false " +
+            "-p:ProduceReferenceAssembly=false";
     }
 
     private static double ReadThresholdMilliseconds(string environmentVariable, double fallbackValue)
