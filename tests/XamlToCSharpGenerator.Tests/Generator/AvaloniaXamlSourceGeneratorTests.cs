@@ -1309,6 +1309,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlSourceGenHotDesignManager.Register", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignRegistrationOptions", generated);
         Assert.Contains("BuildUri = \"avares://", generated);
+        Assert.Contains("DocumentRole = global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignDocumentRole.Root", generated);
+        Assert.Contains("ArtifactKind = global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignArtifactKind.View", generated);
+        Assert.Contains("ScopeHints = new string[] { \"control\", \"UserControl\" }", generated);
     }
 
     [Fact]

@@ -27,6 +27,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var namespaceName = document.ClassNamespace;
         var className = document.ClassName;
         var escapedUri = Escape(viewModel.BuildUri);
+        var hotDesignDocumentRoleExpression = BuildHotDesignDocumentRoleExpression(viewModel);
+        var hotDesignArtifactKindExpression = BuildHotDesignArtifactKindExpression(viewModel);
+        var hotDesignScopeHintsExpression = BuildHotDesignScopeHintsExpression(viewModel);
         var emitReloadStateTracking = viewModel.Document.IsClassBacked && (viewModel.EnableHotReload || viewModel.EnableHotDesign);
         var emitDebugLineDirectives = viewModel.CreateSourceInfo;
         var lineDirectiveFilePath = NormalizeLineDirectivePath(viewModel.Document.FilePath);
@@ -1086,7 +1089,10 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         $"                    global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotDesignManager.Register(this, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignRegistrationOptions");
                     sourceBuilder.AppendLine("                    {");
                     sourceBuilder.AppendLine($"                        BuildUri = \"{escapedUri}\",");
-                    sourceBuilder.AppendLine($"                        SourcePath = \"{escapedSourcePath}\"");
+                    sourceBuilder.AppendLine($"                        SourcePath = \"{escapedSourcePath}\",");
+                    sourceBuilder.AppendLine($"                        DocumentRole = {hotDesignDocumentRoleExpression},");
+                    sourceBuilder.AppendLine($"                        ArtifactKind = {hotDesignArtifactKindExpression},");
+                    sourceBuilder.AppendLine($"                        ScopeHints = {hotDesignScopeHintsExpression}");
                     sourceBuilder.AppendLine("                    });");
                 }
 
@@ -4198,6 +4204,142 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return false;
+    }
+
+    private static string BuildHotDesignDocumentRoleExpression(ResolvedViewModel viewModel)
+    {
+        var artifactKindToken = ResolveHotDesignArtifactKindToken(viewModel);
+        var roleToken = artifactKindToken switch
+        {
+            "Template" => "Template",
+            "ResourceDictionary" => "Resources",
+            "ControlTheme" => "Theme",
+            "Style" when IsThemeLikeDocument(viewModel) => "Theme",
+            _ when !viewModel.Document.IsClassBacked => "Include",
+            _ => "Root"
+        };
+
+        return "global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignDocumentRole." + roleToken;
+    }
+
+    private static string BuildHotDesignArtifactKindExpression(ResolvedViewModel viewModel)
+    {
+        return "global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignArtifactKind." +
+               ResolveHotDesignArtifactKindToken(viewModel);
+    }
+
+    private static string BuildHotDesignScopeHintsExpression(ResolvedViewModel viewModel)
+    {
+        var hints = new List<string>(2)
+        {
+            ResolveHotDesignScopeHint(viewModel)
+        };
+
+        var xmlTypeName = viewModel.Document.RootObject.XmlTypeName;
+        if (!string.IsNullOrWhiteSpace(xmlTypeName))
+        {
+            var trimmedXmlTypeName = xmlTypeName.Trim();
+            if (!string.Equals(trimmedXmlTypeName, hints[0], StringComparison.OrdinalIgnoreCase))
+            {
+                hints.Add(trimmedXmlTypeName);
+            }
+        }
+
+        if (hints.Count == 0)
+        {
+            return "null";
+        }
+
+        if (hints.Count == 1)
+        {
+            return $"new string[] {{ \"{Escape(hints[0])}\" }}";
+        }
+
+        return $"new string[] {{ \"{Escape(hints[0])}\", \"{Escape(hints[1])}\" }}";
+    }
+
+    private static string ResolveHotDesignScopeHint(ResolvedViewModel viewModel)
+    {
+        var artifactKindToken = ResolveHotDesignArtifactKindToken(viewModel);
+        return artifactKindToken switch
+        {
+            "Application" => "application",
+            "Template" => "template",
+            "ControlTheme" => "theme",
+            "ResourceDictionary" => "resources",
+            "Style" when IsThemeLikeDocument(viewModel) => "theme",
+            "Style" => "styles",
+            _ => "control"
+        };
+    }
+
+    private static string ResolveHotDesignArtifactKindToken(ResolvedViewModel viewModel)
+    {
+        var rootXmlTypeName = viewModel.Document.RootObject.XmlTypeName;
+        if (string.Equals(rootXmlTypeName, "Application", StringComparison.Ordinal))
+        {
+            return "Application";
+        }
+
+        if (string.Equals(rootXmlTypeName, "ControlTheme", StringComparison.Ordinal) ||
+            viewModel.ControlThemes.Length > 0)
+        {
+            return "ControlTheme";
+        }
+
+        if (string.Equals(rootXmlTypeName, "ResourceDictionary", StringComparison.Ordinal))
+        {
+            return "ResourceDictionary";
+        }
+
+        if (string.Equals(rootXmlTypeName, "Style", StringComparison.Ordinal) ||
+            string.Equals(rootXmlTypeName, "Styles", StringComparison.Ordinal) ||
+            viewModel.Styles.Length > 0)
+        {
+            return "Style";
+        }
+
+        if (string.Equals(rootXmlTypeName, "ControlTemplate", StringComparison.Ordinal) ||
+            string.Equals(rootXmlTypeName, "DataTemplate", StringComparison.Ordinal) ||
+            string.Equals(rootXmlTypeName, "ItemsPanelTemplate", StringComparison.Ordinal))
+        {
+            return "Template";
+        }
+
+        if (viewModel.Templates.Length > 0 &&
+            viewModel.Styles.Length == 0 &&
+            viewModel.ControlThemes.Length == 0)
+        {
+            return "Template";
+        }
+
+        return "View";
+    }
+
+    private static bool IsThemeLikeDocument(ResolvedViewModel viewModel)
+    {
+        if (viewModel.ControlThemes.Length > 0)
+        {
+            return true;
+        }
+
+        var classFullName = viewModel.Document.ClassFullName;
+        if (!string.IsNullOrWhiteSpace(classFullName))
+        {
+            if (classFullName.IndexOf(".Themes.", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (classFullName.EndsWith(".Theme", StringComparison.OrdinalIgnoreCase) ||
+                classFullName.EndsWith("Theme", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        var className = viewModel.Document.ClassName;
+        return className.EndsWith("Theme", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildHintName(ResolvedViewModel viewModel)
