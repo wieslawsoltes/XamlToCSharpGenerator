@@ -152,6 +152,21 @@ public class FluentThemeComparisonTests
         Assert.Equal(
             GetRequiredProbeValue(xamlIlProbe, "Resource.ButtonPadding.Default.Summary"),
             GetRequiredProbeValue(sourceGenProbe, "Resource.ButtonPadding.Default.Summary"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "Resource.SystemControlHighlightAccentBrush.Default.Summary"),
+            GetRequiredProbeValue(sourceGenProbe, "Resource.SystemControlHighlightAccentBrush.Default.Summary"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "Resource.TextControlBorderBrushFocused.Default.Summary"),
+            GetRequiredProbeValue(sourceGenProbe, "Resource.TextControlBorderBrushFocused.Default.Summary"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "Resource.TextControlSelectionHighlightColor.Default.Summary"),
+            GetRequiredProbeValue(sourceGenProbe, "Resource.TextControlSelectionHighlightColor.Default.Summary"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "Resource.ToggleButtonBackgroundChecked.Default.Summary"),
+            GetRequiredProbeValue(sourceGenProbe, "Resource.ToggleButtonBackgroundChecked.Default.Summary"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "TextBoxStates.Focus.BorderBrush"),
+            GetRequiredProbeValue(sourceGenProbe, "TextBoxStates.Focus.BorderBrush"));
 
         Assert.Equal(
             GetRequiredProbeValue(xamlIlProbe, "TemplateApply.Button.ThemeFound"),

@@ -40,6 +40,7 @@ public static class SourceGenMarkupExtensionRuntime
         return ProvideStaticResourceExtension(
             extension,
             targetObject,
+            targetProperty,
             baseUri,
             parentStack,
             contextProvider);
@@ -293,6 +294,7 @@ public static class SourceGenMarkupExtensionRuntime
             StaticResourceExtension staticResourceExtension => ProvideStaticResourceExtension(
                 staticResourceExtension,
                 targetObject,
+                targetProperty,
                 baseUri,
                 parentStack,
                 contextProvider),
@@ -456,27 +458,50 @@ public static class SourceGenMarkupExtensionRuntime
     private static object? ProvideStaticResourceExtension(
         StaticResourceExtension extension,
         object targetObject,
+        object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack,
         IServiceProvider serviceProvider)
     {
-        var resourceKey = extension.ResourceKey ?? AvaloniaProperty.UnsetValue;
-        var effectiveParentStack = BuildEffectiveParentStack(serviceProvider, parentStack);
-
-        if (TryResolveStaticResourceFallback(
-                resourceKey,
+        if (ShouldDeferStaticResourceResolution(targetObject, targetProperty))
+        {
+            return new DeferredStaticResourceContent(
+                extension.ResourceKey ?? AvaloniaProperty.UnsetValue,
                 targetObject,
                 baseUri,
-                serviceProvider,
-                effectiveParentStack,
-                out var eagerlyResolved))
-        {
-            return eagerlyResolved;
+                parentStack,
+                serviceProvider);
         }
+
+        return ResolveStaticResourceExtensionImmediate(
+            extension,
+            targetObject,
+            baseUri,
+            parentStack,
+            serviceProvider);
+    }
+
+    private static object? ResolveStaticResourceExtensionImmediate(
+        StaticResourceExtension extension,
+        object targetObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack,
+        IServiceProvider? serviceProvider)
+    {
+        var effectiveServiceProvider = serviceProvider ?? CreateContextProvider(
+            parentServiceProvider: null,
+            rootObject: targetObject,
+            intermediateRootObject: targetObject,
+            targetObject: targetObject,
+            targetProperty: null,
+            baseUri: baseUri,
+            parentStack: parentStack);
+        var resourceKey = extension.ResourceKey ?? AvaloniaProperty.UnsetValue;
+        var effectiveParentStack = BuildEffectiveParentStack(effectiveServiceProvider, parentStack);
 
         try
         {
-            var value = extension.ProvideValue(serviceProvider);
+            var value = extension.ProvideValue(effectiveServiceProvider);
             if (!ReferenceEquals(value, AvaloniaProperty.UnsetValue))
             {
                 return value;
@@ -486,7 +511,7 @@ public static class SourceGenMarkupExtensionRuntime
                     resourceKey,
                     targetObject,
                     baseUri,
-                    serviceProvider,
+                    effectiveServiceProvider,
                     effectiveParentStack,
                     out var resolvedFallback))
             {
@@ -502,7 +527,7 @@ public static class SourceGenMarkupExtensionRuntime
                     resourceKey,
                     targetObject,
                     baseUri,
-                    serviceProvider,
+                    effectiveServiceProvider,
                     effectiveParentStack,
                     out var resolvedFallback))
             {
@@ -511,6 +536,15 @@ public static class SourceGenMarkupExtensionRuntime
 
             throw;
         }
+    }
+
+    private static bool ShouldDeferStaticResourceResolution(
+        object targetObject,
+        object? targetProperty)
+    {
+        // Dictionary StaticResource aliases depend on ambient owner context
+        // (merged dictionaries/theme variants). Resolve them lazily once attached.
+        return targetProperty is null && targetObject is IResourceDictionary;
     }
 
     private static IReadOnlyList<object>? BuildEffectiveParentStack(
@@ -661,6 +695,64 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return new Uri("avares://" + localAssemblyName + "/");
+    }
+
+    private sealed class DeferredStaticResourceContent : IDeferredContent
+    {
+        private readonly object _resourceKey;
+        private readonly object _anchor;
+        private readonly string? _baseUri;
+        private readonly object[]? _parentStack;
+        private readonly IServiceProvider? _creationServiceProvider;
+
+        public DeferredStaticResourceContent(
+            object resourceKey,
+            object anchor,
+            string? baseUri,
+            IReadOnlyList<object>? parentStack,
+            IServiceProvider? creationServiceProvider)
+        {
+            _resourceKey = resourceKey;
+            _anchor = anchor;
+            _baseUri = baseUri;
+            _creationServiceProvider = creationServiceProvider;
+            if (parentStack is { Count: > 0 })
+            {
+                _parentStack = new object[parentStack.Count];
+                for (var index = 0; index < parentStack.Count; index++)
+                {
+                    _parentStack[index] = parentStack[index];
+                }
+            }
+        }
+
+        public object? Build(IServiceProvider? serviceProvider)
+        {
+            var effectiveServiceProvider = serviceProvider ?? _creationServiceProvider ?? CreateContextProvider(
+                parentServiceProvider: null,
+                rootObject: _anchor,
+                intermediateRootObject: _anchor,
+                targetObject: _anchor,
+                targetProperty: null,
+                baseUri: _baseUri,
+                parentStack: _parentStack);
+
+            try
+            {
+                return ResolveStaticResourceExtensionImmediate(
+                    new StaticResourceExtension(_resourceKey),
+                    _anchor,
+                    _baseUri,
+                    _parentStack,
+                    effectiveServiceProvider);
+            }
+            catch (KeyNotFoundException)
+            {
+                // Deferred entries may be touched while merged dictionaries are still materializing.
+                // Keep lookup lazy and let a later access attempt resolve the resource.
+                return AvaloniaProperty.UnsetValue;
+            }
+        }
     }
 
     private sealed class MarkupExtensionServiceProvider :

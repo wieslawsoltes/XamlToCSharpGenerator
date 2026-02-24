@@ -8,8 +8,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.Chrome;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Controls.Utils;
 using Avalonia.Headless;
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Avalonia.Themes.Fluent;
@@ -27,6 +29,12 @@ try
     AvaloniaSourceGeneratedXamlLoader.Enable();
 
     var fluentTheme = new FluentTheme();
+    if (Application.Current is { } application)
+    {
+        application.Styles.Clear();
+        application.Styles.Add(fluentTheme);
+    }
+
     report["Theme.ItemCount"] = fluentTheme.Count.ToString(CultureInfo.InvariantCulture);
     report["Theme.ResourceCount"] = fluentTheme.Resources.Count.ToString(CultureInfo.InvariantCulture);
     report["Theme.Resources.MergedCount"] = fluentTheme.Resources.MergedDictionaries.Count.ToString(CultureInfo.InvariantCulture);
@@ -54,9 +62,14 @@ try
         "TemplateApply.TextBox",
         report);
     ProbeWindowTemplateOverlayMaterialization(fluentTheme, report);
+    ProbeTextBoxInteractionStates(fluentTheme, "TextBoxStates", report);
 
     ProbeResource(fluentTheme, "ButtonPadding", "Resource.ButtonPadding.Default", report);
     ProbeResource(fluentTheme, "SystemControlForegroundBaseHighBrush", "Resource.SystemControlForegroundBaseHighBrush.Default", report);
+    ProbeResource(fluentTheme, "SystemControlHighlightAccentBrush", "Resource.SystemControlHighlightAccentBrush.Default", report);
+    ProbeResource(fluentTheme, "TextControlBorderBrushFocused", "Resource.TextControlBorderBrushFocused.Default", report);
+    ProbeResource(fluentTheme, "TextControlSelectionHighlightColor", "Resource.TextControlSelectionHighlightColor.Default", report);
+    ProbeResource(fluentTheme, "ToggleButtonBackgroundChecked", "Resource.ToggleButtonBackgroundChecked.Default", report);
     ProbeResource(fluentTheme, "HorizontalMenuFlyoutPresenter", "Resource.HorizontalMenuFlyoutPresenter.Default", report);
     ProbeDirectGeneratedLoad(
         "avares://Avalonia.Themes.Fluent/Controls/Button.xaml",
@@ -66,6 +79,10 @@ try
         "avares://Avalonia.Themes.Fluent/Accents/BaseResources.xaml",
         "DirectLoad.BaseResourcesXaml",
         report);
+    ProbeDirectGeneratedLoad(
+        "avares://Avalonia.Themes.Fluent/Accents/FluentControlResources.xaml",
+        "DirectLoad.FluentControlResourcesXaml",
+        report);
 
     fluentTheme.DensityStyle = DensityStyle.Compact;
     ProbeResource(fluentTheme, "ButtonPadding", "Resource.ButtonPadding.Compact", report);
@@ -74,6 +91,13 @@ catch (Exception ex)
 {
     report["Probe.Exception.Type"] = ex.GetType().FullName ?? ex.GetType().Name;
     report["Probe.Exception.Message"] = ex.Message;
+    report["Probe.Exception.StackTrace"] = ex.StackTrace ?? string.Empty;
+    if (ex.InnerException is not null)
+    {
+        report["Probe.Exception.InnerType"] = ex.InnerException.GetType().FullName ?? ex.InnerException.GetType().Name;
+        report["Probe.Exception.InnerMessage"] = ex.InnerException.Message;
+        report["Probe.Exception.InnerStackTrace"] = ex.InnerException.StackTrace ?? string.Empty;
+    }
 }
 
 Console.WriteLine(JsonSerializer.Serialize(report));
@@ -270,6 +294,91 @@ static void ProbeWindowTemplateOverlayMaterialization(
     }
 }
 
+static void ProbeTextBoxInteractionStates(
+    IResourceNode node,
+    string prefix,
+    IDictionary<string, string> report)
+{
+    if (!TryGetResource(node, typeof(TextBox), out var value) ||
+        value is not ControlTheme controlTheme)
+    {
+        report[$"{prefix}.ThemeFound"] = "false";
+        return;
+    }
+
+    report[$"{prefix}.ThemeFound"] = "true";
+
+    try
+    {
+        var templateSetter = controlTheme.Setters
+            .OfType<Setter>()
+            .FirstOrDefault(static setter => setter.Property == TemplatedControl.TemplateProperty);
+        if (templateSetter?.Value is not IControlTemplate template)
+        {
+            report[$"{prefix}.TemplateFound"] = "false";
+            return;
+        }
+
+        report[$"{prefix}.TemplateFound"] = "true";
+
+        var textBox = new ProbeTextBox
+        {
+            Theme = controlTheme,
+            Text = "state-probe"
+        };
+        var hostWindow = new Window
+        {
+            Width = 320,
+            Height = 120,
+            Content = textBox
+        };
+
+        INameScope? templateNameScope = null;
+        textBox.TemplateApplied += (_, e) => templateNameScope = e.NameScope;
+        hostWindow.Show();
+        textBox.ApplyTemplate();
+
+        var border = templateNameScope?.Find<Border>("PART_BorderElement");
+        var watermark = templateNameScope?.Find<TextBlock>("PART_Watermark");
+
+        report[$"{prefix}.BorderFound"] = (border is not null).ToString().ToLowerInvariant();
+        report[$"{prefix}.WatermarkFound"] = (watermark is not null).ToString().ToLowerInvariant();
+        if (border is null || watermark is null)
+        {
+            return;
+        }
+
+        CaptureState(prefix, "Default", border, watermark, report);
+
+        textBox.SetPseudoClass(":pointerover", true);
+        CaptureState(prefix, "PointerOver", border, watermark, report);
+        textBox.SetPseudoClass(":pointerover", false);
+
+        textBox.SetPseudoClass(":focus", true);
+        CaptureState(prefix, "Focus", border, watermark, report);
+        textBox.SetPseudoClass(":focus", false);
+        hostWindow.Close();
+    }
+    catch (Exception ex)
+    {
+        report[$"{prefix}.Exception.Type"] = ex.GetType().FullName ?? ex.GetType().Name;
+        report[$"{prefix}.Exception.Message"] = ex.Message;
+    }
+}
+
+static void CaptureState(
+    string prefix,
+    string stateName,
+    Border border,
+    TextBlock watermark,
+    IDictionary<string, string> report)
+{
+    report[$"{prefix}.{stateName}.BorderBackground"] = SummarizeValue(border.Background);
+    report[$"{prefix}.{stateName}.BorderBrush"] = SummarizeValue(border.BorderBrush);
+    report[$"{prefix}.{stateName}.BorderThickness"] = SummarizeValue(border.BorderThickness);
+    report[$"{prefix}.{stateName}.WatermarkForeground"] = SummarizeValue(watermark.Foreground);
+}
+
 static bool TryGetResource(IResourceNode node, object key, out object? value)
 {
     if (node.TryGetResource(key, ThemeVariant.Default, out value))
@@ -301,6 +410,10 @@ static void ProbeDirectGeneratedLoad(string uri, string prefix, IDictionary<stri
         report[$"{prefix}.ResourceCount"] = dictionary.Count.ToString(CultureInfo.InvariantCulture);
         ProbeResource(dictionary, "ButtonPadding", prefix + ".ButtonPadding", report);
         ProbeResource(dictionary, "SystemControlForegroundBaseHighBrush", prefix + ".SystemControlForegroundBaseHighBrush", report);
+        ProbeResource(dictionary, "SystemControlHighlightAccentBrush", prefix + ".SystemControlHighlightAccentBrush", report);
+        ProbeResource(dictionary, "TextControlBorderBrushFocused", prefix + ".TextControlBorderBrushFocused", report);
+        ProbeResource(dictionary, "TextControlSelectionHighlightColor", prefix + ".TextControlSelectionHighlightColor", report);
+        ProbeResource(dictionary, "ToggleButtonBackgroundChecked", prefix + ".ToggleButtonBackgroundChecked", report);
         ProbeControlTheme(dictionary, typeof(Button), prefix + ".ButtonTheme", report);
     }
 }
@@ -310,6 +423,8 @@ static string SummarizeValue(object? value)
     return value switch
     {
         null => "<null>",
+        ISolidColorBrush solidColorBrush => solidColorBrush.Color.ToString(),
+        IBrush => value.GetType().FullName ?? value.GetType().Name,
         Thickness thickness => thickness.ToString(),
         double number => number.ToString(CultureInfo.InvariantCulture),
         float number => number.ToString(CultureInfo.InvariantCulture),
@@ -319,4 +434,12 @@ static string SummarizeValue(object? value)
         string text => text,
         _ => value.GetType().FullName ?? value.GetType().Name
     };
+}
+
+sealed class ProbeTextBox : TextBox
+{
+    public void SetPseudoClass(string pseudoClass, bool value)
+    {
+        PseudoClasses.Set(pseudoClass, value);
+    }
 }

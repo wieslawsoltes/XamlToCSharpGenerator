@@ -96,7 +96,66 @@ public class XamlSourceGenHotDesignManagerTests
 
             Assert.True(result.Succeeded);
             Assert.True(result.SourcePersisted);
+            Assert.True(result.MinimalDiffApplied);
+            Assert.Equal(3, result.MinimalDiffRemovedLength);
+            Assert.Equal(3, result.MinimalDiffInsertedLength);
             Assert.Equal("<TextBlock Text=\"New\"/>", File.ReadAllText(tempFile));
+            Assert.Equal(0, instance.ApplyCount);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempFile))
+                {
+                    File.Delete(tempFile);
+                }
+            }
+            catch
+            {
+                // Best effort temp cleanup.
+            }
+        }
+    }
+
+    [Fact]
+    public void ApplyUpdate_Persists_Source_File_With_NoOp_MinimalDiff_When_Text_Is_Unchanged()
+    {
+        ResetManager();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            UseMinimalDiffPersistence = true,
+            WaitForHotReload = false
+        });
+
+        var instance = new HotDesignTarget();
+        var tempFile = Path.Combine(Path.GetTempPath(), "AXSG-HotDesign-" + Guid.NewGuid().ToString("N") + ".axaml");
+        File.WriteAllText(tempFile, "<TextBlock Text=\"Same\"/>");
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                instance,
+                static target => ((HotDesignTarget)target).ApplyCount++,
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = "avares://tests/PersistNoOp.axaml",
+                    SourcePath = tempFile
+                });
+
+            var result = XamlSourceGenHotDesignManager.ApplyUpdate(new SourceGenHotDesignUpdateRequest
+            {
+                BuildUri = "avares://tests/PersistNoOp.axaml",
+                XamlText = "<TextBlock Text=\"Same\"/>"
+            });
+
+            Assert.True(result.Succeeded);
+            Assert.True(result.SourcePersisted);
+            Assert.True(result.MinimalDiffApplied);
+            Assert.Equal(0, result.MinimalDiffRemovedLength);
+            Assert.Equal(0, result.MinimalDiffInsertedLength);
+            Assert.Equal("<TextBlock Text=\"Same\"/>", File.ReadAllText(tempFile));
             Assert.Equal(0, instance.ApplyCount);
         }
         finally

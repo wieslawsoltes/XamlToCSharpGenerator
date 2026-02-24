@@ -6,6 +6,8 @@ public sealed class SourceGenHotDesignOptions
 {
     public bool PersistChangesToSource { get; set; } = true;
 
+    public bool UseMinimalDiffPersistence { get; set; } = true;
+
     public bool WaitForHotReload { get; set; } = true;
 
     public TimeSpan HotReloadWaitTimeout { get; set; } = TimeSpan.FromSeconds(10);
@@ -21,6 +23,7 @@ public sealed class SourceGenHotDesignOptions
         return new SourceGenHotDesignOptions
         {
             PersistChangesToSource = PersistChangesToSource,
+            UseMinimalDiffPersistence = UseMinimalDiffPersistence,
             WaitForHotReload = WaitForHotReload,
             HotReloadWaitTimeout = HotReloadWaitTimeout,
             FallbackToRuntimeApplyOnTimeout = FallbackToRuntimeApplyOnTimeout,

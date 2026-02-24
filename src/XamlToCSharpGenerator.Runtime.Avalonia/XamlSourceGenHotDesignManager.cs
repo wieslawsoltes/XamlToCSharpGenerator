@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -561,6 +562,10 @@ public static class XamlSourceGenHotDesignManager
             var fallbackToRuntimeApply = options.FallbackToRuntimeApplyOnTimeout;
 
             var sourcePersisted = false;
+            var minimalDiffApplied = false;
+            var minimalDiffStart = -1;
+            var minimalDiffRemovedLength = 0;
+            var minimalDiffInsertedLength = 0;
             var hotReloadObserved = false;
             var runtimeFallbackApplied = false;
 
@@ -585,7 +590,29 @@ public static class XamlSourceGenHotDesignManager
                         Directory.CreateDirectory(directory);
                     }
 
-                    File.WriteAllText(sourcePath, request.XamlText);
+                    if (options.UseMinimalDiffPersistence)
+                    {
+                        var existingText = File.Exists(sourcePath)
+                            ? File.ReadAllText(sourcePath)
+                            : string.Empty;
+                        var patch = MinimalTextDiff.CreatePatch(existingText, request.XamlText);
+
+                        minimalDiffApplied = true;
+                        minimalDiffStart = patch.Start;
+                        minimalDiffRemovedLength = patch.RemovedLength;
+                        minimalDiffInsertedLength = patch.InsertedLength;
+
+                        if (!patch.IsNoOp)
+                        {
+                            var patchedText = MinimalTextDiff.ApplyPatch(existingText, patch);
+                            File.WriteAllText(sourcePath, patchedText);
+                        }
+                    }
+                    else
+                    {
+                        File.WriteAllText(sourcePath, request.XamlText);
+                    }
+
                     sourcePersisted = true;
                 }
                 catch (Exception ex)
@@ -596,6 +623,11 @@ public static class XamlSourceGenHotDesignManager
                         BuildUri: document.BuildUri,
                         TargetType: document.RootType,
                         SourcePath: document.SourcePath,
+                        SourcePersisted: sourcePersisted,
+                        MinimalDiffApplied: minimalDiffApplied,
+                        MinimalDiffStart: minimalDiffStart,
+                        MinimalDiffRemovedLength: minimalDiffRemovedLength,
+                        MinimalDiffInsertedLength: minimalDiffInsertedLength,
                         Error: ex);
                 }
             }
@@ -625,6 +657,10 @@ public static class XamlSourceGenHotDesignManager
                         TargetType: document.RootType,
                         SourcePath: document.SourcePath,
                         SourcePersisted: false,
+                        MinimalDiffApplied: false,
+                        MinimalDiffStart: -1,
+                        MinimalDiffRemovedLength: 0,
+                        MinimalDiffInsertedLength: 0,
                         HotReloadObserved: false,
                         RuntimeFallbackApplied: true);
                 }
@@ -636,6 +672,10 @@ public static class XamlSourceGenHotDesignManager
                     TargetType: document.RootType,
                     SourcePath: document.SourcePath,
                     SourcePersisted: false,
+                    MinimalDiffApplied: false,
+                    MinimalDiffStart: -1,
+                    MinimalDiffRemovedLength: 0,
+                    MinimalDiffInsertedLength: 0,
                     HotReloadObserved: false,
                     RuntimeFallbackApplied: false);
             }
@@ -651,6 +691,10 @@ public static class XamlSourceGenHotDesignManager
                         TargetType: document.RootType,
                         SourcePath: document.SourcePath,
                         SourcePersisted: sourcePersisted,
+                        MinimalDiffApplied: minimalDiffApplied,
+                        MinimalDiffStart: minimalDiffStart,
+                        MinimalDiffRemovedLength: minimalDiffRemovedLength,
+                        MinimalDiffInsertedLength: minimalDiffInsertedLength,
                         HotReloadObserved: true,
                         RuntimeFallbackApplied: false);
                 }
@@ -664,6 +708,10 @@ public static class XamlSourceGenHotDesignManager
                         TargetType: document.RootType,
                         SourcePath: document.SourcePath,
                         SourcePersisted: sourcePersisted,
+                        MinimalDiffApplied: minimalDiffApplied,
+                        MinimalDiffStart: minimalDiffStart,
+                        MinimalDiffRemovedLength: minimalDiffRemovedLength,
+                        MinimalDiffInsertedLength: minimalDiffInsertedLength,
                         HotReloadObserved: false,
                         RuntimeFallbackApplied: true);
                 }
@@ -675,6 +723,10 @@ public static class XamlSourceGenHotDesignManager
                     TargetType: document.RootType,
                     SourcePath: document.SourcePath,
                     SourcePersisted: sourcePersisted,
+                    MinimalDiffApplied: minimalDiffApplied,
+                    MinimalDiffStart: minimalDiffStart,
+                    MinimalDiffRemovedLength: minimalDiffRemovedLength,
+                    MinimalDiffInsertedLength: minimalDiffInsertedLength,
                     HotReloadObserved: false,
                     RuntimeFallbackApplied: false);
             }
@@ -686,6 +738,10 @@ public static class XamlSourceGenHotDesignManager
                 TargetType: document.RootType,
                 SourcePath: document.SourcePath,
                 SourcePersisted: sourcePersisted,
+                MinimalDiffApplied: minimalDiffApplied,
+                MinimalDiffStart: minimalDiffStart,
+                MinimalDiffRemovedLength: minimalDiffRemovedLength,
+                MinimalDiffInsertedLength: minimalDiffInsertedLength,
                 HotReloadObserved: false,
                 RuntimeFallbackApplied: false);
         }
