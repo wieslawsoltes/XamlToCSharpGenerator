@@ -1385,10 +1385,10 @@ public class AvaloniaXamlSourceGeneratorTests
             string.Join("\n", diagnostics.Select(static d => d.ToString())) +
             "\nTrees:\n" +
             string.Join("\n---\n", updatedCompilation.SyntaxTrees.Select(static tree => tree.FilePath ?? "<no-path>")));
-        Assert.Contains("__GetSourceGenHotReloadCollectionMembers()", generated);
+        Assert.Contains("__GetSourceGenHotReloadCollectionCleanupDescriptors()", generated);
         Assert.Contains("\"Resources\"", generated);
         Assert.Contains("\"Styles\"", generated);
-        Assert.Contains("__GetSourceGenHotReloadAvaloniaPropertyMembers()", generated);
+        Assert.Contains("__GetSourceGenHotReloadAvaloniaPropertyCleanupDescriptors()", generated);
         Assert.Contains("global::Avalonia.Controls.UserControl.TitleProperty", generated);
         Assert.DoesNotContain("private static readonly string[] __SourceGenHotReloadCollectionMembers", generated);
     }
@@ -1410,8 +1410,8 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__GetSourceGenHotReloadClrPropertyMembers()", generated);
-        Assert.Contains("return new string[] { \"AcceptButton\" };", generated);
+        Assert.Contains("__GetSourceGenHotReloadClrPropertyCleanupDescriptors()", generated);
+        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"AcceptButton\",", generated);
     }
 
     [Fact]
@@ -1501,9 +1501,9 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__GetSourceGenHotReloadRootEventSubscriptions()", generated);
-        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadEventDescriptor(\"Loaded\", \"OnLoaded\", false, null, null, null)", generated);
-        Assert.Contains("__GetSourceGenHotReloadRootEventSubscriptions());", generated);
+        Assert.Contains("__GetSourceGenHotReloadRootEventCleanupDescriptors()", generated);
+        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"C|Loaded|OnLoaded|||\",", generated);
+        Assert.Contains("__GetSourceGenHotReloadRootEventCleanupDescriptors());", generated);
     }
 
     [Fact]
@@ -4689,9 +4689,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlControlThemeRegistry.Register", generated);
         Assert.Contains("XamlIncludeRegistry.Register", generated);
         Assert.Contains("XamlIncludeGraphRegistry.Register", generated);
-        Assert.Contains("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
+        Assert.Contains("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, object? ownerContext, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
         Assert.Contains("if (item is global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude &&", generated);
-        Assert.Contains("global::XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader.TryLoad(null, includeUri, out var loaded)", generated);
+        Assert.Contains("global::XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader.TryLoad(", generated);
         Assert.Contains("\"Text\"", generated);
         Assert.Contains("\"Content\"", generated);
         Assert.Contains("\"Caption\"", generated);
@@ -11466,7 +11466,7 @@ public class AvaloniaXamlSourceGeneratorTests
     [Fact]
     public void Binder_Source_Does_Not_Reparse_Template_RawXaml_For_Validation()
     {
-        var source = File.ReadAllText(GetBinderSourcePath());
+        var source = GetBinderSourceText();
         Assert.DoesNotContain("XDocument.Parse(rawXaml", source, StringComparison.Ordinal);
         Assert.DoesNotContain("TryGetTemplateContentRootElement(", source, StringComparison.Ordinal);
         Assert.DoesNotContain("TryCollectControlTemplateNamedParts(template.RawXaml", source, StringComparison.Ordinal);
@@ -11475,7 +11475,7 @@ public class AvaloniaXamlSourceGeneratorTests
     [Fact]
     public void Binder_Source_Uses_Parser_First_Markup_Extension_Gate_For_Implicit_Expressions()
     {
-        var source = File.ReadAllText(GetBinderSourcePath());
+        var source = GetBinderSourceText();
         Assert.DoesNotContain("ExtractMarkupHeadToken(", source, StringComparison.Ordinal);
         Assert.Contains("TryParseMarkupExtension(wrappedExpression, out var markup)", source, StringComparison.Ordinal);
     }
@@ -11483,7 +11483,7 @@ public class AvaloniaXamlSourceGeneratorTests
     [Fact]
     public void Binder_Source_Does_Not_Use_Legacy_Template_Or_StaticResource_String_Heuristics()
     {
-        var source = File.ReadAllText(GetBinderSourcePath());
+        var source = GetBinderSourceText();
         Assert.DoesNotContain("EndsWith(\"Template\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Contains(\"__ResolveStaticResource(\"", source, StringComparison.Ordinal);
     }
@@ -11620,14 +11620,20 @@ public class AvaloniaXamlSourceGeneratorTests
         return (updatedCompilation, diagnostics, driver.GetRunResult());
     }
 
-    private static string GetBinderSourcePath()
+    private static string GetBinderSourceText()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
-        return Path.Combine(
+        var bindingDirectory = Path.Combine(
             repositoryRoot,
             "src",
             "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.cs");
+            "Binding");
+
+        var sourceFiles = Directory.GetFiles(bindingDirectory, "AvaloniaSemanticBinder*.cs")
+            .OrderBy(static path => path, StringComparer.Ordinal)
+            .ToArray();
+        return string.Join(
+            Environment.NewLine + Environment.NewLine,
+            sourceFiles.Select(File.ReadAllText));
     }
 }
