@@ -115,6 +115,7 @@ public static class XamlSourceGenHotDesignManager
         var trackedType = NormalizeType(instance.GetType());
         var normalizedBuildUri = options.BuildUri.Trim();
         var normalizedSourcePath = NormalizeSourcePath(options.SourcePath);
+        var normalizedScopeHints = NormalizeScopeHints(options.ScopeHints);
 
         lock (Sync)
         {
@@ -124,7 +125,10 @@ public static class XamlSourceGenHotDesignManager
                     trackedType,
                     normalizedBuildUri,
                     normalizedSourcePath,
-                    runtimeApplyAction);
+                    runtimeApplyAction,
+                    options.DocumentRole,
+                    options.ArtifactKind,
+                    normalizedScopeHints);
                 Registrations[trackedType] = registration;
             }
             else
@@ -132,6 +136,9 @@ public static class XamlSourceGenHotDesignManager
                 registration.BuildUri = normalizedBuildUri;
                 registration.SourcePath = normalizedSourcePath;
                 registration.RuntimeApplyAction = runtimeApplyAction;
+                registration.DocumentRole = options.DocumentRole;
+                registration.ArtifactKind = options.ArtifactKind;
+                registration.ScopeHints = normalizedScopeHints;
             }
 
             TypeByBuildUri[normalizedBuildUri] = trackedType;
@@ -186,7 +193,10 @@ public static class XamlSourceGenHotDesignManager
                     registration.RootType,
                     registration.BuildUri,
                     registration.SourcePath,
-                    registration.Instances.Count));
+                    registration.Instances.Count,
+                    registration.DocumentRole,
+                    registration.ArtifactKind,
+                    registration.ScopeHints));
             }
 
             return results
@@ -253,7 +263,10 @@ public static class XamlSourceGenHotDesignManager
                 resolvedRegistration.RootType,
                 resolvedRegistration.BuildUri,
                 resolvedRegistration.SourcePath,
-                trackedInstances.Count);
+                trackedInstances.Count,
+                resolvedRegistration.DocumentRole,
+                resolvedRegistration.ArtifactKind,
+                resolvedRegistration.ScopeHints);
 
             options = ActiveOptions.Clone();
             if (request.PersistChangesToSource.HasValue)
@@ -394,6 +407,35 @@ public static class XamlSourceGenHotDesignManager
         {
             return sourcePath.Trim();
         }
+    }
+
+    private static IReadOnlyList<string>? NormalizeScopeHints(string[]? scopeHints)
+    {
+        if (scopeHints is null || scopeHints.Length == 0)
+        {
+            return null;
+        }
+
+        var normalized = new List<string>(scopeHints.Length);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < scopeHints.Length; index++)
+        {
+            var value = scopeHints[index];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var trimmed = value.Trim();
+            if (!seen.Add(trimmed))
+            {
+                continue;
+            }
+
+            normalized.Add(trimmed);
+        }
+
+        return normalized.Count == 0 ? null : normalized.ToArray();
     }
 
     private static void AddApplierLocked(ISourceGenHotDesignUpdateApplier applier)
@@ -751,7 +793,10 @@ public static class XamlSourceGenHotDesignManager
         Type rootType,
         string buildUri,
         string? sourcePath,
-        Action<object> runtimeApplyAction)
+        Action<object> runtimeApplyAction,
+        SourceGenHotDesignDocumentRole documentRole,
+        SourceGenHotDesignArtifactKind artifactKind,
+        IReadOnlyList<string>? scopeHints)
     {
         public Type RootType { get; } = rootType;
 
@@ -760,6 +805,12 @@ public static class XamlSourceGenHotDesignManager
         public string? SourcePath { get; set; } = sourcePath;
 
         public Action<object> RuntimeApplyAction { get; set; } = runtimeApplyAction;
+
+        public SourceGenHotDesignDocumentRole DocumentRole { get; set; } = documentRole;
+
+        public SourceGenHotDesignArtifactKind ArtifactKind { get; set; } = artifactKind;
+
+        public IReadOnlyList<string>? ScopeHints { get; set; } = scopeHints;
 
         public List<WeakReference<object>> Instances { get; } = [];
     }

@@ -208,6 +208,7 @@ public class AppBuilderExtensionsTests
     [Fact]
     public void UseAvaloniaSourceGeneratedXamlHotDesign_Enables_Manager_With_Configuration()
     {
+        XamlSourceGenStudioHost.Stop();
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
@@ -224,11 +225,13 @@ public class AppBuilderExtensionsTests
         Assert.True(status.IsEnabled);
         Assert.False(status.Options.PersistChangesToSource);
         Assert.False(status.Options.WaitForHotReload);
+        Assert.True(XamlSourceGenStudioHost.IsStarted);
     }
 
     [Fact]
     public void UseAvaloniaSourceGeneratedXamlHotDesign_Disables_Manager()
     {
+        XamlSourceGenStudioHost.Stop();
         XamlSourceGenHotDesignManager.Enable();
         var builder = AppBuilder.Configure<TestApp>();
 
@@ -236,6 +239,31 @@ public class AppBuilderExtensionsTests
         builder.AfterSetupCallback(builder);
 
         Assert.False(XamlSourceGenHotDesignManager.IsEnabled);
+        Assert.False(XamlSourceGenStudioHost.IsStarted);
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedStudio_Starts_StudioHost_With_Provided_Options()
+    {
+        XamlSourceGenStudioHost.Stop();
+        var builder = AppBuilder.Configure<TestApp>();
+
+        builder.UseAvaloniaSourceGeneratedStudio(options =>
+        {
+            options.ShowOverlayIndicator = false;
+            options.EnableExternalWindow = false;
+            options.WaitMode = SourceGenStudioWaitMode.None;
+            options.FallbackPolicy = SourceGenStudioFallbackPolicy.NoFallback;
+        });
+        builder.AfterSetupCallback(builder);
+
+        var snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+        Assert.True(XamlSourceGenStudioHost.IsStarted);
+        Assert.True(snapshot.IsEnabled);
+        Assert.Equal(SourceGenStudioWaitMode.None, snapshot.Options.WaitMode);
+        Assert.Equal(SourceGenStudioFallbackPolicy.NoFallback, snapshot.Options.FallbackPolicy);
+
+        XamlSourceGenStudioHost.Stop();
     }
 
     private sealed class TestApp : Application

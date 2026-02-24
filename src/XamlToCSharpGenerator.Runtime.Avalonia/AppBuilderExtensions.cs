@@ -75,10 +75,22 @@ public static class AppBuilderExtensions
         Action<SourceGenHotDesignOptions>? configure = null,
         ISourceGenHotDesignUpdateApplier? applier = null)
     {
-        return builder.AfterSetup(_ => ConfigureHotDesign(enable, configure, applier));
+        return builder.AfterSetup(_ => ConfigureHotDesignCompatibility(enable, configure, applier));
     }
 
-    private static void ConfigureHotDesign(
+    public static AppBuilder UseAvaloniaSourceGeneratedStudio(
+        this AppBuilder builder,
+        Action<SourceGenStudioOptions>? configure = null)
+    {
+        return builder.AfterSetup(_ =>
+        {
+            var options = new SourceGenStudioOptions();
+            configure?.Invoke(options);
+            XamlSourceGenStudioHost.Start(options);
+        });
+    }
+
+    private static void ConfigureHotDesignCompatibility(
         bool enable,
         Action<SourceGenHotDesignOptions>? configure,
         ISourceGenHotDesignUpdateApplier? applier)
@@ -88,21 +100,36 @@ public static class AppBuilderExtensions
             XamlSourceGenHotDesignManager.RegisterApplier(applier);
         }
 
-        if (enable)
+        if (!enable)
         {
-            if (configure is null)
-            {
-                XamlSourceGenHotDesignManager.Enable();
-                return;
-            }
-
-            var options = new SourceGenHotDesignOptions();
-            configure(options);
-            XamlSourceGenHotDesignManager.Enable(options);
+            XamlSourceGenStudioHost.Stop();
+            XamlSourceGenStudioManager.Disable();
+            XamlSourceGenHotDesignManager.Disable();
             return;
         }
 
-        XamlSourceGenHotDesignManager.Disable();
+        var studioOptions = new SourceGenStudioOptions
+        {
+            ShowOverlayIndicator = false,
+            EnableExternalWindow = false,
+            AutoOpenStudioWindowOnStartup = false
+        };
+        if (configure is not null)
+        {
+            var hotDesignOptions = new SourceGenHotDesignOptions();
+            configure(hotDesignOptions);
+            studioOptions.PersistChangesToSource = hotDesignOptions.PersistChangesToSource;
+            studioOptions.WaitMode = hotDesignOptions.WaitForHotReload
+                ? SourceGenStudioWaitMode.WaitForLocalOnly
+                : SourceGenStudioWaitMode.None;
+            studioOptions.UpdateTimeout = hotDesignOptions.HotReloadWaitTimeout;
+            studioOptions.FallbackPolicy = hotDesignOptions.FallbackToRuntimeApplyOnTimeout
+                ? SourceGenStudioFallbackPolicy.RuntimeApplyOnTimeout
+                : SourceGenStudioFallbackPolicy.NoFallback;
+            studioOptions.EnableTracing = hotDesignOptions.EnableTracing;
+        }
+
+        XamlSourceGenStudioHost.Start(studioOptions);
     }
 
     private static void ConfigureRuntimeCompilation(

@@ -30,6 +30,36 @@ public class XamlSourceGenHotDesignManagerTests
         Assert.Equal("avares://tests/HotDesignTarget.axaml", document.BuildUri);
         Assert.Equal("/tmp/HotDesignTarget.axaml", document.SourcePath);
         Assert.Equal(1, document.LiveInstanceCount);
+        Assert.Equal(SourceGenHotDesignDocumentRole.Root, document.DocumentRole);
+        Assert.Equal(SourceGenHotDesignArtifactKind.View, document.ArtifactKind);
+        Assert.Null(document.ScopeHints);
+    }
+
+    [Fact]
+    public void Register_Tracks_Document_Metadata_For_Studio_Scope_Resolution()
+    {
+        ResetManager();
+
+        var instance = new HotDesignTarget();
+        XamlSourceGenHotDesignManager.Register(
+            instance,
+            static target => ((HotDesignTarget)target).ApplyCount++,
+            new SourceGenHotDesignRegistrationOptions
+            {
+                BuildUri = "avares://tests/Theme.axaml",
+                SourcePath = "/tmp/Theme.axaml",
+                DocumentRole = SourceGenHotDesignDocumentRole.Theme,
+                ArtifactKind = SourceGenHotDesignArtifactKind.ControlTheme,
+                ScopeHints = new[] { "theme", "ControlTheme" }
+            });
+
+        var document = Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+        Assert.Equal(SourceGenHotDesignDocumentRole.Theme, document.DocumentRole);
+        Assert.Equal(SourceGenHotDesignArtifactKind.ControlTheme, document.ArtifactKind);
+        Assert.NotNull(document.ScopeHints);
+        Assert.Equal(2, document.ScopeHints!.Count);
+        Assert.Equal("theme", document.ScopeHints[0]);
+        Assert.Equal("ControlTheme", document.ScopeHints[1]);
     }
 
     [Fact]
