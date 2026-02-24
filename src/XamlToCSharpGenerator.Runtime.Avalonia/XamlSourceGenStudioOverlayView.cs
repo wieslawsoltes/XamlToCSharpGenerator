@@ -145,7 +145,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var grid = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto,*,Auto,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,*,Auto,Auto"),
             RowSpacing = 8
         };
 

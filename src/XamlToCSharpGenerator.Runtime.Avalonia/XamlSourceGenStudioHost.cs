@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using System.Collections.Generic;
+using System.Windows.Input;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -393,9 +394,9 @@ public static class XamlSourceGenStudioHost
             var openButton = new Button
             {
                 Content = "Open Studio",
-                HorizontalAlignment = HorizontalAlignment.Left
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Command = new StudioActionCommand(openStudioAction)
             };
-            openButton.Click += (_, _) => openStudioAction();
             Grid.SetRow(openButton, 1);
             layout.Children.Add(openButton);
 
@@ -446,4 +447,25 @@ public static class XamlSourceGenStudioHost
         Window Window,
         object? OriginalContent,
         XamlSourceGenStudioOverlayView OverlayContent);
+
+    private sealed class StudioActionCommand(Action execute) : ICommand
+    {
+        private readonly Action _execute = execute;
+
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool CanExecute(object? parameter)
+        {
+            return true;
+        }
+
+        public void Execute(object? parameter)
+        {
+            _execute();
+        }
+    }
 }
