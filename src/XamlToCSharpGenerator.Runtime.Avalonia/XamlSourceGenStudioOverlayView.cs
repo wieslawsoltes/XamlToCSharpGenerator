@@ -3,15 +3,26 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
+using System.ComponentModel;
 
 namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioOverlayView : UserControl
 {
+    private Border? _liveSurfacePanel;
+    private Border? _liveInteractionLayer;
+    private TextBlock? _liveModeText;
+    private XamlSourceGenStudioShellViewModel? _viewModel;
+
     public XamlSourceGenStudioOverlayView(object? liveAppContent)
     {
         BuildContent(liveAppContent);
+        DataContextChanged += OnDataContextChanged;
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
     }
 
     private void BuildContent(object? liveAppContent)
@@ -240,9 +251,9 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         return panel;
     }
 
-    private static Control BuildLiveSurface(object? liveAppContent)
+    private Control BuildLiveSurface(object? liveAppContent)
     {
-        var panel = new Border
+        _liveSurfacePanel = new Border
         {
             BorderBrush = Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
@@ -266,8 +277,44 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Content = liveAppContent
         };
-        Grid.SetRow(presenter, 1);
-        grid.Children.Add(presenter);
+
+        var liveLayer = new Grid();
+        liveLayer.Children.Add(presenter);
+
+        _liveModeText = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = Brushes.LightGray,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 340
+        };
+
+        var modeBanner = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(180, 20, 28, 44)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 86, 139, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 4),
+            Margin = new Thickness(8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Child = _liveModeText
+        };
+
+        _liveInteractionLayer = new Border
+        {
+            Background = Brushes.Transparent,
+            Child = modeBanner
+        };
+        _liveInteractionLayer.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnLiveSurfacePointerPressed,
+            RoutingStrategies.Tunnel);
+        liveLayer.Children.Add(_liveInteractionLayer);
+
+        Grid.SetRow(liveLayer, 1);
+        grid.Children.Add(liveLayer);
 
         var status = new TextBlock
         {
@@ -279,8 +326,9 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         Grid.SetRow(status, 2);
         grid.Children.Add(status);
 
-        panel.Child = grid;
-        return panel;
+        _liveSurfacePanel.Child = grid;
+        UpdateLiveSurfaceModeVisuals();
+        return _liveSurfacePanel;
     }
 
     private static Control BuildRightPanel()
@@ -502,5 +550,70 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioOperationLines)));
         tab.Content = list;
         return tab;
+    }
+
+    private void OnDataContextChanged(object? sender, System.EventArgs e)
+    {
+        if (ReferenceEquals(_viewModel, DataContext))
+        {
+            return;
+        }
+
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        _viewModel = DataContext as XamlSourceGenStudioShellViewModel;
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        }
+
+        UpdateLiveSurfaceModeVisuals();
+    }
+
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel = null;
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(XamlSourceGenStudioShellViewModel.WorkspaceMode) or
+            nameof(XamlSourceGenStudioShellViewModel.LiveSurfaceModeText))
+        {
+            UpdateLiveSurfaceModeVisuals();
+        }
+    }
+
+    private void UpdateLiveSurfaceModeVisuals()
+    {
+        if (_liveModeText is null || _liveInteractionLayer is null || _liveSurfacePanel is null)
+        {
+            return;
+        }
+
+        var interactive = _viewModel?.IsInteractiveMode ?? true;
+        _liveModeText.Text = _viewModel?.LiveSurfaceModeText ?? "Interactive mode: the app behaves normally.";
+        _liveInteractionLayer.IsHitTestVisible = !interactive;
+        _liveSurfacePanel.BorderBrush = interactive
+            ? Brushes.DimGray
+            : new SolidColorBrush(Color.FromArgb(255, 86, 139, 255));
+    }
+
+    private void OnLiveSurfacePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_viewModel is null || _viewModel.IsInteractiveMode)
+        {
+            return;
+        }
+
+        _viewModel.TryHandleLiveSurfacePointerPressed(e.Source);
+        e.Handled = true;
     }
 }

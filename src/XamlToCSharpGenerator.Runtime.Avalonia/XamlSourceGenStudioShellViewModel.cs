@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
@@ -235,7 +236,15 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public string SearchText
     {
         get => _searchText;
-        set => SetProperty(ref _searchText, value);
+        set
+        {
+            if (!SetProperty(ref _searchText, value) || _isRefreshing)
+            {
+                return;
+            }
+
+            RefreshWorkspace();
+        }
     }
 
     public string StatusMessage
@@ -382,8 +391,22 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
             XamlSourceGenHotDesignTool.SetWorkspaceMode(value);
             RefreshWorkspace();
+            NotifyWorkspaceModeChanged();
         }
     }
+
+    public bool IsInteractiveMode => WorkspaceMode == SourceGenHotDesignWorkspaceMode.Interactive;
+
+    public bool IsDesignMode => WorkspaceMode == SourceGenHotDesignWorkspaceMode.Design;
+
+    public bool IsAgentMode => WorkspaceMode == SourceGenHotDesignWorkspaceMode.Agent;
+
+    public string LiveSurfaceModeText => WorkspaceMode switch
+    {
+        SourceGenHotDesignWorkspaceMode.Design => "Design mode: click live controls to select XAML elements.",
+        SourceGenHotDesignWorkspaceMode.Agent => "Agent mode: click live controls to inspect and refine generated output.",
+        _ => "Interactive mode: the app behaves normally."
+    };
 
     public SourceGenHotDesignPropertyFilterMode PropertyFilterMode
     {
@@ -430,6 +453,26 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         SelectedElementId = elementId;
         XamlSourceGenHotDesignTool.SelectElement(ActiveBuildUri, elementId);
         RefreshWorkspace();
+    }
+
+    public bool TryHandleLiveSurfacePointerPressed(object? pointerSource)
+    {
+        if (IsInteractiveMode || string.IsNullOrWhiteSpace(ActiveBuildUri))
+        {
+            return false;
+        }
+
+        if (TryResolveControl(pointerSource) is not { } control)
+        {
+            return false;
+        }
+
+        if (!TrySelectElementForControl(control))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private void RefreshWorkspace()
@@ -489,6 +532,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             StatusMessage = snapshot.Status.IsEnabled
                 ? "Hot Design active. Documents=" + snapshot.Documents.Count + ", Elements=" + snapshot.Elements.Count + "."
                 : "Hot Design is currently disabled.";
+            NotifyWorkspaceModeChanged();
         }
         finally
         {
@@ -819,6 +863,147 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         return null;
+    }
+
+    private bool TrySelectElementForControl(Control control)
+    {
+        if (Elements.Count == 0)
+        {
+            return false;
+        }
+
+        var flattened = FlattenElements(Elements);
+        if (flattened.Count == 0)
+        {
+            return false;
+        }
+
+        var current = control;
+        while (current is not null)
+        {
+            var controlName = current.Name;
+            if (!string.IsNullOrWhiteSpace(controlName))
+            {
+                var byName = FindByXamlName(flattened, controlName);
+                if (byName is not null)
+                {
+                    SelectElement(byName.Id);
+                    return true;
+                }
+            }
+
+            var byType = FindByTypeName(flattened, current.GetType().Name);
+            if (byType is not null)
+            {
+                SelectElement(byType.Id);
+                return true;
+            }
+
+            current = current.Parent as Control;
+        }
+
+        return false;
+    }
+
+    private static Control? TryResolveControl(object? pointerSource)
+    {
+        if (pointerSource is Control control)
+        {
+            return control;
+        }
+
+        if (pointerSource is not Visual visual)
+        {
+            return null;
+        }
+
+        if (visual is Control directControl)
+        {
+            return directControl;
+        }
+
+        foreach (var ancestor in visual.GetVisualAncestors())
+        {
+            if (ancestor is Control ancestorControl)
+            {
+                return ancestorControl;
+            }
+        }
+
+        return null;
+    }
+
+    private static List<SourceGenHotDesignElementNode> FlattenElements(
+        IReadOnlyCollection<SourceGenHotDesignElementNode> roots)
+    {
+        var output = new List<SourceGenHotDesignElementNode>();
+        foreach (var root in roots)
+        {
+            Flatten(root, output);
+        }
+
+        return output;
+    }
+
+    private static void Flatten(SourceGenHotDesignElementNode node, List<SourceGenHotDesignElementNode> output)
+    {
+        output.Add(node);
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            Flatten(node.Children[index], output);
+        }
+    }
+
+    private static SourceGenHotDesignElementNode? FindByXamlName(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        string controlName)
+    {
+        SourceGenHotDesignElementNode? best = null;
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            var node = nodes[index];
+            if (!string.Equals(node.XamlName, controlName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (best is null || node.Depth > best.Depth)
+            {
+                best = node;
+            }
+        }
+
+        return best;
+    }
+
+    private static SourceGenHotDesignElementNode? FindByTypeName(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        string typeName)
+    {
+        SourceGenHotDesignElementNode? best = null;
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            var node = nodes[index];
+            if (!string.Equals(node.TypeName, typeName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (best is null || node.Depth > best.Depth)
+            {
+                best = node;
+            }
+        }
+
+        return best;
+    }
+
+    private void NotifyWorkspaceModeChanged()
+    {
+        OnPropertyChanged(nameof(IsInteractiveMode));
+        OnPropertyChanged(nameof(IsDesignMode));
+        OnPropertyChanged(nameof(IsAgentMode));
+        OnPropertyChanged(nameof(LiveSurfaceModeText));
     }
 
     private static IReadOnlyList<SourceGenHotDesignToolboxItem> FlattenToolbox(
