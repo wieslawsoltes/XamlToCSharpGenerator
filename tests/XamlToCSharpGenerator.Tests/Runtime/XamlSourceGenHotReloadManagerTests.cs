@@ -512,6 +512,86 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void UpdateApplication_Coalesces_Duplicate_Metadata_Requests_For_Nested_Generated_Types_Sharing_BuildUri()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new DuplicateCoalesceTarget();
+        XamlSourceGenHotReloadManager.Register(
+            instance,
+            _ => reloadCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://Demo/Controls/ListBoxItem.xaml"
+            });
+
+        XamlSourceGenTypeUriRegistry.Register(
+            typeof(DuplicateGeneratedUpdateOwner),
+            "avares://Demo/Controls/ListBoxItem.xaml");
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateCoalesceTarget));
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            typeof(DuplicateGeneratedUpdateOwner.NestedMetadataUpdateA),
+            typeof(DuplicateCoalesceTarget));
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            typeof(DuplicateGeneratedUpdateOwner.NestedMetadataUpdateB),
+            typeof(DuplicateCoalesceTarget));
+
+        XamlSourceGenHotReloadManager.UpdateApplication(
+        [
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateGeneratedUpdateOwner.NestedMetadataUpdateA)
+        ]);
+        XamlSourceGenHotReloadManager.UpdateApplication(
+        [
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateGeneratedUpdateOwner.NestedMetadataUpdateB)
+        ]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Coalesces_Duplicate_Metadata_Requests_When_Uri_Matches_And_Helper_Type_Differs()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new DuplicateCoalesceTarget();
+        XamlSourceGenHotReloadManager.Register(
+            instance,
+            _ => reloadCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://Demo/Controls/ListBoxItem.xaml"
+            });
+
+        XamlSourceGenTypeUriRegistry.Register(
+            typeof(DuplicateGeneratedUpdateOwner),
+            "avares://Demo/Controls/ListBoxItem.xaml");
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateCoalesceTarget));
+
+        XamlSourceGenHotReloadManager.UpdateApplication(
+        [
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateGeneratedUpdateHelperA)
+        ]);
+        XamlSourceGenHotReloadManager.UpdateApplication(
+        [
+            typeof(DuplicateGeneratedUpdateOwner),
+            typeof(DuplicateGeneratedUpdateHelperB)
+        ]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
     public void EnableIdePollingFallback_Rejects_Too_Short_Interval()
     {
         ResetManager();
@@ -631,6 +711,25 @@ public class XamlSourceGenHotReloadManagerTests
         public sealed class NestedMetadataType
         {
         }
+    }
+
+    private sealed class DuplicateGeneratedUpdateOwner
+    {
+        public sealed class NestedMetadataUpdateA
+        {
+        }
+
+        public sealed class NestedMetadataUpdateB
+        {
+        }
+    }
+
+    private sealed class DuplicateGeneratedUpdateHelperA
+    {
+    }
+
+    private sealed class DuplicateGeneratedUpdateHelperB
+    {
     }
 
     private sealed class GenericReloadTarget<T>

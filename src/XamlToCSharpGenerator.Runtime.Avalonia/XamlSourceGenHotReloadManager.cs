@@ -576,16 +576,17 @@ public static class XamlSourceGenHotReloadManager
                     continue;
                 }
 
+                if (TryGetBuildUriForTypeOrDeclaringLocked(type, out var buildUri) &&
+                    !string.IsNullOrWhiteSpace(buildUri))
+                {
+                    uriKeys.Add(buildUri);
+                    continue;
+                }
+
                 var fullName = type.FullName;
                 if (!string.IsNullOrWhiteSpace(fullName))
                 {
                     typeKeys.Add(fullName);
-                }
-
-                if (TryGetBuildUriForTypeLocked(type, out var buildUri) &&
-                    !string.IsNullOrWhiteSpace(buildUri))
-                {
-                    uriKeys.Add(buildUri);
                 }
             }
         }
@@ -595,13 +596,17 @@ public static class XamlSourceGenHotReloadManager
             return "<all>";
         }
 
+        // When at least one build URI is known, dedupe by URI only. Generated nested helper
+        // type names can vary between deltas for the same XAML change.
+        if (uriKeys.Count > 0)
+        {
+            return ":" + string.Join("|", uriKeys);
+        }
+
         var typePart = typeKeys.Count == 0
             ? string.Empty
             : string.Join("|", typeKeys);
-        var uriPart = uriKeys.Count == 0
-            ? string.Empty
-            : string.Join("|", uriKeys);
-        return typePart + ":" + uriPart;
+        return typePart + ":";
     }
 
     private static void TryDisableIdePollingFallbackAfterMetadataUpdate()
@@ -706,7 +711,7 @@ public static class XamlSourceGenHotReloadManager
                 reloadTypes.Add(trackedType);
             }
 
-            if (TryGetBuildUriForTypeLocked(normalizedType, out var buildUri))
+            if (TryGetBuildUriForTypeOrDeclaringLocked(normalizedType, out var buildUri))
             {
                 affectedBuildUris.Add(buildUri);
             }
@@ -729,6 +734,25 @@ public static class XamlSourceGenHotReloadManager
         }
 
         return reloadTypes;
+    }
+
+    private static bool TryGetBuildUriForTypeOrDeclaringLocked(Type normalizedType, out string buildUri)
+    {
+        var current = normalizedType;
+        while (current is not null)
+        {
+            if (TryGetBuildUriForTypeLocked(current, out buildUri) &&
+                !string.IsNullOrWhiteSpace(buildUri))
+            {
+                return true;
+            }
+
+            var declaring = current.DeclaringType;
+            current = declaring is null ? null : NormalizeType(declaring);
+        }
+
+        buildUri = string.Empty;
+        return false;
     }
 
     private static bool TryGetBuildUriForTypeLocked(Type normalizedType, out string buildUri)
@@ -1389,6 +1413,7 @@ public static class XamlSourceGenHotReloadManager
         {
             TryNotifyHostedResourcesChanged(instance);
             TryNotifyApplicationHostedResourcesChanged();
+            TryReinsertStyleIntoApplicationHost(instance);
             var affectedThemeTargetTypes = ResolveAffectedControlThemeTargetTypes(_requestedTypes);
             VisualTreeRematerializationUtilities.ScheduleThemeRefresh(affectedThemeTargetTypes);
         }
@@ -1489,12 +1514,52 @@ public static class XamlSourceGenHotReloadManager
             }
         }
 
+        private static void TryReinsertStyleIntoApplicationHost(object instance)
+        {
+            if (instance is not global::Avalonia.Styling.IStyle style)
+            {
+                return;
+            }
+
+            try
+            {
+                if (global::Avalonia.Application.Current is not global::Avalonia.Styling.IStyleHost styleHost ||
+                    !styleHost.IsStylesInitialized)
+                {
+                    return;
+                }
+
+                var styles = styleHost.Styles;
+                for (var index = 0; index < styles.Count; index++)
+                {
+                    if (!ReferenceEquals(styles[index], style))
+                    {
+                        continue;
+                    }
+
+                    styles.RemoveAt(index);
+                    styles.Insert(index, style);
+                    Trace("Reinserted style instance into application style host at index " + index + ".");
+                    return;
+                }
+            }
+            catch
+            {
+                // Best effort style-host reinsert only.
+            }
+        }
+
     }
 
     private static class VisualTreeRematerializationUtilities
     {
+        private sealed class ThemeOverrideMarker
+        {
+        }
+
         private static readonly object ThemeRefreshSync = new();
         private static readonly HashSet<Type> PendingAffectedControlThemeTargetTypes = new();
+        private static readonly ConditionalWeakTable<global::Avalonia.Controls.Control, ThemeOverrideMarker> ManagedThemeOverrides = new();
         private static int ThemeRefreshScheduled;
 
         public static void RefreshAffectedImplicitControlThemes(IReadOnlyCollection<Type> affectedTargetTypes)
@@ -1508,7 +1573,7 @@ public static class XamlSourceGenHotReloadManager
             for (var rootIndex = 0; rootIndex < roots.Count; rootIndex++)
             {
                 var visuals = CaptureVisualSnapshot(roots[rootIndex]);
-                for (var visualIndex = 0; visualIndex < visuals.Count; visualIndex++)
+                for (var visualIndex = visuals.Count - 1; visualIndex >= 0; visualIndex--)
                 {
                     if (visuals[visualIndex] is global::Avalonia.Controls.Control control)
                     {
@@ -1668,26 +1733,57 @@ public static class XamlSourceGenHotReloadManager
                 }
 
                 var styleKeyType = control.StyleKey;
+                var hasManagedOverride = ManagedThemeOverrides.TryGetValue(control, out _);
                 var affectsControl = IsAffectedControl(styleKeyType, affectedTargetTypes);
 
-                if (!affectsControl)
+                if (!affectsControl && !hasManagedOverride)
                 {
                     return;
                 }
 
-                if (control is global::Avalonia.LogicalTree.ILogical logicalControl)
+                // Preserve user-authored explicit theme overrides.
+                if (control.Theme is not null && !hasManagedOverride)
                 {
-                    logicalControl.NotifyResourcesChanged(global::Avalonia.Controls.ResourcesChangedEventArgs.Empty);
+                    return;
                 }
 
-                if (control is global::Avalonia.Layout.Layoutable layoutable)
+                if (!global::Avalonia.Controls.ResourceNodeExtensions.TryFindResource(
+                        control,
+                        styleKeyType,
+                        out var resource) ||
+                    resource is not global::Avalonia.Styling.ControlTheme resolvedTheme)
                 {
-                    layoutable.InvalidateMeasure();
-                    layoutable.InvalidateArrange();
+                    if (hasManagedOverride)
+                    {
+                        control.Theme = null;
+                        ManagedThemeOverrides.Remove(control);
+                        Trace("Cleared managed control theme override for '" + control.GetType().FullName + "'.");
+                    }
+
+                    return;
                 }
 
-                control.InvalidateVisual();
-                Trace("Invalidated implicit control theme resources for '" + control.GetType().FullName + "' using target '" + styleKeyType.FullName + "'.");
+                if (ReferenceEquals(control.Theme, resolvedTheme))
+                {
+                    // Avoid destructive same-reference reapply for duplicate update signals.
+                    // Resource invalidation and root layout invalidation are handled separately.
+                    if (affectsControl)
+                    {
+                        Trace("Skipped same-reference implicit control theme reapply for '" + control.GetType().FullName + "'.");
+                    }
+
+                    return;
+                }
+
+                if (!TrySetControlTheme(control, resolvedTheme))
+                {
+                    Trace("Skipped implicit control theme refresh for '" + control.GetType().FullName + "' due unsafe content state.");
+                    return;
+                }
+
+                ManagedThemeOverrides.Remove(control);
+                ManagedThemeOverrides.Add(control, new ThemeOverrideMarker());
+                Trace("Refreshed implicit control theme for '" + control.GetType().FullName + "'.");
             }
             catch (Exception ex)
             {
@@ -1708,6 +1804,68 @@ public static class XamlSourceGenHotReloadManager
             }
 
             return false;
+        }
+
+        private static bool TrySetControlTheme(
+            global::Avalonia.Controls.Control control,
+            global::Avalonia.Styling.ControlTheme resolvedTheme)
+        {
+            return TryApplyControlTheme(control, resolvedTheme, forceReapply: false);
+        }
+
+        private static bool TryReapplyControlTheme(
+            global::Avalonia.Controls.Control control,
+            global::Avalonia.Styling.ControlTheme resolvedTheme)
+        {
+            return TryApplyControlTheme(control, resolvedTheme, forceReapply: true);
+        }
+
+        private static bool TryApplyControlTheme(
+            global::Avalonia.Controls.Control control,
+            global::Avalonia.Styling.ControlTheme resolvedTheme,
+            bool forceReapply)
+        {
+            if (control is not global::Avalonia.Controls.ContentControl contentControl ||
+                contentControl.Content is not global::Avalonia.Visual)
+            {
+                if (forceReapply)
+                {
+                    control.Theme = null;
+                }
+
+                control.Theme = resolvedTheme;
+                return true;
+            }
+
+            var preservedContent = contentControl.Content;
+            try
+            {
+                contentControl.Content = null;
+                if (forceReapply)
+                {
+                    control.Theme = null;
+                }
+
+                control.Theme = resolvedTheme;
+                contentControl.Content = preservedContent;
+                return true;
+            }
+            catch
+            {
+                if (!ReferenceEquals(contentControl.Content, preservedContent))
+                {
+                    try
+                    {
+                        contentControl.Content = preservedContent;
+                    }
+                    catch
+                    {
+                        // Best effort content restore only.
+                    }
+                }
+
+                return false;
+            }
         }
 
         private static IReadOnlyList<global::Avalonia.Visual> CaptureVisualSnapshot(global::Avalonia.Visual rootVisual)
