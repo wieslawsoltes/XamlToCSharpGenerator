@@ -28,7 +28,7 @@
 
     <Setter Property="Template">
       <ControlTemplate>
-          <ContentPresenter x:Name="PART_ContentPresenter"
+        <ContentPresenter x:Name="PART_ContentPresenter"
                           Background="{TemplateBinding Background}"
                           BorderBrush="{TemplateBinding BorderBrush}"
                           BorderThickness="{TemplateBinding BorderThickness}"
