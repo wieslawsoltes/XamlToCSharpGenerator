@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -174,6 +175,78 @@ public class XamlSourceGenHotDesignCoreToolsTests
         }
     }
 
+    [Fact]
+    public void TryResolveElementForLiveSelection_Resolves_Matching_Element_Across_Documents()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var appSourcePath = CreateTempFile(@"
+<Application xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <Application.Styles>
+    <Style Selector=""TextBlock"" />
+  </Application.Styles>
+</Application>");
+
+        var viewSourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Button Name=""ActionButton"" Content=""Run"" />
+  </StackPanel>
+</UserControl>");
+
+        var appBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/App.axaml";
+        var viewBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/Views/MainView.axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = appBuildUri,
+                    SourcePath = appSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.Application
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTargetView(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = viewBuildUri,
+                    SourcePath = viewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectDocument(appBuildUri);
+
+            var resolved = XamlSourceGenHotDesignCoreTools.TryResolveElementForLiveSelection(
+                new List<string> { "ActionButton" },
+                Array.Empty<string>(),
+                out var resolvedBuildUri,
+                out var resolvedElementId);
+
+            Assert.True(resolved);
+            Assert.Equal(viewBuildUri, resolvedBuildUri);
+            Assert.False(string.IsNullOrWhiteSpace(resolvedElementId));
+            Assert.NotEqual("0", resolvedElementId);
+        }
+        finally
+        {
+            TryDelete(appSourcePath);
+            TryDelete(viewSourcePath);
+        }
+    }
+
     private static SourceGenHotDesignElementNode? FindByTypeName(
         IReadOnlyList<SourceGenHotDesignElementNode> nodes,
         string typeName)
@@ -227,4 +300,6 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     private sealed class HotDesignTarget;
+
+    private sealed class HotDesignTargetView;
 }

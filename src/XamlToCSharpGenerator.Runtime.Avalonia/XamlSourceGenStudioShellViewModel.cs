@@ -457,7 +457,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     public bool TryHandleLiveSurfacePointerPressed(object? pointerSource)
     {
-        if (IsInteractiveMode || string.IsNullOrWhiteSpace(ActiveBuildUri))
+        if (IsInteractiveMode)
         {
             return false;
         }
@@ -867,42 +867,46 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     private bool TrySelectElementForControl(Control control)
     {
-        if (Elements.Count == 0)
+        var controlNames = new List<string>(4);
+        var controlTypeNames = new List<string>(6);
+        CollectControlIdentityCandidates(control, controlNames, controlTypeNames);
+
+        if (controlNames.Count == 0 && controlTypeNames.Count == 0)
         {
             return false;
         }
 
-        var flattened = FlattenElements(Elements);
-        if (flattened.Count == 0)
+        if (Elements.Count > 0)
         {
-            return false;
-        }
-
-        var current = control;
-        while (current is not null)
-        {
-            var controlName = current.Name;
-            if (!string.IsNullOrWhiteSpace(controlName))
+            var flattened = FlattenElements(Elements);
+            if (flattened.Count > 0 &&
+                TryFindMatchingElement(flattened, controlNames, controlTypeNames, out var matchInCurrentDocument))
             {
-                var byName = FindByXamlName(flattened, controlName);
-                if (byName is not null)
-                {
-                    SelectElement(byName.Id);
-                    return true;
-                }
-            }
-
-            var byType = FindByTypeName(flattened, current.GetType().Name);
-            if (byType is not null)
-            {
-                SelectElement(byType.Id);
+                SelectElement(matchInCurrentDocument!.Id);
                 return true;
             }
-
-            current = current.Parent as Control;
         }
 
-        return false;
+        if (!XamlSourceGenHotDesignTool.TryResolveElementForLiveSelection(
+                controlNames,
+                controlTypeNames,
+                out var resolvedBuildUri,
+                out var resolvedElementId) ||
+            string.IsNullOrWhiteSpace(resolvedBuildUri) ||
+            string.IsNullOrWhiteSpace(resolvedElementId))
+        {
+            return false;
+        }
+
+        if (!string.Equals(ActiveBuildUri, resolvedBuildUri, StringComparison.OrdinalIgnoreCase))
+        {
+            ActiveBuildUri = resolvedBuildUri;
+            XamlSourceGenHotDesignTool.SelectDocument(resolvedBuildUri);
+        }
+
+        XamlSourceGenHotDesignTool.SelectElement(resolvedBuildUri, resolvedElementId);
+        RefreshWorkspace();
+        return true;
     }
 
     private static Control? TryResolveControl(object? pointerSource)
@@ -931,6 +935,66 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         return null;
+    }
+
+    private static void CollectControlIdentityCandidates(
+        Control control,
+        ICollection<string> controlNames,
+        ICollection<string> controlTypeNames)
+    {
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenTypes = new HashSet<string>(StringComparer.Ordinal);
+        var current = control;
+        while (current is not null)
+        {
+            var controlName = current.Name;
+            if (!string.IsNullOrWhiteSpace(controlName) && seenNames.Add(controlName))
+            {
+                controlNames.Add(controlName);
+            }
+
+            var typeName = current.GetType().Name;
+            if (!string.IsNullOrWhiteSpace(typeName) && seenTypes.Add(typeName))
+            {
+                controlTypeNames.Add(typeName);
+            }
+
+            current = current.Parent as Control;
+        }
+    }
+
+    private static bool TryFindMatchingElement(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        IReadOnlyList<string> controlNames,
+        IReadOnlyList<string> controlTypeNames,
+        out SourceGenHotDesignElementNode? matched)
+    {
+        for (var index = 0; index < controlNames.Count; index++)
+        {
+            var byName = FindByXamlName(nodes, controlNames[index]);
+            if (byName is null)
+            {
+                continue;
+            }
+
+            matched = byName;
+            return true;
+        }
+
+        for (var index = 0; index < controlTypeNames.Count; index++)
+        {
+            var byType = FindByTypeName(nodes, controlTypeNames[index]);
+            if (byType is null)
+            {
+                continue;
+            }
+
+            matched = byType;
+            return true;
+        }
+
+        matched = null;
+        return false;
     }
 
     private static List<SourceGenHotDesignElementNode> FlattenElements(

@@ -96,6 +96,69 @@ public class XamlSourceGenStudioShellViewModelTests
         }
     }
 
+    [Fact]
+    public void TryHandleLiveSurfacePointerPressed_Resolves_Element_From_NonActive_Document()
+    {
+        ResetRuntimeState();
+        var appSourcePath = CreateTempAppXamlSource();
+        var viewSourcePath = CreateTempXamlSource();
+        const string appBuildUri = "avares://tests/StudioShell.App.axaml";
+        const string viewBuildUri = "avares://tests/StudioShell.View.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioAppTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = appBuildUri,
+                    SourcePath = appSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.Application
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = viewBuildUri,
+                    SourcePath = viewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectDocument(appBuildUri);
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
+
+            var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
+            {
+                Name = "ActionButton"
+            });
+
+            Assert.True(handled);
+            Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
+            Assert.NotNull(viewModel.SelectedElement);
+            Assert.Equal("ActionButton", viewModel.SelectedElement!.XamlName);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(appSourcePath);
+            DeleteFileIfExists(viewSourcePath);
+        }
+    }
+
     private static void ResetRuntimeState()
     {
         XamlSourceGenStudioManager.Disable();
@@ -123,6 +186,22 @@ public class XamlSourceGenStudioShellViewModelTests
         return path;
     }
 
+    private static string CreateTempAppXamlSource()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-App-" + Guid.NewGuid().ToString("N") + ".axaml");
+        const string xaml =
+            """
+            <Application xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                <Application.Styles>
+                    <Style Selector="TextBlock" />
+                </Application.Styles>
+            </Application>
+            """;
+        File.WriteAllText(path, xaml);
+        return path;
+    }
+
     private static void DeleteFileIfExists(string path)
     {
         try
@@ -137,6 +216,8 @@ public class XamlSourceGenStudioShellViewModelTests
             // Best-effort temp cleanup only.
         }
     }
+
+    private sealed class StudioAppTarget;
 
     private sealed class StudioTarget;
 }

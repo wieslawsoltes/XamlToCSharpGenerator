@@ -84,6 +84,19 @@ public static class XamlSourceGenHotDesignTool
         XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, elementId);
     }
 
+    public static bool TryResolveElementForLiveSelection(
+        IReadOnlyList<string>? controlNames,
+        IReadOnlyList<string>? controlTypeNames,
+        out string? buildUri,
+        out string? elementId)
+    {
+        return XamlSourceGenHotDesignCoreTools.TryResolveElementForLiveSelection(
+            controlNames,
+            controlTypeNames,
+            out buildUri,
+            out elementId);
+    }
+
     public static ValueTask<SourceGenHotDesignApplyResult> ApplyDocumentTextAsync(
         string buildUri,
         string xamlText,

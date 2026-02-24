@@ -57,9 +57,9 @@ public static class XamlSourceGenHotDesignCoreTools
                 ActiveBuildUri = buildUri.Trim();
             }
 
-            if (ActiveBuildUri is null && documents.Count > 0)
+            if (ActiveBuildUri is null)
             {
-                ActiveBuildUri = documents[0].BuildUri;
+                ActiveBuildUri = SelectDefaultDocument(documents)?.BuildUri;
             }
 
             currentActiveBuildUri = ActiveBuildUri;
@@ -117,6 +117,65 @@ public static class XamlSourceGenHotDesignCoreTools
             Elements: elements,
             Properties: properties,
             Toolbox: BuildToolboxCategories(search));
+    }
+
+    public static bool TryResolveElementForLiveSelection(
+        IReadOnlyList<string>? controlNames,
+        IReadOnlyList<string>? controlTypeNames,
+        out string? buildUri,
+        out string? elementId)
+    {
+        buildUri = null;
+        elementId = null;
+
+        if ((controlNames is null || controlNames.Count == 0) &&
+            (controlTypeNames is null || controlTypeNames.Count == 0))
+        {
+            return false;
+        }
+
+        var resolvedControlNames = controlNames ?? Array.Empty<string>();
+        var resolvedControlTypeNames = controlTypeNames ?? Array.Empty<string>();
+
+        var status = XamlSourceGenHotDesignManager.GetStatus();
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
+        if (documents.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var document in documents.OrderBy(GetDefaultDocumentScore))
+        {
+            var text = ReadCurrentXamlText(document, status.Options.MaxHistoryEntries);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            var elements = BuildElementTree(text, selectedElementId: null, search: null, out _);
+            if (elements.Count == 0)
+            {
+                continue;
+            }
+
+            var flattened = FlattenElementTree(elements);
+
+            if (TryFindMatchingElementByName(flattened, resolvedControlNames, out var matchedByName))
+            {
+                buildUri = document.BuildUri;
+                elementId = matchedByName!.Id;
+                return true;
+            }
+
+            if (TryFindMatchingElementByType(flattened, resolvedControlTypeNames, out var matchedByType))
+            {
+                buildUri = document.BuildUri;
+                elementId = matchedByType!.Id;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static void SetWorkspaceMode(SourceGenHotDesignWorkspaceMode mode)
@@ -605,7 +664,7 @@ public static class XamlSourceGenHotDesignCoreTools
             targetBuildUri = string.IsNullOrWhiteSpace(buildUri) ? ActiveBuildUri : buildUri.Trim();
             if (targetBuildUri is null && documents.Count > 0)
             {
-                targetBuildUri = documents[0].BuildUri;
+                targetBuildUri = SelectDefaultDocument(documents)?.BuildUri;
                 ActiveBuildUri = targetBuildUri;
             }
         }
@@ -1062,17 +1121,55 @@ public static class XamlSourceGenHotDesignCoreTools
             }
         }
 
-        if (documents.Count > 0)
-        {
-            return documents[0];
-        }
-
-        return null;
+        return SelectDefaultDocument(documents);
     }
 
     private static Type NormalizeType(Type type)
     {
         return type.IsGenericType ? type.GetGenericTypeDefinition() : type;
+    }
+
+    private static SourceGenHotDesignDocumentDescriptor? SelectDefaultDocument(
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents)
+    {
+        if (documents.Count == 0)
+        {
+            return null;
+        }
+
+        return documents
+            .OrderBy(GetDefaultDocumentScore)
+            .FirstOrDefault();
+    }
+
+    private static int GetDefaultDocumentScore(SourceGenHotDesignDocumentDescriptor document)
+    {
+        var score = document.ArtifactKind switch
+        {
+            SourceGenHotDesignArtifactKind.View => 0,
+            SourceGenHotDesignArtifactKind.Unknown when document.DocumentRole == SourceGenHotDesignDocumentRole.Root => 1,
+            _ => 4
+        };
+
+        if (document.DocumentRole is SourceGenHotDesignDocumentRole.Theme or
+            SourceGenHotDesignDocumentRole.Resources or
+            SourceGenHotDesignDocumentRole.Template)
+        {
+            score += 3;
+        }
+
+        if (document.ArtifactKind == SourceGenHotDesignArtifactKind.Application ||
+            typeof(global::Avalonia.Application).IsAssignableFrom(document.RootType))
+        {
+            score += 6;
+        }
+
+        if (document.LiveInstanceCount <= 0)
+        {
+            score += 1;
+        }
+
+        return score;
     }
 
     private static bool TryParseXaml(string text, out XDocument? document, out string? error)
@@ -1127,6 +1224,116 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         return current;
+    }
+
+    private static List<SourceGenHotDesignElementNode> FlattenElementTree(
+        IReadOnlyList<SourceGenHotDesignElementNode> roots)
+    {
+        if (roots.Count == 0)
+        {
+            return [];
+        }
+
+        var flattened = new List<SourceGenHotDesignElementNode>(64);
+        for (var index = 0; index < roots.Count; index++)
+        {
+            FlattenElementNode(roots[index], flattened);
+        }
+
+        return flattened;
+    }
+
+    private static void FlattenElementNode(
+        SourceGenHotDesignElementNode node,
+        List<SourceGenHotDesignElementNode> flattened)
+    {
+        flattened.Add(node);
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            FlattenElementNode(node.Children[index], flattened);
+        }
+    }
+
+    private static bool TryFindMatchingElementByName(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        IReadOnlyList<string> controlNames,
+        out SourceGenHotDesignElementNode? matched)
+    {
+        matched = null;
+        for (var nameIndex = 0; nameIndex < controlNames.Count; nameIndex++)
+        {
+            var controlName = controlNames[nameIndex];
+            if (string.IsNullOrWhiteSpace(controlName))
+            {
+                continue;
+            }
+
+            SourceGenHotDesignElementNode? candidate = null;
+            for (var nodeIndex = 0; nodeIndex < nodes.Count; nodeIndex++)
+            {
+                var node = nodes[nodeIndex];
+                if (!string.Equals(node.XamlName, controlName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (candidate is null || node.Depth > candidate.Depth)
+                {
+                    candidate = node;
+                }
+            }
+
+            if (candidate is null)
+            {
+                continue;
+            }
+
+            matched = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryFindMatchingElementByType(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        IReadOnlyList<string> controlTypeNames,
+        out SourceGenHotDesignElementNode? matched)
+    {
+        matched = null;
+        for (var typeIndex = 0; typeIndex < controlTypeNames.Count; typeIndex++)
+        {
+            var controlTypeName = controlTypeNames[typeIndex];
+            if (string.IsNullOrWhiteSpace(controlTypeName))
+            {
+                continue;
+            }
+
+            SourceGenHotDesignElementNode? candidate = null;
+            for (var nodeIndex = 0; nodeIndex < nodes.Count; nodeIndex++)
+            {
+                var node = nodes[nodeIndex];
+                if (!string.Equals(node.TypeName, controlTypeName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (candidate is null || node.Depth > candidate.Depth)
+                {
+                    candidate = node;
+                }
+            }
+
+            if (candidate is null)
+            {
+                continue;
+            }
+
+            matched = candidate;
+            return true;
+        }
+
+        return false;
     }
 
     private static string? TryGetName(XElement element)
