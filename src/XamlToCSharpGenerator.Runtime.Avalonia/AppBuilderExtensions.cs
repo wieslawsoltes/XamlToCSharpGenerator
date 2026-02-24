@@ -102,34 +102,13 @@ public static class AppBuilderExtensions
 
         if (!enable)
         {
-            XamlSourceGenStudioHost.Stop();
-            XamlSourceGenStudioManager.Disable();
             XamlSourceGenHotDesignManager.Disable();
             return;
         }
 
-        var studioOptions = new SourceGenStudioOptions
-        {
-            ShowOverlayIndicator = false,
-            EnableExternalWindow = false,
-            AutoOpenStudioWindowOnStartup = false
-        };
-        if (configure is not null)
-        {
-            var hotDesignOptions = new SourceGenHotDesignOptions();
-            configure(hotDesignOptions);
-            studioOptions.PersistChangesToSource = hotDesignOptions.PersistChangesToSource;
-            studioOptions.WaitMode = hotDesignOptions.WaitForHotReload
-                ? SourceGenStudioWaitMode.WaitForLocalOnly
-                : SourceGenStudioWaitMode.None;
-            studioOptions.UpdateTimeout = hotDesignOptions.HotReloadWaitTimeout;
-            studioOptions.FallbackPolicy = hotDesignOptions.FallbackToRuntimeApplyOnTimeout
-                ? SourceGenStudioFallbackPolicy.RuntimeApplyOnTimeout
-                : SourceGenStudioFallbackPolicy.NoFallback;
-            studioOptions.EnableTracing = hotDesignOptions.EnableTracing;
-        }
-
-        XamlSourceGenStudioHost.Start(studioOptions);
+        var hotDesignOptions = new SourceGenHotDesignOptions();
+        configure?.Invoke(hotDesignOptions);
+        XamlSourceGenHotDesignManager.Enable(hotDesignOptions);
     }
 
     private static void ConfigureRuntimeCompilation(

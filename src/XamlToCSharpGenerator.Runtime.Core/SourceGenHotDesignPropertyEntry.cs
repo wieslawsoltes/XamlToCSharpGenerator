@@ -9,4 +9,9 @@ public sealed record SourceGenHotDesignPropertyEntry(
     bool IsSet,
     bool IsAttached,
     bool IsMarkupExtension,
-    IReadOnlyList<SourceGenHotDesignPropertyQuickSet> QuickSets);
+    IReadOnlyList<SourceGenHotDesignPropertyQuickSet> QuickSets,
+    string Category = "General",
+    string Source = "Local",
+    string OwnerTypeName = "",
+    string EditorKind = "Text",
+    bool IsPinned = false);

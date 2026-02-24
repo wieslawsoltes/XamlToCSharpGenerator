@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using System.Xml;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -15,9 +16,66 @@ public static class XamlSourceGenHotDesignCoreTools
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DocumentHistoryState> Histories = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, Type?> TypeResolutionCache = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> LayoutPropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Width",
+        "Height",
+        "MinWidth",
+        "MinHeight",
+        "MaxWidth",
+        "MaxHeight",
+        "Margin",
+        "Padding",
+        "HorizontalAlignment",
+        "VerticalAlignment",
+        "HorizontalContentAlignment",
+        "VerticalContentAlignment",
+        "Grid.Row",
+        "Grid.Column",
+        "Grid.RowSpan",
+        "Grid.ColumnSpan",
+        "Canvas.Left",
+        "Canvas.Top",
+        "Canvas.Right",
+        "Canvas.Bottom",
+        "DockPanel.Dock"
+    };
+    private static readonly HashSet<string> AppearancePropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Background",
+        "Foreground",
+        "BorderBrush",
+        "BorderThickness",
+        "CornerRadius",
+        "Opacity",
+        "FontFamily",
+        "FontSize",
+        "FontStyle",
+        "FontWeight",
+        "Classes"
+    };
+    private static readonly HashSet<string> DataPropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DataContext",
+        "ItemsSource",
+        "SelectedItem",
+        "SelectedIndex",
+        "SelectedValue",
+        "Tag"
+    };
+    private static readonly HashSet<string> InteractionPropertyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Command",
+        "CommandParameter",
+        "IsEnabled",
+        "IsVisible",
+        "IsHitTestVisible",
+        "Focusable"
+    };
 
     private static SourceGenHotDesignWorkspaceMode WorkspaceMode = SourceGenHotDesignWorkspaceMode.Design;
     private static SourceGenHotDesignPropertyFilterMode PropertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
+    private static SourceGenHotDesignHitTestMode HitTestMode = SourceGenHotDesignHitTestMode.Logical;
     private static SourceGenHotDesignPanelState PanelState = new();
     private static SourceGenHotDesignCanvasState CanvasState = new();
     private static string? ActiveBuildUri;
@@ -31,6 +89,7 @@ public static class XamlSourceGenHotDesignCoreTools
             TypeResolutionCache.Clear();
             WorkspaceMode = SourceGenHotDesignWorkspaceMode.Design;
             PropertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
+            HitTestMode = SourceGenHotDesignHitTestMode.Logical;
             PanelState = new SourceGenHotDesignPanelState();
             CanvasState = new SourceGenHotDesignCanvasState();
             ActiveBuildUri = null;
@@ -125,6 +184,23 @@ public static class XamlSourceGenHotDesignCoreTools
         out string? buildUri,
         out string? elementId)
     {
+        return TryResolveElementForLiveSelection(
+            controlNames,
+            controlTypeNames,
+            preferredBuildUri: null,
+            allowAmbiguousTypeFallback: true,
+            out buildUri,
+            out elementId);
+    }
+
+    public static bool TryResolveElementForLiveSelection(
+        IReadOnlyList<string>? controlNames,
+        IReadOnlyList<string>? controlTypeNames,
+        string? preferredBuildUri,
+        bool allowAmbiguousTypeFallback,
+        out string? buildUri,
+        out string? elementId)
+    {
         buildUri = null;
         elementId = null;
 
@@ -144,8 +220,11 @@ public static class XamlSourceGenHotDesignCoreTools
             return false;
         }
 
-        foreach (var document in documents.OrderBy(GetDefaultDocumentScore))
+        var orderedDocuments = OrderDocumentsForLiveSelection(documents, preferredBuildUri);
+        var typeCandidates = new List<ResolvedElementCandidate>(orderedDocuments.Count);
+        for (var documentIndex = 0; documentIndex < orderedDocuments.Count; documentIndex++)
         {
+            var document = orderedDocuments[documentIndex];
             var text = ReadCurrentXamlText(document, status.Options.MaxHistoryEntries);
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -169,13 +248,67 @@ public static class XamlSourceGenHotDesignCoreTools
 
             if (TryFindMatchingElementByType(flattened, resolvedControlTypeNames, out var matchedByType))
             {
-                buildUri = document.BuildUri;
-                elementId = matchedByType!.Id;
+                typeCandidates.Add(new ResolvedElementCandidate(document.BuildUri, matchedByType!.Id));
+            }
+        }
+
+        if (typeCandidates.Count == 0)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preferredBuildUri))
+        {
+            var normalizedPreferredBuildUri = preferredBuildUri.Trim();
+            for (var index = 0; index < typeCandidates.Count; index++)
+            {
+                var candidate = typeCandidates[index];
+                if (!string.Equals(candidate.BuildUri, normalizedPreferredBuildUri, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                buildUri = candidate.BuildUri;
+                elementId = candidate.ElementId;
                 return true;
             }
         }
 
-        return false;
+        if (!allowAmbiguousTypeFallback && IsAmbiguousTypeMatch(typeCandidates))
+        {
+            return false;
+        }
+
+        var selectedCandidate = typeCandidates[0];
+        buildUri = selectedCandidate.BuildUri;
+        elementId = selectedCandidate.ElementId;
+        return true;
+    }
+
+    public static bool TryGetCurrentDocumentText(string buildUri, out string xamlText)
+    {
+        xamlText = string.Empty;
+        if (string.IsNullOrWhiteSpace(buildUri))
+        {
+            return false;
+        }
+
+        var status = XamlSourceGenHotDesignManager.GetStatus();
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
+        var document = ResolveDocument(documents, buildUri, targetType: null, targetTypeName: null);
+        if (document is null)
+        {
+            return false;
+        }
+
+        var text = ReadCurrentXamlText(document, status.Options.MaxHistoryEntries);
+        if (text is null)
+        {
+            return false;
+        }
+
+        xamlText = text;
+        return true;
     }
 
     public static void SetWorkspaceMode(SourceGenHotDesignWorkspaceMode mode)
@@ -191,6 +324,22 @@ public static class XamlSourceGenHotDesignCoreTools
         lock (Sync)
         {
             PropertyFilterMode = mode;
+        }
+    }
+
+    public static SourceGenHotDesignHitTestMode GetHitTestMode()
+    {
+        lock (Sync)
+        {
+            return HitTestMode;
+        }
+    }
+
+    public static void SetHitTestMode(SourceGenHotDesignHitTestMode mode)
+    {
+        lock (Sync)
+        {
+            HitTestMode = mode;
         }
     }
 
@@ -895,7 +1044,12 @@ public static class XamlSourceGenHotDesignCoreTools
             Depth: depth,
             IsSelected: isSelected,
             Line: line,
-            Children: children);
+            Children: children,
+            IsExpanded: depth <= 1 ||
+                        !string.IsNullOrWhiteSpace(search) ||
+                        isSelected ||
+                        children.Any(static child => child.IsSelected || child.IsExpanded),
+            DescendantCount: CountDescendants(children));
     }
 
     private static IReadOnlyList<SourceGenHotDesignPropertyEntry> BuildPropertyEntries(
@@ -915,6 +1069,11 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var targetElement = TryFindElementById(document.Root, string.IsNullOrWhiteSpace(selectedElementId) ? "0" : selectedElementId!);
         targetElement ??= document.Root;
+        var resolvedType = ResolveElementType(targetElement);
+        var descriptors = resolvedType is null
+            ? new Dictionary<string, AvaloniaPropertyDescriptor>(StringComparer.OrdinalIgnoreCase)
+            : EnumerateAvaloniaProperties(resolvedType)
+                .ToDictionary(static descriptor => descriptor.Name, StringComparer.OrdinalIgnoreCase);
 
         var properties = new Dictionary<string, SourceGenHotDesignPropertyEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var attribute in targetElement.Attributes())
@@ -927,44 +1086,199 @@ public static class XamlSourceGenHotDesignCoreTools
             var name = FormatAttributeName(targetElement, attribute.Name);
             var value = attribute.Value;
             var isMarkup = value.StartsWith("{", StringComparison.Ordinal) && value.EndsWith("}", StringComparison.Ordinal);
+            var descriptor = TryResolvePropertyDescriptor(descriptors, name);
+            var propertyType = descriptor?.PropertyType;
+            var isAttached = name.Contains('.', StringComparison.Ordinal) || (descriptor?.IsAttached ?? false);
 
             properties[name] = new SourceGenHotDesignPropertyEntry(
                 Name: name,
                 Value: value,
-                TypeName: "string",
+                TypeName: propertyType?.Name ?? "string",
                 IsSet: true,
-                IsAttached: name.Contains('.', StringComparison.Ordinal),
+                IsAttached: isAttached,
                 IsMarkupExtension: isMarkup,
-                QuickSets: GetQuickSets(name));
+                QuickSets: GetQuickSets(name, propertyType),
+                Category: ClassifyPropertyCategory(name, propertyType, isAttached),
+                Source: "Local",
+                OwnerTypeName: descriptor?.OwnerType.Name ?? (resolvedType?.Name ?? string.Empty),
+                EditorKind: GetEditorKind(propertyType, isMarkup));
         }
 
         if (mode == SourceGenHotDesignPropertyFilterMode.All)
         {
-            var resolvedType = ResolveElementType(targetElement);
-            if (resolvedType is not null)
+            foreach (var descriptor in descriptors.Values)
             {
-                foreach (var avaloniaProperty in EnumerateAvaloniaProperties(resolvedType))
+                if (HasPropertyEntryForDescriptor(properties, descriptor))
                 {
-                    if (properties.ContainsKey(avaloniaProperty.Name))
-                    {
-                        continue;
-                    }
-
-                    properties[avaloniaProperty.Name] = new SourceGenHotDesignPropertyEntry(
-                        Name: avaloniaProperty.Name,
-                        Value: null,
-                        TypeName: avaloniaProperty.PropertyType.Name,
-                        IsSet: false,
-                        IsAttached: avaloniaProperty.IsAttached,
-                        IsMarkupExtension: false,
-                        QuickSets: GetQuickSets(avaloniaProperty.Name));
+                    continue;
                 }
+
+                var displayName = descriptor.Name;
+                properties[displayName] = new SourceGenHotDesignPropertyEntry(
+                    Name: displayName,
+                    Value: null,
+                    TypeName: descriptor.PropertyType.Name,
+                    IsSet: false,
+                    IsAttached: descriptor.IsAttached,
+                    IsMarkupExtension: false,
+                    QuickSets: GetQuickSets(displayName, descriptor.PropertyType),
+                    Category: ClassifyPropertyCategory(displayName, descriptor.PropertyType, descriptor.IsAttached),
+                    Source: "Default",
+                    OwnerTypeName: descriptor.OwnerType.Name,
+                    EditorKind: GetEditorKind(descriptor.PropertyType, isMarkupExtension: false));
             }
         }
 
         return properties.Values
-            .OrderBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(static property => property.IsPinned)
+            .ThenByDescending(static property => property.IsSet)
+            .ThenBy(static property => property.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static int CountDescendants(IReadOnlyList<SourceGenHotDesignElementNode> children)
+    {
+        if (children.Count == 0)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        for (var index = 0; index < children.Count; index++)
+        {
+            count += 1 + children[index].DescendantCount;
+        }
+
+        return count;
+    }
+
+    private static bool HasPropertyEntryForDescriptor(
+        IReadOnlyDictionary<string, SourceGenHotDesignPropertyEntry> properties,
+        AvaloniaPropertyDescriptor descriptor)
+    {
+        if (properties.ContainsKey(descriptor.Name))
+        {
+            return true;
+        }
+
+        if (!descriptor.IsAttached)
+        {
+            return false;
+        }
+
+        var ownerQualifiedName = descriptor.OwnerType.Name + "." + descriptor.Name;
+        return properties.ContainsKey(ownerQualifiedName);
+    }
+
+    private static AvaloniaPropertyDescriptor? TryResolvePropertyDescriptor(
+        IReadOnlyDictionary<string, AvaloniaPropertyDescriptor> descriptors,
+        string propertyName)
+    {
+        if (descriptors.TryGetValue(propertyName, out var descriptor))
+        {
+            return descriptor;
+        }
+
+        var delimiterIndex = propertyName.LastIndexOf('.');
+        if (delimiterIndex <= 0 || delimiterIndex >= propertyName.Length - 1)
+        {
+            return null;
+        }
+
+        var localName = propertyName[(delimiterIndex + 1)..];
+        return descriptors.TryGetValue(localName, out descriptor)
+            ? descriptor
+            : null;
+    }
+
+    private static string ClassifyPropertyCategory(string propertyName, Type? propertyType, bool isAttached)
+    {
+        if (isAttached)
+        {
+            return "Attached";
+        }
+
+        if (LayoutPropertyNames.Contains(propertyName))
+        {
+            return "Layout";
+        }
+
+        if (DataPropertyNames.Contains(propertyName))
+        {
+            return "Data";
+        }
+
+        if (InteractionPropertyNames.Contains(propertyName))
+        {
+            return "Interaction";
+        }
+
+        if (AppearancePropertyNames.Contains(propertyName) ||
+            propertyType == typeof(IBrush) ||
+            propertyType == typeof(Color))
+        {
+            return "Appearance";
+        }
+
+        if (propertyName.Contains("Template", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Contains("Style", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Contains("Theme", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Styling";
+        }
+
+        if (propertyName.Contains("Text", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Contains("Content", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Content";
+        }
+
+        return "General";
+    }
+
+    private static string GetEditorKind(Type? propertyType, bool isMarkupExtension)
+    {
+        if (isMarkupExtension)
+        {
+            return "Markup";
+        }
+
+        if (propertyType is null || propertyType == typeof(string))
+        {
+            return "Text";
+        }
+
+        if (propertyType == typeof(bool) || propertyType == typeof(bool?))
+        {
+            return "Boolean";
+        }
+
+        if (propertyType.IsEnum)
+        {
+            return "Enum";
+        }
+
+        if (propertyType == typeof(double) ||
+            propertyType == typeof(float) ||
+            propertyType == typeof(decimal) ||
+            propertyType == typeof(int) ||
+            propertyType == typeof(long) ||
+            propertyType == typeof(short) ||
+            propertyType == typeof(uint) ||
+            propertyType == typeof(ulong) ||
+            propertyType == typeof(byte) ||
+            propertyType == typeof(sbyte))
+        {
+            return "Numeric";
+        }
+
+        if (propertyType == typeof(IBrush) || propertyType == typeof(Color))
+        {
+            return "Brush";
+        }
+
+        return "Text";
     }
 
     private static IReadOnlyList<SourceGenHotDesignToolboxCategory> BuildToolboxCategories(string? search)
@@ -1140,6 +1454,37 @@ public static class XamlSourceGenHotDesignCoreTools
         return documents
             .OrderBy(GetDefaultDocumentScore)
             .FirstOrDefault();
+    }
+
+    private static List<SourceGenHotDesignDocumentDescriptor> OrderDocumentsForLiveSelection(
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents,
+        string? preferredBuildUri)
+    {
+        var ordered = documents
+            .OrderBy(GetDefaultDocumentScore)
+            .ThenBy(static document => document.BuildUri, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(preferredBuildUri))
+        {
+            return ordered;
+        }
+
+        var normalizedPreferredBuildUri = preferredBuildUri.Trim();
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            if (!string.Equals(ordered[index].BuildUri, normalizedPreferredBuildUri, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var preferred = ordered[index];
+            ordered.RemoveAt(index);
+            ordered.Insert(0, preferred);
+            break;
+        }
+
+        return ordered;
     }
 
     private static int GetDefaultDocumentScore(SourceGenHotDesignDocumentDescriptor document)
@@ -1361,6 +1706,25 @@ public static class XamlSourceGenHotDesignCoreTools
         return false;
     }
 
+    private static bool IsAmbiguousTypeMatch(IReadOnlyList<ResolvedElementCandidate> typeCandidates)
+    {
+        if (typeCandidates.Count <= 1)
+        {
+            return false;
+        }
+
+        var firstBuildUri = typeCandidates[0].BuildUri;
+        for (var index = 1; index < typeCandidates.Count; index++)
+        {
+            if (!string.Equals(typeCandidates[index].BuildUri, firstBuildUri, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string? TryGetName(XElement element)
     {
         var name = TryGetAttributeValue(element, "Name");
@@ -1501,7 +1865,9 @@ public static class XamlSourceGenHotDesignCoreTools
         IDictionary<string, AvaloniaPropertyDescriptor> descriptors,
         AvaloniaProperty property)
     {
-        var propertyName = property.Name;
+        var propertyName = property.IsAttached
+            ? property.OwnerType.Name + "." + property.Name
+            : property.Name;
         if (string.IsNullOrWhiteSpace(propertyName) ||
             descriptors.ContainsKey(propertyName))
         {
@@ -1511,10 +1877,11 @@ public static class XamlSourceGenHotDesignCoreTools
         descriptors[propertyName] = new AvaloniaPropertyDescriptor(
             propertyName,
             property.PropertyType,
-            property.IsAttached);
+            property.IsAttached,
+            property.OwnerType);
     }
 
-    private static IReadOnlyList<SourceGenHotDesignPropertyQuickSet> GetQuickSets(string propertyName)
+    private static IReadOnlyList<SourceGenHotDesignPropertyQuickSet> GetQuickSets(string propertyName, Type? propertyType = null)
     {
         if (string.Equals(propertyName, "HorizontalAlignment", StringComparison.OrdinalIgnoreCase))
         {
@@ -1579,6 +1946,32 @@ public static class XamlSourceGenHotDesignCoreTools
             ];
         }
 
+        if (propertyType == typeof(bool) || propertyType == typeof(bool?))
+        {
+            return
+            [
+                new("True", "True"),
+                new("False", "False")
+            ];
+        }
+
+        if (propertyType is not null && propertyType.IsEnum)
+        {
+            var values = Enum.GetNames(propertyType);
+            if (values.Length == 0)
+            {
+                return Array.Empty<SourceGenHotDesignPropertyQuickSet>();
+            }
+
+            var quickSets = new List<SourceGenHotDesignPropertyQuickSet>(values.Length);
+            for (var index = 0; index < values.Length; index++)
+            {
+                quickSets.Add(new SourceGenHotDesignPropertyQuickSet(values[index], values[index]));
+            }
+
+            return quickSets;
+        }
+
         return Array.Empty<SourceGenHotDesignPropertyQuickSet>();
     }
 
@@ -1604,8 +1997,11 @@ public static class XamlSourceGenHotDesignCoreTools
         public List<string> RedoStack { get; } = [];
     }
 
+    private readonly record struct ResolvedElementCandidate(string BuildUri, string ElementId);
+
     private sealed record AvaloniaPropertyDescriptor(
         string Name,
         Type PropertyType,
-        bool IsAttached);
+        bool IsAttached,
+        Type OwnerType);
 }

@@ -50,8 +50,60 @@ public class XamlSourceGenHotDesignCoreToolsTests
             Assert.Equal("0", root.Id);
             Assert.Equal("Window", root.TypeName);
             Assert.NotEmpty(root.Children);
+            Assert.True(root.IsExpanded);
+            Assert.True(root.DescendantCount > 0);
 
-            Assert.Contains(snapshot.Properties, property => property.Name == "Title");
+            var titleProperty = Assert.Single(snapshot.Properties.Where(property => property.Name == "Title"));
+            Assert.Equal("Local", titleProperty.Source);
+            Assert.True(
+                string.Equals(titleProperty.Category, "Content", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(titleProperty.Category, "General", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal("Text", titleProperty.EditorKind);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void WorkspaceSnapshot_AllPropertyMode_Includes_Default_Metadata()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<Window xmlns=""https://github.com/avaloniaui""
+        xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <TextBlock Text=""Hello"" />
+</Window>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignCoreTools.SetPropertyFilterMode(SourceGenHotDesignPropertyFilterMode.All);
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0/0");
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+
+            var isVisible = snapshot.Properties.FirstOrDefault(property =>
+                string.Equals(property.Name, "IsVisible", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "Visual.IsVisible", StringComparison.OrdinalIgnoreCase));
+            Assert.NotNull(isVisible);
+            Assert.Equal("Default", isVisible!.Source);
+            Assert.Equal("Boolean", isVisible.EditorKind);
         }
         finally
         {
@@ -248,6 +300,88 @@ public class XamlSourceGenHotDesignCoreToolsTests
         }
     }
 
+    [Fact]
+    public void TryResolveElementForLiveSelection_TypeFallback_Can_Reject_Ambiguous_Matches()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var firstViewSourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Button Content=""First"" />
+  </StackPanel>
+</UserControl>");
+
+        var secondViewSourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Button Content=""Second"" />
+  </StackPanel>
+</UserControl>");
+
+        var firstBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/Views/First.axaml";
+        var secondBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/Views/Second.axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTargetView(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = firstBuildUri,
+                    SourcePath = firstViewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTargetViewAlt(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = secondBuildUri,
+                    SourcePath = secondViewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            var ambiguous = XamlSourceGenHotDesignCoreTools.TryResolveElementForLiveSelection(
+                Array.Empty<string>(),
+                new[] { "Button" },
+                preferredBuildUri: null,
+                allowAmbiguousTypeFallback: false,
+                out var ambiguousBuildUri,
+                out var ambiguousElementId);
+            Assert.False(ambiguous);
+            Assert.Null(ambiguousBuildUri);
+            Assert.Null(ambiguousElementId);
+
+            var resolvedWithPreference = XamlSourceGenHotDesignCoreTools.TryResolveElementForLiveSelection(
+                Array.Empty<string>(),
+                new[] { "Button" },
+                preferredBuildUri: secondBuildUri,
+                allowAmbiguousTypeFallback: false,
+                out var resolvedBuildUri,
+                out var resolvedElementId);
+            Assert.True(resolvedWithPreference);
+            Assert.Equal(secondBuildUri, resolvedBuildUri);
+            Assert.False(string.IsNullOrWhiteSpace(resolvedElementId));
+            Assert.NotEqual("0", resolvedElementId);
+        }
+        finally
+        {
+            TryDelete(firstViewSourcePath);
+            TryDelete(secondViewSourcePath);
+        }
+    }
+
     private static SourceGenHotDesignElementNode? FindByTypeName(
         IReadOnlyList<SourceGenHotDesignElementNode> nodes,
         string typeName)
@@ -303,4 +437,6 @@ public class XamlSourceGenHotDesignCoreToolsTests
     private sealed class HotDesignTarget;
 
     private sealed class HotDesignTargetView;
+
+    private sealed class HotDesignTargetViewAlt;
 }

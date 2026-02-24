@@ -35,6 +35,7 @@ public class XamlSourceGenStudioShellViewModelTests
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
             using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            Assert.Equal(SourceGenHotDesignHitTestMode.Logical, viewModel.HitTestMode);
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
             {
                 Name = "ActionButton"
@@ -159,6 +160,68 @@ public class XamlSourceGenStudioShellViewModelTests
         }
     }
 
+    [Fact]
+    public void SelectedTemplateDocument_Loads_Text_From_Selected_Template_Document()
+    {
+        ResetRuntimeState();
+        var viewSourcePath = CreateTempXamlSource();
+        var templateSourcePath = CreateTempTemplateXamlSource();
+        const string viewBuildUri = "avares://tests/StudioShell.View.axaml";
+        const string templateBuildUri = "avares://tests/StudioShell.ButtonTemplate.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = viewBuildUri,
+                    SourcePath = viewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTemplateTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = templateBuildUri,
+                    SourcePath = templateSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Template,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.Template
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectDocument(viewBuildUri);
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
+
+            var templateDocument = Assert.Single(viewModel.TemplateDocuments, document =>
+                string.Equals(document.BuildUri, templateBuildUri, StringComparison.OrdinalIgnoreCase));
+            viewModel.SelectedTemplateDocument = templateDocument;
+
+            Assert.Contains("ControlTheme", viewModel.TemplateXamlText, StringComparison.Ordinal);
+            Assert.Contains("Property=\"Background\"", viewModel.TemplateXamlText, StringComparison.Ordinal);
+            Assert.Contains("Value=\"Red\"", viewModel.TemplateXamlText, StringComparison.Ordinal);
+            Assert.DoesNotContain("ActionButton", viewModel.TemplateXamlText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(viewSourcePath);
+            DeleteFileIfExists(templateSourcePath);
+        }
+    }
+
     private static void ResetRuntimeState()
     {
         XamlSourceGenStudioManager.Disable();
@@ -202,6 +265,22 @@ public class XamlSourceGenStudioShellViewModelTests
         return path;
     }
 
+    private static string CreateTempTemplateXamlSource()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-Template-" + Guid.NewGuid().ToString("N") + ".axaml");
+        const string xaml =
+            """
+            <ControlTheme xmlns="https://github.com/avaloniaui"
+                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                          x:Key="{x:Type Button}"
+                          TargetType="Button">
+              <Setter Property="Background" Value="Red" />
+            </ControlTheme>
+            """;
+        File.WriteAllText(path, xaml);
+        return path;
+    }
+
     private static void DeleteFileIfExists(string path)
     {
         try
@@ -220,4 +299,6 @@ public class XamlSourceGenStudioShellViewModelTests
     private sealed class StudioAppTarget;
 
     private sealed class StudioTarget;
+
+    private sealed class StudioTemplateTarget;
 }

@@ -26,6 +26,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private readonly StudioRelayCommand _applyPropertyCommand;
     private readonly StudioRelayCommand _removePropertyCommand;
     private readonly StudioRelayCommand _applyQuickSetCommand;
+    private readonly StudioRelayCommand _togglePropertyPinCommand;
     private readonly StudioRelayCommand _togglePanelCommand;
 
     private SourceGenStudioScopeDescriptor? _selectedScope;
@@ -45,6 +46,10 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private string _selectedElementId = "0";
     private string _propertyName = string.Empty;
     private string _propertyValue = string.Empty;
+    private string _propertySearchText = string.Empty;
+    private string _selectedPropertyCategory = "All";
+    private string _selectedPropertySource = "All";
+    private bool _showOnlySetProperties;
     private string _newElementName = "Button";
     private string _formFactor = "Desktop";
     private double _zoom = 1.0;
@@ -55,11 +60,14 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private object? _canvasPreviewContent;
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
     private SourceGenHotDesignPropertyFilterMode _propertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
+    private SourceGenHotDesignHitTestMode _hitTestMode = SourceGenHotDesignHitTestMode.Logical;
+    private readonly HashSet<string> _pinnedPropertyKeys = new(StringComparer.OrdinalIgnoreCase);
 
     public XamlSourceGenStudioShellViewModel(SourceGenStudioOptions options)
     {
         WorkspaceModes = Enum.GetValues<SourceGenHotDesignWorkspaceMode>();
         PropertyFilterModes = Enum.GetValues<SourceGenHotDesignPropertyFilterMode>();
+        HitTestModes = Enum.GetValues<SourceGenHotDesignHitTestMode>();
 
         _refreshCommand = new StudioRelayCommand(_ => RefreshAll());
         _refreshPreviewCommand = new StudioRelayCommand(_ => RefreshCanvasPreview());
@@ -72,7 +80,9 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         _applyPropertyCommand = new StudioRelayCommand(_ => _ = RunCommandAsync(ApplyPropertyAsync));
         _removePropertyCommand = new StudioRelayCommand(_ => _ = RunCommandAsync(RemovePropertyAsync));
         _applyQuickSetCommand = new StudioRelayCommand(_ => _ = RunCommandAsync(ApplyQuickSetAsync));
+        _togglePropertyPinCommand = new StudioRelayCommand(value => TogglePropertyPin(value as SourceGenHotDesignPropertyEntry));
         _togglePanelCommand = new StudioRelayCommand(value => TogglePanel(value as string));
+        _hitTestMode = XamlSourceGenHotDesignTool.GetHitTestMode();
 
         XamlSourceGenHotDesignManager.HotDesignUpdateApplied += OnHotDesignUpdateApplied;
         XamlSourceGenHotReloadManager.HotReloadPipelineCompleted += OnHotReloadCompleted;
@@ -93,7 +103,13 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     public ObservableCollection<SourceGenHotDesignPropertyEntry> Properties { get; } = [];
 
+    public ObservableCollection<SourceGenHotDesignPropertyEntry> FilteredProperties { get; } = [];
+
     public ObservableCollection<SourceGenHotDesignPropertyQuickSet> SelectedPropertyQuickSets { get; } = [];
+
+    public ObservableCollection<string> PropertyCategories { get; } = [];
+
+    public ObservableCollection<string> PropertySources { get; } = [];
 
     public ObservableCollection<SourceGenHotDesignToolboxItem> ToolboxItems { get; } = [];
 
@@ -102,6 +118,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public IReadOnlyList<SourceGenHotDesignWorkspaceMode> WorkspaceModes { get; }
 
     public IReadOnlyList<SourceGenHotDesignPropertyFilterMode> PropertyFilterModes { get; }
+
+    public IReadOnlyList<SourceGenHotDesignHitTestMode> HitTestModes { get; }
 
     public StudioRelayCommand RefreshCommand => _refreshCommand;
 
@@ -124,6 +142,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public StudioRelayCommand RemovePropertyCommand => _removePropertyCommand;
 
     public StudioRelayCommand ApplyQuickSetCommand => _applyQuickSetCommand;
+
+    public StudioRelayCommand TogglePropertyPinCommand => _togglePropertyPinCommand;
 
     public StudioRelayCommand TogglePanelCommand => _togglePanelCommand;
 
@@ -166,7 +186,9 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             }
 
             ActiveBuildUri = value.BuildUri;
-            TemplateXamlText = XamlText;
+            TemplateXamlText = XamlSourceGenHotDesignTool.TryGetCurrentDocumentText(value.BuildUri, out var templateText)
+                ? templateText
+                : string.Empty;
         }
     }
 
@@ -316,6 +338,68 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         set => SetProperty(ref _propertyValue, value);
     }
 
+    public string PropertySearchText
+    {
+        get => _propertySearchText;
+        set
+        {
+            if (!SetProperty(ref _propertySearchText, value))
+            {
+                return;
+            }
+
+            RefreshFilteredProperties();
+        }
+    }
+
+    public string SelectedPropertyCategory
+    {
+        get => _selectedPropertyCategory;
+        set
+        {
+            if (!SetProperty(ref _selectedPropertyCategory, value))
+            {
+                return;
+            }
+
+            RefreshFilteredProperties();
+        }
+    }
+
+    public string SelectedPropertySource
+    {
+        get => _selectedPropertySource;
+        set
+        {
+            if (!SetProperty(ref _selectedPropertySource, value))
+            {
+                return;
+            }
+
+            RefreshFilteredProperties();
+        }
+    }
+
+    public bool ShowOnlySetProperties
+    {
+        get => _showOnlySetProperties;
+        set
+        {
+            if (!SetProperty(ref _showOnlySetProperties, value))
+            {
+                return;
+            }
+
+            RefreshFilteredProperties();
+        }
+    }
+
+    public string PropertySummaryText =>
+        FilteredProperties.Count + "/" + Properties.Count +
+        " shown | " + Properties.Count(static property => property.IsSet) +
+        " local | " + Properties.Count(static property => property.IsAttached) +
+        " attached.";
+
     public string NewElementName
     {
         get => _newElementName;
@@ -423,6 +507,20 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
     }
 
+    public SourceGenHotDesignHitTestMode HitTestMode
+    {
+        get => _hitTestMode;
+        set
+        {
+            if (!SetProperty(ref _hitTestMode, value))
+            {
+                return;
+            }
+
+            XamlSourceGenHotDesignTool.SetHitTestMode(value);
+        }
+    }
+
     public void Dispose()
     {
         if (_isDisposed)
@@ -467,7 +565,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return false;
         }
 
-        if (!TrySelectElementForControl(control))
+        if (!TrySelectElementForControl(control, HitTestMode))
         {
             return false;
         }
@@ -486,7 +584,6 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         {
             ReplaceCollection(Documents, snapshot.Documents);
             ReplaceCollection(Elements, snapshot.Elements);
-            ReplaceCollection(Properties, snapshot.Properties);
             ReplaceCollection(ToolboxItems, FlattenToolbox(snapshot.Toolbox));
 
             var templates = snapshot.Documents.Where(static document =>
@@ -499,6 +596,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             XamlText = snapshot.CurrentXamlText ?? string.Empty;
             WorkspaceMode = snapshot.Mode;
             PropertyFilterMode = snapshot.PropertyFilterMode;
+            _hitTestMode = XamlSourceGenHotDesignTool.GetHitTestMode();
+            OnPropertyChanged(nameof(HitTestMode));
             Zoom = snapshot.Canvas.Zoom;
             FormFactor = snapshot.Canvas.FormFactor;
             CanUndo = snapshot.CanUndo;
@@ -518,21 +617,34 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
             _selectedTemplateDocument = selectedTemplateDocument;
             OnPropertyChanged(nameof(SelectedTemplateDocument));
-            TemplateXamlText = selectedTemplateDocument is null ? string.Empty : XamlText;
+            if (selectedTemplateDocument is not null &&
+                XamlSourceGenHotDesignTool.TryGetCurrentDocumentText(selectedTemplateDocument.BuildUri, out var selectedTemplateText))
+            {
+                TemplateXamlText = selectedTemplateText;
+            }
+            else
+            {
+                TemplateXamlText = string.Empty;
+            }
 
             var selectedElement = FindById(snapshot.Elements, snapshot.SelectedElementId);
             _selectedElement = selectedElement;
             OnPropertyChanged(nameof(SelectedElement));
 
+            var pinnedProperties = ApplyPinnedStates(snapshot.Properties, snapshot.ActiveBuildUri, selectedElement?.TypeName);
+            ReplaceCollection(Properties, pinnedProperties);
+            RebuildPropertyFilters();
+            RefreshFilteredProperties();
+
             var selectedProperty = Properties.FirstOrDefault(property =>
                 string.Equals(property.Name, PropertyName, StringComparison.OrdinalIgnoreCase));
-            _selectedProperty = selectedProperty;
-            OnPropertyChanged(nameof(SelectedProperty));
+            SelectedProperty = selectedProperty;
 
             StatusMessage = snapshot.Status.IsEnabled
                 ? "Hot Design active. Documents=" + snapshot.Documents.Count + ", Elements=" + snapshot.Elements.Count + "."
                 : "Hot Design is currently disabled.";
             NotifyWorkspaceModeChanged();
+            OnPropertyChanged(nameof(PropertySummaryText));
         }
         finally
         {
@@ -865,11 +977,11 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         return null;
     }
 
-    private bool TrySelectElementForControl(Control control)
+    private bool TrySelectElementForControl(Control control, SourceGenHotDesignHitTestMode mode)
     {
         var controlNames = new List<string>(4);
         var controlTypeNames = new List<string>(6);
-        CollectControlIdentityCandidates(control, controlNames, controlTypeNames);
+        CollectControlIdentityCandidates(control, mode, controlNames, controlTypeNames);
 
         if (controlNames.Count == 0 && controlTypeNames.Count == 0)
         {
@@ -890,6 +1002,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         if (!XamlSourceGenHotDesignTool.TryResolveElementForLiveSelection(
                 controlNames,
                 controlTypeNames,
+                ActiveBuildUri,
+                allowAmbiguousTypeFallback: false,
                 out var resolvedBuildUri,
                 out var resolvedElementId) ||
             string.IsNullOrWhiteSpace(resolvedBuildUri) ||
@@ -939,11 +1053,48 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     private static void CollectControlIdentityCandidates(
         Control control,
+        SourceGenHotDesignHitTestMode mode,
         ICollection<string> controlNames,
         ICollection<string> controlTypeNames)
     {
         var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenTypes = new HashSet<string>(StringComparer.Ordinal);
+
+        if (mode == SourceGenHotDesignHitTestMode.Visual)
+        {
+            if (!string.IsNullOrWhiteSpace(control.Name) && seenNames.Add(control.Name))
+            {
+                controlNames.Add(control.Name);
+            }
+
+            var selfTypeName = control.GetType().Name;
+            if (!string.IsNullOrWhiteSpace(selfTypeName) && seenTypes.Add(selfTypeName))
+            {
+                controlTypeNames.Add(selfTypeName);
+            }
+
+            foreach (var ancestor in control.GetVisualAncestors())
+            {
+                if (ancestor is not Control ancestorControl)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(ancestorControl.Name) && seenNames.Add(ancestorControl.Name))
+                {
+                    controlNames.Add(ancestorControl.Name);
+                }
+
+                var ancestorTypeName = ancestorControl.GetType().Name;
+                if (!string.IsNullOrWhiteSpace(ancestorTypeName) && seenTypes.Add(ancestorTypeName))
+                {
+                    controlTypeNames.Add(ancestorTypeName);
+                }
+            }
+
+            return;
+        }
+
         var current = control;
         while (current is not null)
         {
@@ -1060,6 +1211,172 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         return best;
+    }
+
+    private void TogglePropertyPin(SourceGenHotDesignPropertyEntry? property)
+    {
+        if (property is null)
+        {
+            return;
+        }
+
+        var key = BuildPinnedPropertyKey(ActiveBuildUri, SelectedElement?.TypeName, property.Name);
+        if (!_pinnedPropertyKeys.Remove(key))
+        {
+            _pinnedPropertyKeys.Add(key);
+        }
+
+        var updatedProperties = ApplyPinnedStates(Properties, ActiveBuildUri, SelectedElement?.TypeName);
+        ReplaceCollection(Properties, updatedProperties);
+        RefreshFilteredProperties();
+
+        var selectedProperty = Properties.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, property.Name, StringComparison.OrdinalIgnoreCase));
+        _selectedProperty = selectedProperty;
+        OnPropertyChanged(nameof(SelectedProperty));
+        OnPropertyChanged(nameof(PropertySummaryText));
+    }
+
+    private void RebuildPropertyFilters()
+    {
+        var categories = Properties
+            .Select(static property => property.Category)
+            .Where(static category => !string.IsNullOrWhiteSpace(category))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static category => category, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var sources = Properties
+            .Select(static property => property.Source)
+            .Where(static source => !string.IsNullOrWhiteSpace(source))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static source => source, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        ReplaceCollection(PropertyCategories, BuildFilterList(categories));
+        ReplaceCollection(PropertySources, BuildFilterList(sources));
+
+        if (!ContainsIgnoreCase(PropertyCategories, SelectedPropertyCategory))
+        {
+            _selectedPropertyCategory = "All";
+            OnPropertyChanged(nameof(SelectedPropertyCategory));
+        }
+
+        if (!ContainsIgnoreCase(PropertySources, SelectedPropertySource))
+        {
+            _selectedPropertySource = "All";
+            OnPropertyChanged(nameof(SelectedPropertySource));
+        }
+    }
+
+    private void RefreshFilteredProperties()
+    {
+        var search = string.IsNullOrWhiteSpace(PropertySearchText) ? null : PropertySearchText.Trim();
+        var includeCategoryFilter = !string.Equals(SelectedPropertyCategory, "All", StringComparison.OrdinalIgnoreCase);
+        var includeSourceFilter = !string.Equals(SelectedPropertySource, "All", StringComparison.OrdinalIgnoreCase);
+
+        var filtered = Properties
+            .Where(property =>
+            {
+                if (ShowOnlySetProperties && !property.IsSet)
+                {
+                    return false;
+                }
+
+                if (includeCategoryFilter &&
+                    !string.Equals(property.Category, SelectedPropertyCategory, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (includeSourceFilter &&
+                    !string.Equals(property.Source, SelectedPropertySource, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(search))
+                {
+                    return true;
+                }
+
+                return property.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       property.TypeName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       property.Category.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       property.Source.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       (property.Value?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
+            })
+            .OrderByDescending(static property => property.IsPinned)
+            .ThenByDescending(static property => property.IsSet)
+            .ThenBy(static property => property.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        ReplaceCollection(FilteredProperties, filtered);
+        if (SelectedProperty is not null &&
+            FilteredProperties.All(property => !string.Equals(property.Name, SelectedProperty.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            SelectedProperty = null;
+        }
+
+        OnPropertyChanged(nameof(PropertySummaryText));
+    }
+
+    private static IReadOnlyList<string> BuildFilterList(IReadOnlyList<string> values)
+    {
+        var output = new List<string>(values.Count + 1)
+        {
+            "All"
+        };
+
+        for (var index = 0; index < values.Count; index++)
+        {
+            output.Add(values[index]);
+        }
+
+        return output;
+    }
+
+    private IReadOnlyList<SourceGenHotDesignPropertyEntry> ApplyPinnedStates(
+        IReadOnlyList<SourceGenHotDesignPropertyEntry> properties,
+        string? buildUri,
+        string? typeName)
+    {
+        if (properties.Count == 0)
+        {
+            return Array.Empty<SourceGenHotDesignPropertyEntry>();
+        }
+
+        var withPinnedState = new SourceGenHotDesignPropertyEntry[properties.Count];
+        for (var index = 0; index < properties.Count; index++)
+        {
+            var property = properties[index];
+            var key = BuildPinnedPropertyKey(buildUri, typeName, property.Name);
+            withPinnedState[index] = property with
+            {
+                IsPinned = _pinnedPropertyKeys.Contains(key)
+            };
+        }
+
+        return withPinnedState;
+    }
+
+    private static string BuildPinnedPropertyKey(string? buildUri, string? typeName, string propertyName)
+    {
+        return (buildUri ?? string.Empty) + "|" + (typeName ?? string.Empty) + "|" + propertyName;
+    }
+
+    private static bool ContainsIgnoreCase(IEnumerable<string> values, string candidate)
+    {
+        foreach (var value in values)
+        {
+            if (string.Equals(value, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void NotifyWorkspaceModeChanged()

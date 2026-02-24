@@ -222,10 +222,12 @@ public class AppBuilderExtensionsTests
         builder.AfterSetupCallback(builder);
 
         var status = XamlSourceGenHotDesignManager.GetStatus();
+        var studioSnapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
         Assert.True(status.IsEnabled);
         Assert.False(status.Options.PersistChangesToSource);
         Assert.False(status.Options.WaitForHotReload);
-        Assert.True(XamlSourceGenStudioHost.IsStarted);
+        Assert.False(XamlSourceGenStudioHost.IsStarted);
+        Assert.False(studioSnapshot.IsEnabled);
     }
 
     [Fact]

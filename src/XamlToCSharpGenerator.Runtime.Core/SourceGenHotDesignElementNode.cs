@@ -11,4 +11,6 @@ public sealed record SourceGenHotDesignElementNode(
     int Depth,
     bool IsSelected,
     int Line,
-    IReadOnlyList<SourceGenHotDesignElementNode> Children);
+    IReadOnlyList<SourceGenHotDesignElementNode> Children,
+    bool IsExpanded = false,
+    int DescendantCount = 0);

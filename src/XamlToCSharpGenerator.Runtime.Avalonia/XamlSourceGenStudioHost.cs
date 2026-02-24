@@ -176,26 +176,35 @@ public static class XamlSourceGenStudioHost
         }
 
         var originalContent = window.Content;
-        object? liveDataContext = null;
-        if (originalContent is StyledElement originalStyledElement)
-        {
-            liveDataContext = originalStyledElement.DataContext;
-        }
-
-        if (liveDataContext is null)
-        {
-            liveDataContext = window.DataContext;
-        }
+        var dataContextBinding = ResolveLiveSurfaceDataContextBinding(window, originalContent);
 
         window.Content = null;
 
-        var overlay = new XamlSourceGenStudioOverlayView(originalContent, liveDataContext)
+        var overlay = new XamlSourceGenStudioOverlayView(
+            originalContent,
+            dataContextBinding.Source,
+            dataContextBinding.InitialValue)
         {
             DataContext = ShellViewModel
         };
         window.Content = overlay;
 
         OverlayAttachments[window] = new StudioOverlayAttachment(window, originalContent, overlay);
+    }
+
+    internal static (StyledElement? Source, object? InitialValue) ResolveLiveSurfaceDataContextBinding(
+        StyledElement defaultDataContextSource,
+        object? originalContent)
+    {
+        if (originalContent is StyledElement originalStyledElement &&
+            originalStyledElement.IsSet(StyledElement.DataContextProperty))
+        {
+            // Preserve explicit content DataContext without creating a circular binding
+            // between the live presenter and the moved content root.
+            return (null, originalStyledElement.DataContext);
+        }
+
+        return (defaultDataContextSource, null);
     }
 
     private static void DetachStudioOverlayFromTopLevels()

@@ -26,7 +26,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private Border? _liveSurfacePanel;
     private TextBlock? _liveModeText;
     private XamlSourceGenStudioShellViewModel? _viewModel;
-    private readonly object? _liveSurfaceDataContext;
+    private readonly StyledElement? _liveSurfaceDataContextSource;
+    private readonly object? _initialLiveSurfaceDataContext;
     private Grid? _liveLayer;
     private ContentControl? _livePresenter;
     private Canvas? _adornerCanvas;
@@ -39,9 +40,13 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private Control? _hoveredControl;
     private Control? _selectedControl;
 
-    public XamlSourceGenStudioOverlayView(object? liveAppContent, object? liveSurfaceDataContext)
+    public XamlSourceGenStudioOverlayView(
+        object? liveAppContent,
+        StyledElement? liveSurfaceDataContextSource,
+        object? initialLiveSurfaceDataContext = null)
     {
-        _liveSurfaceDataContext = liveSurfaceDataContext;
+        _liveSurfaceDataContextSource = liveSurfaceDataContextSource;
+        _initialLiveSurfaceDataContext = initialLiveSurfaceDataContext;
         BuildContent(liveAppContent);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += OnDetachedFromVisualTree;
@@ -89,7 +94,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 8
         };
         toolbar.Child = grid;
@@ -119,33 +124,42 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         Grid.SetColumn(filter, 2);
         grid.Children.Add(filter);
 
+        var hitTestMode = new ComboBox
+        {
+            Width = 130
+        };
+        hitTestMode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.HitTestModes)));
+        hitTestMode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.HitTestMode), BindingMode.TwoWay));
+        Grid.SetColumn(hitTestMode, 3);
+        grid.Children.Add(hitTestMode);
+
         var state = new TextBlock
         {
             TextAlignment = Avalonia.Media.TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center
         };
         state.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioStateText)));
-        Grid.SetColumn(state, 3);
+        Grid.SetColumn(state, 4);
         grid.Children.Add(state);
 
         var refresh = new Button { Content = "Refresh" };
         refresh.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RefreshCommand)));
-        Grid.SetColumn(refresh, 4);
+        Grid.SetColumn(refresh, 5);
         grid.Children.Add(refresh);
 
         var undo = new Button { Content = "Undo" };
         undo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.UndoCommand)));
-        Grid.SetColumn(undo, 5);
+        Grid.SetColumn(undo, 6);
         grid.Children.Add(undo);
 
         var redo = new Button { Content = "Redo" };
         redo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RedoCommand)));
-        Grid.SetColumn(redo, 6);
+        Grid.SetColumn(redo, 7);
         grid.Children.Add(redo);
 
         var apply = new Button { Content = "Apply XAML" };
         apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyXamlCommand)));
-        Grid.SetColumn(apply, 7);
+        Grid.SetColumn(apply, 8);
         grid.Children.Add(apply);
 
         var scopeSelector = new ComboBox
@@ -160,7 +174,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         };
         scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Scopes)));
         scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedScope), BindingMode.TwoWay));
-        Grid.SetColumn(scopeSelector, 8);
+        Grid.SetColumn(scopeSelector, 9);
         grid.Children.Add(scopeSelector);
 
         return toolbar;
@@ -205,12 +219,22 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                     Spacing = 6,
                     Children =
                     {
-                        new TextBlock { Text = item.DisplayName },
+                        new TextBlock
+                        {
+                            Text = item.DisplayName,
+                            FontWeight = item.IsSelected ? FontWeight.SemiBold : FontWeight.Normal
+                        },
                         new TextBlock
                         {
                             Text = item.Id,
                             FontSize = 11,
                             Foreground = Avalonia.Media.Brushes.Gray
+                        },
+                        new TextBlock
+                        {
+                            Text = item.DescendantCount > 0 ? "(" + item.DescendantCount + ")" : string.Empty,
+                            FontSize = 11,
+                            Foreground = Avalonia.Media.Brushes.DarkGray
                         }
                     }
                 },
@@ -220,7 +244,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Setters =
             {
-                new Setter(TreeViewItem.IsExpandedProperty, true)
+                new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(SourceGenHotDesignElementNode.IsExpanded)))
             }
         });
         tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Elements)));
@@ -306,9 +330,19 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Content = liveAppContent
         };
-        if (_liveSurfaceDataContext is not null)
+        if (_liveSurfaceDataContextSource is not null)
         {
-            _livePresenter.DataContext = _liveSurfaceDataContext;
+            _livePresenter.Bind(
+                StyledElement.DataContextProperty,
+                new Binding(nameof(StyledElement.DataContext))
+                {
+                    Mode = BindingMode.OneWay,
+                    Source = _liveSurfaceDataContextSource
+                });
+        }
+        else if (_initialLiveSurfaceDataContext is not null)
+        {
+            _livePresenter.DataContext = _initialLiveSurfaceDataContext;
         }
 
         _liveLayer = new Grid
@@ -426,50 +460,139 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var grid = new Grid
         {
-            RowDefinitions = new RowDefinitions("*,Auto,Auto,Auto,Auto,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"),
             RowSpacing = 8
         };
+
+        var summary = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = Brushes.Gray
+        };
+        summary.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySummaryText)));
+        grid.Children.Add(summary);
+
+        var filters = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,120,120,Auto"),
+            ColumnSpacing = 6
+        };
+        Grid.SetRow(filters, 1);
+
+        var propertySearch = new TextBox
+        {
+            Watermark = "Filter by name/value/type/category"
+        };
+        propertySearch.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySearchText), BindingMode.TwoWay));
+        filters.Children.Add(propertySearch);
+
+        var categoryFilter = new ComboBox
+        {
+            Width = 120
+        };
+        categoryFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyCategories)));
+        categoryFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertyCategory), BindingMode.TwoWay));
+        Grid.SetColumn(categoryFilter, 1);
+        filters.Children.Add(categoryFilter);
+
+        var sourceFilter = new ComboBox
+        {
+            Width = 120
+        };
+        sourceFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySources)));
+        sourceFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertySource), BindingMode.TwoWay));
+        Grid.SetColumn(sourceFilter, 2);
+        filters.Children.Add(sourceFilter);
+
+        var setOnly = new CheckBox
+        {
+            Content = "Set only",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        setOnly.Bind(ToggleButton.IsCheckedProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ShowOnlySetProperties), BindingMode.TwoWay));
+        Grid.SetColumn(setOnly, 3);
+        filters.Children.Add(setOnly);
+        grid.Children.Add(filters);
 
         var propertyList = new ListBox
         {
             ItemTemplate = new FuncDataTemplate<SourceGenHotDesignPropertyEntry>(
                 (property, _) => new Grid
                 {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                    ColumnSpacing = 8,
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"),
+                    ColumnSpacing = 6,
                     Children =
                     {
                         new TextBlock
                         {
-                            Text = property.Name
+                            Text = property.IsPinned ? "★" : "☆",
+                            Foreground = property.IsPinned ? Brushes.Goldenrod : Brushes.Gray,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        new StackPanel
+                        {
+                            Spacing = 2,
+                            [Grid.ColumnProperty] = 1,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = property.Name,
+                                    FontWeight = FontWeight.SemiBold
+                                },
+                                new TextBlock
+                                {
+                                    Text = property.Category + " | " + property.EditorKind,
+                                    FontSize = 11,
+                                    Foreground = Brushes.Gray
+                                }
+                            }
                         },
                         new TextBlock
                         {
                             Text = property.Value ?? string.Empty,
-                            Foreground = Avalonia.Media.Brushes.Gray,
-                            [Grid.ColumnProperty] = 1
+                            Foreground = Brushes.LightGray,
+                            MaxWidth = 140,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            [Grid.ColumnProperty] = 2
+                        },
+                        new Border
+                        {
+                            Background = property.IsSet
+                                ? new SolidColorBrush(Color.FromArgb(60, 86, 139, 255))
+                                : new SolidColorBrush(Color.FromArgb(45, 120, 120, 120)),
+                            CornerRadius = new CornerRadius(3),
+                            Padding = new Thickness(4, 1),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            [Grid.ColumnProperty] = 3,
+                            Child = new TextBlock
+                            {
+                                Text = property.Source,
+                                FontSize = 11
+                            }
                         }
                     }
                 },
                 supportsRecycling: true)
         };
-        propertyList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Properties)));
+        propertyList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.FilteredProperties)));
         propertyList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedProperty), BindingMode.TwoWay));
+        Grid.SetRow(propertyList, 2);
         grid.Children.Add(propertyList);
 
         var propertyName = new TextBox { Watermark = "Property" };
         propertyName.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyName), BindingMode.TwoWay));
-        Grid.SetRow(propertyName, 1);
+        Grid.SetRow(propertyName, 3);
         grid.Children.Add(propertyName);
 
         var propertyValue = new TextBox { Watermark = "Value" };
         propertyValue.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyValue), BindingMode.TwoWay));
-        Grid.SetRow(propertyValue, 2);
+        Grid.SetRow(propertyValue, 4);
         grid.Children.Add(propertyValue);
 
         var quickSetList = new ListBox
         {
-            Height = 90,
+            Height = 100,
             ItemTemplate = new FuncDataTemplate<SourceGenHotDesignPropertyQuickSet>(
                 (quickSet, _) => new TextBlock
                 {
@@ -479,13 +602,25 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         };
         quickSetList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertyQuickSets)));
         quickSetList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedQuickSet), BindingMode.TwoWay));
-        Grid.SetRow(quickSetList, 3);
+        Grid.SetRow(quickSetList, 5);
         grid.Children.Add(quickSetList);
+
+        var tools = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
 
         var quickApply = new Button { Content = "Apply Quick Set" };
         quickApply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyQuickSetCommand)));
-        Grid.SetRow(quickApply, 4);
-        grid.Children.Add(quickApply);
+        tools.Children.Add(quickApply);
+
+        var pin = new Button { Content = "Pin/Unpin Selected" };
+        pin.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TogglePropertyPinCommand)));
+        pin.Bind(Button.CommandParameterProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedProperty)));
+        tools.Children.Add(pin);
+        Grid.SetRow(tools, 6);
+        grid.Children.Add(tools);
 
         var actions = new StackPanel
         {
@@ -498,7 +633,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var remove = new Button { Content = "Remove" };
         remove.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemovePropertyCommand)));
         actions.Children.Add(remove);
-        Grid.SetRow(actions, 5);
+        Grid.SetRow(actions, 7);
         grid.Children.Add(actions);
 
         tab.Content = grid;
@@ -661,6 +796,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             UpdateLiveSurfaceModeVisuals();
         }
 
+        if (e.PropertyName == nameof(XamlSourceGenStudioShellViewModel.HitTestMode))
+        {
+            _hoveredControl = null;
+            RefreshAdorners();
+        }
+
         if (e.PropertyName == nameof(XamlSourceGenStudioShellViewModel.SelectedElement))
         {
             SynchronizeSelectionFromWorkspace();
@@ -699,7 +840,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             return;
         }
 
-        var control = TryResolveLiveContentControl(e.Source);
+        var control = ResolveControlAtPointer(e);
         if (control is null)
         {
             return;
@@ -708,7 +849,9 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         if (_viewModel.TryHandleLiveSurfacePointerPressed(control))
         {
             _selectedControl = control;
+            _hoveredControl = control;
             RefreshSelectionAdorner();
+            RefreshHoverAdorner();
             e.Handled = true;
         }
     }
@@ -720,7 +863,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             return;
         }
 
-        var control = TryResolveLiveContentControl(e.Source);
+        var control = ResolveControlAtPointer(e);
         if (ReferenceEquals(control, _hoveredControl))
         {
             return;
@@ -756,6 +899,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var matched = TryFindLiveControlForElement(_viewModel.SelectedElement);
         if (matched is null)
         {
+            _selectedControl = null;
+            RefreshSelectionAdorner();
             return;
         }
 
@@ -766,6 +911,11 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private Control? TryFindLiveControlForElement(SourceGenHotDesignElementNode element)
     {
         var controls = CaptureLiveControls();
+        if (_viewModel?.HitTestMode == SourceGenHotDesignHitTestMode.Logical)
+        {
+            controls = controls.Where(IsLogicalDescendantOfLiveRoot).ToList();
+        }
+
         if (controls.Count == 0)
         {
             return null;
@@ -875,6 +1025,92 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         return depth;
     }
 
+    private Control? ResolveControlAtPointer(PointerEventArgs e)
+    {
+        if (_liveLayer is null || _viewModel is null)
+        {
+            return TryResolveLiveContentControl(e.Source);
+        }
+
+        var point = e.GetPosition(_liveLayer);
+        var mode = _viewModel.HitTestMode;
+        if (TryResolveControlAtPoint(point, mode, out var resolved))
+        {
+            return resolved;
+        }
+
+        return TryResolveLiveContentControl(e.Source);
+    }
+
+    private bool TryResolveControlAtPoint(Point point, SourceGenHotDesignHitTestMode mode, out Control? resolvedControl)
+    {
+        resolvedControl = null;
+        if (_liveLayer is null)
+        {
+            return false;
+        }
+
+        var controls = CaptureLiveControls();
+        if (controls.Count == 0)
+        {
+            return false;
+        }
+
+        var bestDepth = int.MinValue;
+        var bestArea = double.PositiveInfinity;
+        var bestNamed = false;
+
+        for (var index = 0; index < controls.Count; index++)
+        {
+            var candidate = controls[index];
+            if (!TryGetControlBoundsInLayer(candidate, _liveLayer, out var bounds) ||
+                !bounds.Contains(point))
+            {
+                continue;
+            }
+
+            if (mode == SourceGenHotDesignHitTestMode.Logical && !IsLogicalDescendantOfLiveRoot(candidate))
+            {
+                continue;
+            }
+
+            var depth = mode == SourceGenHotDesignHitTestMode.Visual
+                ? GetVisualDepth(candidate)
+                : GetLogicalDepth(candidate);
+            var area = bounds.Width * bounds.Height;
+            var hasName = !string.IsNullOrWhiteSpace(candidate.Name);
+
+            if (resolvedControl is not null &&
+                depth < bestDepth)
+            {
+                continue;
+            }
+
+            if (resolvedControl is not null &&
+                depth == bestDepth &&
+                hasName == bestNamed &&
+                area >= bestArea)
+            {
+                continue;
+            }
+
+            if (resolvedControl is not null &&
+                depth == bestDepth &&
+                bestNamed &&
+                !hasName)
+            {
+                continue;
+            }
+
+            resolvedControl = candidate;
+            bestDepth = depth;
+            bestArea = area;
+            bestNamed = hasName;
+        }
+
+        return resolvedControl is not null;
+    }
+
     private Control? TryResolveLiveContentControl(object? pointerSource)
     {
         var control = TryResolveControl(pointerSource);
@@ -886,6 +1122,40 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         return IsDescendantOf(control, _livePresenter)
             ? control
             : null;
+    }
+
+    private bool IsLogicalDescendantOfLiveRoot(Control control)
+    {
+        if (_livePresenter?.Content is not StyledElement logicalRoot)
+        {
+            return false;
+        }
+
+        StyledElement? current = control;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, logicalRoot))
+            {
+                return true;
+            }
+
+            current = current.Parent as StyledElement;
+        }
+
+        return false;
+    }
+
+    private static int GetLogicalDepth(Control control)
+    {
+        var depth = 0;
+        StyledElement? current = control;
+        while (current?.Parent is StyledElement parent)
+        {
+            depth++;
+            current = parent;
+        }
+
+        return depth;
     }
 
     private static Control? TryResolveControl(object? pointerSource)
@@ -1078,14 +1348,57 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             return false;
         }
 
+        var clipped = transformedBounds;
+        var current = control as Visual;
+        while (current is not null && !ReferenceEquals(current, layer))
+        {
+            var parent = current.GetVisualParent();
+            if (parent is null)
+            {
+                break;
+            }
+
+            if (parent.ClipToBounds)
+            {
+                var parentMatrix = parent.TransformToVisual(layer);
+                if (!parentMatrix.HasValue)
+                {
+                    return false;
+                }
+
+                var parentBounds = parent.Bounds.TransformToAABB(parentMatrix.Value);
+                clipped = clipped.Intersect(parentBounds);
+                if (clipped.Width <= 0 || clipped.Height <= 0)
+                {
+                    return false;
+                }
+            }
+
+            current = parent;
+        }
+
         var layerBounds = layer.Bounds;
-        var clipped = transformedBounds.Intersect(layerBounds);
+        clipped = clipped.Intersect(layerBounds);
         if (clipped.Width <= 0 || clipped.Height <= 0)
         {
             return false;
         }
 
-        bounds = clipped;
+        bounds = AlignToPixelBounds(clipped);
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return false;
+        }
+
         return true;
+    }
+
+    private static Rect AlignToPixelBounds(Rect rect)
+    {
+        var left = Math.Floor(rect.Left);
+        var top = Math.Floor(rect.Top);
+        var right = Math.Ceiling(rect.Right);
+        var bottom = Math.Ceiling(rect.Bottom);
+        return new Rect(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
     }
 }

@@ -49,6 +49,16 @@ public static class XamlSourceGenHotDesignTool
         XamlSourceGenHotDesignCoreTools.SetPropertyFilterMode(mode);
     }
 
+    public static SourceGenHotDesignHitTestMode GetHitTestMode()
+    {
+        return XamlSourceGenHotDesignCoreTools.GetHitTestMode();
+    }
+
+    public static void SetHitTestMode(SourceGenHotDesignHitTestMode mode)
+    {
+        XamlSourceGenHotDesignCoreTools.SetHitTestMode(mode);
+    }
+
     public static bool TogglePanel(SourceGenHotDesignPanelKind panel)
     {
         return XamlSourceGenHotDesignCoreTools.TogglePanel(panel);
@@ -95,6 +105,28 @@ public static class XamlSourceGenHotDesignTool
             controlTypeNames,
             out buildUri,
             out elementId);
+    }
+
+    public static bool TryResolveElementForLiveSelection(
+        IReadOnlyList<string>? controlNames,
+        IReadOnlyList<string>? controlTypeNames,
+        string? preferredBuildUri,
+        bool allowAmbiguousTypeFallback,
+        out string? buildUri,
+        out string? elementId)
+    {
+        return XamlSourceGenHotDesignCoreTools.TryResolveElementForLiveSelection(
+            controlNames,
+            controlTypeNames,
+            preferredBuildUri,
+            allowAmbiguousTypeFallback,
+            out buildUri,
+            out elementId);
+    }
+
+    public static bool TryGetCurrentDocumentText(string buildUri, out string xamlText)
+    {
+        return XamlSourceGenHotDesignCoreTools.TryGetCurrentDocumentText(buildUri, out xamlText);
     }
 
     public static ValueTask<SourceGenHotDesignApplyResult> ApplyDocumentTextAsync(
@@ -264,6 +296,16 @@ public static class XamlSourceGenHotDesignTool
                 SetPropertyFilterMode(mode);
                 return "Property mode set to " + mode + ".";
             }
+            case "set-hit-test-mode":
+            {
+                if (!TryParseHitTestMode(argument1, out var mode))
+                {
+                    return "Usage: set-hit-test-mode <logical|visual>";
+                }
+
+                SetHitTestMode(mode);
+                return "Hit test mode set to " + mode + ".";
+            }
             case "panel-toggle":
             {
                 if (!TryParsePanelKind(argument1, out var panel))
@@ -371,7 +413,7 @@ public static class XamlSourceGenHotDesignTool
                 return result.Succeeded ? "Applied: " + result.Message : "Failed: " + result.Message;
             }
             default:
-                return "Unknown command '" + command + "'. Supported commands: enable, disable, toggle, status, list, snapshot, set-mode, set-property-mode, panel-toggle, set-zoom, select-doc, select-element, apply-doc, set-property, undo, redo, apply-uri, apply-type.";
+                return "Unknown command '" + command + "'. Supported commands: enable, disable, toggle, status, list, snapshot, set-mode, set-property-mode, set-hit-test-mode, panel-toggle, set-zoom, select-doc, select-element, apply-doc, set-property, undo, redo, apply-uri, apply-type.";
         }
     }
 
@@ -389,6 +431,17 @@ public static class XamlSourceGenHotDesignTool
     private static bool TryParsePropertyFilterMode(string? value, out SourceGenHotDesignPropertyFilterMode mode)
     {
         mode = SourceGenHotDesignPropertyFilterMode.Smart;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return Enum.TryParse(value.Trim(), true, out mode);
+    }
+
+    private static bool TryParseHitTestMode(string? value, out SourceGenHotDesignHitTestMode mode)
+    {
+        mode = SourceGenHotDesignHitTestMode.Logical;
         if (string.IsNullOrWhiteSpace(value))
         {
             return false;
