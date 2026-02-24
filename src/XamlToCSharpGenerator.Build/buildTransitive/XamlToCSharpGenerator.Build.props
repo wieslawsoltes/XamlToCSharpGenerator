@@ -66,6 +66,9 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenGlobalXmlnsPrefixes" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTransformRules" />
     <CompilerVisibleProperty Include="RootNamespace" />
+    <CompilerVisibleProperty Include="IntermediateOutputPath" />
+    <CompilerVisibleProperty Include="BaseIntermediateOutputPath" />
+    <CompilerVisibleProperty Include="MSBuildProjectDirectory" />
     <CompilerVisibleProperty Include="DotNetWatchBuild" />
     <CompilerVisibleProperty Include="BuildingInsideVisualStudio" />
     <CompilerVisibleProperty Include="BuildingByReSharper" />

@@ -27,6 +27,9 @@ public sealed record GeneratorOptions(
     bool ImplicitProjectNamespacesEnabled,
     string? GlobalXmlnsPrefixes,
     string? RootNamespace,
+    string? IntermediateOutputPath,
+    string? BaseIntermediateOutputPath,
+    string? ProjectDirectory,
     string Backend,
     string? AssemblyName)
 {
@@ -66,6 +69,9 @@ public sealed record GeneratorOptions(
             ImplicitProjectNamespacesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitProjectNamespacesEnabled", false),
             GlobalXmlnsPrefixes: GetNullable(globalOptions, "build_property.AvaloniaSourceGenGlobalXmlnsPrefixes"),
             RootNamespace: GetNullable(globalOptions, "build_property.RootNamespace"),
+            IntermediateOutputPath: GetNullable(globalOptions, "build_property.IntermediateOutputPath"),
+            BaseIntermediateOutputPath: GetNullable(globalOptions, "build_property.BaseIntermediateOutputPath"),
+            ProjectDirectory: GetNullable(globalOptions, "build_property.MSBuildProjectDirectory"),
             Backend: backend,
             AssemblyName: assemblyName);
     }

@@ -62,6 +62,9 @@ public class NoUiFrameworkProfileTests
             ImplicitProjectNamespacesEnabled: false,
             GlobalXmlnsPrefixes: null,
             RootNamespace: "NoUi.Tests",
+            IntermediateOutputPath: null,
+            BaseIntermediateOutputPath: null,
+            ProjectDirectory: null,
             Backend: "SourceGen",
             AssemblyName: "NoUi.Tests");
 

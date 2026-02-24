@@ -91,6 +91,9 @@ public class AvaloniaFrameworkProfileTests
             ImplicitProjectNamespacesEnabled: false,
             GlobalXmlnsPrefixes: null,
             RootNamespace: "Sample",
+            IntermediateOutputPath: null,
+            BaseIntermediateOutputPath: null,
+            ProjectDirectory: null,
             Backend: "SourceGen",
             AssemblyName: "TestAssembly");
 

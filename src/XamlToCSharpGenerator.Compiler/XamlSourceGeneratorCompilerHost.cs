@@ -18,8 +18,15 @@ namespace XamlToCSharpGenerator.Compiler;
 
 public static class XamlSourceGeneratorCompilerHost
 {
+    private const string PersistentCacheVersionHeader = "AXSG-HOTRELOAD-CACHE-V1";
+
     private static readonly ConcurrentDictionary<string, CachedGeneratedSource> LastGoodGeneratedSources =
         new(StringComparer.OrdinalIgnoreCase);
+
+    internal static void ClearHotReloadFallbackCacheForTesting()
+    {
+        LastGoodGeneratedSources.Clear();
+    }
 
     public static void Initialize(
         IncrementalGeneratorInitializationContext context,
@@ -184,6 +191,32 @@ public static class XamlSourceGeneratorCompilerHost
             });
         var parsedDocumentsSnapshot = parsedDocuments.Collect();
 
+        var hotReloadAssemblyHandlerSource = uniqueXamlInputs
+            .Combine(optionsProvider)
+            .Select((pair, _) =>
+            {
+                var (inputs, options) = pair;
+                return BuildHotReloadAssemblyMetadataHandlerSource(
+                    frameworkProfile.Id,
+                    !inputs.IsDefaultOrEmpty,
+                    options);
+            });
+
+        context.RegisterSourceOutput(
+            hotReloadAssemblyHandlerSource,
+            (sourceContext, source) =>
+            {
+                if (string.IsNullOrWhiteSpace(source))
+                {
+                    return;
+                }
+
+                var hintName = NormalizeFrameworkHintName(
+                    frameworkProfile.Id,
+                    "__SourceGenHotReloadAssemblyMetadataHandler.g.cs");
+                _ = TryAddSource(sourceContext, hintName, source);
+            });
+
         var globalGraphDiagnostics = parsedDocuments
             .Select(static (result, _) => result.Document)
             .Where(static document => document is not null)
@@ -231,7 +264,8 @@ public static class XamlSourceGeneratorCompilerHost
                     frameworkProfile.Id,
                     options.AssemblyName,
                     parsedDocument.Input.FilePath,
-                    parsedDocument.Input.TargetPath);
+                    parsedDocument.Input.TargetPath,
+                    options.ProjectDirectory);
                 var bindElapsed = TimeSpan.Zero;
                 var emitElapsed = TimeSpan.Zero;
                 var semanticDiagnosticsCount = 0;
@@ -253,7 +287,13 @@ public static class XamlSourceGeneratorCompilerHost
                     ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                     if (parseResult is null)
                     {
-                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parsedDocument.Input.FilePath, resilienceEnabled);
+                        usedFallbackSource = TryUseCachedSource(
+                            sourceContext,
+                            cacheKey,
+                            parsedDocument.Input.FilePath,
+                            resilienceEnabled,
+                            options,
+                            frameworkProfile.Id);
                         status = usedFallbackSource ? "fallback-parse" : "parse-failed";
                         return;
                     }
@@ -277,7 +317,13 @@ public static class XamlSourceGeneratorCompilerHost
                     ReportDiagnostics(sourceContext, semanticDiagnostics, resilienceEnabled);
                     if (viewModel is null)
                     {
-                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled);
+                        usedFallbackSource = TryUseCachedSource(
+                            sourceContext,
+                            cacheKey,
+                            parseResult.FilePath,
+                            resilienceEnabled,
+                            options,
+                            frameworkProfile.Id);
                         status = usedFallbackSource ? "fallback-bind" : "bind-failed";
                         return;
                     }
@@ -295,7 +341,9 @@ public static class XamlSourceGeneratorCompilerHost
                             status = "generated";
                             if (resilienceEnabled)
                             {
-                                LastGoodGeneratedSources[cacheKey] = new CachedGeneratedSource(hintName, source);
+                                var cachedSource = new CachedGeneratedSource(hintName, source);
+                                LastGoodGeneratedSources[cacheKey] = cachedSource;
+                                PersistCachedSource(cachedSource, cacheKey, options, frameworkProfile.Id);
                             }
                         }
                         else
@@ -311,7 +359,13 @@ public static class XamlSourceGeneratorCompilerHost
                     }
                     catch (Exception ex)
                     {
-                        usedFallbackSource = TryUseCachedSource(sourceContext, cacheKey, parseResult.FilePath, resilienceEnabled);
+                        usedFallbackSource = TryUseCachedSource(
+                            sourceContext,
+                            cacheKey,
+                            parseResult.FilePath,
+                            resilienceEnabled,
+                            options,
+                            frameworkProfile.Id);
                         status = usedFallbackSource ? "fallback-emit" : "emit-failed";
                         if (!usedFallbackSource)
                         {
@@ -681,14 +735,22 @@ public static class XamlSourceGeneratorCompilerHost
         SourceProductionContext sourceContext,
         string cacheKey,
         string filePath,
-        bool resilienceEnabled)
+        bool resilienceEnabled,
+        GeneratorOptions options,
+        string frameworkProfileId)
     {
-        if (!resilienceEnabled ||
-            !LastGoodGeneratedSources.TryGetValue(cacheKey, out var cached))
+        if (!resilienceEnabled)
         {
             return false;
         }
 
+        if (!LastGoodGeneratedSources.TryGetValue(cacheKey, out var cached) &&
+            !TryReadPersistedCachedSource(cacheKey, options, frameworkProfileId, out cached))
+        {
+            return false;
+        }
+
+        LastGoodGeneratedSources[cacheKey] = cached;
         _ = TryAddSource(sourceContext, cached.HintName, cached.Source);
 
         var location = CreateLocation(filePath, 1, 1);
@@ -700,11 +762,218 @@ public static class XamlSourceGeneratorCompilerHost
         return true;
     }
 
+    private static void PersistCachedSource(
+        CachedGeneratedSource cachedSource,
+        string cacheKey,
+        GeneratorOptions options,
+        string frameworkProfileId)
+    {
+        if (!TryGetPersistentCacheFilePath(cacheKey, options, frameworkProfileId, out var cacheFilePath))
+        {
+            return;
+        }
+
+        var cacheDirectoryPath = Path.GetDirectoryName(cacheFilePath);
+        if (string.IsNullOrWhiteSpace(cacheDirectoryPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(cacheDirectoryPath);
+            var payload = SerializeCachedGeneratedSource(cachedSource);
+            WriteAllTextAtomically(cacheFilePath, payload);
+        }
+        catch
+        {
+            // Best effort persistent fallback cache only.
+        }
+    }
+
+    private static bool TryReadPersistedCachedSource(
+        string cacheKey,
+        GeneratorOptions options,
+        string frameworkProfileId,
+        out CachedGeneratedSource cached)
+    {
+        cached = default!;
+        if (!TryGetPersistentCacheFilePath(cacheKey, options, frameworkProfileId, out var cacheFilePath) ||
+            !File.Exists(cacheFilePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var payload = File.ReadAllText(cacheFilePath);
+            return TryDeserializeCachedGeneratedSource(payload, out cached);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPersistentCacheFilePath(
+        string cacheKey,
+        GeneratorOptions options,
+        string frameworkProfileId,
+        out string cacheFilePath)
+    {
+        cacheFilePath = string.Empty;
+        var cacheDirectory = ResolvePersistentCacheDirectory(options, frameworkProfileId);
+        if (string.IsNullOrWhiteSpace(cacheDirectory))
+        {
+            return false;
+        }
+
+        cacheFilePath = Path.Combine(cacheDirectory, ComputeStableHashHex(cacheKey) + ".cache");
+        return true;
+    }
+
+    private static string? ResolvePersistentCacheDirectory(GeneratorOptions options, string frameworkProfileId)
+    {
+        var intermediateOutputPath = ResolveIntermediateOutputPath(options);
+        if (string.IsNullOrWhiteSpace(intermediateOutputPath))
+        {
+            return null;
+        }
+
+        return Path.Combine(
+            intermediateOutputPath,
+            "XamlToCSharpGenerator",
+            "HotReloadFallback",
+            NormalizeCachePathSegment(NormalizeFrameworkIdentifier(frameworkProfileId)),
+            NormalizeCachePathSegment(options.AssemblyName ?? "UnknownAssembly"));
+    }
+
+    private static string? ResolveIntermediateOutputPath(GeneratorOptions options)
+    {
+        var configuredPath = options.IntermediateOutputPath;
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            configuredPath = options.BaseIntermediateOutputPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return null;
+        }
+
+        var trimmedPath = configuredPath.Trim();
+        try
+        {
+            if (Path.IsPathRooted(trimmedPath))
+            {
+                return Path.GetFullPath(trimmedPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.ProjectDirectory))
+            {
+                return Path.GetFullPath(Path.Combine(options.ProjectDirectory!, trimmedPath));
+            }
+
+            return Path.GetFullPath(trimmedPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeCachePathSegment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Unknown";
+        }
+
+        var invalidPathCharacters = Path.GetInvalidFileNameChars();
+        var chars = value.Trim().ToCharArray();
+        for (var index = 0; index < chars.Length; index++)
+        {
+            if (Array.IndexOf(invalidPathCharacters, chars[index]) >= 0)
+            {
+                chars[index] = '_';
+            }
+        }
+
+        var normalized = new string(chars).Trim();
+        return normalized.Length == 0 ? "Unknown" : normalized;
+    }
+
+    private static string SerializeCachedGeneratedSource(CachedGeneratedSource cachedSource)
+    {
+        return PersistentCacheVersionHeader + "\n" +
+               cachedSource.HintName + "\n" +
+               cachedSource.Source;
+    }
+
+    private static bool TryDeserializeCachedGeneratedSource(
+        string payload,
+        out CachedGeneratedSource cachedSource)
+    {
+        cachedSource = default!;
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        var header = PersistentCacheVersionHeader + "\n";
+        if (!payload.StartsWith(header, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var hintStart = header.Length;
+        var hintEnd = payload.IndexOf('\n', hintStart);
+        if (hintEnd <= hintStart)
+        {
+            return false;
+        }
+
+        var hintName = payload.Substring(hintStart, hintEnd - hintStart).Trim();
+        if (string.IsNullOrWhiteSpace(hintName))
+        {
+            return false;
+        }
+
+        var source = payload.Substring(hintEnd + 1);
+        cachedSource = new CachedGeneratedSource(hintName, source);
+        return true;
+    }
+
+    private static void WriteAllTextAtomically(string filePath, string contents)
+    {
+        var tempFilePath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(tempFilePath, contents);
+            File.Move(tempFilePath, filePath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempFilePath))
+                {
+                    File.Delete(tempFilePath);
+                }
+            }
+            catch
+            {
+                // Best effort temp cleanup only.
+            }
+        }
+    }
+
     private static string BuildHotReloadCacheKey(
         string frameworkProfileId,
         string? assemblyName,
         string filePath,
-        string targetPath)
+        string targetPath,
+        string? projectDirectory)
     {
         var normalizedAssemblyName = string.IsNullOrWhiteSpace(assemblyName)
             ? "UnknownAssembly"
@@ -712,7 +981,61 @@ public static class XamlSourceGeneratorCompilerHost
         var normalizedProfileId = string.IsNullOrWhiteSpace(frameworkProfileId)
             ? "UnknownFramework"
             : frameworkProfileId.Trim();
-        return normalizedProfileId + "|" + normalizedAssemblyName + "|" + NormalizeDedupePath(filePath) + "|" + targetPath;
+        var normalizedFilePath = NormalizeCacheKeyFilePath(filePath, projectDirectory);
+        var normalizedTargetPath = NormalizeCacheKeyTargetPath(targetPath);
+        return normalizedProfileId + "|" + normalizedAssemblyName + "|" + normalizedFilePath + "|" + normalizedTargetPath;
+    }
+
+    private static string NormalizeCacheKeyFilePath(string filePath, string? projectDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return string.Empty;
+        }
+
+        var normalized = filePath.Replace('\\', '/');
+        try
+        {
+            if (Path.IsPathRooted(filePath))
+            {
+                normalized = Path.GetFullPath(filePath).Replace('\\', '/');
+            }
+            else if (!string.IsNullOrWhiteSpace(projectDirectory))
+            {
+                normalized = Path.GetFullPath(Path.Combine(projectDirectory!, filePath)).Replace('\\', '/');
+            }
+        }
+        catch
+        {
+            // Keep lexical normalization when physical normalization fails.
+        }
+
+        return NormalizePathSegments(normalized);
+    }
+
+    private static string NormalizeCacheKeyTargetPath(string targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            return string.Empty;
+        }
+
+        return NormalizePathSegments(targetPath.Replace('\\', '/'));
+    }
+
+    private static string ComputeStableHashHex(string text)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var character in text)
+            {
+                hash ^= character;
+                hash *= 16777619u;
+            }
+
+            return hash.ToString("x8", CultureInfo.InvariantCulture);
+        }
     }
 
     private static string NormalizeFrameworkHintName(string frameworkProfileId, string hintName)
@@ -1260,6 +1583,26 @@ public static class XamlSourceGeneratorCompilerHost
     private static string BuildUri(string assemblyName, string normalizedTargetPath)
     {
         return "avares://" + assemblyName + "/" + normalizedTargetPath;
+    }
+
+    private static string? BuildHotReloadAssemblyMetadataHandlerSource(
+        string frameworkProfileId,
+        bool hasXamlInputs,
+        GeneratorOptions options)
+    {
+        if (!hasXamlInputs ||
+            !options.IsEnabled ||
+            !options.HotReloadEnabled ||
+            !string.Equals(frameworkProfileId, FrameworkProfileIds.Avalonia, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return """
+#if NET6_0_OR_GREATER
+[assembly: global::System.Reflection.Metadata.MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
+#endif
+""";
     }
 
     private static bool ShouldPreferTargetPath(string candidateTargetPath, string currentTargetPath)
