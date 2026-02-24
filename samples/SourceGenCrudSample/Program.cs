@@ -19,11 +19,15 @@ internal static class Program
             .UsePlatformDetect()
             .LogToTrace()
             .UseAvaloniaSourceGeneratedXaml()
-            .UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
+            .UseAvaloniaSourceGeneratedStudio(options =>
             {
                 options.PersistChangesToSource = true;
-                options.WaitForHotReload = true;
-                options.HotReloadWaitTimeout = TimeSpan.FromSeconds(10);
+                options.WaitMode = SourceGenStudioWaitMode.WaitForLocalOnly;
+                options.UpdateTimeout = TimeSpan.FromSeconds(10);
+                options.FallbackPolicy = SourceGenStudioFallbackPolicy.RuntimeApplyOnTimeout;
+                options.ShowOverlayIndicator = true;
+                options.EnableExternalWindow = true;
+                options.AutoOpenStudioWindowOnStartup = true;
             })
             .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
     }
