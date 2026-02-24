@@ -1185,7 +1185,6 @@ public static class XamlSourceGenHotReloadManager
     private static void AddDefaultHandlersLocked()
     {
         AddHandlerLocked(new StyledElementDataContextHotReloadHandler(), typeof(global::Avalonia.StyledElement), "default");
-        AddHandlerLocked(new VisualTemplateRematerializationHotReloadHandler(), typeof(global::Avalonia.Visual), "default");
         AddHandlerLocked(new StyleHostVisualRefreshHotReloadHandler(), typeof(global::Avalonia.Styling.IStyle), "default");
     }
 
@@ -1364,26 +1363,6 @@ public static class XamlSourceGenHotReloadManager
         }
     }
 
-    private sealed class VisualTemplateRematerializationHotReloadHandler : ISourceGenHotReloadHandler
-    {
-        public int Priority => -200;
-
-        public bool CanHandle(Type reloadType, object instance)
-        {
-            return instance is global::Avalonia.Visual;
-        }
-
-        public void AfterElementReload(Type reloadType, object instance, object? state)
-        {
-            if (instance is not global::Avalonia.Visual rootVisual)
-            {
-                return;
-            }
-
-            VisualTreeRematerializationUtilities.RematerializeFromRootVisual(rootVisual);
-        }
-    }
-
     private sealed class StyleHostVisualRefreshHotReloadHandler : ISourceGenHotReloadHandler
     {
         private IReadOnlyList<Type>? _requestedTypes;
@@ -1518,15 +1497,6 @@ public static class XamlSourceGenHotReloadManager
         private static readonly HashSet<Type> PendingAffectedControlThemeTargetTypes = new();
         private static int ThemeRefreshScheduled;
 
-        public static void RematerializeApplicationVisualRoots()
-        {
-            var roots = CaptureApplicationRootVisuals();
-            for (var index = 0; index < roots.Count; index++)
-            {
-                RematerializeFromRootVisual(roots[index]);
-            }
-        }
-
         public static void RefreshAffectedImplicitControlThemes(IReadOnlyCollection<Type> affectedTargetTypes)
         {
             if (affectedTargetTypes.Count == 0)
@@ -1617,30 +1587,6 @@ public static class XamlSourceGenHotReloadManager
             catch
             {
                 // Best effort root invalidation only.
-            }
-        }
-
-        public static void RematerializeFromRootVisual(global::Avalonia.Visual rootVisual)
-        {
-            // Two passes ensure template-created descendants are also materialized.
-            for (var pass = 0; pass < 2; pass++)
-            {
-                var visuals = CaptureVisualSnapshot(rootVisual);
-                for (var index = 0; index < visuals.Count; index++)
-                {
-                    if (visuals[index] is global::Avalonia.StyledElement styledElement)
-                    {
-                        TryApplyStyling(styledElement);
-                    }
-                }
-
-                for (var index = 0; index < visuals.Count; index++)
-                {
-                    if (visuals[index] is global::Avalonia.Layout.Layoutable layoutable)
-                    {
-                        TryApplyTemplate(layoutable);
-                    }
-                }
             }
         }
 
@@ -1780,30 +1726,6 @@ public static class XamlSourceGenHotReloadManager
             }
 
             return visuals;
-        }
-
-        private static void TryApplyStyling(global::Avalonia.StyledElement styledElement)
-        {
-            try
-            {
-                styledElement.ApplyStyling();
-            }
-            catch
-            {
-                // Best effort style apply only.
-            }
-        }
-
-        private static void TryApplyTemplate(global::Avalonia.Layout.Layoutable layoutable)
-        {
-            try
-            {
-                layoutable.ApplyTemplate();
-            }
-            catch
-            {
-                // Best effort template materialization only.
-            }
         }
 
         private static void TryInvalidateRootVisual(global::Avalonia.Visual rootVisual)

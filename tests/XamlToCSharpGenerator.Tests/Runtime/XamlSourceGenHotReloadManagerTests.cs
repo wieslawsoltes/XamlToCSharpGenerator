@@ -172,7 +172,7 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
-    public void UpdateApplication_Default_Template_Rematerialization_Handler_Reapplies_Descendant_Templates()
+    public void UpdateApplication_Default_Handlers_Do_Not_Force_Template_Rematerialization()
     {
         ResetManager();
         XamlSourceGenHotReloadManager.Enable();
@@ -185,8 +185,8 @@ public class XamlSourceGenHotReloadManagerTests
 
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(TemplateProbeLayoutable)]);
 
-        Assert.True(root.ApplyTemplateCount >= 1);
-        Assert.True(child.ApplyTemplateCount >= 1);
+        Assert.Equal(0, root.ApplyTemplateCount);
+        Assert.Equal(0, child.ApplyTemplateCount);
     }
 
     [Fact]
