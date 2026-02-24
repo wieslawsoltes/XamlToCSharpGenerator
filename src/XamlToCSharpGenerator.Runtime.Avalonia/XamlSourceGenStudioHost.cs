@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using System.Collections.Generic;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -16,6 +17,9 @@ public static class XamlSourceGenStudioHost
     private static StudioIndicatorWindow? IndicatorWindow;
     private static StudioDashboardWindow? DashboardWindow;
     private static XamlSourceGenStudioShellViewModel? ShellViewModel;
+    private static readonly Dictionary<Window, StudioOverlayAttachment> OverlayAttachments = new();
+    private static readonly HashSet<Window> TrackedWindows = new();
+    private static DispatcherTimer? OverlayRefreshTimer;
     private static bool Started;
 
     public static bool IsStarted
@@ -53,6 +57,9 @@ public static class XamlSourceGenStudioHost
             EnsureIndicatorWindow(snapshot);
         }
 
+        EnsureOverlayRefreshTimer();
+        AttachStudioOverlayToTopLevels();
+
         if (ActiveOptions.AutoOpenStudioWindowOnStartup && ActiveOptions.EnableExternalWindow)
         {
             OpenStudioWindow();
@@ -80,6 +87,10 @@ public static class XamlSourceGenStudioHost
 
         Dispatcher.UIThread.Post(static () =>
         {
+            DetachStudioOverlayFromTopLevels();
+            StopOverlayRefreshTimer();
+            DetachTrackedWindows();
+
             if (IndicatorWindow is not null)
             {
                 IndicatorWindow.Close();
@@ -125,7 +136,195 @@ public static class XamlSourceGenStudioHost
             return;
         }
 
+        AttachStudioOverlayToTopLevels();
         EnsureIndicatorWindow(snapshot);
+    }
+
+    private static void AttachStudioOverlayToTopLevels()
+    {
+        Dispatcher.UIThread.Post(static () =>
+        {
+            if (!Started || ShellViewModel is null)
+            {
+                return;
+            }
+
+            foreach (var window in EnumerateStudioEligibleWindows())
+            {
+                TrackWindow(window);
+                TryAttachOverlay(window);
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private static void TryAttachOverlay(Window window)
+    {
+        if (OverlayAttachments.ContainsKey(window))
+        {
+            return;
+        }
+
+        if (!IsStudioEligibleWindow(window))
+        {
+            return;
+        }
+
+        if (window.Content is null || window.Content is XamlSourceGenStudioOverlayView)
+        {
+            return;
+        }
+
+        var originalContent = window.Content;
+        window.Content = null;
+
+        var overlay = new XamlSourceGenStudioOverlayView(originalContent)
+        {
+            DataContext = ShellViewModel
+        };
+        window.Content = overlay;
+
+        OverlayAttachments[window] = new StudioOverlayAttachment(window, originalContent, overlay);
+    }
+
+    private static void DetachStudioOverlayFromTopLevels()
+    {
+        foreach (var entry in OverlayAttachments.Values)
+        {
+            if (entry.Window is null)
+            {
+                continue;
+            }
+
+            if (!ReferenceEquals(entry.Window.Content, entry.OverlayContent))
+            {
+                continue;
+            }
+
+            try
+            {
+                entry.Window.Content = null;
+                entry.Window.Content = entry.OriginalContent;
+            }
+            catch
+            {
+                // Best effort cleanup for windows that are closing/closed.
+            }
+        }
+
+        OverlayAttachments.Clear();
+    }
+
+    private static bool IsStudioEligibleWindow(Window window)
+    {
+        return !ReferenceEquals(window, IndicatorWindow) &&
+               !ReferenceEquals(window, DashboardWindow);
+    }
+
+    private static void EnsureOverlayRefreshTimer()
+    {
+        Dispatcher.UIThread.Post(static () =>
+        {
+            if (OverlayRefreshTimer is not null)
+            {
+                return;
+            }
+
+            OverlayRefreshTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, static (_, _) =>
+            {
+                AttachStudioOverlayToTopLevels();
+            });
+            OverlayRefreshTimer.Start();
+        }, DispatcherPriority.Background);
+    }
+
+    private static void StopOverlayRefreshTimer()
+    {
+        if (OverlayRefreshTimer is null)
+        {
+            return;
+        }
+
+        OverlayRefreshTimer.Stop();
+        OverlayRefreshTimer = null;
+    }
+
+    private static void TrackWindow(Window? window)
+    {
+        if (window is null || !TrackedWindows.Add(window))
+        {
+            return;
+        }
+
+        window.Closed += OnTrackedWindowClosed;
+    }
+
+    private static void UntrackWindow(Window? window)
+    {
+        if (window is null || !TrackedWindows.Remove(window))
+        {
+            return;
+        }
+
+        try
+        {
+            window.Closed -= OnTrackedWindowClosed;
+        }
+        catch
+        {
+            // Best effort unsubscribe only.
+        }
+    }
+
+    private static void DetachTrackedWindows()
+    {
+        foreach (var window in TrackedWindows)
+        {
+            try
+            {
+                window.Closed -= OnTrackedWindowClosed;
+            }
+            catch
+            {
+                // Best effort unsubscribe only.
+            }
+        }
+
+        TrackedWindows.Clear();
+    }
+
+    private static void OnTrackedWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is not Window window)
+        {
+            return;
+        }
+
+        OverlayAttachments.Remove(window);
+        UntrackWindow(window);
+    }
+
+    private static IEnumerable<Window> EnumerateStudioEligibleWindows()
+    {
+        if (Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktopLifetime)
+        {
+            yield break;
+        }
+
+        for (var index = 0; index < desktopLifetime.Windows.Count; index++)
+        {
+            var window = desktopLifetime.Windows[index];
+            if (window is null)
+            {
+                continue;
+            }
+
+            if (!IsStudioEligibleWindow(window))
+            {
+                continue;
+            }
+
+            yield return window;
+        }
     }
 
     private static void EnsureIndicatorWindow(SourceGenStudioStatusSnapshot snapshot)
@@ -242,4 +441,9 @@ public static class XamlSourceGenStudioHost
             };
         }
     }
+
+    private sealed record StudioOverlayAttachment(
+        Window Window,
+        object? OriginalContent,
+        XamlSourceGenStudioOverlayView OverlayContent);
 }
