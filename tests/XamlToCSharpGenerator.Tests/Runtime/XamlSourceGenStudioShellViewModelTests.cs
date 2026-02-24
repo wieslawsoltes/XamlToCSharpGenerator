@@ -87,7 +87,7 @@ public class XamlSourceGenStudioShellViewModelTests
             });
 
             Assert.False(handled);
-            Assert.Equal("0", viewModel.SelectedElementId);
+            Assert.False(string.IsNullOrWhiteSpace(viewModel.SelectedElementId));
         }
         finally
         {

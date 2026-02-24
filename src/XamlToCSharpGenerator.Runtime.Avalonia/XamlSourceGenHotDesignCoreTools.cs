@@ -76,7 +76,7 @@ public static class XamlSourceGenHotDesignCoreTools
         var elements = BuildElementTree(currentText, currentSelectedElementId, search, out var selectionExists);
         if (!selectionExists)
         {
-            currentSelectedElementId = elements.Count > 0 ? elements[0].Id : null;
+            currentSelectedElementId = SelectPreferredElementId(elements);
             lock (Sync)
             {
                 SelectedElementId = currentSelectedElementId;
@@ -1224,6 +1224,31 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         return current;
+    }
+
+    private static string? SelectPreferredElementId(
+        IReadOnlyList<SourceGenHotDesignElementNode> roots)
+    {
+        if (roots.Count == 0)
+        {
+            return null;
+        }
+
+        var root = roots[0];
+        var preferredChild = FindPreferredDescendant(root);
+        return preferredChild?.Id ?? root.Id;
+    }
+
+    private static SourceGenHotDesignElementNode? FindPreferredDescendant(
+        SourceGenHotDesignElementNode node)
+    {
+        if (node.Children.Count == 0)
+        {
+            return null;
+        }
+
+        var firstChild = node.Children[0];
+        return FindPreferredDescendant(firstChild) ?? firstChild;
     }
 
     private static List<SourceGenHotDesignElementNode> FlattenElementTree(

@@ -41,6 +41,7 @@ public class XamlSourceGenHotDesignCoreToolsTests
                     SourcePath = sourcePath
                 });
 
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0");
             var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
             Assert.Equal(buildUri, snapshot.ActiveBuildUri);
             Assert.NotEmpty(snapshot.Elements);
