@@ -4,6 +4,8 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public sealed class SourceGenHotReloadRegistrationOptions
 {
+    public string? BuildUri { get; init; }
+
     public string? SourcePath { get; init; }
 
     public Action<object>? BeforeReload { get; init; }

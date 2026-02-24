@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlToCSharpGenerator.Compiler;
 using XamlToCSharpGenerator.Generator;
 using XamlToCSharpGenerator.Tests.Infrastructure;
 
@@ -1244,6 +1245,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlSourceGenHotReloadStateTracker.Reconcile", generated);
         Assert.Contains("XamlSourceGenHotReloadManager.Register", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions", generated);
+        Assert.Contains("BuildUri = \"avares://", generated);
+        Assert.Contains("XamlSourceGenTypeUriRegistry.Register(typeof(", generated);
+        Assert.Contains("XamlSourceGenArtifactRefreshRegistry.Register(typeof(", generated);
         Assert.DoesNotContain("XamlSourceGenHotDesignManager.Register", generated);
         Assert.Contains("CaptureState = static __instance =>", generated);
         Assert.Contains("RestoreState = static (__instance, __state) =>", generated);
@@ -1541,6 +1545,184 @@ public class AvaloniaXamlSourceGeneratorTests
         var second = RunGeneratorWithResult(
             compilation,
             [("WatchView.axaml", invalidXaml)],
+            options);
+
+        Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(second.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0001" && d.Severity == DiagnosticSeverity.Warning);
+        Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0700" && d.Severity == DiagnosticSeverity.Warning);
+
+        var firstSources = first.RunResult.Results
+            .SelectMany(static result => result.GeneratedSources)
+            .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+        var secondSources = second.RunResult.Results
+            .SelectMany(static result => result.GeneratedSources)
+            .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+
+        Assert.Equal(firstSources.Count, secondSources.Count);
+        foreach (var pair in firstSources)
+        {
+            Assert.True(secondSources.TryGetValue(pair.Key, out var secondSource));
+            Assert.Equal(pair.Value, secondSource);
+        }
+    }
+
+    [Fact]
+    public void HotReload_Emits_Assembly_MetadataUpdateHandler_Hook_For_SourceGen_Avalonia_Assemblies()
+    {
+        const string code = "namespace Demo; public partial class HookedView {}";
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.HookedView">
+                <Button Content="Hook" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var result = RunGeneratorWithResult(
+            compilation,
+            [("HookedView.axaml", xaml)],
+            [
+                new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+            ]);
+
+        var generatedSources = result.RunResult.Results
+            .SelectMany(static output => output.GeneratedSources)
+            .Select(static source => source.SourceText.ToString())
+            .ToArray();
+
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains(
+                "MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HotReload_WatchMode_Uses_Persistent_Last_Good_Source_After_InMemory_Cache_Reset()
+    {
+        const string code = "namespace Demo; public partial class PersistedWatchView {}";
+        const string validXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.PersistedWatchView">
+                <Button Content="Valid" />
+            </UserControl>
+            """;
+
+        const string invalidXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.PersistedWatchView">
+                <Button Content="Broken"
+            </UserControl>
+            """;
+
+        var cacheDirectory = Path.Combine(Path.GetTempPath(), "AXSG-HotReloadCache-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(cacheDirectory);
+
+        try
+        {
+            XamlSourceGeneratorCompilerHost.ClearHotReloadFallbackCacheForTesting();
+
+            var options = new[]
+            {
+                new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.IntermediateOutputPath", cacheDirectory),
+                new KeyValuePair<string, string>("build_property.MSBuildProjectDirectory", cacheDirectory),
+            };
+
+            var compilation = CreateCompilation(code);
+            var first = RunGeneratorWithResult(
+                compilation,
+                [("PersistedWatchView.axaml", validXaml)],
+                options);
+
+            Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            Assert.True(Directory.EnumerateFiles(cacheDirectory, "*.cache", SearchOption.AllDirectories).Any());
+
+            XamlSourceGeneratorCompilerHost.ClearHotReloadFallbackCacheForTesting();
+
+            var second = RunGeneratorWithResult(
+                compilation,
+                [("PersistedWatchView.axaml", invalidXaml)],
+                options);
+
+            Assert.Empty(second.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0001" && d.Severity == DiagnosticSeverity.Warning);
+            Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0700" && d.Severity == DiagnosticSeverity.Warning);
+
+            var firstSources = first.RunResult.Results
+                .SelectMany(static result => result.GeneratedSources)
+                .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+            var secondSources = second.RunResult.Results
+                .SelectMany(static result => result.GeneratedSources)
+                .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+
+            Assert.Equal(firstSources.Count, secondSources.Count);
+            foreach (var pair in firstSources)
+            {
+                Assert.True(secondSources.TryGetValue(pair.Key, out var secondSource));
+                Assert.Equal(pair.Value, secondSource);
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(cacheDirectory))
+                {
+                    Directory.Delete(cacheDirectory, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort test cleanup only.
+            }
+
+            XamlSourceGeneratorCompilerHost.ClearHotReloadFallbackCacheForTesting();
+        }
+    }
+
+    [Fact]
+    public void HotReload_WatchMode_Uses_Last_Good_Source_When_TargetPath_Shape_Changes()
+    {
+        const string code = "namespace Demo; public partial class TargetPathShapeView {}";
+        const string validXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.TargetPathShapeView">
+                <Button Content="Valid" />
+            </UserControl>
+            """;
+
+        const string invalidXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.TargetPathShapeView">
+                <Button Content="Broken"
+            </UserControl>
+            """;
+
+        var options = new[]
+        {
+            new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "true"),
+            new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+            new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", "true"),
+        };
+
+        var compilation = CreateCompilation(code);
+        var first = RunGeneratorWithResult(
+            compilation,
+            [("Pages/TargetPathShapeView.axaml", validXaml)],
+            options);
+        var second = RunGeneratorWithResult(
+            compilation,
+            [("./Pages/TargetPathShapeView.axaml", invalidXaml)],
             options);
 
         Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
@@ -5464,7 +5646,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(
             diagnostics,
             diagnostic => diagnostic.GetMessage().Contains("hintName", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(compilation.SyntaxTrees.Count() + 1, updatedCompilation.SyntaxTrees.Count());
+        Assert.Equal(compilation.SyntaxTrees.Count() + 2, updatedCompilation.SyntaxTrees.Count());
     }
 
     [Fact]
@@ -5499,7 +5681,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(
             diagnostics,
             diagnostic => diagnostic.GetMessage().Contains("hintName", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(compilation.SyntaxTrees.Count() + 1, updatedCompilation.SyntaxTrees.Count());
+        Assert.Equal(compilation.SyntaxTrees.Count() + 2, updatedCompilation.SyntaxTrees.Count());
     }
 
     [Fact]
@@ -5517,7 +5699,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(compilation.SyntaxTrees.Count(), updatedCompilation.SyntaxTrees.Count());
+        Assert.Equal(compilation.SyntaxTrees.Count() + 1, updatedCompilation.SyntaxTrees.Count());
     }
 
     [Fact]
@@ -11342,6 +11524,72 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("__TryAddToCollection(__root.Styles, __n0);", generated);
         Assert.Contains("new global::Avalonia.Themes.Fluent.FluentTheme(", generated);
         Assert.Contains("DensityStyle", generated);
+    }
+
+    [Fact]
+    public void Emits_Generic_Collection_Clear_Paths_For_Style_And_Resource_HotReload_Reconciliation()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class Application
+                {
+                    public global::Avalonia.Styling.Styles Styles { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public interface IStyle { }
+                public class SetterBase { }
+                public class Styles : global::System.Collections.Generic.ICollection<IStyle>, IStyle
+                {
+                    private readonly global::System.Collections.Generic.List<IStyle> _items = new();
+                    public int Count => _items.Count;
+                    public bool IsReadOnly => false;
+                    public void Add(IStyle item) => _items.Add(item);
+                    public void Clear() => _items.Clear();
+                    public bool Contains(IStyle item) => _items.Contains(item);
+                    public void CopyTo(IStyle[] array, int arrayIndex) => _items.CopyTo(array, arrayIndex);
+                    public bool Remove(IStyle item) => _items.Remove(item);
+                    public global::System.Collections.Generic.IEnumerator<IStyle> GetEnumerator() => _items.GetEnumerator();
+                    global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => _items.GetEnumerator();
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface IResourceProvider { }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+            }
+
+            namespace Demo
+            {
+                public partial class App : global::Avalonia.Application { }
+            }
+            """;
+
+        const string xaml = """
+            <Application xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.App" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            [("App.axaml", xaml)]);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.IStyle> styleCollection:", generated);
+        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Controls.IResourceProvider> resourceProviderCollection:", generated);
+        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.SetterBase> setterCollection:", generated);
     }
 
     [Fact]
