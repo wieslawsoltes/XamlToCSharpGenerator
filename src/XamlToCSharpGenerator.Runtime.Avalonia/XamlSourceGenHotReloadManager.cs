@@ -1514,14 +1514,9 @@ public static class XamlSourceGenHotReloadManager
 
     private static class VisualTreeRematerializationUtilities
     {
-        private sealed class ThemeOverrideMarker
-        {
-        }
-
         private static readonly object ThemeRefreshSync = new();
         private static readonly HashSet<Type> PendingAffectedControlThemeTargetTypes = new();
         private static int ThemeRefreshScheduled;
-        private static readonly ConditionalWeakTable<global::Avalonia.Controls.Control, ThemeOverrideMarker> ManagedThemeOverrides = new();
 
         public static void RematerializeApplicationVisualRoots()
         {
@@ -1727,45 +1722,26 @@ public static class XamlSourceGenHotReloadManager
                 }
 
                 var styleKeyType = control.StyleKey;
-                var hasManagedOverride = ManagedThemeOverrides.TryGetValue(control, out _);
                 var affectsControl = IsAffectedControl(styleKeyType, affectedTargetTypes);
 
-                if (!affectsControl && !hasManagedOverride)
+                if (!affectsControl)
                 {
                     return;
                 }
 
-                // Preserve user-authored explicit theme overrides.
-                if (control.Theme is not null && !hasManagedOverride)
+                if (control is global::Avalonia.LogicalTree.ILogical logicalControl)
                 {
-                    return;
+                    logicalControl.NotifyResourcesChanged(global::Avalonia.Controls.ResourcesChangedEventArgs.Empty);
                 }
 
-                if (!global::Avalonia.Controls.ResourceNodeExtensions.TryFindResource(
-                        control,
-                        styleKeyType,
-                        out var resource) ||
-                    resource is not global::Avalonia.Styling.ControlTheme resolvedTheme)
+                if (control is global::Avalonia.Layout.Layoutable layoutable)
                 {
-                    if (hasManagedOverride)
-                    {
-                        control.Theme = null;
-                        ManagedThemeOverrides.Remove(control);
-                        Trace("Cleared managed control theme override for '" + control.GetType().FullName + "'.");
-                    }
-
-                    return;
+                    layoutable.InvalidateMeasure();
+                    layoutable.InvalidateArrange();
                 }
 
-                if (ReferenceEquals(control.Theme, resolvedTheme))
-                {
-                    return;
-                }
-
-                control.Theme = resolvedTheme;
-                ManagedThemeOverrides.Remove(control);
-                ManagedThemeOverrides.Add(control, new ThemeOverrideMarker());
-                Trace("Refreshed control theme for '" + control.GetType().FullName + "' using target '" + styleKeyType.FullName + "'.");
+                control.InvalidateVisual();
+                Trace("Invalidated implicit control theme resources for '" + control.GetType().FullName + "' using target '" + styleKeyType.FullName + "'.");
             }
             catch (Exception ex)
             {
