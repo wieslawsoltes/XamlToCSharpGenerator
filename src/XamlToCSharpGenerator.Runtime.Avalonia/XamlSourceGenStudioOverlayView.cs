@@ -14,12 +14,13 @@ namespace XamlToCSharpGenerator.Runtime;
 internal sealed class XamlSourceGenStudioOverlayView : UserControl
 {
     private Border? _liveSurfacePanel;
-    private Border? _liveInteractionLayer;
     private TextBlock? _liveModeText;
     private XamlSourceGenStudioShellViewModel? _viewModel;
+    private readonly object? _liveSurfaceDataContext;
 
-    public XamlSourceGenStudioOverlayView(object? liveAppContent)
+    public XamlSourceGenStudioOverlayView(object? liveAppContent, object? liveSurfaceDataContext)
     {
+        _liveSurfaceDataContext = liveSurfaceDataContext;
         BuildContent(liveAppContent);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += OnDetachedFromVisualTree;
@@ -277,8 +278,17 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Content = liveAppContent
         };
+        if (_liveSurfaceDataContext is not null)
+        {
+            presenter.DataContext = _liveSurfaceDataContext;
+        }
 
         var liveLayer = new Grid();
+        liveLayer.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnLiveSurfacePointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
         liveLayer.Children.Add(presenter);
 
         _liveModeText = new TextBlock
@@ -302,16 +312,13 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Child = _liveModeText
         };
 
-        _liveInteractionLayer = new Border
+        var overlayLayer = new Border
         {
             Background = Brushes.Transparent,
-            Child = modeBanner
+            Child = modeBanner,
+            IsHitTestVisible = false
         };
-        _liveInteractionLayer.AddHandler(
-            InputElement.PointerPressedEvent,
-            OnLiveSurfacePointerPressed,
-            RoutingStrategies.Tunnel);
-        liveLayer.Children.Add(_liveInteractionLayer);
+        liveLayer.Children.Add(overlayLayer);
 
         Grid.SetRow(liveLayer, 1);
         grid.Children.Add(liveLayer);
@@ -593,14 +600,13 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void UpdateLiveSurfaceModeVisuals()
     {
-        if (_liveModeText is null || _liveInteractionLayer is null || _liveSurfacePanel is null)
+        if (_liveModeText is null || _liveSurfacePanel is null)
         {
             return;
         }
 
         var interactive = _viewModel?.IsInteractiveMode ?? true;
         _liveModeText.Text = _viewModel?.LiveSurfaceModeText ?? "Interactive mode: the app behaves normally.";
-        _liveInteractionLayer.IsHitTestVisible = !interactive;
         _liveSurfacePanel.BorderBrush = interactive
             ? Brushes.DimGray
             : new SolidColorBrush(Color.FromArgb(255, 86, 139, 255));

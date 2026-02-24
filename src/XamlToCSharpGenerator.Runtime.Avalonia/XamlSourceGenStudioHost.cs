@@ -176,9 +176,20 @@ public static class XamlSourceGenStudioHost
         }
 
         var originalContent = window.Content;
+        object? liveDataContext = null;
+        if (originalContent is StyledElement originalStyledElement)
+        {
+            liveDataContext = originalStyledElement.DataContext;
+        }
+
+        if (liveDataContext is null)
+        {
+            liveDataContext = window.DataContext;
+        }
+
         window.Content = null;
 
-        var overlay = new XamlSourceGenStudioOverlayView(originalContent)
+        var overlay = new XamlSourceGenStudioOverlayView(originalContent, liveDataContext)
         {
             DataContext = ShellViewModel
         };
