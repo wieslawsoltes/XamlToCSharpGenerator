@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection.Metadata;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -20,10 +21,12 @@ public static class XamlSourceGenHotReloadManager
     private static readonly Dictionary<Type, List<WeakReference<object>>> Instances = new();
     private static readonly Dictionary<Type, ReloadRegistration> Registrations = new();
     private static readonly Dictionary<Type, SourcePathWatchState> IdeSourcePathWatchers = new();
+    private static readonly Dictionary<Type, string> BuildUrisByType = new();
     private static readonly Dictionary<Type, Type> ReplacementTypeMap = new();
     private static readonly List<RegisteredHandler> Handlers = new();
     private static readonly HashSet<string> HandlerKeys = new(StringComparer.Ordinal);
     private static readonly HashSet<Type> PendingReloadTypes = new();
+    private static readonly IXamlSourceGenUriMapper UriMapper = XamlSourceGenUriMapper.Default;
 
     private static Timer? IdePollingTimer;
     private static int IdePollingIntervalMs = 1000;
@@ -117,6 +120,11 @@ public static class XamlSourceGenHotReloadManager
                     Trace("Registered source path watcher for type '" + type.FullName + "': " + normalizedSourcePath);
                 }
             }
+
+            if (TryNormalizeBuildUri(options?.BuildUri, out var buildUri))
+            {
+                BuildUrisByType[type] = buildUri;
+            }
         }
     }
 
@@ -161,6 +169,7 @@ public static class XamlSourceGenHotReloadManager
             Instances.Clear();
             Registrations.Clear();
             IdeSourcePathWatchers.Clear();
+            BuildUrisByType.Clear();
             ReplacementTypeMap.Clear();
             PendingReloadTypes.Clear();
             PendingReloadAllTypes = false;
@@ -273,9 +282,16 @@ public static class XamlSourceGenHotReloadManager
             var currentTrigger = trigger;
             while (true)
             {
+                var refreshedTypes = RefreshArtifactsForUpdatedTypes(currentTypes);
                 var operations = CollectReloadOperations(currentTypes);
                 var context = BuildUpdateContext(currentTrigger, currentTypes, operations);
                 Trace("UpdateApplication invoked. Trigger: " + currentTrigger + ". Candidate operations: " + operations.Count + ".");
+                Trace("UpdateApplication requested types: " + FormatTypeList(currentTypes) + ".");
+                if (refreshedTypes.Count > 0)
+                {
+                    Trace("UpdateApplication refreshed artifact registrations for: " + FormatTypeList(refreshedTypes.ToArray()) + ".");
+                }
+                Trace("UpdateApplication resolved targets: " + FormatOperationTargets(operations) + ".");
 
                 ExecuteReloadPipeline(context, operations);
                 HotReloaded?.Invoke(currentTypes);
@@ -301,6 +317,40 @@ public static class XamlSourceGenHotReloadManager
                 ReloadInProgress = false;
             }
         }
+    }
+
+    private static List<Type> RefreshArtifactsForUpdatedTypes(Type[]? types)
+    {
+        var refreshed = new List<Type>();
+        if (types is null || types.Length == 0)
+        {
+            return refreshed;
+        }
+
+        var seen = new HashSet<Type>();
+        for (var index = 0; index < types.Length; index++)
+        {
+            var type = types[index];
+            if (type is null)
+            {
+                continue;
+            }
+
+            var normalizedType = NormalizeType(type);
+            if (!seen.Add(normalizedType))
+            {
+                continue;
+            }
+
+            if (!XamlSourceGenArtifactRefreshRegistry.TryRefresh(normalizedType))
+            {
+                continue;
+            }
+
+            refreshed.Add(normalizedType);
+        }
+
+        return refreshed;
     }
 
     private static void StartIdePollingTimerLocked()
@@ -397,6 +447,12 @@ public static class XamlSourceGenHotReloadManager
         }
     }
 
+    private static bool TryNormalizeBuildUri(string? buildUri, out string normalizedBuildUri)
+    {
+        normalizedBuildUri = UriMapper.Normalize(buildUri);
+        return !string.IsNullOrWhiteSpace(normalizedBuildUri);
+    }
+
     private static Type[]? NormalizeUpdatedTypes(Type[]? types)
     {
         if (types is null || types.Length == 0)
@@ -474,28 +530,116 @@ public static class XamlSourceGenHotReloadManager
                 return operations;
             }
 
-            foreach (var requestedType in types)
+            var reloadTypes = ResolveRequestedReloadTypesLocked(types);
+            foreach (var reloadType in reloadTypes)
             {
-                var normalizedType = NormalizeType(requestedType);
-                if (!TryResolveTrackedTypeLocked(normalizedType, out var trackedType))
+                if (!Instances.TryGetValue(reloadType, out var references))
                 {
                     continue;
                 }
 
-                if (!Instances.TryGetValue(trackedType, out var references))
+                if (!Registrations.TryGetValue(reloadType, out var registration))
                 {
                     continue;
                 }
 
-                if (!Registrations.TryGetValue(trackedType, out var registration))
-                {
-                    continue;
-                }
-
-                AddOperationsForType(trackedType, references, registration, operations);
+                AddOperationsForType(reloadType, references, registration, operations);
             }
 
             return operations;
+        }
+    }
+
+    private static IReadOnlyCollection<Type> ResolveRequestedReloadTypesLocked(Type[] types)
+    {
+        var reloadTypes = new HashSet<Type>();
+        var affectedBuildUris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var requestedType in types)
+        {
+            var normalizedType = NormalizeType(requestedType);
+            if (TryResolveTrackedTypeLocked(normalizedType, out var trackedType))
+            {
+                reloadTypes.Add(trackedType);
+            }
+
+            if (TryGetBuildUriForTypeLocked(normalizedType, out var buildUri))
+            {
+                affectedBuildUris.Add(buildUri);
+            }
+        }
+
+        if (affectedBuildUris.Count == 0)
+        {
+            return reloadTypes;
+        }
+
+        ExpandIncomingBuildUrisLocked(affectedBuildUris);
+        foreach (var pair in BuildUrisByType)
+        {
+            if (!affectedBuildUris.Contains(pair.Value))
+            {
+                continue;
+            }
+
+            reloadTypes.Add(pair.Key);
+        }
+
+        return reloadTypes;
+    }
+
+    private static bool TryGetBuildUriForTypeLocked(Type normalizedType, out string buildUri)
+    {
+        if (BuildUrisByType.TryGetValue(normalizedType, out buildUri!))
+        {
+            return true;
+        }
+
+        if (ReplacementTypeMap.TryGetValue(normalizedType, out var mappedType) &&
+            BuildUrisByType.TryGetValue(mappedType, out buildUri!))
+        {
+            return true;
+        }
+
+        if (XamlSourceGenTypeUriRegistry.TryGetUri(normalizedType, out buildUri!))
+        {
+            buildUri = UriMapper.Normalize(buildUri);
+            return !string.IsNullOrWhiteSpace(buildUri);
+        }
+
+        if (ReplacementTypeMap.TryGetValue(normalizedType, out mappedType) &&
+            XamlSourceGenTypeUriRegistry.TryGetUri(mappedType, out buildUri!))
+        {
+            buildUri = UriMapper.Normalize(buildUri);
+            return !string.IsNullOrWhiteSpace(buildUri);
+        }
+
+        buildUri = string.Empty;
+        return false;
+    }
+
+    private static void ExpandIncomingBuildUrisLocked(HashSet<string> affectedBuildUris)
+    {
+        var queue = new Queue<string>();
+        foreach (var buildUri in affectedBuildUris)
+        {
+            queue.Enqueue(buildUri);
+        }
+
+        while (queue.Count > 0)
+        {
+            var currentBuildUri = queue.Dequeue();
+            foreach (var incoming in XamlIncludeGraphRegistry.GetIncoming(currentBuildUri))
+            {
+                var sourceUri = UriMapper.Normalize(incoming.SourceUri);
+                if (string.IsNullOrWhiteSpace(sourceUri) ||
+                    !affectedBuildUris.Add(sourceUri))
+                {
+                    continue;
+                }
+
+                queue.Enqueue(sourceUri);
+            }
         }
     }
 
@@ -604,13 +748,31 @@ public static class XamlSourceGenHotReloadManager
     {
         foreach (var operation in operations)
         {
-            if (operation.Instance is global::Avalonia.AvaloniaObject)
+            if (RequiresUiDispatchForInstance(operation.Instance))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    internal static bool RequiresUiDispatchForInstance(object? instance)
+    {
+        if (instance is null)
+        {
+            return false;
+        }
+
+        if (instance is global::Avalonia.AvaloniaObject)
+        {
+            return true;
+        }
+
+        // Style/resource hosts (for example FluentTheme) also mutate runtime visual behavior
+        // and must be reloaded on the UI thread.
+        return instance is global::Avalonia.Styling.IStyle ||
+               instance is global::Avalonia.Controls.IResourceProvider;
     }
 
     private static IReadOnlyList<RegisteredHandler> SnapshotHandlers()
@@ -676,6 +838,7 @@ public static class XamlSourceGenHotReloadManager
         ReloadOperation operation,
         IReadOnlyList<RegisteredHandler> handlers)
     {
+        Trace("Applying reload operation. Target type: " + operation.Type.FullName + ", instance type: " + operation.Instance.GetType().FullName + ".");
         var applicableHandlers = ResolveApplicableHandlers(operation, handlers);
         var capturedState = TryCaptureRegistrationState(operation);
         var handlerStates = CaptureHandlerStates(operation, applicableHandlers);
@@ -696,10 +859,12 @@ public static class XamlSourceGenHotReloadManager
 
             operation.Registration.BeforeReload?.Invoke(operation.Instance);
             operation.Registration.ReloadAction(operation.Instance);
+            Trace("Reload operation applied successfully for type '" + operation.Type.FullName + "'.");
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"XAML source generator hot reload failed for '{operation.Type.FullName}': {ex}");
+            Trace("Reload operation failed for type '" + operation.Type.FullName + "': " + ex.Message);
             HotReloadFailed?.Invoke(operation.Type, ex);
             XamlSourceGenHotReloadEventBus.Instance.PublishHotReloadFailed(operation.Type, ex);
             if (IsRudeEditException(ex))
@@ -878,6 +1043,7 @@ public static class XamlSourceGenHotReloadManager
     {
         AddHandlerLocked(new StyledElementDataContextHotReloadHandler(), typeof(global::Avalonia.StyledElement), "default");
         AddHandlerLocked(new VisualTemplateRematerializationHotReloadHandler(), typeof(global::Avalonia.Visual), "default");
+        AddHandlerLocked(new StyleHostVisualRefreshHotReloadHandler(), typeof(global::Avalonia.Styling.IStyle), "default");
     }
 
     private static void AddHandlerLocked(
@@ -1071,6 +1237,261 @@ public static class XamlSourceGenHotReloadManager
                 return;
             }
 
+            VisualTreeRematerializationUtilities.RematerializeFromRootVisual(rootVisual);
+        }
+    }
+
+    private sealed class StyleHostVisualRefreshHotReloadHandler : ISourceGenHotReloadHandler
+    {
+        private IReadOnlyList<Type>? _requestedTypes;
+
+        public int Priority => -210;
+
+        public bool CanHandle(Type reloadType, object instance)
+        {
+            return instance is global::Avalonia.Styling.IStyle ||
+                   instance is global::Avalonia.Controls.IResourceProvider;
+        }
+
+        public void BeforeVisualTreeUpdate(SourceGenHotReloadUpdateContext context)
+        {
+            _requestedTypes = context.RequestedTypes;
+        }
+
+        public void ReloadCompleted(SourceGenHotReloadUpdateContext context)
+        {
+            _requestedTypes = null;
+        }
+
+        public void AfterElementReload(Type reloadType, object instance, object? state)
+        {
+            TryNotifyHostedResourcesChanged(instance);
+            TryNotifyApplicationHostedResourcesChanged();
+            TryReinsertStyleIntoApplicationHost(instance);
+            TryReattachApplicationStyles();
+            var affectedThemeTargetTypes = ResolveAffectedControlThemeTargetTypes(_requestedTypes);
+            VisualTreeRematerializationUtilities.RefreshAffectedImplicitControlThemes(affectedThemeTargetTypes);
+            VisualTreeRematerializationUtilities.RefreshApplicationVisualTreeAfterThemeUpdate();
+        }
+
+        private static IReadOnlyCollection<Type> ResolveAffectedControlThemeTargetTypes(IReadOnlyList<Type>? requestedTypes)
+        {
+            if (requestedTypes is null || requestedTypes.Count == 0)
+            {
+                return Array.Empty<Type>();
+            }
+
+            var affectedUris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < requestedTypes.Count; index++)
+            {
+                var requestedType = requestedTypes[index];
+                if (requestedType is null)
+                {
+                    continue;
+                }
+
+                if (XamlSourceGenTypeUriRegistry.TryGetUri(requestedType, out var uri) &&
+                    !string.IsNullOrWhiteSpace(uri))
+                {
+                    affectedUris.Add(uri);
+                }
+            }
+
+            if (affectedUris.Count == 0)
+            {
+                return Array.Empty<Type>();
+            }
+
+            var targets = new HashSet<Type>();
+            foreach (var uri in affectedUris)
+            {
+                var descriptors = XamlControlThemeRegistry.GetAll(uri);
+                foreach (var descriptor in descriptors)
+                {
+                    if (string.IsNullOrWhiteSpace(descriptor.TargetTypeName))
+                    {
+                        continue;
+                    }
+
+                    var normalizedTypeName = descriptor.TargetTypeName.Trim();
+                    if (normalizedTypeName.StartsWith("global::", StringComparison.Ordinal))
+                    {
+                        normalizedTypeName = normalizedTypeName["global::".Length..];
+                    }
+
+                    if (SourceGenKnownTypeRegistry.TryResolve(xmlNamespace: null, normalizedTypeName, out var targetType) &&
+                        targetType is not null)
+                    {
+                        targets.Add(targetType);
+                    }
+                }
+            }
+
+            return targets.Count == 0
+                ? Array.Empty<Type>()
+                : targets.ToArray();
+        }
+
+        private static void TryNotifyHostedResourcesChanged(object instance)
+        {
+            try
+            {
+                switch (instance)
+                {
+                    case global::Avalonia.Styling.StyleBase styleBase when styleBase.Owner is global::Avalonia.Controls.IResourceHost styleOwner:
+                        styleOwner.NotifyHostedResourcesChanged(global::Avalonia.Controls.ResourcesChangedEventArgs.Empty);
+                        Trace("Notified hosted resource change for style owner '" + styleOwner.GetType().FullName + "'.");
+                        break;
+                    case global::Avalonia.Styling.Styles styles when styles.Owner is global::Avalonia.Controls.IResourceHost stylesOwner:
+                        stylesOwner.NotifyHostedResourcesChanged(global::Avalonia.Controls.ResourcesChangedEventArgs.Empty);
+                        Trace("Notified hosted resource change for styles owner '" + stylesOwner.GetType().FullName + "'.");
+                        break;
+                }
+            }
+            catch
+            {
+                // Best effort hosted-resource invalidation only.
+            }
+        }
+
+        private static void TryNotifyApplicationHostedResourcesChanged()
+        {
+            try
+            {
+                if (global::Avalonia.Application.Current is global::Avalonia.Controls.IResourceHost resourceHost)
+                {
+                    resourceHost.NotifyHostedResourcesChanged(global::Avalonia.Controls.ResourcesChangedEventArgs.Empty);
+                    Trace("Notified hosted resource change for application resource host.");
+                }
+            }
+            catch
+            {
+                // Best effort application resource invalidation only.
+            }
+        }
+
+        private static void TryReinsertStyleIntoApplicationHost(object instance)
+        {
+            if (instance is not global::Avalonia.Styling.IStyle style)
+            {
+                return;
+            }
+
+            try
+            {
+                if (global::Avalonia.Application.Current is not global::Avalonia.Styling.IStyleHost styleHost ||
+                    !styleHost.IsStylesInitialized)
+                {
+                    return;
+                }
+
+                var styles = styleHost.Styles;
+                for (var index = 0; index < styles.Count; index++)
+                {
+                    if (!ReferenceEquals(styles[index], style))
+                    {
+                        continue;
+                    }
+
+                    styles.RemoveAt(index);
+                    styles.Insert(index, style);
+                    Trace("Reinserted style instance into application style host at index " + index + ".");
+                    return;
+                }
+            }
+            catch
+            {
+                // Best effort style-host reinsert only.
+            }
+        }
+
+        private static void TryReattachApplicationStyles()
+        {
+            try
+            {
+                if (global::Avalonia.Application.Current is not global::Avalonia.Styling.IStyleHost styleHost ||
+                    !styleHost.IsStylesInitialized)
+                {
+                    return;
+                }
+
+                var styles = styleHost.Styles;
+                if (styles.Count == 0)
+                {
+                    return;
+                }
+
+                var snapshot = new List<global::Avalonia.Styling.IStyle>(styles.Count);
+                for (var index = 0; index < styles.Count; index++)
+                {
+                    snapshot.Add(styles[index]);
+                }
+
+                styles.Clear();
+                for (var index = 0; index < snapshot.Count; index++)
+                {
+                    styles.Add(snapshot[index]);
+                }
+
+                Trace("Reattached application styles collection after style/resource reload. Count: " + snapshot.Count + ".");
+            }
+            catch
+            {
+                // Best effort style-host reattachment only.
+            }
+        }
+    }
+
+    private static class VisualTreeRematerializationUtilities
+    {
+        private sealed class ThemeOverrideMarker
+        {
+        }
+
+        private static readonly ConditionalWeakTable<global::Avalonia.Controls.Control, ThemeOverrideMarker> ManagedThemeOverrides = new();
+
+        public static void RematerializeApplicationVisualRoots()
+        {
+            var roots = CaptureApplicationRootVisuals();
+            for (var index = 0; index < roots.Count; index++)
+            {
+                RematerializeFromRootVisual(roots[index]);
+            }
+        }
+
+        public static void RefreshAffectedImplicitControlThemes(IReadOnlyCollection<Type> affectedTargetTypes)
+        {
+            if (affectedTargetTypes.Count == 0)
+            {
+                return;
+            }
+
+            var roots = CaptureApplicationRootVisuals();
+            for (var rootIndex = 0; rootIndex < roots.Count; rootIndex++)
+            {
+                var visuals = CaptureVisualSnapshot(roots[rootIndex]);
+                for (var visualIndex = 0; visualIndex < visuals.Count; visualIndex++)
+                {
+                    if (visuals[visualIndex] is global::Avalonia.Controls.Control control)
+                    {
+                        TryRefreshImplicitControlTheme(control, affectedTargetTypes);
+                    }
+                }
+            }
+        }
+
+        public static void RefreshApplicationVisualTreeAfterThemeUpdate()
+        {
+            var roots = CaptureApplicationRootVisuals();
+            for (var rootIndex = 0; rootIndex < roots.Count; rootIndex++)
+            {
+                var root = roots[rootIndex];
+                TryInvalidateRootVisual(root);
+            }
+        }
+
+        public static void RematerializeFromRootVisual(global::Avalonia.Visual rootVisual)
+        {
             // Two passes ensure template-created descendants are also materialized.
             for (var pass = 0; pass < 2; pass++)
             {
@@ -1091,6 +1512,145 @@ public static class XamlSourceGenHotReloadManager
                     }
                 }
             }
+        }
+
+        private static IReadOnlyList<global::Avalonia.Visual> CaptureApplicationRootVisuals()
+        {
+            var roots = new List<global::Avalonia.Visual>(4);
+
+            var application = global::Avalonia.Application.Current;
+            if (application is null)
+            {
+                return roots;
+            }
+
+            if (application.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktopLifetime)
+            {
+                if (desktopLifetime.MainWindow is global::Avalonia.Visual mainWindowVisual)
+                {
+                    roots.Add(mainWindowVisual);
+                }
+
+                try
+                {
+                    var windows = desktopLifetime.Windows;
+                    for (var index = 0; index < windows.Count; index++)
+                    {
+                        if (windows[index] is not global::Avalonia.Visual windowVisual ||
+                            ContainsVisualReference(roots, windowVisual))
+                        {
+                            continue;
+                        }
+
+                        roots.Add(windowVisual);
+                    }
+                }
+                catch
+                {
+                    // Best effort window enumeration only.
+                }
+            }
+
+            if (application.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime singleViewLifetime &&
+                singleViewLifetime.MainView is global::Avalonia.Visual singleViewVisual &&
+                !ContainsVisualReference(roots, singleViewVisual))
+            {
+                roots.Add(singleViewVisual);
+            }
+
+            return roots;
+        }
+
+        private static bool ContainsVisualReference(List<global::Avalonia.Visual> roots, global::Avalonia.Visual candidate)
+        {
+            for (var index = 0; index < roots.Count; index++)
+            {
+                if (ReferenceEquals(roots[index], candidate))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void TryRefreshImplicitControlTheme(
+            global::Avalonia.Controls.Control control,
+            IReadOnlyCollection<Type> affectedTargetTypes)
+        {
+            try
+            {
+                if (control.TemplatedParent is not null)
+                {
+                    return;
+                }
+
+                if (control is global::Avalonia.LogicalTree.ILogical logical &&
+                    !logical.IsAttachedToLogicalTree)
+                {
+                    return;
+                }
+
+                var styleKeyType = control.StyleKey;
+                var hasManagedOverride = ManagedThemeOverrides.TryGetValue(control, out _);
+                var affectsControl = IsAffectedControl(styleKeyType, affectedTargetTypes);
+
+                if (!affectsControl && !hasManagedOverride)
+                {
+                    return;
+                }
+
+                // Preserve user-authored explicit theme overrides.
+                if (control.Theme is not null && !hasManagedOverride)
+                {
+                    return;
+                }
+
+                if (!global::Avalonia.Controls.ResourceNodeExtensions.TryFindResource(
+                        control,
+                        styleKeyType,
+                        out var resource) ||
+                    resource is not global::Avalonia.Styling.ControlTheme resolvedTheme)
+                {
+                    if (hasManagedOverride)
+                    {
+                        control.Theme = null;
+                        ManagedThemeOverrides.Remove(control);
+                        Trace("Cleared managed control theme override for '" + control.GetType().FullName + "'.");
+                    }
+
+                    return;
+                }
+
+                if (ReferenceEquals(control.Theme, resolvedTheme))
+                {
+                    return;
+                }
+
+                control.Theme = resolvedTheme;
+                ManagedThemeOverrides.Remove(control);
+                ManagedThemeOverrides.Add(control, new ThemeOverrideMarker());
+                Trace("Refreshed control theme for '" + control.GetType().FullName + "' using target '" + styleKeyType.FullName + "'.");
+            }
+            catch (Exception ex)
+            {
+                Trace("Implicit control theme refresh failed for '" + control.GetType().FullName + "': " + ex.Message);
+            }
+        }
+
+        private static bool IsAffectedControl(Type styleKeyType, IReadOnlyCollection<Type> affectedTargetTypes)
+        {
+            foreach (var targetType in affectedTargetTypes)
+            {
+                if (targetType == styleKeyType ||
+                    targetType.IsAssignableFrom(styleKeyType) ||
+                    styleKeyType.IsAssignableFrom(targetType))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static IReadOnlyList<global::Avalonia.Visual> CaptureVisualSnapshot(global::Avalonia.Visual rootVisual)
@@ -1132,6 +1692,24 @@ public static class XamlSourceGenHotReloadManager
             catch
             {
                 // Best effort template materialization only.
+            }
+        }
+
+        private static void TryInvalidateRootVisual(global::Avalonia.Visual rootVisual)
+        {
+            try
+            {
+                if (rootVisual is global::Avalonia.Layout.Layoutable layoutable)
+                {
+                    layoutable.InvalidateMeasure();
+                    layoutable.InvalidateArrange();
+                }
+
+                rootVisual.InvalidateVisual();
+            }
+            catch
+            {
+                // Best effort root invalidation only.
             }
         }
     }
@@ -1197,5 +1775,39 @@ public static class XamlSourceGenHotReloadManager
                       string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         TraceEnabledCached = enabled;
         return enabled;
+    }
+
+    private static string FormatTypeList(Type[]? types)
+    {
+        if (types is null || types.Length == 0)
+        {
+            return "<all>";
+        }
+
+        var values = new string[types.Length];
+        for (var index = 0; index < types.Length; index++)
+        {
+            values[index] = types[index]?.FullName ?? "<null>";
+        }
+
+        return string.Join(", ", values);
+    }
+
+    private static string FormatOperationTargets(List<ReloadOperation> operations)
+    {
+        if (operations.Count == 0)
+        {
+            return "<none>";
+        }
+
+        var values = new string[operations.Count];
+        for (var index = 0; index < operations.Count; index++)
+        {
+            var operation = operations[index];
+            var instanceType = operation.Instance?.GetType().FullName ?? "<null>";
+            values[index] = operation.Type.FullName + " <= " + instanceType;
+        }
+
+        return string.Join("; ", values);
     }
 }

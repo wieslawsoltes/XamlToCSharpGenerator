@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Styling;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -347,6 +349,126 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void RequiresUiDispatchForInstance_Returns_True_For_Style_And_ResourceProvider()
+    {
+        Assert.True(XamlSourceGenHotReloadManager.RequiresUiDispatchForInstance(new global::Avalonia.Styling.Styles()));
+        Assert.True(XamlSourceGenHotReloadManager.RequiresUiDispatchForInstance(new global::Avalonia.Controls.ResourceDictionary()));
+        Assert.False(XamlSourceGenHotReloadManager.RequiresUiDispatchForInstance(new object()));
+        Assert.False(XamlSourceGenHotReloadManager.RequiresUiDispatchForInstance(null));
+    }
+
+    [Fact]
+    public void UpdateApplication_Notifies_Hosted_Resources_For_Styles()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var host = new ResourceHostProbeApplication();
+        var notificationCount = 0;
+        host.ResourcesChanged += static (_, _) => { };
+        host.ResourcesChanged += (_, _) => notificationCount++;
+        var style = new global::Avalonia.Styling.Styles();
+        ((global::Avalonia.Controls.IResourceProvider)style).AddOwner(host);
+
+        var reloadCount = 0;
+        XamlSourceGenHotReloadManager.Register(style, _ => reloadCount++);
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(global::Avalonia.Styling.Styles)]);
+
+        Assert.Equal(1, reloadCount);
+        Assert.True(notificationCount > 0);
+    }
+
+    [Fact]
+    public void UpdateApplication_Expands_Changed_Include_BuildUri_To_Owning_Registered_Types()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var owner = new IncludeOwnerReloadTarget();
+        XamlSourceGenHotReloadManager.Register(
+            owner,
+            _ => reloadCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://Demo/FluentTheme.xaml"
+            });
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/FluentTheme.xaml",
+            "avares://Demo/Controls/FluentControls.xaml",
+            "Styles");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Controls/FluentControls.xaml",
+            "avares://Demo/Controls/ListBoxItem.xaml",
+            "Styles");
+
+        XamlSourceGenTypeUriRegistry.Register(
+            typeof(ChangedLeafGeneratedDocument),
+            "avares://Demo/Controls/ListBoxItem.xaml");
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ChangedLeafGeneratedDocument)]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Resolves_Nested_MetadataUpdate_Type_To_Registered_Include_BuildUri()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var owner = new IncludeOwnerReloadTarget();
+        XamlSourceGenHotReloadManager.Register(
+            owner,
+            _ => reloadCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://Demo/FluentTheme.xaml"
+            });
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/FluentTheme.xaml",
+            "avares://Demo/Controls/FluentControls.xaml",
+            "Styles");
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/Controls/FluentControls.xaml",
+            "avares://Demo/Controls/TabItem.xaml",
+            "Styles");
+
+        XamlSourceGenTypeUriRegistry.Register(
+            typeof(ChangedLeafGeneratedDocumentWithNestedType),
+            "avares://Demo/Controls/TabItem.xaml");
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ChangedLeafGeneratedDocumentWithNestedType.NestedMetadataType)]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Refreshes_Artifacts_For_Updated_Type_Before_Reload()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var refreshCount = 0;
+        XamlSourceGenArtifactRefreshRegistry.Register(
+            typeof(ArtifactRefreshTarget),
+            () => refreshCount++);
+
+        var reloadCount = 0;
+        var instance = new ArtifactRefreshTarget();
+        XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ArtifactRefreshTarget)]);
+
+        Assert.Equal(1, refreshCount);
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
     public void EnableIdePollingFallback_CanBe_Enabled_And_Disabled()
     {
         ResetManager();
@@ -446,6 +568,9 @@ public class XamlSourceGenHotReloadManagerTests
         XamlSourceGenHotReloadManager.DisableIdePollingFallback();
         XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotReloadManager.ResetHandlersToDefaults();
+        XamlIncludeGraphRegistry.Clear();
+        XamlSourceGenArtifactRefreshRegistry.Clear();
+        XamlSourceGenTypeUriRegistry.Clear();
     }
 
     private sealed class ReloadTargetA
@@ -467,6 +592,25 @@ public class XamlSourceGenHotReloadManagerTests
 
     private sealed class ReloadTargetEvent
     {
+    }
+
+    private sealed class IncludeOwnerReloadTarget
+    {
+    }
+
+    private sealed class ArtifactRefreshTarget
+    {
+    }
+
+    private sealed class ChangedLeafGeneratedDocument
+    {
+    }
+
+    private sealed class ChangedLeafGeneratedDocumentWithNestedType
+    {
+        public sealed class NestedMetadataType
+        {
+        }
     }
 
     private sealed class GenericReloadTarget<T>
@@ -521,6 +665,10 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     private sealed class AssemblyLevelHandlerReloadTarget
+    {
+    }
+
+    private sealed class ResourceHostProbeApplication : global::Avalonia.Application
     {
     }
 
