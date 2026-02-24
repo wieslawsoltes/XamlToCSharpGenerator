@@ -288,6 +288,22 @@ These rules prevent regressions in the source-generator compiler pipeline.
 - For app-specific side effects outside generated graph, use explicit hot-reload handler
   policies rather than implicit best-effort cleanup.
 
+### Minimal-diff live editing (strict)
+- Hot design and related editing tools must compute and propagate minimal text-diff metadata
+  (replace start offset, removed length, inserted length) for each source update.
+- Source persistence paths must support no-op diff detection and avoid rewriting source files
+  when there is no effective text change.
+- Minimal-diff behavior must be deterministic and test-covered for replace/insert/delete cases.
+
+### Mandatory hot reload and hot design coverage
+- Any new parser/binder/emitter feature is incomplete unless hot reload and hot design behavior
+  is explicitly implemented and verified.
+- For each new feature, define live-edit semantics for:
+  - apply while editing,
+  - revert/removal convergence to baseline,
+  - failure handling with last-known-good behavior when applicable.
+- Add tests that exercise both compile-time emission and runtime live-edit behavior for the feature.
+
 ## 17) XAML compiler and semantic-binder implementation standard (required)
 
 These rules are mandatory for parser, semantic model, transforms, binder, emitter, and
@@ -350,6 +366,14 @@ runtime contracts. They apply to all new features and all refactors.
   - framework adapter mapping in Avalonia layer,
   - runtime contract only if strictly required.
 - Do not introduce Avalonia-only assumptions into generic parsing/tokenization logic.
+
+### Parser infrastructure reuse (strict)
+- All mini-language parsing/tokenization must use the shared parser infrastructure project
+  (`XamlToCSharpGenerator.MiniLanguageParsing`) instead of ad-hoc binder/runtime parsing.
+- Add new parsers/tokenizers there first (framework-neutral), then consume them from framework
+  adapters and runtime tooling.
+- Live-edit tooling (hot reload/hot design) must reuse the same parser infrastructure whenever
+  structural parsing is required, so behavior stays aligned across compile-time and runtime paths.
 
 ### Diagnostics quality requirements
 - Diagnostics must be actionable, deterministic, and source-accurate.
