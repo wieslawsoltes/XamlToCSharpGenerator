@@ -43,7 +43,9 @@ public class DifferentialRuntimeBehaviorTests
         var coreProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Core", "XamlToCSharpGenerator.Core.csproj");
         var compilerProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Compiler", "XamlToCSharpGenerator.Compiler.csproj");
         var frameworkProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Framework.Abstractions", "XamlToCSharpGenerator.Framework.Abstractions.csproj");
+        var expressionSemanticsProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.ExpressionSemantics", "XamlToCSharpGenerator.ExpressionSemantics.csproj");
         var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
+        var miniLanguageParsingProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.MiniLanguageParsing", "XamlToCSharpGenerator.MiniLanguageParsing.csproj");
         var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
 
         var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "runtime-diff");
@@ -58,7 +60,9 @@ public class DifferentialRuntimeBehaviorTests
                 NormalizeForMsBuild(coreProject),
                 NormalizeForMsBuild(compilerProject),
                 NormalizeForMsBuild(frameworkProject),
+                NormalizeForMsBuild(expressionSemanticsProject),
                 NormalizeForMsBuild(avaloniaProject),
+                NormalizeForMsBuild(miniLanguageParsingProject),
                 NormalizeForMsBuild(generatorProject)));
 
             foreach (var file in fixture.Files)
@@ -835,7 +839,9 @@ public class DifferentialRuntimeBehaviorTests
         string coreProject,
         string compilerProject,
         string frameworkProject,
+        string expressionSemanticsProject,
         string avaloniaProject,
+        string miniLanguageParsingProject,
         string generatorProject)
     {
         return $"""
@@ -860,7 +866,9 @@ public class DifferentialRuntimeBehaviorTests
     <ProjectReference Include="{coreProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{compilerProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{frameworkProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="{expressionSemanticsProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{avaloniaProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="{miniLanguageParsingProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="{generatorProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

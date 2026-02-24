@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
 
@@ -139,155 +140,11 @@ public sealed class MarkupExpressionParser
 
     public static IEnumerable<string> SplitTopLevel(string value, char separator)
     {
-        var result = new List<string>();
-        var start = 0;
-        var braceDepth = 0;
-        var bracketDepth = 0;
-        var parenthesisDepth = 0;
-        var inQuote = false;
-        var quoteChar = '\0';
-
-        for (var index = 0; index < value.Length; index++)
-        {
-            var ch = value[index];
-            if (inQuote)
-            {
-                if (ch == quoteChar)
-                {
-                    inQuote = false;
-                }
-
-                continue;
-            }
-
-            if (ch == '"' || ch == '\'')
-            {
-                inQuote = true;
-                quoteChar = ch;
-                continue;
-            }
-
-            switch (ch)
-            {
-                case '{':
-                    braceDepth++;
-                    break;
-                case '}':
-                    if (braceDepth > 0)
-                    {
-                        braceDepth--;
-                    }
-                    break;
-                case '[':
-                    bracketDepth++;
-                    break;
-                case ']':
-                    if (bracketDepth > 0)
-                    {
-                        bracketDepth--;
-                    }
-                    break;
-                case '(':
-                    parenthesisDepth++;
-                    break;
-                case ')':
-                    if (parenthesisDepth > 0)
-                    {
-                        parenthesisDepth--;
-                    }
-                    break;
-                default:
-                    if (ch == separator &&
-                        braceDepth == 0 &&
-                        bracketDepth == 0 &&
-                        parenthesisDepth == 0)
-                    {
-                        result.Add(value.Substring(start, index - start));
-                        start = index + 1;
-                    }
-                    break;
-            }
-        }
-
-        if (start <= value.Length)
-        {
-            result.Add(value.Substring(start));
-        }
-
-        return result;
+        return TopLevelTextParser.SplitTopLevel(value, separator);
     }
 
     public static int IndexOfTopLevel(string value, char token)
     {
-        var braceDepth = 0;
-        var bracketDepth = 0;
-        var parenthesisDepth = 0;
-        var inQuote = false;
-        var quoteChar = '\0';
-
-        for (var index = 0; index < value.Length; index++)
-        {
-            var ch = value[index];
-            if (inQuote)
-            {
-                if (ch == quoteChar)
-                {
-                    inQuote = false;
-                }
-
-                continue;
-            }
-
-            if (ch == '"' || ch == '\'')
-            {
-                inQuote = true;
-                quoteChar = ch;
-                continue;
-            }
-
-            switch (ch)
-            {
-                case '{':
-                    braceDepth++;
-                    continue;
-                case '}':
-                    if (braceDepth > 0)
-                    {
-                        braceDepth--;
-                    }
-
-                    continue;
-                case '[':
-                    bracketDepth++;
-                    continue;
-                case ']':
-                    if (bracketDepth > 0)
-                    {
-                        bracketDepth--;
-                    }
-
-                    continue;
-                case '(':
-                    parenthesisDepth++;
-                    continue;
-                case ')':
-                    if (parenthesisDepth > 0)
-                    {
-                        parenthesisDepth--;
-                    }
-
-                    continue;
-            }
-
-            if (ch == token &&
-                braceDepth == 0 &&
-                bracketDepth == 0 &&
-                parenthesisDepth == 0)
-            {
-                return index;
-            }
-        }
-
-        return -1;
+        return TopLevelTextParser.IndexOfTopLevel(value, token);
     }
 }
