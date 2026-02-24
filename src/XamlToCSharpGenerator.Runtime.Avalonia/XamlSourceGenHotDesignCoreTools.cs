@@ -640,7 +640,47 @@ public static class XamlSourceGenHotDesignCoreTools
             }
         }
 
-        var result = await XamlSourceGenHotDesignManager.ApplyUpdateAsync(request, cancellationToken).ConfigureAwait(false);
+        SourceGenHotDesignApplyResult result;
+        if (XamlSourceGenStudioManager.IsEnabled)
+        {
+            var studioResult = await XamlSourceGenStudioManager.ApplyUpdateAsync(
+                new SourceGenStudioUpdateRequest
+                {
+                    RequestId = Guid.NewGuid().ToString("N"),
+                    CorrelationId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    BuildUri = request.BuildUri,
+                    TargetType = request.TargetType,
+                    TargetTypeName = request.TargetTypeName,
+                    XamlText = request.XamlText,
+                    PersistChangesToSource = request.PersistChangesToSource,
+                    WaitMode = request.WaitForHotReload.HasValue
+                        ? (request.WaitForHotReload.Value
+                            ? SourceGenStudioWaitMode.WaitForLocalOnly
+                            : SourceGenStudioWaitMode.None)
+                        : null,
+                    FallbackPolicy = request.FallbackToRuntimeApplyOnTimeout.HasValue
+                        ? (request.FallbackToRuntimeApplyOnTimeout.Value
+                            ? SourceGenStudioFallbackPolicy.RuntimeApplyOnTimeout
+                            : SourceGenStudioFallbackPolicy.NoFallback)
+                        : null
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            result = new SourceGenHotDesignApplyResult(
+                Succeeded: studioResult.Succeeded,
+                Message: studioResult.Message,
+                BuildUri: studioResult.BuildUri,
+                TargetType: studioResult.TargetType,
+                SourcePersisted: studioResult.SourcePersisted,
+                HotReloadObserved: studioResult.LocalUpdateObserved,
+                RuntimeFallbackApplied: studioResult.RuntimeFallbackApplied,
+                Error: studioResult.Error);
+        }
+        else
+        {
+            result = await XamlSourceGenHotDesignManager.ApplyUpdateAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         if (!result.Succeeded || !recordHistory || document is null)
         {
             return result;

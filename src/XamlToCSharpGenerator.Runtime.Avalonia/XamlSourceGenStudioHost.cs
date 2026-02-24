@@ -15,6 +15,7 @@ public static class XamlSourceGenStudioHost
     private static SourceGenStudioOptions ActiveOptions = new();
     private static StudioIndicatorWindow? IndicatorWindow;
     private static StudioDashboardWindow? DashboardWindow;
+    private static XamlSourceGenStudioShellViewModel? ShellViewModel;
     private static bool Started;
 
     public static bool IsStarted
@@ -41,6 +42,8 @@ public static class XamlSourceGenStudioHost
 
             Started = true;
             XamlSourceGenStudioManager.Enable(ActiveOptions);
+            XamlSourceGenStudioManager.StartSession();
+            ShellViewModel = new XamlSourceGenStudioShellViewModel(ActiveOptions);
             XamlSourceGenStudioManager.StudioStatusChanged += OnStudioStatusChanged;
             snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
         }
@@ -58,6 +61,7 @@ public static class XamlSourceGenStudioHost
 
     public static void Stop()
     {
+        XamlSourceGenStudioShellViewModel? shellViewModel;
         lock (Sync)
         {
             if (!Started)
@@ -67,8 +71,12 @@ public static class XamlSourceGenStudioHost
 
             Started = false;
             XamlSourceGenStudioManager.StudioStatusChanged -= OnStudioStatusChanged;
+            shellViewModel = ShellViewModel;
+            ShellViewModel = null;
             XamlSourceGenStudioManager.Disable();
         }
+
+        shellViewModel?.Dispose();
 
         Dispatcher.UIThread.Post(static () =>
         {
@@ -88,7 +96,7 @@ public static class XamlSourceGenStudioHost
 
     public static void OpenStudioWindow()
     {
-        SourceGenStudioStatusSnapshot snapshot;
+        XamlSourceGenStudioShellViewModel? shellViewModel;
         lock (Sync)
         {
             if (!Started || !ActiveOptions.EnableExternalWindow)
@@ -96,17 +104,15 @@ public static class XamlSourceGenStudioHost
                 return;
             }
 
-            snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+            shellViewModel = ShellViewModel;
         }
 
         Dispatcher.UIThread.Post(() =>
         {
             if (DashboardWindow is null || !DashboardWindow.IsVisible)
             {
-                DashboardWindow = new StudioDashboardWindow();
+                DashboardWindow = new StudioDashboardWindow(shellViewModel);
             }
-
-            DashboardWindow.Update(snapshot);
             DashboardWindow.Show();
             DashboardWindow.Activate();
         }, DispatcherPriority.Background);
@@ -120,14 +126,6 @@ public static class XamlSourceGenStudioHost
         }
 
         EnsureIndicatorWindow(snapshot);
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (DashboardWindow is not null && DashboardWindow.IsVisible)
-            {
-                DashboardWindow.Update(snapshot);
-            }
-        }, DispatcherPriority.Background);
     }
 
     private static void EnsureIndicatorWindow(SourceGenStudioStatusSnapshot snapshot)
@@ -144,7 +142,7 @@ public static class XamlSourceGenStudioHost
         {
             if (IndicatorWindow is null || !IndicatorWindow.IsVisible)
             {
-                IndicatorWindow = new StudioIndicatorWindow
+                IndicatorWindow = new StudioIndicatorWindow(static () => OpenStudioWindow())
                 {
                     Position = new PixelPoint(16, 16)
                 };
@@ -157,12 +155,12 @@ public static class XamlSourceGenStudioHost
 
     private sealed class StudioIndicatorWindow : Window
     {
-        private readonly TextBlock _statusText;
+        private readonly TextBlock? _statusText;
 
-        public StudioIndicatorWindow()
+        public StudioIndicatorWindow(Action openStudioAction)
         {
             Width = 280;
-            Height = 54;
+            Height = 72;
             CanResize = false;
             ShowInTaskbar = false;
             SystemDecorations = SystemDecorations.None;
@@ -173,17 +171,45 @@ public static class XamlSourceGenStudioHost
                 CornerRadius = new CornerRadius(8),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(255, 57, 109, 255)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 8),
-                Child = (_statusText = new TextBlock
-                {
-                    Foreground = Brushes.White,
-                    VerticalAlignment = VerticalAlignment.Center
-                })
+                Padding = new Thickness(10, 8)
             };
+
+            if (Content is not Border border)
+            {
+                return;
+            }
+
+            var layout = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,Auto"),
+                RowSpacing = 6
+            };
+
+            layout.Children.Add(_statusText = new TextBlock
+            {
+                Foreground = Brushes.White,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var openButton = new Button
+            {
+                Content = "Open Studio",
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            openButton.Click += (_, _) => openStudioAction();
+            Grid.SetRow(openButton, 1);
+            layout.Children.Add(openButton);
+
+            border.Child = layout;
         }
 
         public void Update(SourceGenStudioStatusSnapshot snapshot)
         {
+            if (_statusText is null)
+            {
+                return;
+            }
+
             _statusText.Text = "Studio: " + snapshot.CurrentState +
                                " | Session: " + (snapshot.SessionId == Guid.Empty ? "<none>" : snapshot.SessionId.ToString("N")[..8]) +
                                " | Ops: " + snapshot.Operations.Count;
@@ -192,43 +218,28 @@ public static class XamlSourceGenStudioHost
 
     private sealed class StudioDashboardWindow : Window
     {
-        private readonly TextBlock _statusText;
-
-        public StudioDashboardWindow()
+        public StudioDashboardWindow(XamlSourceGenStudioShellViewModel? shellViewModel)
         {
-            Width = 760;
-            Height = 460;
-            MinWidth = 600;
-            MinHeight = 360;
+            Width = 1280;
+            Height = 840;
+            MinWidth = 960;
+            MinHeight = 640;
             Title = "SourceGen Hot Design Studio";
-            Content = new Border
+
+            if (shellViewModel is null)
             {
-                Padding = new Thickness(12),
-                Child = (_statusText = new TextBlock
+                Content = new TextBlock
                 {
-                    TextWrapping = TextWrapping.Wrap,
-                    FontFamily = FontFamily.Default,
-                    FontSize = 13
-                })
+                    Margin = new Thickness(12),
+                    Text = "Studio view model is not available."
+                };
+                return;
+            }
+
+            Content = new XamlSourceGenStudioShellView
+            {
+                DataContext = shellViewModel
             };
-        }
-
-        public void Update(SourceGenStudioStatusSnapshot snapshot)
-        {
-            var lastOperation = snapshot.Operations.Count > 0
-                ? snapshot.Operations[^1]
-                : null;
-            var scopeCount = snapshot.ActiveScopeCount;
-            var lastMessage = lastOperation?.Result?.Message ?? "No operations yet.";
-
-            _statusText.Text =
-                "Studio Session: " + (snapshot.SessionId == Guid.Empty ? "<none>" : snapshot.SessionId) + Environment.NewLine +
-                "State: " + snapshot.CurrentState + Environment.NewLine +
-                "Registered documents: " + snapshot.RegisteredDocumentCount + Environment.NewLine +
-                "Scopes: " + scopeCount + Environment.NewLine +
-                "Operation history: " + snapshot.Operations.Count + Environment.NewLine + Environment.NewLine +
-                "Latest result:" + Environment.NewLine +
-                lastMessage;
         }
     }
 }
