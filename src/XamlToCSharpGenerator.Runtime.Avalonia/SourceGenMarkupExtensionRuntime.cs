@@ -10,12 +10,16 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
 using Avalonia.Platform;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace XamlToCSharpGenerator.Runtime;
 
 public static class SourceGenMarkupExtensionRuntime
 {
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
+    private const int MaxDeferredBindingRetryCount = 12;
+    private static readonly bool BindingTraceEnabled = IsEnvironmentEnabled("AXSG_BINDING_TRACE");
 
     public static object? ProvideStaticResource(
         object resourceKey,
@@ -56,6 +60,27 @@ public static class SourceGenMarkupExtensionRuntime
         if (ReferenceEquals(value, AvaloniaProperty.UnsetValue) || value is null)
         {
             return default!;
+        }
+
+        if (value is IDeferredContent deferredContent)
+        {
+            var deferredValue = deferredContent.Build(serviceProvider: null);
+            if (ReferenceEquals(deferredValue, AvaloniaProperty.UnsetValue) || deferredValue is null)
+            {
+                return default!;
+            }
+
+            if (deferredValue is IDeferredContent)
+            {
+                return default!;
+            }
+
+            if (deferredValue is T deferredTyped)
+            {
+                return deferredTyped;
+            }
+
+            return (T)deferredValue;
         }
 
         if (value is T typed)
@@ -111,6 +136,126 @@ public static class SourceGenMarkupExtensionRuntime
         return SourceGenRuntimeXamlCompiler.Load(document, configuration, options);
     }
 
+    public static object? ProvideMarkupExtensionValue(
+        object? extension,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        if (extension is null)
+        {
+            return null;
+        }
+
+        object? value;
+        if (extension is MarkupExtension markupExtension)
+        {
+            value = ProvideMarkupExtension(
+                markupExtension,
+                parentServiceProvider,
+                rootObject,
+                intermediateRootObject,
+                targetObject,
+                targetProperty,
+                baseUri,
+                parentStack);
+        }
+        else if (extension is OnPlatformExtension onPlatform)
+        {
+            var platformValue = ProvideOnPlatform(
+                onPlatform.Default,
+                onPlatform.Windows,
+                onPlatform.macOS,
+                onPlatform.Linux,
+                onPlatform.Android,
+                onPlatform.iOS,
+                onPlatform.Browser);
+            value = platformValue;
+        }
+        else if (extension is OnFormFactorExtension onFormFactor)
+        {
+            var formFactorValue = ProvideOnFormFactor(
+                onFormFactor.Default,
+                onFormFactor.Desktop,
+                onFormFactor.Mobile,
+                onFormFactor.TV,
+                parentServiceProvider);
+            value = formFactorValue;
+        }
+        else
+        {
+            value = extension;
+        }
+
+        return CoerceMarkupExtensionResultForTargetProperty(value, targetProperty);
+    }
+
+    private static object? CoerceMarkupExtensionResultForTargetProperty(object? value, object? targetProperty)
+    {
+        if (value is IDeferredContent deferredContent)
+        {
+            var deferredValue = deferredContent.Build(serviceProvider: null);
+            if (!ReferenceEquals(deferredValue, AvaloniaProperty.UnsetValue) &&
+                deferredValue is not null &&
+                deferredValue is not IDeferredContent)
+            {
+                return CoerceMarkupExtensionResultForTargetProperty(deferredValue, targetProperty);
+            }
+
+            if (targetProperty is AvaloniaProperty)
+            {
+                return AvaloniaProperty.UnsetValue;
+            }
+        }
+
+        if (value is null ||
+            targetProperty is not AvaloniaProperty avaloniaProperty)
+        {
+            return value;
+        }
+
+        var targetType = avaloniaProperty.PropertyType;
+        if (targetType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if ((targetType == typeof(Avalonia.Media.IBrush) ||
+             targetType == typeof(Avalonia.Media.Brush)) &&
+            value is Avalonia.Media.Color colorValue)
+        {
+            return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(colorValue);
+        }
+
+        if (value is not string textValue)
+        {
+            return value;
+        }
+
+        var trimmed = textValue.Trim();
+        if (trimmed.Length == 0)
+        {
+            return value;
+        }
+
+        if (targetType == typeof(Avalonia.Media.IBrush) ||
+            targetType == typeof(Avalonia.Media.Brush))
+        {
+            return Avalonia.Media.Brush.Parse(trimmed);
+        }
+
+        if (targetType == typeof(Avalonia.Media.Color))
+        {
+            return Avalonia.Media.Color.Parse(trimmed);
+        }
+
+        return value;
+    }
+
     public static IBinding? ProvideDynamicResource(
         object resourceKey,
         IServiceProvider? parentServiceProvider,
@@ -151,7 +296,7 @@ public static class SourceGenMarkupExtensionRuntime
         return binding;
     }
 
-    public static void ApplyBinding(object? target, AvaloniaProperty property, object? value)
+    public static void ApplyBinding(object? target, AvaloniaProperty property, object? value, object? anchor = null)
     {
         if (target is not AvaloniaObject avaloniaObject || property is null)
         {
@@ -160,11 +305,432 @@ public static class SourceGenMarkupExtensionRuntime
 
         if (value is IBinding binding)
         {
-            avaloniaObject.Bind(property, binding);
+            bool TryApplyBindingNow(string stage)
+            {
+                if (TryBind(avaloniaObject, property, binding, anchor, out var deferredException))
+                {
+                    TraceBinding($"Applied binding ({stage}): {DescribeBindingTarget(avaloniaObject, property)}.");
+                    return true;
+                }
+
+                if (deferredException is not null)
+                {
+                    TraceBinding($"Deferred binding ({stage}): {DescribeBindingTarget(avaloniaObject, property)}. {deferredException.Message}");
+                }
+
+                return false;
+            }
+
+            if (TryApplyBindingNow("immediate"))
+            {
+                return;
+            }
+
+            ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
+
+            void AttachDeferredRetryHooks(StyledElement observedElement, Visual? observedVisual, string ownerKind)
+            {
+                void TryApplyAndDetachHandlers()
+                {
+                    if (!TryApplyBindingNow("event/" + ownerKind))
+                    {
+                        return;
+                    }
+
+                    observedElement.PropertyChanged -= OnPropertyChanged;
+                    if (observedVisual is not null)
+                    {
+                        observedVisual.AttachedToVisualTree -= OnAttachedToVisualTree;
+                    }
+                }
+
+                void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
+                {
+                    if (args.Property != StyledElement.DataContextProperty &&
+                        !string.Equals(args.Property.Name, "TemplatedParent", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    TryApplyAndDetachHandlers();
+                }
+
+                void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs args)
+                {
+                    TryApplyAndDetachHandlers();
+                }
+
+                observedElement.PropertyChanged += OnPropertyChanged;
+                if (observedVisual is not null)
+                {
+                    observedVisual.AttachedToVisualTree += OnAttachedToVisualTree;
+                }
+            }
+
+            if (target is StyledElement styledTarget)
+            {
+                AttachDeferredRetryHooks(styledTarget, target as Visual, "target");
+            }
+
+            if (anchor is StyledElement styledAnchor &&
+                (target is not StyledElement styledTargetReference || !ReferenceEquals(styledAnchor, styledTargetReference)))
+            {
+                AttachDeferredRetryHooks(styledAnchor, styledAnchor as Visual, "anchor");
+            }
+
             return;
         }
 
         avaloniaObject.SetValue(property, value);
+    }
+
+    public static object? ResolveBindingAnchor(object? target, IReadOnlyList<object>? parentStack)
+    {
+        if (target is StyledElement)
+        {
+            return target;
+        }
+
+        if (parentStack is null || parentStack.Count == 0)
+        {
+            return null;
+        }
+
+        StyledElement? fallbackAnchor = null;
+        for (var index = 0; index < parentStack.Count; index++)
+        {
+            var candidate = parentStack[index];
+            if (ReferenceEquals(candidate, target) || candidate is not StyledElement styledElement)
+            {
+                continue;
+            }
+
+            fallbackAnchor ??= styledElement;
+
+            if (styledElement.TemplatedParent is not null ||
+                styledElement is Visual visual && TopLevel.GetTopLevel(visual) is not null)
+            {
+                return styledElement;
+            }
+        }
+
+        return fallbackAnchor;
+    }
+
+    private static bool IsDataContextUnavailableException(InvalidOperationException exception)
+    {
+        return exception.Message.IndexOf("DataContext", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsTemplatedParentUnavailableException(InvalidOperationException exception)
+    {
+        return exception.Message.IndexOf("TemplatedParent", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsDeferredBindingContextException(InvalidOperationException exception)
+    {
+        return IsDataContextUnavailableException(exception) ||
+               IsTemplatedParentUnavailableException(exception);
+    }
+
+    private static bool IsTemplatedParentRelativeSource(RelativeSource? relativeSource)
+    {
+        return relativeSource?.Mode == RelativeSourceMode.TemplatedParent;
+    }
+
+    private static bool IsBindingSourceUnset(Binding binding)
+    {
+        var source = binding.Source;
+        return source is null || ReferenceEquals(source, AvaloniaProperty.UnsetValue);
+    }
+
+    private static StyledElement? ResolveTemplatedParentAnchor(StyledElement anchor)
+    {
+        for (StyledElement? current = anchor; current is not null; current = current.Parent as StyledElement)
+        {
+            if (current.TemplatedParent is not null)
+            {
+                return current;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryPrepareBindingForNonStyledTemplatedParentTarget(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor,
+        out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (binding is not Binding dataBinding ||
+            !IsTemplatedParentRelativeSource(dataBinding.RelativeSource) ||
+            !IsBindingSourceUnset(dataBinding) ||
+            dataBinding.ElementName is not null)
+        {
+            return true;
+        }
+
+        StyledElement? styledAnchor = target as StyledElement;
+        if (styledAnchor is null && anchor is StyledElement providedAnchor)
+        {
+            styledAnchor = providedAnchor;
+        }
+
+        if (styledAnchor is null)
+        {
+            TraceBinding(
+                $"Deferred templated-parent binding preparation: target={target.GetType().FullName}, anchor=<null>, path={dataBinding.Path}.");
+            deferredException = new InvalidOperationException("Cannot find a StyledElement to get a TemplatedParent.");
+            return false;
+        }
+
+        var templatedParentAnchor = ResolveTemplatedParentAnchor(styledAnchor);
+        if (templatedParentAnchor?.TemplatedParent is null &&
+            anchor is StyledElement alternateAnchor &&
+            !ReferenceEquals(alternateAnchor, styledAnchor))
+        {
+            templatedParentAnchor = ResolveTemplatedParentAnchor(alternateAnchor);
+        }
+
+        if (templatedParentAnchor?.TemplatedParent is null)
+        {
+            TraceBinding(
+                $"Deferred templated-parent binding preparation: target={target.GetType().FullName}, anchor={styledAnchor.GetType().FullName}, path={dataBinding.Path}.");
+            deferredException = new InvalidOperationException("Cannot find a StyledElement to get a TemplatedParent.");
+            return false;
+        }
+
+        // Non-StyledElement targets (e.g., ColumnDefinition) cannot resolve TemplatedParent by themselves.
+        // Rewriting to explicit Source keeps binding semantics while making it bindable.
+        dataBinding.Source = templatedParentAnchor.TemplatedParent;
+        dataBinding.RelativeSource = null;
+        TraceBinding(
+            $"Rewrote templated-parent binding: target={target.GetType().FullName}, anchor={templatedParentAnchor.GetType().FullName}, source={templatedParentAnchor.TemplatedParent.GetType().FullName}, path={dataBinding.Path}.");
+        return true;
+    }
+
+    private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
+    {
+        void TryApply(int attempt)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (TryBind(target, property, binding, anchor, out var deferredException))
+                {
+                    TraceBinding($"Applied binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}): {DescribeBindingTarget(target, property)}.");
+                    return;
+                }
+
+                if (deferredException is not null)
+                {
+                    TraceBinding($"Deferred binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}): {DescribeBindingTarget(target, property)}. {deferredException.Message}");
+                }
+
+                if (attempt + 1 < MaxDeferredBindingRetryCount)
+                {
+                    var nextAttempt = attempt + 1;
+                    var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
+                    DispatcherTimer.RunOnce(
+                        () => TryApply(nextAttempt),
+                        TimeSpan.FromMilliseconds(delayMilliseconds),
+                        DispatcherPriority.Background);
+                }
+            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background);
+        }
+
+        TryApply(0);
+    }
+
+    private static bool TryBind(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor, out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (!TryPrepareBindingForNonStyledTemplatedParentTarget(target, binding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (anchor is not null)
+            {
+#pragma warning disable CS0618
+                target.Bind(property, binding, anchor);
+#pragma warning restore CS0618
+            }
+            else
+            {
+                target.Bind(property, binding);
+            }
+
+            return true;
+        }
+        catch (InvalidOperationException exception) when (IsDeferredBindingContextException(exception))
+        {
+            if (BindingTraceEnabled)
+            {
+                var relativeSourceMode = binding is Binding deferredBinding && deferredBinding.RelativeSource is not null
+                    ? deferredBinding.RelativeSource.Mode.ToString()
+                    : "<none>";
+                var sourceType = binding is Binding deferredBindingWithSource && deferredBindingWithSource.Source is not null
+                    ? deferredBindingWithSource.Source.GetType().FullName
+                    : "<null>";
+                var sourceIsUnset = binding is Binding deferredBindingWithSourceCheck && IsBindingSourceUnset(deferredBindingWithSourceCheck);
+                var elementName = binding is Binding deferredBindingWithElement ? deferredBindingWithElement.ElementName : null;
+                TraceBinding(
+                    $"Deferred bind details: target={target.GetType().FullName}.{property.Name}, bindingType={binding.GetType().FullName}, relativeSource={relativeSourceMode}, sourceType={sourceType}, sourceIsUnset={sourceIsUnset}, elementName={elementName ?? "<null>"}, anchor={(anchor as object)?.GetType().FullName ?? "<null>"}.");
+            }
+            deferredException = exception;
+            return false;
+        }
+    }
+
+    private static bool IsEnvironmentEnabled(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return string.Equals(value, "1", StringComparison.Ordinal) ||
+               string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void TraceBinding(string message)
+    {
+        if (!BindingTraceEnabled)
+        {
+            return;
+        }
+
+        Console.WriteLine($"[AXSG.Binding] {message}");
+    }
+
+    private static string DescribeBindingTarget(AvaloniaObject target, AvaloniaProperty property)
+    {
+        return $"{target.GetType().FullName}.{property.Name}";
+    }
+
+    public static Avalonia.Media.Imaging.Bitmap? LoadBitmapAsset(string path, string? baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var trimmedPath = path.Trim();
+        var uri = trimmedPath.StartsWith("/", StringComparison.Ordinal)
+            ? new Uri(trimmedPath, UriKind.Relative)
+            : new Uri(trimmedPath, UriKind.RelativeOrAbsolute);
+
+        if (uri.IsAbsoluteUri && uri.IsFile)
+        {
+            return new Avalonia.Media.Imaging.Bitmap(uri.LocalPath);
+        }
+
+        var contextBaseUri = TryCreateAbsoluteUri(baseUri);
+        return new Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(uri, contextBaseUri));
+    }
+
+    public static WindowIcon? LoadWindowIconAsset(string path, string? baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var trimmedPath = path.Trim();
+        var uri = trimmedPath.StartsWith("/", StringComparison.Ordinal)
+            ? new Uri(trimmedPath, UriKind.Relative)
+            : new Uri(trimmedPath, UriKind.RelativeOrAbsolute);
+
+        if (uri.IsAbsoluteUri && uri.IsFile)
+        {
+            return new WindowIcon(uri.LocalPath);
+        }
+
+        var contextBaseUri = TryCreateAbsoluteUri(baseUri);
+        return new WindowIcon(AssetLoader.Open(uri, contextBaseUri));
+    }
+
+    public static Avalonia.Media.FontFeatureCollection? ParseFontFeatureCollection(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var collection = new Avalonia.Media.FontFeatureCollection();
+        var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (var index = 0; index < parts.Length; index++)
+        {
+            var token = parts[index];
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            collection.Add(Avalonia.Media.FontFeature.Parse(token));
+        }
+
+        return collection;
+    }
+
+    public static Avalonia.Media.FontFamily ParseFontFamily(string? value, string? baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Avalonia.Media.FontFamily.Default;
+        }
+
+        var trimmedValue = value.Trim();
+        var resolvedBaseUri = TryCreateAbsoluteUri(baseUri);
+        resolvedBaseUri ??= new Uri("avares://sourcegen/");
+
+        try
+        {
+            return Avalonia.Media.FontFamily.Parse(trimmedValue, resolvedBaseUri);
+        }
+        catch (ArgumentException)
+        {
+            // Keep font parsing non-fatal when a family source can't be resolved.
+            return Avalonia.Media.FontFamily.Default;
+        }
+    }
+
+    public static void ApplyClassValue(object? target, string className, object? value)
+    {
+        if (target is not StyledElement styledElement || string.IsNullOrWhiteSpace(className))
+        {
+            return;
+        }
+
+        var normalizedClassName = className.Trim();
+        if (value is IBinding binding)
+        {
+            styledElement.Bind(StyledElementExtensions.GetClassProperty(normalizedClassName), binding);
+            return;
+        }
+
+        var enabled = value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out var parsedBool) => parsedBool,
+            _ => value is not null
+        };
+
+        styledElement.Classes.Set(normalizedClassName, enabled);
+    }
+
+    private static Uri? TryCreateAbsoluteUri(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value, UriKind.Absolute, out var resolvedUri)
+            ? resolvedUri
+            : null;
     }
 
     private static Type ResolveBindingType(string? xmlNamespace, string name)
@@ -534,7 +1100,14 @@ public static class SourceGenMarkupExtensionRuntime
                 return resolvedFallback;
             }
 
-            throw;
+            // Keep resource lookup resilient while merged dictionaries/styles are
+            // still materializing; deferred content will re-attempt resolution.
+            return new DeferredStaticResourceContent(
+                resourceKey,
+                targetObject,
+                baseUri,
+                effectiveParentStack,
+                effectiveServiceProvider);
         }
     }
 
