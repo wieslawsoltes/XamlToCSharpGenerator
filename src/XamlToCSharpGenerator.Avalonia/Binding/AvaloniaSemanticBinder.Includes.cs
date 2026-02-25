@@ -54,7 +54,8 @@ public sealed partial class AvaloniaSemanticBinder
                 continue;
             }
 
-            if (include.MergeTarget == "Unknown")
+            if (include.MergeTarget == "Unknown" &&
+                !include.Kind.Equals("StyleInclude", StringComparison.Ordinal))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0402",
