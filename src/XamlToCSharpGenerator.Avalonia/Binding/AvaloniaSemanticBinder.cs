@@ -2445,13 +2445,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (symbol is not null &&
             string.IsNullOrWhiteSpace(factoryExpression) &&
             !string.IsNullOrWhiteSpace(node.TextContent) &&
-            children.Count == 0 &&
-            propertyElementAssignments.Count == 0)
+            children.Count == 0)
         {
             var inlineTextContent = node.TextContent!.Trim();
             var handledAsContentProperty = false;
             if (!string.IsNullOrWhiteSpace(contentPropertyName) &&
-                !HasResolvedPropertyAssignment(assignments, contentPropertyName!))
+                !HasResolvedPropertyAssignment(assignments, contentPropertyName!) &&
+                !HasResolvedPropertyElementAssignment(propertyElementAssignments, contentPropertyName!))
             {
                 var contentProperty = FindProperty(symbol, contentPropertyName!);
                 if (contentProperty?.SetMethod is not null &&
@@ -2484,6 +2484,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (!handledAsContentProperty &&
                 assignments.Count == 0 &&
+                propertyElementAssignments.Count == 0 &&
                 TryConvertValueConversion(
                     inlineTextContent,
                     symbol,
@@ -9794,6 +9795,21 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool HasResolvedPropertyAssignment(
         ImmutableArray<ResolvedPropertyAssignment>.Builder assignments,
+        string propertyName)
+    {
+        for (var index = 0; index < assignments.Count; index++)
+        {
+            if (assignments[index].PropertyName.Equals(propertyName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasResolvedPropertyElementAssignment(
+        ImmutableArray<ResolvedPropertyElementAssignment>.Builder assignments,
         string propertyName)
     {
         for (var index = 0; index < assignments.Count; index++)
