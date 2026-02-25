@@ -174,7 +174,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("        }");
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine(
-            $"        internal static void __PopulateGeneratedObjectGraph({viewModel.RootObject.TypeName} __root, global::System.IServiceProvider? __serviceProvider = null)");
+            $"        internal static void __PopulateGeneratedObjectGraph({viewModel.RootObject.TypeName} __root, global::System.IServiceProvider? __serviceProvider = null, bool __replaceExistingCollections = false)");
         sourceBuilder.AppendLine("        {");
         if (viewModel.EmitNameScopeRegistration)
         {
@@ -182,7 +182,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine("            var __rootObject = (object)__root;");
             sourceBuilder.AppendLine("            if (__rootObject is global::Avalonia.StyledElement __rootStyledElement)");
             sourceBuilder.AppendLine("            {");
-            sourceBuilder.AppendLine("                global::Avalonia.Controls.NameScope.SetNameScope(__rootStyledElement, __nameScope);");
+            sourceBuilder.AppendLine("                __TrySetNameScope(__rootStyledElement, __nameScope);");
             sourceBuilder.AppendLine("            }");
         }
 
@@ -268,7 +268,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine("        {");
             sourceBuilder.AppendLine("            __RegisterXamlSourceGenArtifacts();");
             sourceBuilder.AppendLine("            __TrackAndReconcileSourceGenHotReloadState(this);");
-            sourceBuilder.AppendLine("            __PopulateGeneratedObjectGraph(this, null);");
+            sourceBuilder.AppendLine("            __PopulateGeneratedObjectGraph(this, null, true);");
             sourceBuilder.AppendLine("            var __self = (object)this;");
             sourceBuilder.AppendLine("            if (__self is global::Avalonia.Layout.Layoutable __layoutable)");
             sourceBuilder.AppendLine("            {");
@@ -1033,6 +1033,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("            }");
         sourceBuilder.AppendLine("        }");
         sourceBuilder.AppendLine();
+        sourceBuilder.AppendLine("        private static void __TrySetNameScope(object? target, object? scope)");
+        sourceBuilder.AppendLine("        {");
+        sourceBuilder.AppendLine("            if (target is not global::Avalonia.StyledElement styledElement ||");
+        sourceBuilder.AppendLine("                scope is not global::Avalonia.Controls.INameScope nameScope)");
+        sourceBuilder.AppendLine("            {");
+        sourceBuilder.AppendLine("                return;");
+        sourceBuilder.AppendLine("            }");
+        sourceBuilder.AppendLine();
+        sourceBuilder.AppendLine("            if (global::Avalonia.Controls.NameScope.GetNameScope(styledElement) is null)");
+        sourceBuilder.AppendLine("            {");
+        sourceBuilder.AppendLine("                global::Avalonia.Controls.NameScope.SetNameScope(styledElement, nameScope);");
+        sourceBuilder.AppendLine("            }");
+        sourceBuilder.AppendLine("        }");
+        sourceBuilder.AppendLine();
 
         if (viewModel.Document.IsClassBacked)
         {
@@ -1173,6 +1187,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
         }
 
+        string WrapSetValueExpression(string expression, string targetObjectExpression, string targetPropertyExpression)
+        {
+            return "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideMarkupExtensionValue(" +
+                   expression +
+                   ", " + serviceProviderReference +
+                   ", " + rootReference +
+                   ", " + intermediateRootReference +
+                   ", " + targetObjectExpression +
+                   ", " + targetPropertyExpression +
+                   ", " + baseUriExpression +
+                   ", " + nodeParentStackExpression +
+                   ")";
+        }
+
         if (TryEmitDeferredTemplateNode(
                 node,
                 sourceBuilder,
@@ -1208,7 +1236,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             var scopedElementVariable = "__scopedStyledElement" + nodeCounter.ToString();
             EmitNodeStatement($"if ((object){variableName} is global::Avalonia.StyledElement {scopedElementVariable})");
             EmitNodeStatement("{");
-            EmitNodeStatement($"    global::Avalonia.Controls.NameScope.SetNameScope({scopedElementVariable}, {nameScopeReference});");
+            EmitNodeStatement($"    __TrySetNameScope({scopedElementVariable}, {nameScopeReference});");
             EmitNodeStatement("}");
         }
 
@@ -1216,9 +1244,10 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         if (node.ChildAttachmentMode == ResolvedChildAttachmentMode.DictionaryAdd &&
             (node.Children.Length > 0 || existingVariableName is not null))
         {
-            EmitNodeStatement($"__TryClearDictionaryEntries({variableName});");
+            EmitNodeStatement($"if (__replaceExistingCollections) __TryClearDictionaryEntries({variableName});");
         }
 
+        string? pendingTopDownAttachmentStatement = null;
         if (node.UseTopDownInitialization &&
             !string.IsNullOrWhiteSpace(topDownAttachmentTemplate))
         {
@@ -1230,7 +1259,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 intermediateRootReference,
                 baseUriExpression,
                 nodeParentStackExpression);
-            EmitNodeStatement(ExpandTopDownAttachmentTemplate(topDownAttachmentTemplate!, attachmentValueExpression));
+            pendingTopDownAttachmentStatement = ExpandTopDownAttachmentTemplate(
+                topDownAttachmentTemplate!,
+                attachmentValueExpression);
         }
 
         if (!string.IsNullOrWhiteSpace(node.Name))
@@ -1256,6 +1287,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
+            var bindingAnchorExpression =
+                $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression})";
             var valueExpression = ExpandMarkupContextExpression(
                 assignment.ValueExpression,
                 serviceProviderReference,
@@ -1270,7 +1303,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        assignment.PropertyName,
+                        assignment.ClrPropertyOwnerTypeName,
+                        assignment.ClrPropertyTypeName,
+                        clrAssignmentValueExpression,
+                        out var specialClrSetterInvocation))
+                {
+                    EmitStatementAt(specialClrSetterInvocation, assignment.Line, assignment.Column);
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         assignment.PropertyName,
                         assignment.ClrPropertyTypeName,
@@ -1293,7 +1336,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 {
                     var bindingExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
                     EmitStatementAt(
-                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingExpression});",
+                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingExpression}, {bindingAnchorExpression});",
                         assignment.Line,
                         assignment.Column);
                     continue;
@@ -1302,14 +1345,14 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {valueExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(valueExpression, variableName, avaloniaPropertyExpression)});",
                         assignment.Line,
                         assignment.Column);
                 }
                 else
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {valueExpression}, {avaloniaPriorityExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(valueExpression, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});",
                         assignment.Line,
                         assignment.Column);
                 }
@@ -1333,7 +1376,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             if (propertyElementAssignment.IsCollectionAdd)
             {
                 EmitStatementAt(
-                    $"__TryClearCollection({variableName}.{propertyElementAssignment.PropertyName});",
+                    $"if (__replaceExistingCollections) __TryClearCollection({variableName}.{propertyElementAssignment.PropertyName});",
                     propertyElementAssignment.Line,
                     propertyElementAssignment.Column);
                 var isMergedDictionariesProperty = string.Equals(
@@ -1434,7 +1477,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             string assignmentTemplate;
             if (string.IsNullOrWhiteSpace(avaloniaPropertyExpression))
             {
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        propertyElementAssignment.PropertyName,
+                        propertyElementAssignment.ClrPropertyOwnerTypeName,
+                        propertyElementAssignment.ClrPropertyTypeName,
+                        TopDownAttachValueToken,
+                        out var specialTopDownSetterInvocation))
+                {
+                    assignmentTemplate = specialTopDownSetterInvocation;
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         propertyElementAssignment.PropertyName,
                         propertyElementAssignment.ClrPropertyTypeName,
@@ -1454,17 +1507,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     ? TopDownAttachValueToken
                     : $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({TopDownAttachValueToken}, {nameScopeReference})";
                 assignmentTemplate =
-                    $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression});";
+                    $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression}, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression}));";
             }
             else if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
             {
                 assignmentTemplate =
-                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {TopDownAttachValueToken});";
+                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(TopDownAttachValueToken, variableName, avaloniaPropertyExpression)});";
             }
             else
             {
                 assignmentTemplate =
-                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {TopDownAttachValueToken}, {avaloniaPriorityExpression});";
+                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(TopDownAttachValueToken, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});";
             }
 
             var assignedNode = propertyElementAssignment.ObjectValues[0];
@@ -1500,7 +1553,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
             if (string.IsNullOrWhiteSpace(avaloniaPropertyExpression))
             {
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        propertyElementAssignment.PropertyName,
+                        propertyElementAssignment.ClrPropertyOwnerTypeName,
+                        propertyElementAssignment.ClrPropertyTypeName,
+                        assignedValue,
+                        out var specialClrSetterInvocation))
+                {
+                    EmitStatementAt(
+                        specialClrSetterInvocation,
+                        propertyElementAssignment.Line,
+                        propertyElementAssignment.Column);
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         propertyElementAssignment.PropertyName,
                         propertyElementAssignment.ClrPropertyTypeName,
@@ -1528,21 +1594,21 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         ? assignedValue
                         : $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({assignedValue}, {nameScopeReference})";
                     EmitStatementAt(
-                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression});",
+                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression}, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression}));",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
                 else if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {assignedValue});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(assignedValue, variableName, avaloniaPropertyExpression)});",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
                 else
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {assignedValue}, {avaloniaPriorityExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(assignedValue, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
@@ -1623,7 +1689,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 if (node.Children.Length > 0 || existingVariableName is not null)
                 {
-                    EmitNodeStatement($"__TryClearCollection({variableName}.Children);");
+                    EmitNodeStatement($"if (__replaceExistingCollections) __TryClearCollection({variableName}.Children);");
                 }
                 foreach (var child in node.Children)
                 {
@@ -1667,7 +1733,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
             case ResolvedChildAttachmentMode.ItemsCollection:
             {
-                EmitNodeStatement($"__TryClearCollection({variableName}.Items);");
+                EmitNodeStatement($"if (__replaceExistingCollections) __TryClearCollection({variableName}.Items);");
                 foreach (var child in node.Children)
                 {
                     var inlineAddValueToken = AttachBindingNodeNameScope(child, TopDownAttachValueToken);
@@ -1712,7 +1778,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 if (node.Children.Length > 0 || existingVariableName is not null)
                 {
-                    EmitNodeStatement($"__TryClearCollection({variableName});");
+                    EmitNodeStatement($"if (__replaceExistingCollections) __TryClearCollection({variableName});");
                 }
                 foreach (var child in node.Children)
                 {
@@ -1800,6 +1866,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
+        {
+            EmitNodeStatement(pendingTopDownAttachmentStatement);
+        }
+
         if (completeNameScopeOnNodeCompletion &&
             !string.IsNullOrWhiteSpace(nameScopeReference))
         {
@@ -1879,6 +1950,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
         }
 
+        string WrapSetValueExpression(string expression, string targetObjectExpression, string targetPropertyExpression)
+        {
+            return "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideMarkupExtensionValue(" +
+                   expression +
+                   ", " + serviceProviderReference +
+                   ", " + rootReference +
+                   ", " + intermediateRootReference +
+                   ", " + targetObjectExpression +
+                   ", " + targetPropertyExpression +
+                   ", " + baseUriExpression +
+                   ", " + nodeParentStackExpression +
+                   ")";
+        }
+
         if (shouldCreateVariable)
         {
             nodeCounter++;
@@ -1891,11 +1976,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             var scopedElementVariable = "__scopedStyledElement" + nodeCounter.ToString();
             EmitNodeStatement($"if ((object){variableName} is global::Avalonia.StyledElement {scopedElementVariable})");
             EmitNodeStatement("{");
-            EmitNodeStatement($"    global::Avalonia.Controls.NameScope.SetNameScope({scopedElementVariable}, {nameScopeReference});");
+            EmitNodeStatement($"    __TrySetNameScope({scopedElementVariable}, {nameScopeReference});");
             EmitNodeStatement("}");
         }
 
         EmitNodeStatement($"__BeginInit({variableName});");
+        string? pendingTopDownAttachmentStatement = null;
         if (node.UseTopDownInitialization &&
             !string.IsNullOrWhiteSpace(topDownAttachmentTemplate))
         {
@@ -1907,7 +1993,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 intermediateRootReference,
                 baseUriExpression,
                 nodeParentStackExpression);
-            EmitNodeStatement(ExpandTopDownAttachmentTemplate(topDownAttachmentTemplate!, attachmentValueExpression));
+            pendingTopDownAttachmentStatement = ExpandTopDownAttachmentTemplate(
+                topDownAttachmentTemplate!,
+                attachmentValueExpression);
         }
 
         if (!string.IsNullOrWhiteSpace(node.Name))
@@ -1938,6 +2026,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
+            var bindingAnchorExpression =
+                $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression})";
             var valueExpression = ExpandMarkupContextExpression(
                 assignment.ValueExpression,
                 serviceProviderReference,
@@ -1952,7 +2042,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        assignment.PropertyName,
+                        assignment.ClrPropertyOwnerTypeName,
+                        assignment.ClrPropertyTypeName,
+                        clrAssignmentValueExpression,
+                        out var specialClrSetterInvocation))
+                {
+                    EmitStatementAt(specialClrSetterInvocation, assignment.Line, assignment.Column);
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         assignment.PropertyName,
                         assignment.ClrPropertyTypeName,
@@ -1975,7 +2075,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 {
                     var bindingExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
                     EmitStatementAt(
-                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingExpression});",
+                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingExpression}, {bindingAnchorExpression});",
                         assignment.Line,
                         assignment.Column);
                     continue;
@@ -1984,14 +2084,14 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {valueExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(valueExpression, variableName, avaloniaPropertyExpression)});",
                         assignment.Line,
                         assignment.Column);
                 }
                 else
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {valueExpression}, {avaloniaPriorityExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(valueExpression, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});",
                         assignment.Line,
                         assignment.Column);
                 }
@@ -2020,7 +2120,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             if (propertyElementAssignment.IsCollectionAdd)
             {
                 EmitStatementAt(
-                    $"__TryClearCollection({variableName}.{propertyElementAssignment.PropertyName});",
+                    $"if (__replaceExistingCollections) __TryClearCollection({variableName}.{propertyElementAssignment.PropertyName});",
                     propertyElementAssignment.Line,
                     propertyElementAssignment.Column);
                 var isMergedDictionariesProperty = string.Equals(
@@ -2121,7 +2221,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             string assignmentTemplate;
             if (string.IsNullOrWhiteSpace(avaloniaPropertyExpression))
             {
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        propertyElementAssignment.PropertyName,
+                        propertyElementAssignment.ClrPropertyOwnerTypeName,
+                        propertyElementAssignment.ClrPropertyTypeName,
+                        TopDownAttachValueToken,
+                        out var specialTopDownSetterInvocation))
+                {
+                    assignmentTemplate = specialTopDownSetterInvocation;
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         propertyElementAssignment.PropertyName,
                         propertyElementAssignment.ClrPropertyTypeName,
@@ -2141,17 +2251,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     ? TopDownAttachValueToken
                     : $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({TopDownAttachValueToken}, {nameScopeReference})";
                 assignmentTemplate =
-                    $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression});";
+                    $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression}, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression}));";
             }
             else if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
             {
                 assignmentTemplate =
-                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {TopDownAttachValueToken});";
+                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(TopDownAttachValueToken, variableName, avaloniaPropertyExpression)});";
             }
             else
             {
                 assignmentTemplate =
-                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {TopDownAttachValueToken}, {avaloniaPriorityExpression});";
+                    $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(TopDownAttachValueToken, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});";
             }
 
             var assignedNode = propertyElementAssignment.ObjectValues[0];
@@ -2187,7 +2297,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
             if (string.IsNullOrWhiteSpace(avaloniaPropertyExpression))
             {
-                if (TryBuildDirectClrPropertyAssignment(
+                if (TryBuildSpecialClrSetterInvocation(
+                        variableName,
+                        propertyElementAssignment.PropertyName,
+                        propertyElementAssignment.ClrPropertyOwnerTypeName,
+                        propertyElementAssignment.ClrPropertyTypeName,
+                        assignedValue,
+                        out var specialClrSetterInvocation))
+                {
+                    EmitStatementAt(
+                        specialClrSetterInvocation,
+                        propertyElementAssignment.Line,
+                        propertyElementAssignment.Column);
+                }
+                else if (TryBuildDirectClrPropertyAssignment(
                         variableName,
                         propertyElementAssignment.PropertyName,
                         propertyElementAssignment.ClrPropertyTypeName,
@@ -2215,21 +2338,21 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         ? assignedValue
                         : $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({assignedValue}, {nameScopeReference})";
                     EmitStatementAt(
-                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression});",
+                        $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ApplyBinding({variableName}, {avaloniaPropertyExpression}, {bindingValueExpression}, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResolveBindingAnchor({variableName}, {nodeParentStackExpression}));",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
                 else if (string.IsNullOrWhiteSpace(avaloniaPriorityExpression))
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {assignedValue});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(assignedValue, variableName, avaloniaPropertyExpression)});",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
                 else
                 {
                     EmitStatementAt(
-                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {assignedValue}, {avaloniaPriorityExpression});",
+                        $"{variableName}.SetValue({avaloniaPropertyExpression}, {WrapSetValueExpression(assignedValue, variableName, avaloniaPropertyExpression)}, {avaloniaPriorityExpression});",
                         propertyElementAssignment.Line,
                         propertyElementAssignment.Column);
                 }
@@ -2271,11 +2394,16 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine($"{factoryIndent}if ({templateRoot} is global::Avalonia.StyledElement __templateStyledElement)");
             sourceBuilder.AppendLine($"{factoryIndent}{{");
             sourceBuilder.AppendLine(
-                $"{factoryIndent}    global::Avalonia.Controls.NameScope.SetNameScope(__templateStyledElement, {templateScopeName});");
+                $"{factoryIndent}    __TrySetNameScope(__templateStyledElement, {templateScopeName});");
             sourceBuilder.AppendLine($"{factoryIndent}}}");
             sourceBuilder.AppendLine(
                 $"{factoryIndent}return new global::Avalonia.Controls.Templates.TemplateResult<global::Avalonia.Controls.Control>((global::Avalonia.Controls.Control){templateRoot}, {templateScopeName});");
             sourceBuilder.AppendLine($"{indent}}});");
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
+        {
+            EmitNodeStatement(pendingTopDownAttachmentStatement);
         }
 
         if (completeNameScopeOnNodeCompletion &&
@@ -2357,7 +2485,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     {
         AppendSourceMappedLine(
             sourceBuilder,
-            $"{indent}__TryClearDictionaryEntries({variableName}.{propertyElementAssignment.PropertyName});",
+            $"{indent}if (__replaceExistingCollections) __TryClearDictionaryEntries({variableName}.{propertyElementAssignment.PropertyName});",
             emitDebugLineDirectives,
             lineDirectiveFilePath,
             propertyElementAssignment.Line,
@@ -4139,6 +4267,78 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         statement = variableName + "." + propertyName + " = " +
                     BuildClrTypedValueExpression(clrPropertyTypeName, valueExpression) + ";";
+        return true;
+    }
+
+    private static bool TryBuildSpecialClrSetterInvocation(
+        string variableName,
+        string propertyName,
+        string? clrPropertyOwnerTypeName,
+        string? clrPropertyTypeName,
+        string valueExpression,
+        out string statement)
+    {
+        statement = string.Empty;
+        if (string.IsNullOrWhiteSpace(clrPropertyOwnerTypeName) ||
+            !string.IsNullOrWhiteSpace(clrPropertyTypeName) ||
+            string.IsNullOrWhiteSpace(propertyName))
+        {
+            return false;
+        }
+
+        if (propertyName.StartsWith("SetClass:", StringComparison.Ordinal))
+        {
+            var className = propertyName.Substring("SetClass:".Length);
+            if (className.Length == 0)
+            {
+                return false;
+            }
+
+            statement = clrPropertyOwnerTypeName +
+                        ".ApplyClassValue(" +
+                        variableName +
+                        ", \"" +
+                        Escape(className) +
+                        "\", " +
+                        valueExpression +
+                        ");";
+            return true;
+        }
+
+        if (!propertyName.StartsWith("Set", StringComparison.Ordinal) ||
+            !IsClrIdentifier(propertyName))
+        {
+            return false;
+        }
+
+        statement = clrPropertyOwnerTypeName +
+                    "." +
+                    propertyName +
+                    "(" +
+                    variableName +
+                    ", " +
+                    valueExpression +
+                    ");";
+        return true;
+    }
+
+    private static bool IsClrIdentifier(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token) ||
+            (!char.IsLetter(token[0]) && token[0] != '_'))
+        {
+            return false;
+        }
+
+        for (var index = 1; index < token.Length; index++)
+        {
+            var character = token[index];
+            if (!char.IsLetterOrDigit(character) && character != '_')
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
