@@ -19,7 +19,9 @@ public static class XamlStyleRegistry
 
         if (string.IsNullOrWhiteSpace(selector))
         {
-            throw new ArgumentException("Selector must be provided.", nameof(selector));
+            // Selector-less style blocks are valid as local resource containers but
+            // are not targetable through the style selector registry.
+            return;
         }
 
         var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenStyleDescriptor>());
