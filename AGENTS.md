@@ -346,6 +346,17 @@ runtime contracts. They apply to all new features and all refactors.
   - Required: deterministic ordered resolution with ambiguity diagnostics and explicit
     compatibility switches for legacy fallback behavior.
 
+### Root-cause-first fix policy (strict)
+- Do not ship heuristic patches or one-off hacks to "make it work".
+- Every bug fix must start with root-cause analysis at the correct semantic layer
+  (parser, binder, transform, emitter, or runtime contract).
+- Implement fixes using established XAML compiler patterns and standard XAML semantics,
+  not ad-hoc behavior guesses tied to specific samples.
+- If behavior differs from mature XAML compilers, align semantics through typed models
+  and deterministic rules, not special-case string or control-name checks.
+- Any compatibility fallback must be explicit, documented, deterministic, and covered
+  by diagnostics/tests; silent heuristic fallback is forbidden.
+
 ### Semantic pipeline contracts
 - Pipeline stages must stay explicit and ordered:
   1. Parse to immutable model.
