@@ -157,67 +157,36 @@ public static class CompiledBindingPathParser
         var castRequiresSegmentClosure = false;
         if (path[index] == '(')
         {
-            if (index + 1 < path.Length && path[index + 1] != '(')
+            var attachedStatus = CompiledBindingPathSegmentSemantics.TryParseAttachedPropertySegment(
+                path,
+                index,
+                out attachedOwnerTypeToken,
+                out memberName,
+                out var attachedNextIndex);
+            if (attachedStatus == CompiledBindingAttachedPropertyParseStatus.Parsed)
             {
-                var attachedClosing = path.IndexOf(')', index + 1);
-                if (attachedClosing > index + 1)
-                {
-                    var attachedInner = path.Substring(index + 1, attachedClosing - index - 1).Trim();
-                    var attachedSeparator = attachedInner.LastIndexOf('.');
-                    var isAttachedTail = attachedClosing + 1 >= path.Length ||
-                                         path[attachedClosing + 1] == '.' ||
-                                         path[attachedClosing + 1] == '?' ||
-                                         path[attachedClosing + 1] == '[' ||
-                                         path[attachedClosing + 1] == '^';
-                    if (attachedSeparator > 0 &&
-                        attachedSeparator < attachedInner.Length - 1 &&
-                        isAttachedTail)
-                    {
-                        attachedOwnerTypeToken = attachedInner.Substring(0, attachedSeparator).Trim();
-                        memberName = attachedInner.Substring(attachedSeparator + 1).Trim();
-                        if (attachedOwnerTypeToken.Length == 0 || memberName.Length == 0)
-                        {
-                            errorMessage = "invalid attached property segment";
-                            return false;
-                        }
-
-                        isAttachedProperty = true;
-                        index = attachedClosing + 1;
-                        return true;
-                    }
-                }
+                isAttachedProperty = true;
+                index = attachedNextIndex;
+                return true;
             }
 
-            if (index + 1 < path.Length && path[index + 1] == '(')
+            if (attachedStatus == CompiledBindingAttachedPropertyParseStatus.Invalid)
             {
-                castRequiresSegmentClosure = true;
-                index += 2;
-            }
-            else
-            {
-                index++;
-            }
-
-            var castStart = index;
-            while (index < path.Length && path[index] != ')')
-            {
-                index++;
-            }
-
-            if (index >= path.Length || path[index] != ')')
-            {
-                errorMessage = "unterminated cast segment";
+                errorMessage = "invalid attached property segment";
                 return false;
             }
 
-            castTypeToken = path.Substring(castStart, index - castStart).Trim();
-            if (castTypeToken.Length == 0)
+            if (!CompiledBindingPathSegmentSemantics.TryParseCastTypeToken(
+                    path,
+                    ref index,
+                    out var parsedCastTypeToken,
+                    out castRequiresSegmentClosure,
+                    out errorMessage))
             {
-                errorMessage = "cast type token cannot be empty";
                 return false;
             }
 
-            index++;
+            castTypeToken = parsedCastTypeToken;
             while (index < path.Length && char.IsWhiteSpace(path[index]))
             {
                 index++;
