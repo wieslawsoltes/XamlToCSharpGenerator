@@ -1119,6 +1119,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
+        {
+            EmitNodeStatement(pendingTopDownAttachmentStatement);
+        }
+
         foreach (var assignment in node.PropertyAssignments)
         {
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
@@ -1775,11 +1780,6 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
-        {
-            EmitNodeStatement(pendingTopDownAttachmentStatement);
-        }
-
         if (completeNameScopeOnNodeCompletion &&
             !string.IsNullOrWhiteSpace(nameScopeReference))
         {
@@ -1923,6 +1923,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 EmitNodeStatement(
                     $"{nameScopeReference}.Register(\"{Escape(node.Name!)}\", {variableName});");
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
+        {
+            EmitNodeStatement(pendingTopDownAttachmentStatement);
         }
 
         foreach (var assignment in node.PropertyAssignments)
@@ -2338,11 +2343,6 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine(
                 $"{factoryIndent}return new global::Avalonia.Controls.Templates.TemplateResult<global::Avalonia.Controls.Control>((global::Avalonia.Controls.Control){templateRoot}, {templateScopeName});");
             sourceBuilder.AppendLine($"{indent}}});");
-        }
-
-        if (!string.IsNullOrWhiteSpace(pendingTopDownAttachmentStatement))
-        {
-            EmitNodeStatement(pendingTopDownAttachmentStatement);
         }
 
         if (completeNameScopeOnNodeCompletion &&
