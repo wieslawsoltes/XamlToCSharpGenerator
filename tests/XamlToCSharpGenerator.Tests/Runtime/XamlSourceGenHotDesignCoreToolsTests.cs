@@ -112,6 +112,49 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void WorkspaceSnapshot_Property_Metadata_Detects_Markup_Expressions_Using_Envelope_Semantics()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<Window xmlns=""https://github.com/avaloniaui""
+        xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <TextBlock x:Name=""TitleText"" Text=""{Binding Name}"" Tag=""LiteralValue"" />
+</Window>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0/0");
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+
+            var textProperty = Assert.Single(snapshot.Properties.Where(property => property.Name == "Text"));
+            Assert.True(textProperty.IsMarkupExtension);
+
+            var tagProperty = Assert.Single(snapshot.Properties.Where(property => property.Name == "Tag"));
+            Assert.False(tagProperty.IsMarkupExtension);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public async Task ApplyPropertyUpdate_Supports_Undo_And_Redo()
     {
         ResetRuntimeState();

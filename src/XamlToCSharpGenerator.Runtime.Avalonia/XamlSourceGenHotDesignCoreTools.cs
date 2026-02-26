@@ -8,6 +8,7 @@ using System.Xml;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -1085,7 +1086,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
             var name = FormatAttributeName(targetElement, attribute.Name);
             var value = attribute.Value;
-            var isMarkup = value.StartsWith("{", StringComparison.Ordinal) && value.EndsWith("}", StringComparison.Ordinal);
+            var isMarkup = MarkupExpressionEnvelopeSemantics.IsMarkupExpression(value);
             var descriptor = TryResolvePropertyDescriptor(descriptors, name);
             var propertyType = descriptor?.PropertyType;
             var isAttached = name.Contains('.', StringComparison.Ordinal) || (descriptor?.IsAttached ?? false);

@@ -333,6 +333,34 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal("Purple", value);
     }
 
+    [Fact]
+    public void ApplyBinding_Does_Not_Throw_For_DataContext_Unavailable_InvalidOperation()
+    {
+        var root = new UserControl();
+        var panel = new StackPanel();
+        var anchor = new Border();
+        var flyout = new MenuFlyout();
+        var binding = new Binding("MenuItems");
+
+        panel.Children.Add(anchor);
+        root.Content = panel;
+        anchor.ContextFlyout = flyout;
+
+        var applyException = Record.Exception(() =>
+            SourceGenMarkupExtensionRuntime.ApplyBinding(
+                flyout,
+                MenuFlyout.ItemsSourceProperty,
+                binding,
+                anchor));
+
+        Assert.Null(applyException);
+
+        var dataContextException = Record.Exception(() =>
+            root.DataContext = new ContextPageViewModel());
+
+        Assert.Null(dataContextException);
+    }
+
     private sealed class DictionaryServiceProvider : IServiceProvider
     {
         private readonly IReadOnlyDictionary<Type, object> _services;
@@ -387,6 +415,11 @@ public class SourceGenMarkupExtensionRuntimeTests
 
             return $"{hasProvideValueTarget}|{hasTargetProperty}|{hasRootObject}|{scheme}|{hasParentStack}";
         }
+    }
+
+    private sealed class ContextPageViewModel
+    {
+        public IReadOnlyList<string> MenuItems { get; } = ["One", "Two"];
     }
 
 }

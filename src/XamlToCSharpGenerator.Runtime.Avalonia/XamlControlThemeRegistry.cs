@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Avalonia.Styling;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -236,50 +237,11 @@ public static class XamlControlThemeRegistry
 
     private static string? TryExtractBasedOnKey(string? basedOnExpression)
     {
-        if (string.IsNullOrWhiteSpace(basedOnExpression))
-        {
-            return null;
-        }
-
-        var trimmed = basedOnExpression.Trim();
-        if (trimmed.StartsWith("{", StringComparison.Ordinal) &&
-            trimmed.EndsWith("}", StringComparison.Ordinal))
-        {
-            var inner = trimmed.Substring(1, trimmed.Length - 2).Trim();
-            if (!(inner.StartsWith("StaticResource", StringComparison.OrdinalIgnoreCase) ||
-                  inner.StartsWith("DynamicResource", StringComparison.OrdinalIgnoreCase)))
-            {
-                return null;
-            }
-
-            var separator = inner.IndexOf(' ');
-            if (separator < 0 || separator >= inner.Length - 1)
-            {
-                return null;
-            }
-
-            var value = inner.Substring(separator + 1).Trim();
-            foreach (var segment in value.Split(','))
-            {
-                var trimmedSegment = segment.Trim();
-                var equalsIndex = trimmedSegment.IndexOf('=');
-                if (equalsIndex <= 0 || equalsIndex >= trimmedSegment.Length - 1)
-                {
-                    continue;
-                }
-
-                var argumentName = trimmedSegment.Substring(0, equalsIndex).Trim();
-                if (argumentName.Equals("ResourceKey", StringComparison.OrdinalIgnoreCase) ||
-                    argumentName.Equals("Key", StringComparison.OrdinalIgnoreCase))
-                {
-                    return Unquote(trimmedSegment.Substring(equalsIndex + 1).Trim());
-                }
-            }
-
-            return Unquote(value);
-        }
-
-        return Unquote(trimmed);
+        return StaticResourceReferenceParser.TryExtractResourceKey(
+            basedOnExpression,
+            out var resourceKey)
+            ? resourceKey
+            : null;
     }
 
     private static string? NormalizeThemeVariant(string? themeVariant)
@@ -330,16 +292,4 @@ public static class XamlControlThemeRegistry
             : trimmed;
     }
 
-    private static string? Unquote(string value)
-    {
-        if (value.Length >= 2)
-        {
-            if ((value[0] == '"' && value[^1] == '"') || (value[0] == '\'' && value[^1] == '\''))
-            {
-                return value.Substring(1, value.Length - 2);
-            }
-        }
-
-        return value;
-    }
 }

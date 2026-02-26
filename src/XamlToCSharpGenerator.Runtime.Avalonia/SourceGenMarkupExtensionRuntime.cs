@@ -17,6 +17,13 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public static class SourceGenMarkupExtensionRuntime
 {
+    private enum DeferredBindingFailureReason
+    {
+        None,
+        DataContextUnavailable,
+        TemplatedParentUnavailable
+    }
+
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
     private const int MaxDeferredBindingRetryCount = 12;
     private static readonly bool BindingTraceEnabled = IsEnvironmentEnabled("AXSG_BINDING_TRACE");
@@ -306,9 +313,13 @@ public static class SourceGenMarkupExtensionRuntime
 
         if (value is IBinding binding)
         {
-            bool TryApplyBindingNow(string stage, out InvalidOperationException? deferredException)
+            bool TryApplyBindingNow(
+                string stage,
+                out InvalidOperationException? deferredException,
+                out DeferredBindingFailureReason deferredReason)
             {
                 deferredException = null;
+                deferredReason = DeferredBindingFailureReason.None;
                 if (TryBind(avaloniaObject, property, binding, anchor, out deferredException))
                 {
                     if (!string.Equals(stage, "immediate", StringComparison.Ordinal) ||
@@ -321,13 +332,14 @@ public static class SourceGenMarkupExtensionRuntime
 
                 if (deferredException is not null)
                 {
-                    TraceBinding($"Deferred binding ({stage}): {DescribeBindingTarget(avaloniaObject, property)}. {deferredException.Message}");
+                    deferredReason = ResolveDeferredBindingFailureReason(avaloniaObject, binding, anchor, deferredException);
+                    TraceBinding($"Deferred binding ({stage}/{deferredReason}): {DescribeBindingTarget(avaloniaObject, property)}. {deferredException.Message}");
                 }
 
                 return false;
             }
 
-            if (TryApplyBindingNow("immediate", out var initialDeferredException))
+            if (TryApplyBindingNow("immediate", out _, out var initialDeferredReason))
             {
                 return;
             }
@@ -336,7 +348,7 @@ public static class SourceGenMarkupExtensionRuntime
             {
                 void TryApplyAndDetachHandlers()
                 {
-                    if (!TryApplyBindingNow("event/" + ownerKind, out _))
+                    if (!TryApplyBindingNow("event/" + ownerKind, out _, out _))
                     {
                         return;
                     }
@@ -382,7 +394,7 @@ public static class SourceGenMarkupExtensionRuntime
                 AttachDeferredRetryHooks(styledAnchor, styledAnchor as Visual, "anchor");
             }
 
-            if (ShouldScheduleTimedBindingRetry(avaloniaObject, binding, anchor, initialDeferredException))
+            if (ShouldScheduleTimedBindingRetry(avaloniaObject, binding, anchor, initialDeferredReason))
             {
                 ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
             }
@@ -426,41 +438,136 @@ public static class SourceGenMarkupExtensionRuntime
         return fallbackAnchor;
     }
 
-    private static bool IsDataContextUnavailableException(InvalidOperationException exception)
+    private static DeferredBindingFailureReason ClassifyDeferredBindingFailure(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor)
     {
-        return exception.Message.IndexOf("DataContext", StringComparison.OrdinalIgnoreCase) >= 0;
+        if (binding is not Binding dataBinding)
+        {
+            return DeferredBindingFailureReason.None;
+        }
+
+        if (IsTemplatedParentBindingWithoutAnchor(dataBinding, target, anchor))
+        {
+            return DeferredBindingFailureReason.TemplatedParentUnavailable;
+        }
+
+        if (IsDataContextBindingWithoutSource(dataBinding) &&
+            !HasBindingDataContext(target, anchor))
+        {
+            return DeferredBindingFailureReason.DataContextUnavailable;
+        }
+
+        return DeferredBindingFailureReason.None;
     }
 
-    private static bool IsTemplatedParentUnavailableException(InvalidOperationException exception)
+    private static DeferredBindingFailureReason ResolveDeferredBindingFailureReason(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor,
+        InvalidOperationException? exception)
     {
-        return exception.Message.IndexOf("TemplatedParent", StringComparison.OrdinalIgnoreCase) >= 0;
+        var deferredReason = ClassifyDeferredBindingFailure(target, binding, anchor);
+        if (deferredReason != DeferredBindingFailureReason.None || exception is null)
+        {
+            return deferredReason;
+        }
+
+        var message = exception.Message;
+        if (message.IndexOf("Cannot find a DataContext", StringComparison.Ordinal) >= 0)
+        {
+            return DeferredBindingFailureReason.DataContextUnavailable;
+        }
+
+        if (message.IndexOf("Cannot find a StyledElement to get a TemplatedParent", StringComparison.Ordinal) >= 0)
+        {
+            return DeferredBindingFailureReason.TemplatedParentUnavailable;
+        }
+
+        return DeferredBindingFailureReason.None;
     }
 
-    private static bool IsDeferredBindingContextException(InvalidOperationException exception)
+    private static bool IsDataContextBindingWithoutSource(Binding binding)
     {
-        return IsDataContextUnavailableException(exception) ||
-               IsTemplatedParentUnavailableException(exception);
+        return IsBindingSourceUnset(binding) &&
+               binding.ElementName is null &&
+               binding.RelativeSource is null;
+    }
+
+    private static bool HasBindingDataContext(object? target, object? anchor)
+    {
+        return HasDataContext(target) || HasDataContext(anchor);
+    }
+
+    private static bool HasDataContext(object? candidate)
+    {
+        if (candidate is not StyledElement styledElement)
+        {
+            return false;
+        }
+
+        var dataContext = styledElement.DataContext;
+        return dataContext is not null &&
+               !ReferenceEquals(dataContext, AvaloniaProperty.UnsetValue);
+    }
+
+    private static bool IsTemplatedParentBindingWithoutAnchor(Binding binding, AvaloniaObject target, object? anchor)
+    {
+        if (!IsTemplatedParentRelativeSource(binding.RelativeSource) ||
+            !IsBindingSourceUnset(binding) ||
+            binding.ElementName is not null)
+        {
+            return false;
+        }
+
+        StyledElement? styledAnchor = target as StyledElement;
+        if (styledAnchor is null && anchor is StyledElement providedAnchor)
+        {
+            styledAnchor = providedAnchor;
+        }
+
+        if (styledAnchor is null)
+        {
+            return true;
+        }
+
+        var templatedParentAnchor = ResolveTemplatedParentAnchor(styledAnchor);
+        if (templatedParentAnchor?.TemplatedParent is not null)
+        {
+            return false;
+        }
+
+        if (anchor is StyledElement alternateAnchor &&
+            !ReferenceEquals(alternateAnchor, styledAnchor))
+        {
+            var alternateTemplatedParentAnchor = ResolveTemplatedParentAnchor(alternateAnchor);
+            if (alternateTemplatedParentAnchor?.TemplatedParent is not null)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool ShouldScheduleTimedBindingRetry(
         AvaloniaObject target,
         IBinding _,
         object? anchor,
-        InvalidOperationException? deferredException)
+        DeferredBindingFailureReason deferredReason)
     {
-        if (deferredException is null)
+        if (deferredReason == DeferredBindingFailureReason.None)
         {
             return false;
         }
 
-        // DataContext-based failures should be event-driven to avoid retry storms
-        // for bindings that become valid only when a flyout/menu is opened.
-        if (IsDataContextUnavailableException(deferredException))
+        if (deferredReason == DeferredBindingFailureReason.DataContextUnavailable)
         {
             return false;
         }
 
-        if (!IsTemplatedParentUnavailableException(deferredException))
+        if (deferredReason != DeferredBindingFailureReason.TemplatedParentUnavailable)
         {
             return false;
         }
@@ -570,7 +677,8 @@ public static class SourceGenMarkupExtensionRuntime
 
                 if (deferredException is not null)
                 {
-                    TraceBinding($"Deferred binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}): {DescribeBindingTarget(target, property)}. {deferredException.Message}");
+                    var deferredReason = ResolveDeferredBindingFailureReason(target, binding, anchor, deferredException);
+                    TraceBinding($"Deferred binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}/{deferredReason}): {DescribeBindingTarget(target, property)}. {deferredException.Message}");
                 }
 
                 if (attempt + 1 < MaxDeferredBindingRetryCount)
@@ -612,8 +720,14 @@ public static class SourceGenMarkupExtensionRuntime
 
             return true;
         }
-        catch (InvalidOperationException exception) when (IsDeferredBindingContextException(exception))
+        catch (InvalidOperationException exception)
         {
+            var deferredReason = ResolveDeferredBindingFailureReason(target, binding, anchor, exception);
+            if (deferredReason == DeferredBindingFailureReason.None)
+            {
+                throw;
+            }
+
             if (BindingTraceEnabled)
             {
                 var relativeSourceMode = binding is Binding deferredBinding && deferredBinding.RelativeSource is not null
@@ -1144,14 +1258,12 @@ public static class SourceGenMarkupExtensionRuntime
                 return resolvedFallback;
             }
 
-            // Keep resource lookup resilient while merged dictionaries/styles are
-            // still materializing; deferred content will re-attempt resolution.
-            return new DeferredStaticResourceContent(
-                resourceKey,
-                targetObject,
-                baseUri,
-                effectiveParentStack,
-                effectiveServiceProvider);
+            if (targetObject is AvaloniaObject)
+            {
+                return AvaloniaProperty.UnsetValue;
+            }
+
+            throw;
         }
     }
 

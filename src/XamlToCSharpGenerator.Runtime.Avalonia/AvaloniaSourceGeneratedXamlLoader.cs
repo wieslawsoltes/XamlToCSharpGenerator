@@ -1,7 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
@@ -53,20 +51,6 @@ public static class AvaloniaSourceGeneratedXamlLoader
         for (var index = 0; index < lookupUris.Length; index++)
         {
             if (XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
-            {
-                return true;
-            }
-        }
-
-        for (var index = 0; index < lookupUris.Length; index++)
-        {
-            if (!Uri.TryCreate(lookupUris[index], UriKind.RelativeOrAbsolute, out var candidateUri))
-            {
-                continue;
-            }
-
-            if (TryEnsureAssemblyLoadedForUri(candidateUri) &&
-                XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
             {
                 return true;
             }
@@ -174,55 +158,6 @@ public static class AvaloniaSourceGeneratedXamlLoader
         }
 
         return null;
-    }
-
-    private static bool TryEnsureAssemblyLoadedForUri(Uri uri)
-    {
-        if (!uri.IsAbsoluteUri ||
-            !string.Equals(uri.Scheme, "avares", StringComparison.OrdinalIgnoreCase) ||
-            string.IsNullOrWhiteSpace(uri.Host))
-        {
-            return false;
-        }
-
-        var targetAssemblyName = uri.Host;
-        if (string.IsNullOrWhiteSpace(targetAssemblyName))
-        {
-            return false;
-        }
-
-        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (var index = 0; index < loadedAssemblies.Length; index++)
-        {
-            var loadedName = loadedAssemblies[index].GetName().Name;
-            if (string.Equals(loadedName, targetAssemblyName, StringComparison.Ordinal))
-            {
-                return TryRunModuleInitializer(loadedAssemblies[index]);
-            }
-        }
-
-        try
-        {
-            var loadedAssembly = Assembly.Load(new AssemblyName(targetAssemblyName));
-            return TryRunModuleInitializer(loadedAssembly);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryRunModuleInitializer(Assembly assembly)
-    {
-        try
-        {
-            RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static string[] BuildLookupUriCandidates(IServiceProvider? serviceProvider, Uri uri)
