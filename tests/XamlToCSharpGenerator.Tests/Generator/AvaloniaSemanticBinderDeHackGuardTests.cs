@@ -224,16 +224,56 @@ public class AvaloniaSemanticBinderDeHackGuardTests
         Assert.Contains("XamlXmlNamespaceSemantics.TryBuildClrNamespaceMetadataName(", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Binder_Uses_Expression_Classification_Service()
+    {
+        var source = ReadExpressionMarkupSource();
+
+        Assert.Contains("ExpressionClassificationService.TryParseCSharpExpressionMarkup(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static bool IsImplicitCSharpExpressionMarkup(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static bool LooksLikeMarkupExtensionStart(", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Binder_Uses_Type_Resolution_Policy_Service()
+    {
+        var source = ReadBinderSource();
+
+        Assert.Contains("TypeResolutionPolicyService.TryResolveTokenFallback(", source, StringComparison.Ordinal);
+        Assert.Contains("TypeResolutionPolicyService.TryResolveXmlNamespaceFallback(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia default namespace compatibility fallback", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia default xml namespace compatibility fallback", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Binder_Uses_List_And_Member_Path_Semantics_Services()
+    {
+        var source = ReadBinderSource();
+        var eventBindingPathSource = ReadEventBindingPathSemanticsSource();
+
+        Assert.Contains("XamlListValueSemantics.SplitWhitespaceAndCommaTokens(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlListValueSemantics.SplitCommaSeparatedTokens(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static ImmutableArray<string> SplitClassTokens(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlMemberPathSemantics.SplitPathSegments(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlMemberPathSemantics.NormalizeSegmentForMemberLookup(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlMemberPathSemantics.SplitPathSegments(", eventBindingPathSource, StringComparison.Ordinal);
+    }
+
     private static string ReadBinderSource()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var binderPath = Path.Combine(
+        var bindingDirectory = Path.Combine(
             repositoryRoot,
             "src",
             "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.cs");
-        return File.ReadAllText(binderPath);
+            "Binding");
+
+        var sourceFiles = Directory.GetFiles(bindingDirectory, "AvaloniaSemanticBinder*.cs")
+            .OrderBy(static path => path, StringComparer.Ordinal)
+            .ToArray();
+        return string.Join(
+            Environment.NewLine + Environment.NewLine,
+            sourceFiles.Select(File.ReadAllText));
     }
 
     private static string ReadSelectorExpressionSemanticsSource()
@@ -304,6 +344,30 @@ public class AvaloniaSemanticBinderDeHackGuardTests
             "XamlToCSharpGenerator.Avalonia",
             "Binding",
             "AvaloniaSemanticBinder.SelectorPropertyReferences.cs");
+        return File.ReadAllText(path);
+    }
+
+    private static string ReadExpressionMarkupSource()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var path = Path.Combine(
+            repositoryRoot,
+            "src",
+            "XamlToCSharpGenerator.Avalonia",
+            "Binding",
+            "AvaloniaSemanticBinder.ExpressionMarkup.cs");
+        return File.ReadAllText(path);
+    }
+
+    private static string ReadEventBindingPathSemanticsSource()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var path = Path.Combine(
+            repositoryRoot,
+            "src",
+            "XamlToCSharpGenerator.Core",
+            "Parsing",
+            "EventBindingPathSemantics.cs");
         return File.ReadAllText(path);
     }
 

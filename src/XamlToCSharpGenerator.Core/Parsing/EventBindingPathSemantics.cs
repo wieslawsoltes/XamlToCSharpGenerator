@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using XamlToCSharpGenerator.Core.Models;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
@@ -23,15 +24,20 @@ public static class EventBindingPathSemantics
             return false;
         }
 
-        var lastDot = normalized.LastIndexOf('.');
-        if (lastDot <= 0 || lastDot >= normalized.Length - 1)
+        var pathSegments = XamlMemberPathSemantics.SplitPathSegments(normalized);
+        if (pathSegments.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        if (pathSegments.Length == 1)
         {
             methodName = normalized;
             return IsSimpleIdentifier(methodName);
         }
 
-        targetPath = normalized[..lastDot];
-        methodName = normalized[(lastDot + 1)..];
+        methodName = pathSegments[^1];
+        targetPath = BuildTargetPath(pathSegments, pathSegments.Length - 1);
         return targetPath.Length > 0 &&
                methodName.Length > 0 &&
                IsSimplePath(targetPath) &&
@@ -85,7 +91,7 @@ public static class EventBindingPathSemantics
             return true;
         }
 
-        var segments = normalizedPath.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = XamlMemberPathSemantics.SplitPathSegments(normalizedPath);
         if (segments.Length == 0)
         {
             return false;
@@ -170,5 +176,30 @@ public static class EventBindingPathSemantics
         return "__AXSG_EventBinding_" + new string(chars) + "_" +
                line.ToString(CultureInfo.InvariantCulture) + "_" +
                column.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string BuildTargetPath(
+        ImmutableArray<string> segments,
+        int length)
+    {
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (length == 1)
+        {
+            return segments[0];
+        }
+
+        var resultBuilder = new StringBuilder();
+        resultBuilder.Append(segments[0]);
+        for (var index = 1; index < length; index++)
+        {
+            resultBuilder.Append('.');
+            resultBuilder.Append(segments[index]);
+        }
+
+        return resultBuilder.ToString();
     }
 }
