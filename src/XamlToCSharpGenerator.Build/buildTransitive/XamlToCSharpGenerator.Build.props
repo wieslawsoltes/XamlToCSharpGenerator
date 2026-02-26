@@ -24,7 +24,8 @@
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
     <AvaloniaSourceGenMetricsEnabled Condition="'$(AvaloniaSourceGenMetricsEnabled)' == ''">false</AvaloniaSourceGenMetricsEnabled>
     <AvaloniaSourceGenMetricsDetailed Condition="'$(AvaloniaSourceGenMetricsDetailed)' == ''">false</AvaloniaSourceGenMetricsDetailed>
-    <AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled Condition="'$(AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled)' == ''">true</AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled>
+    <AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled Condition="'$(AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled)' == ''">false</AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled>
+    <AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled Condition="'$(AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled)' == ''">false</AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled>
     <AvaloniaSourceGenAllowImplicitXmlnsDeclaration Condition="'$(AvaloniaSourceGenAllowImplicitXmlnsDeclaration)' == ''">false</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
     <AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled Condition="'$(AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled)' == ''">true</AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>
     <AvaloniaSourceGenImplicitDefaultXmlns Condition="'$(AvaloniaSourceGenImplicitDefaultXmlns)' == ''">https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
@@ -57,6 +58,7 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsDetailed" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenAllowImplicitXmlnsDeclaration" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled" />

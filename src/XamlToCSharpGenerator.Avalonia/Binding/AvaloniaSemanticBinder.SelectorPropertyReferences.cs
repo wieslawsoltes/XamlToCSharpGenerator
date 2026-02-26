@@ -96,15 +96,7 @@ public sealed partial class AvaloniaSemanticBinder
     {
         expression = string.Empty;
         propertyValueType = null;
-        var token = rawValue.Trim();
-        if (token.Length > 2 &&
-            token[0] == '(' &&
-            token[^1] == ')')
-        {
-            token = token.Substring(1, token.Length - 2).Trim();
-        }
-
-        if (token.Length == 0)
+        if (!XamlPropertyReferenceTokenSemantics.TryNormalize(rawValue, out var token))
         {
             return false;
         }

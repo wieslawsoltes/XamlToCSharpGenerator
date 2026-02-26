@@ -16,28 +16,24 @@ public sealed partial class AvaloniaSemanticBinder
         out string expression)
     {
         expression = string.Empty;
-        var name = markup.Name.Trim().ToLowerInvariant();
+        var kind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
         var rawValue = TryGetNamedMarkupArgument(markup, "Value") ??
-                       (markup.PositionalArguments.Length > 0 ? Unquote(markup.PositionalArguments[0]) : null);
-        switch (name)
+                       (markup.PositionalArguments.Length > 0 ? XamlQuotedValueSemantics.TrimAndUnquote(markup.PositionalArguments[0]) : null);
+        switch (kind)
         {
-            case "x:true":
-            case "true":
+            case XamlMarkupExtensionKind.True:
                 expression = "true";
                 return true;
-            case "x:false":
-            case "false":
+            case XamlMarkupExtensionKind.False:
                 expression = "false";
                 return true;
-            case "x:string":
-            case "string":
+            case XamlMarkupExtensionKind.String:
             {
                 var value = rawValue ?? string.Empty;
                 expression = "\"" + Escape(value ?? string.Empty) + "\"";
                 return true;
             }
-            case "x:char":
-            case "char":
+            case XamlMarkupExtensionKind.Char:
             {
                 if (string.IsNullOrEmpty(rawValue))
                 {
@@ -61,8 +57,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "'" + EscapeChar(trimmedValue[0]) + "'";
                 return true;
             }
-            case "x:byte":
-            case "byte":
+            case XamlMarkupExtensionKind.Byte:
             {
                 if (!byte.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -72,8 +67,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "((byte)" + parsed.ToString(CultureInfo.InvariantCulture) + ")";
                 return true;
             }
-            case "x:sbyte":
-            case "sbyte":
+            case XamlMarkupExtensionKind.SByte:
             {
                 if (!sbyte.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -83,8 +77,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "((sbyte)" + parsed.ToString(CultureInfo.InvariantCulture) + ")";
                 return true;
             }
-            case "x:int16":
-            case "int16":
+            case XamlMarkupExtensionKind.Int16:
             {
                 if (!short.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -94,8 +87,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "((short)" + parsed.ToString(CultureInfo.InvariantCulture) + ")";
                 return true;
             }
-            case "x:uint16":
-            case "uint16":
+            case XamlMarkupExtensionKind.UInt16:
             {
                 if (!ushort.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -105,8 +97,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "((ushort)" + parsed.ToString(CultureInfo.InvariantCulture) + ")";
                 return true;
             }
-            case "x:int32":
-            case "int32":
+            case XamlMarkupExtensionKind.Int32:
             {
                 if (!int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -116,8 +107,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = parsed.ToString(CultureInfo.InvariantCulture);
                 return true;
             }
-            case "x:uint32":
-            case "uint32":
+            case XamlMarkupExtensionKind.UInt32:
             {
                 if (!uint.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -127,8 +117,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = parsed.ToString(CultureInfo.InvariantCulture) + "u";
                 return true;
             }
-            case "x:int64":
-            case "int64":
+            case XamlMarkupExtensionKind.Int64:
             {
                 if (!long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -138,8 +127,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = parsed.ToString(CultureInfo.InvariantCulture) + "L";
                 return true;
             }
-            case "x:uint64":
-            case "uint64":
+            case XamlMarkupExtensionKind.UInt64:
             {
                 if (!ulong.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -149,10 +137,8 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = parsed.ToString(CultureInfo.InvariantCulture) + "UL";
                 return true;
             }
-            case "x:single":
-            case "single":
-            case "x:double":
-            case "double":
+            case XamlMarkupExtensionKind.Single:
+            case XamlMarkupExtensionKind.Double:
             {
                 if (string.IsNullOrWhiteSpace(rawValue))
                 {
@@ -169,8 +155,7 @@ public sealed partial class AvaloniaSemanticBinder
                     : parsed.ToString("R", CultureInfo.InvariantCulture) + "d";
                 return true;
             }
-            case "x:decimal":
-            case "decimal":
+            case XamlMarkupExtensionKind.Decimal:
             {
                 if (!decimal.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
                 {
@@ -180,8 +165,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = parsed.ToString(CultureInfo.InvariantCulture) + "m";
                 return true;
             }
-            case "x:datetime":
-            case "datetime":
+            case XamlMarkupExtensionKind.DateTime:
             {
                 if (string.IsNullOrWhiteSpace(rawValue))
                 {
@@ -191,8 +175,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "global::System.DateTime.Parse(\"" + Escape(rawValue.Trim()) + "\", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)";
                 return true;
             }
-            case "x:timespan":
-            case "timespan":
+            case XamlMarkupExtensionKind.TimeSpan:
             {
                 if (string.IsNullOrWhiteSpace(rawValue))
                 {
@@ -202,8 +185,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "global::System.TimeSpan.Parse(\"" + Escape(rawValue.Trim()) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
                 return true;
             }
-            case "x:uri":
-            case "uri":
+            case XamlMarkupExtensionKind.Uri:
             {
                 if (string.IsNullOrWhiteSpace(rawValue))
                 {
@@ -213,8 +195,7 @@ public sealed partial class AvaloniaSemanticBinder
                 expression = "new global::System.Uri(\"" + Escape(rawValue.Trim()) + "\", global::System.UriKind.RelativeOrAbsolute)";
                 return true;
             }
-            case "x:null":
-            case "null":
+            case XamlMarkupExtensionKind.Null:
                 expression = "null";
                 return true;
             default:
@@ -398,25 +379,15 @@ public sealed partial class AvaloniaSemanticBinder
         out INamedTypeSymbol? extensionType)
     {
         extensionType = null;
-        var token = markupName.Trim();
-        if (token.Length == 0)
+        if (XamlMarkupExtensionNameSemantics.Classify(markupName) == XamlMarkupExtensionKind.Null)
         {
             return false;
         }
 
-        token = token switch
-        {
-            "x:Null" or "x:null" => string.Empty,
-            _ => token
-        };
+        var token = XamlMarkupExtensionNameSemantics.ToClrExtensionTypeToken(markupName);
         if (token.Length == 0)
         {
             return false;
-        }
-
-        if (!token.EndsWith("Extension", StringComparison.Ordinal))
-        {
-            token += "Extension";
         }
 
         extensionType = ResolveTypeToken(compilation, document, token, document.ClassNamespace);

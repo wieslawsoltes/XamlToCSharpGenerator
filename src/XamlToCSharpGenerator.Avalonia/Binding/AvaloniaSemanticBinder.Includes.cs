@@ -175,8 +175,7 @@ public sealed partial class AvaloniaSemanticBinder
             return trimmedSource;
         }
 
-        var markupName = markup.Name.ToLowerInvariant();
-        if (markupName is not ("x:uri" or "uri"))
+        if (XamlMarkupExtensionNameSemantics.Classify(markup.Name) != XamlMarkupExtensionKind.Uri)
         {
             return trimmedSource;
         }

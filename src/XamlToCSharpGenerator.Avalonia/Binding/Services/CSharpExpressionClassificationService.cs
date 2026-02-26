@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -15,16 +16,16 @@ internal sealed class CSharpExpressionClassificationService
         string token,
         out INamedTypeSymbol? typeSymbol);
 
-    private readonly MarkupExpressionParser _markupExpressionParser;
+    private readonly TryParseMarkupExtensionDelegate _tryParseMarkupExtension;
     private readonly ImmutableHashSet<string> _knownMarkupExtensionNames;
     private readonly TryResolveMarkupExtensionTypeDelegate _tryResolveMarkupExtensionType;
 
     public CSharpExpressionClassificationService(
-        MarkupExpressionParser markupExpressionParser,
+        TryParseMarkupExtensionDelegate tryParseMarkupExtension,
         ImmutableHashSet<string> knownMarkupExtensionNames,
         TryResolveMarkupExtensionTypeDelegate tryResolveMarkupExtensionType)
     {
-        _markupExpressionParser = markupExpressionParser ?? throw new ArgumentNullException(nameof(markupExpressionParser));
+        _tryParseMarkupExtension = tryParseMarkupExtension ?? throw new ArgumentNullException(nameof(tryParseMarkupExtension));
         _knownMarkupExtensionNames = knownMarkupExtensionNames ?? throw new ArgumentNullException(nameof(knownMarkupExtensionNames));
         _tryResolveMarkupExtensionType = tryResolveMarkupExtensionType ??
                                          throw new ArgumentNullException(nameof(tryResolveMarkupExtensionType));
@@ -48,22 +49,19 @@ internal sealed class CSharpExpressionClassificationService
             return false;
         }
 
-        var trimmed = value.Trim();
-        if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
-            !trimmed.EndsWith("}", StringComparison.Ordinal))
+        if (!MarkupExpressionEnvelopeSemantics.TryExtractInnerContent(value, out var innerExpression))
         {
             return false;
         }
 
-        if (trimmed.StartsWith("{}", StringComparison.Ordinal))
+        if (innerExpression.Length == 0)
         {
             return false;
         }
 
-        if (trimmed.Length > 3 &&
-            trimmed[1] == '=')
+        if (innerExpression.StartsWith("=", StringComparison.Ordinal))
         {
-            var explicitExpression = trimmed.Substring(2, trimmed.Length - 3).Trim();
+            var explicitExpression = innerExpression.Substring(1).Trim();
             if (explicitExpression.Length == 0)
             {
                 return false;
@@ -79,13 +77,12 @@ internal sealed class CSharpExpressionClassificationService
             return false;
         }
 
-        var implicitExpression = trimmed.Substring(1, trimmed.Length - 2).Trim();
-        if (!IsImplicitCSharpExpressionMarkup(implicitExpression, compilation, document))
+        if (!IsImplicitCSharpExpressionMarkup(innerExpression, compilation, document))
         {
             return false;
         }
 
-        csharpExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(implicitExpression);
+        csharpExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(innerExpression);
         return csharpExpression.Length > 0;
     }
 
@@ -146,7 +143,7 @@ internal sealed class CSharpExpressionClassificationService
         XamlDocumentModel document)
     {
         var wrappedExpression = "{" + expressionBody + "}";
-        if (!_markupExpressionParser.TryParseMarkupExtension(wrappedExpression, out var markup))
+        if (!_tryParseMarkupExtension(wrappedExpression, out var markup))
         {
             return false;
         }
@@ -162,12 +159,24 @@ internal sealed class CSharpExpressionClassificationService
             return true;
         }
 
-        if (_knownMarkupExtensionNames.Contains(token) ||
-            _knownMarkupExtensionNames.Contains(token + "Extension"))
+        if (IsKnownMarkupExtensionName(token))
         {
             return true;
         }
 
         return _tryResolveMarkupExtensionType(compilation, document, token, out _);
+    }
+
+    private bool IsKnownMarkupExtensionName(string token)
+    {
+        foreach (var knownMarkupExtensionName in _knownMarkupExtensionNames)
+        {
+            if (XamlMarkupExtensionNameSemantics.Matches(token, knownMarkupExtensionName))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

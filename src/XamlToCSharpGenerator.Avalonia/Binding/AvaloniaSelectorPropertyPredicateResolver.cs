@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
@@ -66,7 +67,7 @@ internal static class AvaloniaSelectorPropertyPredicateResolver
         }
 
         propertyExpression = propertyResolution.PropertyExpression;
-        var selectorValue = Unquote(predicate.RawValue);
+        var selectorValue = XamlQuotedValueSemantics.UnquoteWrapped(predicate.RawValue);
         if (propertyResolution.PropertyValueType is null)
         {
             return tryConvertUntypedValue(selectorValue, out valueExpression);
@@ -81,19 +82,4 @@ internal static class AvaloniaSelectorPropertyPredicateResolver
             out valueExpression);
     }
 
-    private static string Unquote(string value)
-    {
-        if (string.IsNullOrEmpty(value) || value.Length < 2)
-        {
-            return value;
-        }
-
-        if ((value[0] == '"' && value[^1] == '"') ||
-            (value[0] == '\'' && value[^1] == '\''))
-        {
-            return value.Substring(1, value.Length - 2);
-        }
-
-        return value;
-    }
 }

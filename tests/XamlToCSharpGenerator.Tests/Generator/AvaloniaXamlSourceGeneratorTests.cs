@@ -299,7 +299,7 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
-    public void Resolves_Default_Namespace_Compatibility_Type_Fallback_When_Option_On()
+    public void Resolves_Default_Namespace_Compatibility_Type_Fallback_When_Option_Explicitly_On()
     {
         const string code = """
             namespace Avalonia.Controls
@@ -330,7 +330,15 @@ public class AvaloniaXamlSourceGeneratorTests
             """;
 
         var compilation = CreateCompilation(code);
-        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalBuildOptions:
+            [
+                new KeyValuePair<string, string>(
+                    "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+                    "true")
+            ]);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.Contains(
@@ -340,6 +348,100 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodad()", generated);
+    }
+
+    [Fact]
+    public void Disables_Default_Namespace_Compatibility_Type_Fallback_When_Option_Explicitly_Off_In_NonStrict_Mode()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Styling
+            {
+                public class ThemeDoodad { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ThemeDoodad />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalBuildOptions:
+            [
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "false")
+            ]);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0113");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.DoesNotContain("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodad()", generated);
+    }
+
+    [Fact]
+    public void Disables_Default_Namespace_Compatibility_Type_Fallback_When_Option_Explicitly_Off_In_Strict_Mode()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Styling
+            {
+                public class ThemeDoodad { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ThemeDoodad />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalBuildOptions:
+            [
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenStrictMode", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "false")
+            ]);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0113");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.DoesNotContain("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodad()", generated);
     }
 
     [Fact]
@@ -1905,7 +2007,8 @@ public class AvaloniaXamlSourceGeneratorTests
             additionalBuildOptions:
             [
                 new KeyValuePair<string, string>("build_property.AvaloniaSourceGenMetricsEnabled", "true"),
-                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenMetricsDetailed", "true")
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenMetricsDetailed", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "true")
             ]);
 
         var summaryDiagnostic = Assert.Single(diagnostics.Where(d => d.Id == "AXSG0800"));
@@ -1919,6 +2022,53 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("parse=", message, StringComparison.Ordinal);
         Assert.Contains("bind=", message, StringComparison.Ordinal);
         Assert.Contains("emit=", message, StringComparison.Ordinal);
+        Assert.Contains("typeResolutionFallbacks=", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emits_Compile_Metrics_Type_Resolution_Fallback_Count()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Styling
+            {
+                public class ThemeDoodad { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ThemeDoodad />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalBuildOptions:
+            [
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenMetricsEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenMetricsDetailed", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "true")
+            ]);
+
+        var fileDiagnostic = Assert.Single(diagnostics.Where(d => d.Id == "AXSG0801"));
+        Assert.Contains("typeResolutionFallbacks=1", fileDiagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2552,9 +2702,18 @@ public class AvaloniaXamlSourceGeneratorTests
             """;
 
         var compilation = CreateCompilation(code);
-        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            new[]
+            {
+                new KeyValuePair<string, string>(
+                    "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+                    "false")
+            });
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ProvideMarkupExtension((global::Avalonia.Markup.Xaml.MarkupExtensions.StaticResourceExtension)",
@@ -4460,6 +4619,68 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideOnPlatform(", generated);
         Assert.Contains("\"Base\", \"Win\"", generated);
         Assert.DoesNotContain("__AXSG_CTX_", generated);
+    }
+
+    [Fact]
+    public void Resolves_OnPlatform_Object_Element_To_Markup_Extension_Type()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class OnPlatformExtension
+                {
+                    public object? Default { get; set; }
+                }
+
+                public class On
+                {
+                    public string[]? Options { get; set; }
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public class Host : global::Avalonia.Controls.Control
+                {
+                    public object? Value { get; set; }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView">
+                <local:Host>
+                    <local:Host.Value>
+                        <OnPlatform Default="Base">
+                            <On Options="Windows" Content="Win" />
+                        </OnPlatform>
+                    </local:Host.Value>
+                </local:Host>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("new global::Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension()", generated);
+        Assert.DoesNotContain("new global::System.Object();", generated);
     }
 
     [Fact]
@@ -12080,6 +12301,19 @@ public class AvaloniaXamlSourceGeneratorTests
         if (additionalBuildOptions is not null)
         {
             options.AddRange(additionalBuildOptions);
+        }
+
+        if (!options.Any(static pair =>
+                string.Equals(
+                    pair.Key,
+                    "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+                    StringComparison.Ordinal)))
+        {
+            // Legacy generator-shape tests in this suite assume compatibility fallback behavior.
+            // Explicitly pin it here so default-option changes are covered by focused fallback tests instead.
+            options.Add(new KeyValuePair<string, string>(
+                "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+                "true"));
         }
 
         var generator = new AvaloniaXamlSourceGenerator();

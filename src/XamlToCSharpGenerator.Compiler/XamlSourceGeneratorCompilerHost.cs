@@ -269,6 +269,7 @@ public static class XamlSourceGeneratorCompilerHost
                 var bindElapsed = TimeSpan.Zero;
                 var emitElapsed = TimeSpan.Zero;
                 var semanticDiagnosticsCount = 0;
+                var typeResolutionFallbackCount = 0;
                 var generatedSource = false;
                 var usedFallbackSource = false;
                 var duplicateHint = false;
@@ -314,6 +315,7 @@ public static class XamlSourceGeneratorCompilerHost
                         allParsedDocuments);
                     semanticDiagnostics = ApplyDefaultDiagnosticPolicy(semanticDiagnostics, options);
                     semanticDiagnosticsCount = semanticDiagnostics.Length;
+                    typeResolutionFallbackCount = semanticDiagnostics.Count(static diagnostic => diagnostic.Id == "AXSG0113");
                     ReportDiagnostics(sourceContext, semanticDiagnostics, resilienceEnabled);
                     if (viewModel is null)
                     {
@@ -390,6 +392,7 @@ public static class XamlSourceGeneratorCompilerHost
                         parseResult,
                         parseDiagnostics.Length,
                         semanticDiagnosticsCount,
+                        typeResolutionFallbackCount,
                         parsedDocument.ParseElapsed,
                         bindElapsed,
                         emitElapsed,
@@ -628,6 +631,7 @@ public static class XamlSourceGeneratorCompilerHost
         XamlDocumentModel? parseResult,
         int parseDiagnosticsCount,
         int semanticDiagnosticsCount,
+        int typeResolutionFallbackCount,
         TimeSpan parseElapsed,
         TimeSpan bindElapsed,
         TimeSpan emitElapsed,
@@ -650,7 +654,7 @@ public static class XamlSourceGeneratorCompilerHost
         var message = options.MetricsDetailed
             ? string.Format(
                 CultureInfo.InvariantCulture,
-                "XAML compile metrics for '{0}': total={1}, parse={2}, bind={3}, emit={4}, status={5}, generated={6}, fallback={7}, duplicateHint={8}, parseDiagnostics={9}, semanticDiagnostics={10}.",
+                "XAML compile metrics for '{0}': total={1}, parse={2}, bind={3}, emit={4}, status={5}, generated={6}, fallback={7}, duplicateHint={8}, parseDiagnostics={9}, semanticDiagnostics={10}, typeResolutionFallbacks={11}.",
                 documentDisplayName,
                 FormatMilliseconds(totalElapsed),
                 FormatMilliseconds(parseElapsed),
@@ -661,7 +665,8 @@ public static class XamlSourceGeneratorCompilerHost
                 usedFallbackSource,
                 duplicateHint,
                 parseDiagnosticsCount,
-                semanticDiagnosticsCount)
+                semanticDiagnosticsCount,
+                typeResolutionFallbackCount)
             : string.Format(
                 CultureInfo.InvariantCulture,
                 "XAML compile metrics for '{0}': total={1}, status={2}.",

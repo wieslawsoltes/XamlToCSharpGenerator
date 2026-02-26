@@ -35,12 +35,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool TryParseBindingMarkupCore(
         MarkupExtensionInfo markup,
-        string extensionName,
+        XamlMarkupExtensionKind extensionKind,
         out BindingMarkup bindingMarkup)
     {
         return BindingEventMarkupParser.TryParseBindingMarkupCore(
             markup,
-            extensionName,
+            extensionKind,
             TryParseMarkupExtension,
             out bindingMarkup);
     }
@@ -688,7 +688,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (collectionType is IArrayTypeSymbol arrayType)
         {
-            if (!int.TryParse(rawIndexerToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var arrayIndex))
+            if (!XamlScalarLiteralSemantics.TryParseInt32(rawIndexerToken, out var arrayIndex))
             {
                 indexerExpression = string.Empty;
                 resultType = collectionType;
@@ -861,7 +861,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (parameterType is INamedTypeSymbol nullableType &&
             IsNullableValueType(nullableType))
         {
-            if (normalizedToken.Equals("null", StringComparison.OrdinalIgnoreCase))
+            if (XamlScalarLiteralSemantics.IsNullLiteral(normalizedToken))
             {
                 expression = "null";
                 normalizedToken = "null";
@@ -883,7 +883,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        if (normalizedToken.Equals("null", StringComparison.OrdinalIgnoreCase))
+        if (XamlScalarLiteralSemantics.IsNullLiteral(normalizedToken))
         {
             if (parameterType.IsReferenceType)
             {
@@ -916,7 +916,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         if (parameterType.SpecialType == SpecialType.System_Boolean &&
-            bool.TryParse(unquotedToken, out var boolValue))
+            XamlScalarLiteralSemantics.TryParseBoolean(unquotedToken, out var boolValue))
         {
             expression = boolValue ? "true" : "false";
             normalizedToken = expression;
@@ -925,7 +925,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         if (parameterType.SpecialType == SpecialType.System_Int32 &&
-            int.TryParse(unquotedToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            XamlScalarLiteralSemantics.TryParseInt32(unquotedToken, out var intValue))
         {
             expression = intValue.ToString(CultureInfo.InvariantCulture);
             normalizedToken = expression;
@@ -934,7 +934,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         if (parameterType.SpecialType == SpecialType.System_Int64 &&
-            long.TryParse(unquotedToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+            XamlScalarLiteralSemantics.TryParseInt64(unquotedToken, out var longValue))
         {
             expression = longValue.ToString(CultureInfo.InvariantCulture) + "L";
             normalizedToken = longValue.ToString(CultureInfo.InvariantCulture);
@@ -943,7 +943,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         if (parameterType.SpecialType == SpecialType.System_Double &&
-            double.TryParse(unquotedToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+            XamlScalarLiteralSemantics.TryParseDouble(unquotedToken, out var doubleValue))
         {
             expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
             normalizedToken = expression;
@@ -952,7 +952,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         if (parameterType.SpecialType == SpecialType.System_Single &&
-            float.TryParse(unquotedToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatValue))
+            XamlScalarLiteralSemantics.TryParseSingle(unquotedToken, out var floatValue))
         {
             expression = floatValue.ToString("R", CultureInfo.InvariantCulture) + "f";
             normalizedToken = floatValue.ToString("R", CultureInfo.InvariantCulture);
@@ -962,7 +962,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (parameterType.SpecialType == SpecialType.System_Object)
         {
-            if (bool.TryParse(unquotedToken, out boolValue))
+            if (XamlScalarLiteralSemantics.TryParseBoolean(unquotedToken, out boolValue))
             {
                 expression = boolValue ? "true" : "false";
                 normalizedToken = expression;
@@ -970,7 +970,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 return true;
             }
 
-            if (int.TryParse(unquotedToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out intValue))
+            if (XamlScalarLiteralSemantics.TryParseInt32(unquotedToken, out intValue))
             {
                 expression = intValue.ToString(CultureInfo.InvariantCulture);
                 normalizedToken = expression;
@@ -978,7 +978,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 return true;
             }
 
-            if (double.TryParse(unquotedToken, NumberStyles.Float, CultureInfo.InvariantCulture, out doubleValue))
+            if (XamlScalarLiteralSemantics.TryParseDouble(unquotedToken, out doubleValue))
             {
                 expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
                 normalizedToken = expression;
@@ -1042,7 +1042,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var token = Unquote(normalizedToken);
 
         if (parameterType.SpecialType == SpecialType.System_Int32 &&
-            int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            XamlScalarLiteralSemantics.TryParseInt32(token, out var intValue))
         {
             expression = intValue.ToString(CultureInfo.InvariantCulture);
             normalizedToken = expression;
@@ -1070,16 +1070,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return false;
-    }
-
-    private static bool IsIdentifierStart(char ch)
-    {
-        return char.IsLetter(ch) || ch == '_';
-    }
-
-    private static bool IsIdentifierPart(char ch)
-    {
-        return char.IsLetterOrDigit(ch) || ch == '_';
     }
 
     private static ITypeSymbol? TryResolveSetterValueType(
@@ -4058,10 +4048,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var unquotedToken = Unquote(token);
         if (TryParseMarkupExtension(unquotedToken, out var markup))
         {
-            switch (markup.Name.ToLowerInvariant())
+            switch (XamlMarkupExtensionNameSemantics.Classify(markup.Name))
             {
-                case "x:type":
-                case "type":
+                case XamlMarkupExtensionKind.Type:
                 {
                     var typeToken = markup.NamedArguments.TryGetValue("Type", out var explicitType)
                         ? explicitType
@@ -4086,8 +4075,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Kind: ResolvedResourceKeyKind.TypeReference);
                     return true;
                 }
-                case "x:static":
-                case "static":
+                case XamlMarkupExtensionKind.Static:
                 {
                     var memberToken = markup.NamedArguments.TryGetValue("Member", out var explicitMember)
                         ? explicitMember
@@ -4250,52 +4238,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool TryMapBindingMode(string modeToken, out string expression)
     {
-        expression = string.Empty;
-        var normalized = modeToken.Trim();
-        if (normalized.StartsWith("global::Avalonia.Data.BindingMode.", StringComparison.Ordinal))
-        {
-            expression = normalized;
-            return true;
-        }
-
-        expression = normalized.ToLowerInvariant() switch
-        {
-            "default" => "global::Avalonia.Data.BindingMode.Default",
-            "oneway" => "global::Avalonia.Data.BindingMode.OneWay",
-            "twoway" => "global::Avalonia.Data.BindingMode.TwoWay",
-            "onewaytosource" => "global::Avalonia.Data.BindingMode.OneWayToSource",
-            "onetime" => "global::Avalonia.Data.BindingMode.OneTime",
-            _ => string.Empty
-        };
-
-        return expression.Length > 0;
+        return AvaloniaBindingEnumSemantics.TryMapBindingModeToken(modeToken, out expression);
     }
 
     private static bool TryMapRelativeSourceMode(string modeToken, out string expression)
     {
-        expression = modeToken.Trim().ToLowerInvariant() switch
-        {
-            "self" => "global::Avalonia.Data.RelativeSourceMode.Self",
-            "templatedparent" => "global::Avalonia.Data.RelativeSourceMode.TemplatedParent",
-            "datacontext" => "global::Avalonia.Data.RelativeSourceMode.DataContext",
-            "findancestor" => "global::Avalonia.Data.RelativeSourceMode.FindAncestor",
-            "ancestor" => "global::Avalonia.Data.RelativeSourceMode.FindAncestor",
-            _ => string.Empty
-        };
-
-        return expression.Length > 0;
+        return AvaloniaBindingEnumSemantics.TryMapRelativeSourceModeToken(modeToken, out expression);
     }
 
     private static bool TryMapTreeType(string treeToken, out string expression)
     {
-        expression = treeToken.Trim().ToLowerInvariant() switch
-        {
-            "visual" => "global::Avalonia.Data.TreeType.Visual",
-            "logical" => "global::Avalonia.Data.TreeType.Logical",
-            _ => string.Empty
-        };
-
-        return expression.Length > 0;
+        return AvaloniaBindingEnumSemantics.TryMapTreeTypeToken(treeToken, out expression);
     }
 
     private static string? GetDefaultBindingPriorityToken(BindingPriorityScope scope)
@@ -4493,19 +4446,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         var trimmed = value.Trim();
 
-        if (bool.TryParse(trimmed, out var boolValue))
+        if (XamlScalarLiteralSemantics.TryParseBoolean(trimmed, out var boolValue))
         {
             expression = boolValue ? "true" : "false";
             return true;
         }
 
-        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        if (XamlScalarLiteralSemantics.TryParseInt32(trimmed, out var intValue))
         {
             expression = intValue.ToString(CultureInfo.InvariantCulture);
             return true;
         }
 
-        if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+        if (XamlScalarLiteralSemantics.TryParseDouble(trimmed, out var doubleValue))
         {
             expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
             return true;
@@ -4518,23 +4471,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool TryParseHandlerName(string value, out string? handlerName)
     {
         handlerName = null;
-        if (string.IsNullOrWhiteSpace(value))
+        if (!XamlEventHandlerNameSemantics.TryParseHandlerName(value, out var parsedHandlerName))
         {
             return false;
         }
 
-        var trimmed = value.Trim();
-        if (trimmed.StartsWith("{", StringComparison.Ordinal) || trimmed.IndexOf('.') >= 0)
-        {
-            return false;
-        }
-
-        if (!IsIdentifier(trimmed))
-        {
-            return false;
-        }
-
-        handlerName = trimmed;
+        handlerName = parsedHandlerName;
         return true;
     }
 
@@ -4566,25 +4508,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                      ")." +
                      handlerMethodName +
                      ")";
-        return true;
-    }
-
-    private static bool IsIdentifier(string value)
-    {
-        if (value.Length == 0 || (!char.IsLetter(value[0]) && value[0] != '_'))
-        {
-            return false;
-        }
-
-        for (var index = 1; index < value.Length; index++)
-        {
-            var ch = value[index];
-            if (!char.IsLetterOrDigit(ch) && ch != '_')
-            {
-                return false;
-            }
-        }
-
         return true;
     }
 
@@ -5004,7 +4927,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             nullableType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
             nullableType.TypeArguments.Length == 1)
         {
-            if (value.Trim().Equals("null", StringComparison.OrdinalIgnoreCase))
+            if (XamlScalarLiteralSemantics.IsNullLiteral(value))
             {
                 conversion = CreateLiteralConversion("null");
                 return true;
@@ -5126,37 +5049,43 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Boolean && bool.TryParse(value, out var boolValue))
+        if (type.SpecialType == SpecialType.System_Boolean &&
+            XamlScalarLiteralSemantics.TryParseBoolean(value, out var boolValue))
         {
             conversion = CreateLiteralConversion(boolValue ? "true" : "false");
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Int32 && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        if (type.SpecialType == SpecialType.System_Int32 &&
+            XamlScalarLiteralSemantics.TryParseInt32(value, out var intValue))
         {
             conversion = CreateLiteralConversion(intValue.ToString(CultureInfo.InvariantCulture));
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Int64 && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+        if (type.SpecialType == SpecialType.System_Int64 &&
+            XamlScalarLiteralSemantics.TryParseInt64(value, out var longValue))
         {
             conversion = CreateLiteralConversion(longValue.ToString(CultureInfo.InvariantCulture) + "L");
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Double && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+        if (type.SpecialType == SpecialType.System_Double &&
+            XamlScalarLiteralSemantics.TryParseDouble(value, out var doubleValue))
         {
             conversion = CreateLiteralConversion(doubleValue.ToString("R", CultureInfo.InvariantCulture) + "d");
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Single && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatValue))
+        if (type.SpecialType == SpecialType.System_Single &&
+            XamlScalarLiteralSemantics.TryParseSingle(value, out var floatValue))
         {
             conversion = CreateLiteralConversion(floatValue.ToString("R", CultureInfo.InvariantCulture) + "f");
             return true;
         }
 
-        if (type.SpecialType == SpecialType.System_Decimal && decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
+        if (type.SpecialType == SpecialType.System_Decimal &&
+            XamlScalarLiteralSemantics.TryParseDecimal(value, out var decimalValue))
         {
             conversion = CreateLiteralConversion(decimalValue.ToString(CultureInfo.InvariantCulture) + "m");
             return true;
@@ -5264,15 +5193,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        if (long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericValue))
+        if (XamlScalarLiteralSemantics.TryParseInt64(trimmed, out var numericValue))
         {
             expression = "(" + enumType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")" +
                          numericValue.ToString(CultureInfo.InvariantCulture);
             return true;
         }
 
-        var separators = new[] { ',', '|' };
-        var tokens = trimmed.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tokens = XamlDelimitedValueSemantics.SplitEnumFlagTokens(trimmed);
         if (tokens.Length == 0)
         {
             return false;
@@ -5401,27 +5329,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool TryConvertTimeSpanLiteralExpression(string value, out string expression)
     {
         expression = string.Empty;
-        var trimmed = value.Trim();
-        if (trimmed.Length == 0)
+        if (!XamlTimeSpanLiteralSemantics.TryParse(value, out var parsedTimeSpan))
         {
             return false;
-        }
-
-        if (!TimeSpan.TryParse(trimmed, CultureInfo.InvariantCulture, out var parsedTimeSpan))
-        {
-            if (!trimmed.Contains(':') &&
-                double.TryParse(
-                    trimmed,
-                    NumberStyles.Float | NumberStyles.AllowThousands,
-                    CultureInfo.InvariantCulture,
-                    out var seconds))
-            {
-                parsedTimeSpan = TimeSpan.FromSeconds(seconds);
-            }
-            else
-            {
-                return false;
-            }
         }
 
         expression = "global::System.TimeSpan.FromTicks(" +
@@ -5472,65 +5382,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool TryConvertStyleQueryLiteralExpression(string value, out string expression)
     {
         expression = string.Empty;
-        var trimmed = value.Trim();
-        if (trimmed.Length == 0)
+        if (!AvaloniaStyleQuerySemantics.TryParse(value, out var descriptor))
         {
             return false;
-        }
-
-        if (!XamlTokenSplitSemantics.TrySplitAtFirstSeparator(
-                trimmed,
-                ':',
-                out var rawQueryToken,
-                out var valueToken))
-        {
-            return false;
-        }
-
-        var queryToken = rawQueryToken.ToLowerInvariant();
-        if (!double.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var queryValue))
-        {
-            return false;
-        }
-
-        string methodName;
-        string operatorName;
-        switch (queryToken)
-        {
-            case "width":
-                methodName = "Width";
-                operatorName = "Equals";
-                break;
-            case "min-width":
-                methodName = "Width";
-                operatorName = "GreaterThanOrEquals";
-                break;
-            case "max-width":
-                methodName = "Width";
-                operatorName = "LessThanOrEquals";
-                break;
-            case "height":
-                methodName = "Height";
-                operatorName = "Equals";
-                break;
-            case "min-height":
-                methodName = "Height";
-                operatorName = "GreaterThanOrEquals";
-                break;
-            case "max-height":
-                methodName = "Height";
-                operatorName = "LessThanOrEquals";
-                break;
-            default:
-                return false;
         }
 
         expression = "global::Avalonia.Styling.StyleQueries." +
-                     methodName +
+                     descriptor.MethodName +
                      "(null, global::Avalonia.Styling.StyleQueryComparisonOperator." +
-                     operatorName +
+                     descriptor.OperatorName +
                      ", " +
-                     queryValue.ToString("R", CultureInfo.InvariantCulture) +
+                     descriptor.Value.ToString("R", CultureInfo.InvariantCulture) +
                      "d)";
         return true;
     }
@@ -5566,47 +5428,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 trimEntriesFlag);
         }
 
-        string[] items;
-        var trimmedValue = value.Trim();
-        var useTopLevelCommaSplit = separators.Length == 1 &&
-                                    separators[0] == ",";
-        if (trimmedValue.Length == 0)
-        {
-            items = Array.Empty<string>();
-        }
-        else if (useTopLevelCommaSplit)
-        {
-            items = SplitTopLevel(trimmedValue, ',').ToArray();
-            if ((splitOptions & trimEntriesFlag) != 0)
-            {
-                for (var index = 0; index < items.Length; index++)
-                {
-                    items[index] = items[index].Trim();
-                }
-            }
-
-            if ((splitOptions & StringSplitOptions.RemoveEmptyEntries) != 0)
-            {
-                items = items.Where(item => item.Length > 0).ToArray();
-            }
-        }
-        else
-        {
-            var effectiveSplitOptions = splitOptions & ~trimEntriesFlag;
-            items = trimmedValue.Split(separators, effectiveSplitOptions);
-            if ((splitOptions & trimEntriesFlag) != 0)
-            {
-                for (var index = 0; index < items.Length; index++)
-                {
-                    items[index] = items[index].Trim();
-                }
-            }
-
-            if ((splitOptions & StringSplitOptions.RemoveEmptyEntries) != 0)
-            {
-                items = items.Where(item => item.Length > 0).ToArray();
-            }
-        }
+        var items = XamlDelimitedValueSemantics.SplitCollectionItems(value, separators, splitOptions);
 
         var itemExpressions = new List<string>(items.Length);
         foreach (var item in items)
@@ -5942,10 +5764,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        switch (markup.Name.ToLowerInvariant())
+        switch (XamlMarkupExtensionNameSemantics.Classify(markup.Name))
         {
-            case "binding":
-            case "compiledbinding":
+            case XamlMarkupExtensionKind.Binding:
+            case XamlMarkupExtensionKind.CompiledBinding:
             {
                 if (!TryParseBindingMarkup(value, out var bindingMarkup))
                 {
@@ -5975,14 +5797,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     requiresParentStack: true);
                 return true;
             }
-            case "x:null":
-            case "null":
+            case XamlMarkupExtensionKind.Null:
             {
                 conversion = CreateLiteralConversion("null");
                 return true;
             }
-            case "x:type":
-            case "type":
+            case XamlMarkupExtensionKind.Type:
             {
                 var typeToken = markup.NamedArguments.TryGetValue("Type", out var explicitType)
                     ? explicitType
@@ -6006,8 +5826,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     "typeof(" + resolvedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")");
                 return true;
             }
-            case "x:static":
-            case "static":
+            case XamlMarkupExtensionKind.Static:
             {
                 var memberToken = markup.NamedArguments.TryGetValue("Member", out var explicitMember)
                     ? explicitMember
@@ -6027,7 +5846,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 conversion = CreateLiteralConversion(staticMemberExpression);
                 return true;
             }
-            case "staticresource":
+            case XamlMarkupExtensionKind.StaticResource:
             {
                 var keyToken = markup.NamedArguments.TryGetValue("ResourceKey", out var explicitKey)
                     ? explicitKey
@@ -6088,7 +5907,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     resourceKey: keyExpression);
                 return true;
             }
-            case "dynamicresource":
+            case XamlMarkupExtensionKind.DynamicResource:
             {
                 var keyToken = markup.NamedArguments.TryGetValue("ResourceKey", out var explicitKey)
                     ? explicitKey
@@ -6133,7 +5952,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     resourceKey: dynamicResourceKeyExpression);
                 return true;
             }
-            case "reflectionbinding":
+            case XamlMarkupExtensionKind.ReflectionBinding:
             {
                 if (!TryParseReflectionBindingMarkup(value, out var reflectionBindingMarkup))
                 {
@@ -6174,7 +5993,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     requiresParentStack: true);
                 return true;
             }
-            case "relativesource":
+            case XamlMarkupExtensionKind.RelativeSource:
             {
                 if (!TryParseRelativeSourceMarkup(value, out var relativeSourceMarkup) ||
                     !TryBuildRelativeSourceExpression(relativeSourceMarkup, compilation, document, out var relativeSourceExpression))
@@ -6185,7 +6004,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 conversion = CreateLiteralConversion(WrapWithTargetTypeCast(targetType, relativeSourceExpression));
                 return true;
             }
-            case "onplatform":
+            case XamlMarkupExtensionKind.OnPlatform:
             {
                 if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension") is null)
                 {
@@ -6209,7 +6028,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     requiresRuntimeServiceProvider: true);
                 return true;
             }
-            case "onformfactor":
+            case XamlMarkupExtensionKind.OnFormFactor:
             {
                 if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.OnFormFactorExtension") is null)
                 {
@@ -6233,9 +6052,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     requiresRuntimeServiceProvider: true);
                 return true;
             }
-            case "x:reference":
-            case "reference":
-            case "resolvebyname":
+            case XamlMarkupExtensionKind.Reference:
+            case XamlMarkupExtensionKind.ResolveByName:
             {
                 var referenceName = TryGetNamedMarkupArgument(markup, "Name", "ElementName") ??
                                     (markup.PositionalArguments.Length > 0 ? Unquote(markup.PositionalArguments[0]) : null);
@@ -6275,7 +6093,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     requiresParentStack: true);
                 return true;
             }
-            case "templatebinding":
+            case XamlMarkupExtensionKind.TemplateBinding:
             {
                 var propertyToken = markup.NamedArguments.TryGetValue("Property", out var explicitProperty)
                     ? explicitProperty
@@ -6341,7 +6159,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool TryParseMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
     {
-        return CanonicalMarkupExpressionParser.TryParseMarkupExtension(value, out markupExtension);
+        return GetActiveMarkupExpressionParser().TryParseMarkupExtension(value, out markupExtension);
     }
 
     private static bool TryParseRelativeSourceMarkup(string value, out RelativeSourceMarkup relativeSourceMarkup)
@@ -6352,11 +6170,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             out relativeSourceMarkup);
     }
 
-    private static IEnumerable<string> SplitTopLevel(string value, char separator)
-    {
-        return TopLevelTextParser.SplitTopLevel(value, separator);
-    }
-
     private static int IndexOfTopLevel(string value, char token)
     {
         return TopLevelTextParser.IndexOfTopLevel(value, token);
@@ -6364,23 +6177,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static string Unquote(string value)
     {
-        var trimmed = value.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[trimmed.Length - 1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[trimmed.Length - 1] == '\'')))
-        {
-            return trimmed.Substring(1, trimmed.Length - 2);
-        }
-
-        return trimmed;
+        return XamlQuotedValueSemantics.TrimAndUnquote(value);
     }
 
     private static bool IsQuotedLiteral(string value)
     {
-        var trimmed = value.Trim();
-        return trimmed.Length >= 2 &&
-               ((trimmed[0] == '"' && trimmed[trimmed.Length - 1] == '"') ||
-                (trimmed[0] == '\'' && trimmed[trimmed.Length - 1] == '\''));
+        return XamlQuotedValueSemantics.IsWrapped(value.Trim());
     }
 
     private static string EscapeChar(char value)

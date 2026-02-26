@@ -19,6 +19,7 @@ public sealed record GeneratorOptions(
     bool TracePasses,
     bool MetricsEnabled,
     bool MetricsDetailed,
+    bool MarkupParserLegacyInvalidNamedArgumentFallbackEnabled,
     bool TypeResolutionCompatibilityFallbackEnabled,
     bool AllowImplicitXmlnsDeclaration,
     bool ImplicitStandardXmlnsPrefixesEnabled,
@@ -43,6 +44,13 @@ public sealed record GeneratorOptions(
             globalOptions,
             "build_property.XamlSourceGenEnabled",
             GetBool(globalOptions, "build_property.AvaloniaSourceGenCompilerEnabled", false));
+        var strictMode = GetBool(globalOptions, "build_property.AvaloniaSourceGenStrictMode", false);
+        var compatibilityFallbackEnabled = TryGetBool(
+            globalOptions,
+            "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+            out var configuredFallbackEnabled)
+            ? configuredFallbackEnabled
+            : false;
 
         return new GeneratorOptions(
             IsEnabled: explicitEnable || backend.Equals("SourceGen", System.StringComparison.OrdinalIgnoreCase),
@@ -50,7 +58,7 @@ public sealed record GeneratorOptions(
             CSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenCSharpExpressionsEnabled", true),
             ImplicitCSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitCSharpExpressionsEnabled", true),
             CreateSourceInfo: GetBool(globalOptions, "build_property.AvaloniaSourceGenCreateSourceInfo", false),
-            StrictMode: GetBool(globalOptions, "build_property.AvaloniaSourceGenStrictMode", false),
+            StrictMode: strictMode,
             HotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadEnabled", true),
             HotReloadErrorResilienceEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", true),
             IdeHotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenIdeHotReloadEnabled", true),
@@ -61,7 +69,8 @@ public sealed record GeneratorOptions(
             TracePasses: GetBool(globalOptions, "build_property.AvaloniaSourceGenTracePasses", false),
             MetricsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsEnabled", false),
             MetricsDetailed: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsDetailed", false),
-            TypeResolutionCompatibilityFallbackEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", true),
+            MarkupParserLegacyInvalidNamedArgumentFallbackEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled", false),
+            TypeResolutionCompatibilityFallbackEnabled: compatibilityFallbackEnabled,
             AllowImplicitXmlnsDeclaration: GetBool(globalOptions, "build_property.AvaloniaSourceGenAllowImplicitXmlnsDeclaration", false),
             ImplicitStandardXmlnsPrefixesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled", true),
             ImplicitDefaultXmlns: GetOrDefault(globalOptions, "build_property.AvaloniaSourceGenImplicitDefaultXmlns", "https://github.com/avaloniaui"),
@@ -84,6 +93,23 @@ public sealed record GeneratorOptions(
         }
 
         return bool.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static bool TryGetBool(AnalyzerConfigOptions options, string key, out bool value)
+    {
+        value = false;
+        if (!options.TryGetValue(key, out var text))
+        {
+            return false;
+        }
+
+        if (!bool.TryParse(text, out value))
+        {
+            value = false;
+            return false;
+        }
+
+        return true;
     }
 
     private static string GetOrDefault(AnalyzerConfigOptions options, string key, string fallback)

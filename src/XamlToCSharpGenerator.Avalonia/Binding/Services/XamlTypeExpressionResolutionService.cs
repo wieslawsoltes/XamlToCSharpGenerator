@@ -13,14 +13,14 @@ internal sealed class XamlTypeExpressionResolutionService
         string token,
         string fallbackClrNamespace);
 
-    private readonly MarkupExpressionParser _markupExpressionParser;
+    private readonly TryParseMarkupExtensionDelegate _tryParseMarkupExtension;
     private readonly ResolveTypeTokenDelegate _resolveTypeToken;
 
     public XamlTypeExpressionResolutionService(
-        MarkupExpressionParser markupExpressionParser,
+        TryParseMarkupExtensionDelegate tryParseMarkupExtension,
         ResolveTypeTokenDelegate resolveTypeToken)
     {
-        _markupExpressionParser = markupExpressionParser ?? throw new ArgumentNullException(nameof(markupExpressionParser));
+        _tryParseMarkupExtension = tryParseMarkupExtension ?? throw new ArgumentNullException(nameof(tryParseMarkupExtension));
         _resolveTypeToken = resolveTypeToken ?? throw new ArgumentNullException(nameof(resolveTypeToken));
     }
 
@@ -50,7 +50,7 @@ internal sealed class XamlTypeExpressionResolutionService
         }
 
         var trimmed = typeExpression.Trim();
-        if (!_markupExpressionParser.TryParseMarkupExtension(trimmed, out var markup) ||
+        if (!_tryParseMarkupExtension(trimmed, out var markup) ||
             !IsTypeMarkupExtension(markup.Name))
         {
             token = trimmed;
@@ -63,16 +63,13 @@ internal sealed class XamlTypeExpressionResolutionService
             return false;
         }
 
-        token = Unquote(typeToken);
+        token = XamlQuotedValueSemantics.TrimAndUnquote(typeToken);
         return token.Length > 0;
     }
 
     private static bool IsTypeMarkupExtension(string extensionName)
     {
-        return extensionName.Equals("x:Type", StringComparison.OrdinalIgnoreCase) ||
-               extensionName.Equals("Type", StringComparison.OrdinalIgnoreCase) ||
-               extensionName.Equals("x:TypeExtension", StringComparison.OrdinalIgnoreCase) ||
-               extensionName.Equals("TypeExtension", StringComparison.OrdinalIgnoreCase);
+        return XamlMarkupExtensionNameSemantics.Classify(extensionName) == XamlMarkupExtensionKind.Type;
     }
 
     private static string? ResolveTypeMarkupPayload(MarkupExtensionInfo markup)
@@ -95,16 +92,4 @@ internal sealed class XamlTypeExpressionResolutionService
         return null;
     }
 
-    private static string Unquote(string value)
-    {
-        var trimmed = value.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
-        {
-            return trimmed.Substring(1, trimmed.Length - 2);
-        }
-
-        return trimmed;
-    }
 }

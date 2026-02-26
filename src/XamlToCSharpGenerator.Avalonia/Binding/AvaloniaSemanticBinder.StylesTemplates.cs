@@ -881,34 +881,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static string? TryExtractControlThemeBasedOnKey(string? basedOnExpression)
     {
-        if (string.IsNullOrWhiteSpace(basedOnExpression))
-        {
-            return null;
-        }
-
-        var trimmed = basedOnExpression.Trim();
-        if (trimmed.StartsWith("{", StringComparison.Ordinal) &&
-            trimmed.EndsWith("}", StringComparison.Ordinal) &&
-            TryParseMarkupExtension(trimmed, out var markup))
-        {
-            var markupName = markup.Name.ToLowerInvariant();
-            if (markupName != "staticresource" && markupName != "dynamicresource")
-            {
-                return null;
-            }
-
-            var resourceKey = TryGetNamedMarkupArgument(markup, "ResourceKey", "Key");
-            if (string.IsNullOrWhiteSpace(resourceKey) && markup.PositionalArguments.Length > 0)
-            {
-                resourceKey = Unquote(markup.PositionalArguments[0]);
-            }
-
-            return string.IsNullOrWhiteSpace(resourceKey)
-                ? null
-                : resourceKey.Trim();
-        }
-
-        return Unquote(trimmed);
+        return StaticResourceReferenceParser.TryExtractResourceKey(
+            basedOnExpression,
+            out var resourceKey)
+            ? resourceKey
+            : null;
     }
 
     private static ImmutableArray<ResolvedResourceDefinition> BindResources(
@@ -1549,7 +1526,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return normalizedName;
         }
 
-        return SupportsNameScopeRegistrationFromNameProperty(resolvedType, compilation)
+        return NameScopeRegistrationSemanticsService.SupportsRegistrationFromNameProperty(resolvedType, compilation)
             ? normalizedName
             : null;
     }
@@ -1565,19 +1542,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return false;
-    }
-
-    private static bool SupportsNameScopeRegistrationFromNameProperty(
-        INamedTypeSymbol? resolvedType,
-        Compilation compilation)
-    {
-        if (resolvedType is null)
-        {
-            return true;
-        }
-
-        var controlType = compilation.GetTypeByMetadataName("Avalonia.Controls.Control");
-        return controlType is not null && IsTypeAssignableTo(resolvedType, controlType);
     }
 
     private static bool TryFindTemplateNode(

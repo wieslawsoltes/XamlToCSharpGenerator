@@ -639,6 +639,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("                return false;");
         sourceBuilder.AppendLine("            }");
         sourceBuilder.AppendLine();
+        sourceBuilder.AppendLine("            var mergeIntoDictionary = includeValue is global::Avalonia.Markup.Xaml.Styling.MergeResourceInclude;");
+        sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("            object? loadedInclude = null;");
         sourceBuilder.AppendLine("            if (!__TryResolveResourceInclude(resourceInclude, ownerDictionary, out loadedInclude))");
         sourceBuilder.AppendLine("            {");
@@ -654,6 +656,13 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("            if (loadedInclude is global::Avalonia.Controls.IResourceDictionary mergedResourceDictionary)");
         sourceBuilder.AppendLine("            {");
+        sourceBuilder.AppendLine("                if (mergeIntoDictionary)");
+        sourceBuilder.AppendLine("                {");
+        sourceBuilder.AppendLine("                    __TryMergeDictionary(destinationDictionary, mergedResourceDictionary);");
+        sourceBuilder.AppendLine("                    __TryMergeThemeDictionaryMap(destinationDictionary.ThemeDictionaries, mergedResourceDictionary.ThemeDictionaries);");
+        sourceBuilder.AppendLine("                    return true;");
+        sourceBuilder.AppendLine("                }");
+        sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("                try");
         sourceBuilder.AppendLine("                {");
         sourceBuilder.AppendLine("                    destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);");
@@ -667,6 +676,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("            if (loadedInclude is global::Avalonia.Controls.IResourceProvider mergedResourceProvider)");
         sourceBuilder.AppendLine("            {");
+        sourceBuilder.AppendLine("                if (mergeIntoDictionary && mergedResourceProvider is global::System.Collections.IDictionary mergedDictionaryProvider)");
+        sourceBuilder.AppendLine("                {");
+        sourceBuilder.AppendLine("                    __TryMergeDictionary(destinationDictionary, mergedDictionaryProvider);");
+        sourceBuilder.AppendLine("                    return true;");
+        sourceBuilder.AppendLine("                }");
+        sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("                try");
         sourceBuilder.AppendLine("                {");
         sourceBuilder.AppendLine("                    destinationDictionary.MergedDictionaries.Add(mergedResourceProvider);");

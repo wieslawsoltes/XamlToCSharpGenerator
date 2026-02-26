@@ -83,6 +83,7 @@ public class AvaloniaFrameworkProfileTests
             TracePasses: false,
             MetricsEnabled: false,
             MetricsDetailed: false,
+            MarkupParserLegacyInvalidNamedArgumentFallbackEnabled: false,
             TypeResolutionCompatibilityFallbackEnabled: true,
             AllowImplicitXmlnsDeclaration: true,
             ImplicitStandardXmlnsPrefixesEnabled: true,

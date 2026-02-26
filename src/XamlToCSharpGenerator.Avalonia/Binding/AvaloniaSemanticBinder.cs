@@ -39,8 +39,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private const string MarkupContextBaseUriToken = "__AXSG_CTX_BASE_URI__";
     private const string MarkupContextParentStackToken = "__AXSG_CTX_PARENT_STACK__";
     private const string ExpressionSourceParameterName = "source";
-    private static readonly MarkupExpressionParser CanonicalMarkupExpressionParser =
-        new(new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
+    private static readonly MarkupExpressionParser StrictMarkupExpressionParser = new(
+        new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: false));
+    private static readonly MarkupExpressionParser LegacyMarkupExpressionParser = new(
+        new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
 
     private static readonly ImmutableHashSet<string> KnownMarkupExtensionNames = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
@@ -136,11 +138,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static readonly AsyncLocal<GeneratorOptions?> ActiveGeneratorOptions = new();
     private static readonly AsyncLocal<TypeResolutionDiagnosticContext?> ActiveTypeResolutionDiagnosticContext = new();
     private static readonly CSharpExpressionClassificationService ExpressionClassificationService = new(
-        CanonicalMarkupExpressionParser,
+        TryParseMarkupExtension,
         KnownMarkupExtensionNames,
         TryResolveMarkupExtensionType);
     private static readonly XamlTypeExpressionResolutionService TypeExpressionResolutionService = new(
-        CanonicalMarkupExpressionParser,
+        TryParseMarkupExtension,
         ResolveTypeToken);
     private static readonly TypeResolutionPolicyService TypeResolutionPolicyService = new(
         TryResolveTypeFromNamespacePrefixes,
@@ -151,6 +153,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         IsTypeResolutionCompatibilityFallbackEnabled,
         IsStrictTypeResolutionMode,
         IsAvaloniaDefaultXmlNamespace);
+    private static readonly MarkupObjectElementTypeResolutionService MarkupObjectElementTypeResolutionService = new(
+        IsAvaloniaDefaultXmlNamespace,
+        Xaml2006.NamespaceName);
     private static readonly RuntimeXamlFragmentDetectionService RuntimeXamlFragmentDetectionService = new();
     private static readonly CollectionAddBindingService CollectionAddService = new(
         ResolveTypeToken,
@@ -158,8 +163,23 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         TryGetCollectionElementType,
         TryConvertValueForCollectionAdd,
         Escape);
+    private static readonly NameScopeRegistrationSemanticsService NameScopeRegistrationSemanticsService = new(
+        IsTypeAssignableTo);
     private static readonly HotDesignArtifactClassificationService HotDesignArtifactClassificationService = new(
         IsTypeAssignableTo);
+
+    private static bool IsMarkupParserLegacyFallbackEnabled()
+    {
+        var options = ActiveGeneratorOptions.Value;
+        return options?.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled == true;
+    }
+
+    private static MarkupExpressionParser GetActiveMarkupExpressionParser()
+    {
+        return IsMarkupParserLegacyFallbackEnabled()
+            ? LegacyMarkupExpressionParser
+            : StrictMarkupExpressionParser;
+    }
 
     private static readonly ItemContainerTypeMapping[] KnownItemContainerTypeMappings =
     [

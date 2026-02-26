@@ -653,6 +653,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return xmlnsDefinitionResolved;
         }
 
+        var markupObjectElementResolved = MarkupObjectElementTypeResolutionService.TryResolve(
+            compilation,
+            xmlNamespace,
+            xmlTypeName);
+        if (markupObjectElementResolved is not null)
+        {
+            return markupObjectElementResolved;
+        }
+
         return TypeResolutionPolicyService.TryResolveXmlNamespaceFallback(
             compilation,
             xmlNamespace,
@@ -839,23 +848,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static string? NormalizeClassModifier(string? classModifier)
     {
-        if (string.IsNullOrWhiteSpace(classModifier))
-        {
-            return null;
-        }
-
-        var normalized = classModifier!.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "public" => "public",
-            "internal" => "internal",
-            "private" => "private",
-            "protected" => "protected",
-            "protected internal" => "protected internal",
-            "private protected" => "private protected",
-            "notpublic" => "internal",
-            _ => null,
-        };
+        return XamlAccessibilityModifierSemantics.NormalizeClassModifier(classModifier);
     }
 
     private static string ToCSharpClassModifier(Accessibility accessibility)
