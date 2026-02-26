@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <TrimmerRootAssembly Include="Avalonia.Controls.ColorPicker" />
+    <TrimmerRootAssembly Include="ControlSamples" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ControlCatalog\ControlCatalog.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
   </ItemGroup>

@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
 
 public static class AvaloniaSourceGeneratedXamlLoader
 {
+    private const string TraceEnvVarName = "AXSG_HOTRELOAD_TRACE";
     private static readonly object Sync = new();
+    private static readonly ConcurrentDictionary<string, bool> AttemptedAssemblyLoads = new(StringComparer.Ordinal);
     private static SourceGenRuntimeXamlCompilationOptions _runtimeCompilationOptions = new();
 
     public static bool IsEnabled { get; private set; }
@@ -50,6 +55,7 @@ public static class AvaloniaSourceGeneratedXamlLoader
         var lookupUris = BuildLookupUriCandidates(serviceProvider, uri);
         for (var index = 0; index < lookupUris.Length; index++)
         {
+            EnsureAssemblyLoadedForUri(lookupUris[index]);
             if (XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
             {
                 return true;
@@ -192,5 +198,120 @@ public static class AvaloniaSourceGeneratedXamlLoader
         }
 
         return [resolvedCandidate, directCandidate];
+    }
+
+    private static void EnsureAssemblyLoadedForUri(string candidateUri)
+    {
+        if (!Uri.TryCreate(candidateUri, UriKind.Absolute, out var parsedUri) ||
+            !parsedUri.IsAbsoluteUri ||
+            !string.Equals(parsedUri.Scheme, "avares", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var assemblyName = parsedUri.Host;
+        if (string.IsNullOrWhiteSpace(assemblyName))
+        {
+            return;
+        }
+
+        if (!AttemptedAssemblyLoads.TryAdd(assemblyName, true))
+        {
+            return;
+        }
+
+        if (IsAssemblyKnown(assemblyName))
+        {
+            Trace("Known types are already present for assembly '" + assemblyName + "'; ensuring module initializers have executed.");
+        }
+
+        Assembly? assembly = FindLoadedAssembly(assemblyName);
+        try
+        {
+            assembly ??= Assembly.Load(new AssemblyName(assemblyName));
+            Trace("Loaded assembly '" + assemblyName + "' for source-gen URI lookup.");
+        }
+        catch (Exception ex)
+        {
+            // Keep source-generated load path non-fatal; fallback remains available.
+            Trace("Failed to load assembly '" + assemblyName + "' for source-gen URI lookup: " + ex.Message);
+            return;
+        }
+
+        try
+        {
+            RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+            Trace("Executed module initializers for assembly '" + assemblyName + "'.");
+        }
+        catch (Exception ex)
+        {
+            // Keep source-generated load path non-fatal; fallback remains available.
+            Trace("Failed to execute module initializers for assembly '" + assemblyName + "': " + ex.Message);
+            return;
+        }
+
+        if (!IsAssemblyKnown(assemblyName))
+        {
+            Trace("Assembly '" + assemblyName + "' loaded, but no source-gen known types were registered.");
+        }
+    }
+
+    private static bool IsAssemblyKnown(string assemblyName)
+    {
+        var registeredTypes = SourceGenKnownTypeRegistry.GetRegisteredTypes();
+        for (var index = 0; index < registeredTypes.Count; index++)
+        {
+            var candidate = registeredTypes[index];
+            if (string.Equals(
+                    candidate.Assembly.GetName().Name,
+                    assemblyName,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Assembly? FindLoadedAssembly(string assemblyName)
+    {
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < assemblies.Length; index++)
+        {
+            var candidate = assemblies[index];
+            if (string.Equals(candidate.GetName().Name, assemblyName, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static void Trace(string message)
+    {
+        if (!IsTraceEnabled())
+        {
+            return;
+        }
+
+        try
+        {
+            Console.WriteLine("[AXSG.HotReload] " + message);
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool IsTraceEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable(TraceEnvVarName);
+        return !string.IsNullOrWhiteSpace(value) &&
+               (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "on", StringComparison.OrdinalIgnoreCase));
     }
 }
