@@ -114,6 +114,80 @@ public class BindingEventMarkupParserTests
         Assert.False(literalReferenceToken.FromMarkupExtension);
     }
 
+    [Fact]
+    public void TryParseEventBindingMarkup_Parses_Null_Parameter_Markup()
+    {
+        Assert.True(
+            TryParseMarkupExtension(
+                "{EventBinding Command=SaveCommand, Parameter={x:Null}}",
+                out var markupExtension));
+
+        var success = BindingEventMarkupParser.TryParseEventBindingMarkup(
+            markupExtension,
+            TryParseMarkupExtension,
+            TryConvertLiteralValueExpression,
+            out var eventBindingMarkup,
+            out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.True(eventBindingMarkup.HasParameterValueExpression);
+        Assert.Equal("null", eventBindingMarkup.ParameterValueExpression);
+    }
+
+    [Fact]
+    public void TryParseResolveByNameReferenceToken_Parses_ResolveByName_Alias()
+    {
+        Assert.True(
+            BindingEventMarkupParser.TryParseResolveByNameReferenceToken(
+                "{ResolveByName Name=RootPanel}",
+                TryParseMarkupExtension,
+                out var token));
+        Assert.Equal("RootPanel", token.Name);
+        Assert.True(token.FromMarkupExtension);
+    }
+
+    [Theory]
+    [InlineData("Root Panel")]
+    [InlineData("{x:Reference Name='Root Panel'}")]
+    public void TryParseResolveByNameReferenceToken_Rejects_Whitespace_Name(string value)
+    {
+        Assert.False(
+            BindingEventMarkupParser.TryParseResolveByNameReferenceToken(
+                value,
+                TryParseMarkupExtension,
+                out _));
+    }
+
+    [Fact]
+    public void IsEventBindingMarkupExtension_Recognizes_Xaml_Directive_Form()
+    {
+        Assert.True(
+            TryParseMarkupExtension(
+                "{x:EventBinding Command=SaveCommand}",
+                out var markupExtension));
+
+        Assert.True(BindingEventMarkupParser.IsEventBindingMarkupExtension(markupExtension));
+    }
+
+    [Fact]
+    public void TryParseEventBindingMarkup_Maps_Default_Source_Alias_To_DataContextThenRoot()
+    {
+        Assert.True(
+            TryParseMarkupExtension(
+                "{EventBinding Command=SaveCommand, Source=Default}",
+                out var markupExtension));
+
+        var success = BindingEventMarkupParser.TryParseEventBindingMarkup(
+            markupExtension,
+            TryParseMarkupExtension,
+            TryConvertLiteralValueExpression,
+            out var eventBindingMarkup,
+            out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Equal(ResolvedEventBindingSourceMode.DataContextThenRoot, eventBindingMarkup.SourceMode);
+    }
+
     private static bool TryParseMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
     {
         return Parser.TryParseMarkupExtension(value, out markupExtension);

@@ -42,8 +42,7 @@ public sealed class MarkupExpressionParserTests
     [Fact]
     public void Legacy_Invalid_Named_Fallback_Can_Be_Disabled()
     {
-        var parser = new MarkupExpressionParser(
-            new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: false));
+        var parser = new MarkupExpressionParser();
 
         var parsed = parser.TryParseMarkupExtension("{Binding =Foo}", out _);
 
@@ -51,9 +50,10 @@ public sealed class MarkupExpressionParserTests
     }
 
     [Fact]
-    public void Legacy_Invalid_Named_Fallback_Defaults_To_Positional()
+    public void Legacy_Invalid_Named_Fallback_Can_Be_Enabled()
     {
-        var parser = new MarkupExpressionParser();
+        var parser = new MarkupExpressionParser(
+            new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
 
         var parsed = parser.TryParseMarkupExtension("{Binding =Foo}", out var markup);
 

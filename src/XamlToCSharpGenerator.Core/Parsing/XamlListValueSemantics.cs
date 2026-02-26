@@ -46,7 +46,7 @@ public static class XamlListValueSemantics
                 return;
             }
 
-            builder.Add(Unquote(token));
+            builder.Add(XamlQuotedValueSemantics.UnquoteWrapped(token));
         }
 
         for (var index = 0; index < value.Length; index++)
@@ -106,15 +106,4 @@ public static class XamlListValueSemantics
             : builder.ToImmutable();
     }
 
-    private static string Unquote(string token)
-    {
-        if (token.Length >= 2 &&
-            ((token[0] == '"' && token[^1] == '"') ||
-             (token[0] == '\'' && token[^1] == '\'')))
-        {
-            return token.Substring(1, token.Length - 2);
-        }
-
-        return token;
-    }
 }

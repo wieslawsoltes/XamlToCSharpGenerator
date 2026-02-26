@@ -1,4 +1,5 @@
 using System;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
 
@@ -40,16 +41,25 @@ public static class XamlRuntimeBindingPathSemantics
             return false;
         }
 
-        var closingParenthesisIndex = normalized.IndexOf(')');
-        if (closingParenthesisIndex <= 1 ||
-            closingParenthesisIndex + 1 >= normalized.Length ||
-            normalized[closingParenthesisIndex + 1] != '.')
+        var index = 0;
+        if (!CompiledBindingPathSegmentSemantics.TryParseCastTypeToken(
+                normalized,
+                ref index,
+                out var parsedTypeToken,
+                out _,
+                out _))
         {
             return false;
         }
 
-        typeToken = normalized.Substring(1, closingParenthesisIndex - 1).Trim();
-        remainder = normalized.Substring(closingParenthesisIndex + 2).Trim();
+        if (index >= normalized.Length ||
+            normalized[index] != '.')
+        {
+            return false;
+        }
+
+        typeToken = parsedTypeToken;
+        remainder = normalized[(index + 1)..].Trim();
         return true;
     }
 

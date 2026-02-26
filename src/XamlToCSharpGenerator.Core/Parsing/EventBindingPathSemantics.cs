@@ -110,27 +110,7 @@ public static class EventBindingPathSemantics
 
     public static bool IsSimpleIdentifier(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var start = value[0];
-        if (!(start == '_' || char.IsLetter(start)))
-        {
-            return false;
-        }
-
-        for (var index = 1; index < value.Length; index++)
-        {
-            var current = value[index];
-            if (!(current == '_' || char.IsLetterOrDigit(current)))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return XamlIdentifierSemantics.IsIdentifier(value);
     }
 
     public static string ExtractMethodName(string path)

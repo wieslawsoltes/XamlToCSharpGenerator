@@ -37,21 +37,25 @@ public static class XamlConditionalNamespaceUtilities
             return false;
         }
 
-        var separatorIndex = rawNamespace.IndexOf('?');
-        if (separatorIndex <= 0 || separatorIndex >= rawNamespace.Length - 1)
+        if (!XamlConditionalNamespaceUriSemantics.TrySplit(
+                rawNamespace,
+                out var candidateNamespace,
+                out var candidateCondition))
         {
             return false;
         }
 
-        var candidateCondition = rawNamespace.Substring(separatorIndex + 1).Trim();
-        if (candidateCondition.Length == 0 ||
-            !candidateCondition.EndsWith(")", System.StringComparison.Ordinal) ||
-            candidateCondition.IndexOf('(') <= 0)
+        if (!XamlConditionalExpressionSemantics.TryParseMethodCallShape(
+                candidateCondition,
+                out _,
+                out _,
+                out _,
+                out _))
         {
             return false;
         }
 
-        normalizedNamespace = rawNamespace.Substring(0, separatorIndex);
+        normalizedNamespace = candidateNamespace;
         conditionExpression = candidateCondition;
         return true;
     }

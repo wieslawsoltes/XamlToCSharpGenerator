@@ -1,4 +1,4 @@
 namespace XamlToCSharpGenerator.Core.Parsing;
 
 public readonly record struct MarkupExpressionParserOptions(
-    bool AllowLegacyInvalidNamedArgumentFallback = true);
+    bool AllowLegacyInvalidNamedArgumentFallback = false);

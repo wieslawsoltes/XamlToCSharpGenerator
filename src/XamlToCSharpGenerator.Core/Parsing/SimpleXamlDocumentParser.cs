@@ -19,21 +19,6 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         MarkupCompatibility.NamespaceName,
         "http://schemas.microsoft.com/expression/blend/2008");
 
-    private static readonly ImmutableHashSet<string> SupportedConditionalMethodNames = ImmutableHashSet.Create(
-        StringComparer.Ordinal,
-        "IsTypePresent",
-        "IsTypeNotPresent",
-        "IsPropertyPresent",
-        "IsPropertyNotPresent",
-        "IsMethodPresent",
-        "IsMethodNotPresent",
-        "IsEventPresent",
-        "IsEventNotPresent",
-        "IsEnumNamedValuePresent",
-        "IsEnumNamedValueNotPresent",
-        "IsApiContractPresent",
-        "IsApiContractNotPresent");
-
     private readonly ImmutableDictionary<string, string> _globalXmlNamespaces;
     private readonly bool _allowImplicitDefaultXmlns;
     private readonly string? _implicitDefaultXmlns;
@@ -216,7 +201,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         var dataType = TryGetDirectiveValue(element, "DataType");
         var compileBindings = TryGetBoolDirectiveValue(element, "CompileBindings");
         var factoryMethod = TryGetDirectiveValue(element, "FactoryMethod");
-        var typeArguments = ParseTypeArguments(TryGetDirectiveValue(element, "TypeArguments"));
+        var typeArguments = XamlTypeArgumentListSemantics.Parse(TryGetDirectiveValue(element, "TypeArguments"));
         var arrayItemType = TryGetArrayItemType(element);
         var textContent = TryGetInlineTextContent(element);
 
@@ -235,7 +220,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 PropertyName: propertyName,
                 XmlNamespace: normalizedAttributeNamespace,
                 Value: attribute.Value,
-                IsAttached: propertyName.IndexOf('.') >= 0,
+                IsAttached: XamlPropertyElementSemantics.IsAttachedPropertyToken(propertyName),
                 Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
                     attribute.Name.NamespaceName,
                     conditionalNamespacesByRawUri),
@@ -509,8 +494,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
         if (!string.IsNullOrWhiteSpace(ignorablePrefixesValue))
         {
-            var prefixes = ignorablePrefixesValue!
-                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var prefixes = XamlWhitespaceTokenSemantics.SplitTokens(ignorablePrefixesValue);
 
             foreach (var prefix in prefixes)
             {
@@ -577,170 +561,26 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         out string errorMessage)
     {
         expression = null!;
-        errorMessage = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(rawExpression))
-        {
-            errorMessage = "Condition expression is empty.";
-            return false;
-        }
-
-        var trimmed = rawExpression.Trim();
-        var openParenIndex = trimmed.IndexOf('(');
-        var closeParenIndex = trimmed.LastIndexOf(')');
-        if (openParenIndex <= 0 || closeParenIndex <= openParenIndex || closeParenIndex != trimmed.Length - 1)
-        {
-            errorMessage = "Condition expression must be a method call.";
-            return false;
-        }
-
-        var methodToken = trimmed.Substring(0, openParenIndex).Trim();
-        if (methodToken.StartsWith("ApiInformation.", StringComparison.OrdinalIgnoreCase))
-        {
-            methodToken = methodToken.Substring("ApiInformation.".Length);
-        }
-
-        if (!SupportedConditionalMethodNames.Contains(methodToken))
-        {
-            errorMessage = $"Unsupported conditional method '{methodToken}'.";
-            return false;
-        }
-
-        var argumentsText = trimmed.Substring(openParenIndex + 1, closeParenIndex - openParenIndex - 1);
-        if (!TryParseConditionalArguments(argumentsText, out var arguments, out errorMessage))
-        {
-            return false;
-        }
-
-        if (!ValidateConditionalMethodArity(methodToken, arguments.Length, out errorMessage))
+        if (!XamlConditionalExpressionSemantics.TryParse(
+                rawExpression,
+                out var parsedExpression,
+                out errorMessage))
         {
             return false;
         }
 
         expression = new ConditionalXamlExpression(
-            RawExpression: trimmed,
-            MethodName: methodToken,
-            Arguments: arguments,
+            RawExpression: parsedExpression.RawExpression,
+            MethodName: parsedExpression.MethodName,
+            Arguments: parsedExpression.Arguments,
             Line: line,
             Column: column);
         return true;
     }
 
-    private static bool TryParseConditionalArguments(
-        string rawArguments,
-        out ImmutableArray<string> arguments,
-        out string errorMessage)
-    {
-        arguments = ImmutableArray<string>.Empty;
-        errorMessage = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(rawArguments))
-        {
-            return true;
-        }
-
-        var parsedArguments = ImmutableArray.CreateBuilder<string>();
-        var argumentStart = 0;
-        var inQuote = false;
-        var quoteChar = '\0';
-
-        for (var index = 0; index < rawArguments.Length; index++)
-        {
-            var ch = rawArguments[index];
-            if (inQuote)
-            {
-                if (ch == quoteChar)
-                {
-                    inQuote = false;
-                }
-
-                continue;
-            }
-
-            if (ch is '"' or '\'')
-            {
-                inQuote = true;
-                quoteChar = ch;
-                continue;
-            }
-
-            if (ch == ',')
-            {
-                var token = rawArguments.Substring(argumentStart, index - argumentStart);
-                if (!TryNormalizeConditionalArgument(token, out var normalizedToken, out errorMessage))
-                {
-                    return false;
-                }
-
-                parsedArguments.Add(normalizedToken);
-                argumentStart = index + 1;
-            }
-        }
-
-        var trailingToken = rawArguments.Substring(argumentStart);
-        if (!TryNormalizeConditionalArgument(trailingToken, out var trailingNormalizedToken, out errorMessage))
-        {
-            return false;
-        }
-
-        parsedArguments.Add(trailingNormalizedToken);
-        arguments = parsedArguments.ToImmutable();
-        return true;
-    }
-
-    private static bool TryNormalizeConditionalArgument(
-        string rawArgument,
-        out string normalizedArgument,
-        out string errorMessage)
-    {
-        errorMessage = string.Empty;
-        var token = rawArgument.Trim();
-        if (token.Length == 0)
-        {
-            normalizedArgument = string.Empty;
-            errorMessage = "Condition expression has an empty argument.";
-            return false;
-        }
-
-        if (token.Length >= 2 &&
-            ((token[0] == '\'' && token[^1] == '\'') || (token[0] == '"' && token[^1] == '"')))
-        {
-            normalizedArgument = token.Substring(1, token.Length - 2);
-            return true;
-        }
-
-        normalizedArgument = token;
-        return true;
-    }
-
-    private static bool ValidateConditionalMethodArity(string methodName, int argumentCount, out string errorMessage)
-    {
-        errorMessage = string.Empty;
-        var isApiContractMethod = methodName is "IsApiContractPresent" or "IsApiContractNotPresent";
-        if (isApiContractMethod)
-        {
-            if (argumentCount is >= 1 and <= 3)
-            {
-                return true;
-            }
-
-            errorMessage = $"Method '{methodName}' expects between 1 and 3 arguments.";
-            return false;
-        }
-
-        var expectedArguments = methodName is "IsTypePresent" or "IsTypeNotPresent" ? 1 : 2;
-        if (argumentCount == expectedArguments)
-        {
-            return true;
-        }
-
-        errorMessage = $"Method '{methodName}' expects {expectedArguments} argument(s).";
-        return false;
-    }
-
     private static bool IsPropertyElement(XElement element)
     {
-        return element.Name.LocalName.IndexOf('.') >= 0;
+        return XamlPropertyElementSemantics.IsPropertyElementName(element.Name.LocalName);
     }
 
     private static string ExtractPropertyElementName(string localName)
@@ -795,20 +635,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
     private static string? TryGetFieldModifier(XElement element)
     {
         var fieldModifier = TryGetDirectiveValue(element, "FieldModifier");
-        if (fieldModifier is null)
-        {
-            return null;
-        }
-
-        return fieldModifier.ToLowerInvariant() switch
-        {
-            "private" => "private",
-            "public" => "public",
-            "protected" => "protected",
-            "internal" => "internal",
-            "notpublic" => "internal",
-            _ => null,
-        };
+        return XamlAccessibilityModifierSemantics.NormalizeFieldModifier(fieldModifier);
     }
 
     private static bool IsIgnoredDirective(XAttribute attribute)
@@ -846,97 +673,6 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
     {
         return element.Name.Namespace == Xaml2006 &&
                element.Name.LocalName.Equals(localName, StringComparison.Ordinal);
-    }
-
-    private static ImmutableArray<string> ParseTypeArguments(string? rawTypeArguments)
-    {
-        if (string.IsNullOrWhiteSpace(rawTypeArguments))
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        var builder = ImmutableArray.CreateBuilder<string>();
-        var tokenStart = 0;
-        var braceDepth = 0;
-        var parenthesisDepth = 0;
-        var angleDepth = 0;
-        var inQuote = false;
-        var quoteChar = '\0';
-        var text = rawTypeArguments!;
-
-        for (var index = 0; index < text.Length; index++)
-        {
-            var ch = text[index];
-            if (inQuote)
-            {
-                if (ch == quoteChar)
-                {
-                    inQuote = false;
-                }
-
-                continue;
-            }
-
-            if (ch == '"' || ch == '\'')
-            {
-                inQuote = true;
-                quoteChar = ch;
-                continue;
-            }
-
-            switch (ch)
-            {
-                case '{':
-                    braceDepth++;
-                    break;
-                case '}':
-                    if (braceDepth > 0)
-                    {
-                        braceDepth--;
-                    }
-
-                    break;
-                case '(':
-                    parenthesisDepth++;
-                    break;
-                case ')':
-                    if (parenthesisDepth > 0)
-                    {
-                        parenthesisDepth--;
-                    }
-
-                    break;
-                case '<':
-                    angleDepth++;
-                    break;
-                case '>':
-                    if (angleDepth > 0)
-                    {
-                        angleDepth--;
-                    }
-
-                    break;
-                case ',' when braceDepth == 0 && parenthesisDepth == 0 && angleDepth == 0:
-                {
-                    var token = text.Substring(tokenStart, index - tokenStart).Trim();
-                    if (token.Length > 0)
-                    {
-                        builder.Add(token);
-                    }
-
-                    tokenStart = index + 1;
-                    break;
-                }
-            }
-        }
-
-        var tail = text.Substring(tokenStart).Trim();
-        if (tail.Length > 0)
-        {
-            builder.Add(tail);
-        }
-
-        return builder.ToImmutable();
     }
 
     private static string? TryGetArrayItemType(XElement element)

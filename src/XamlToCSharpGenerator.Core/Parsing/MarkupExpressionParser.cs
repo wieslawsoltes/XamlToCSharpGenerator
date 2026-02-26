@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
@@ -10,7 +11,7 @@ public sealed class MarkupExpressionParser
     private readonly MarkupExpressionParserOptions _options;
 
     public MarkupExpressionParser()
-        : this(new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true))
+        : this(default)
     {
     }
 
@@ -27,59 +28,38 @@ public sealed class MarkupExpressionParser
             return false;
         }
 
-        var trimmed = value.Trim();
-        if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
-            !trimmed.EndsWith("}", StringComparison.Ordinal))
+        if (!MarkupExpressionEnvelopeSemantics.TryExtractInnerContent(value, out var inner))
         {
             return false;
         }
 
-        var inner = trimmed.Substring(1, trimmed.Length - 2).Trim();
-        if (inner.Length == 0)
+        if (!XamlMarkupArgumentSemantics.TryParseHead(inner, out var name, out var argumentsText))
         {
             return false;
-        }
-
-        var headLength = 0;
-        while (headLength < inner.Length &&
-               !char.IsWhiteSpace(inner[headLength]) &&
-               inner[headLength] != ',')
-        {
-            headLength++;
-        }
-
-        var name = inner.Substring(0, headLength).Trim();
-        if (name.Length == 0)
-        {
-            return false;
-        }
-
-        var argumentsText = headLength < inner.Length ? inner.Substring(headLength).Trim() : string.Empty;
-        if (argumentsText.StartsWith(",", StringComparison.Ordinal))
-        {
-            argumentsText = argumentsText.Substring(1).TrimStart();
         }
 
         var positional = ImmutableArray.CreateBuilder<string>();
         var named = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.OrdinalIgnoreCase);
         var arguments = ImmutableArray.CreateBuilder<MarkupExtensionArgument>();
 
-        if (!string.IsNullOrWhiteSpace(argumentsText))
+        if (argumentsText.Length > 0)
         {
             var position = 0;
-            foreach (var token in SplitTopLevel(argumentsText, ','))
+            foreach (var argument in XamlMarkupArgumentSemantics.SplitArguments(argumentsText))
             {
-                var argument = token.Trim();
-                if (argument.Length == 0)
+                var namedParseStatus = XamlMarkupArgumentSemantics.TryParseNamedArgument(
+                    argument,
+                    out var key,
+                    out var argumentValue);
+                switch (namedParseStatus)
                 {
-                    continue;
-                }
+                    case XamlMarkupNamedArgumentParseStatus.LeadingEquals:
+                    case XamlMarkupNamedArgumentParseStatus.EmptyName:
+                        if (!_options.AllowLegacyInvalidNamedArgumentFallback)
+                        {
+                            return false;
+                        }
 
-                var equalsIndex = IndexOfTopLevel(argument, '=');
-                if (equalsIndex == 0)
-                {
-                    if (_options.AllowLegacyInvalidNamedArgumentFallback)
-                    {
                         positional.Add(argument);
                         arguments.Add(new MarkupExtensionArgument(
                             Name: null,
@@ -87,38 +67,14 @@ public sealed class MarkupExpressionParser
                             IsNamed: false,
                             Position: position++));
                         continue;
-                    }
-
-                    return false;
-                }
-
-                if (equalsIndex > 0)
-                {
-                    var key = argument.Substring(0, equalsIndex).Trim();
-                    var argumentValue = argument.Substring(equalsIndex + 1).Trim();
-                    if (key.Length == 0 && _options.AllowLegacyInvalidNamedArgumentFallback)
-                    {
-                        positional.Add(argument);
+                    case XamlMarkupNamedArgumentParseStatus.Parsed:
+                        named[key] = argumentValue;
                         arguments.Add(new MarkupExtensionArgument(
-                            Name: null,
-                            Value: argument,
-                            IsNamed: false,
+                            Name: key,
+                            Value: argumentValue,
+                            IsNamed: true,
                             Position: position++));
                         continue;
-                    }
-
-                    if (key.Length == 0)
-                    {
-                        return false;
-                    }
-
-                    named[key] = argumentValue;
-                    arguments.Add(new MarkupExtensionArgument(
-                        Name: key,
-                        Value: argumentValue,
-                        IsNamed: true,
-                        Position: position++));
-                    continue;
                 }
 
                 positional.Add(argument);

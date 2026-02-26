@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
@@ -22,14 +23,14 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        var extensionName = markup.Name;
-        if (!extensionName.Equals("Binding", StringComparison.OrdinalIgnoreCase) &&
-            !extensionName.Equals("CompiledBinding", StringComparison.OrdinalIgnoreCase))
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
+        if (extensionKind is not XamlMarkupExtensionKind.Binding &&
+            extensionKind is not XamlMarkupExtensionKind.CompiledBinding)
         {
             return false;
         }
 
-        return TryParseBindingMarkupCore(markup, extensionName, tryParseMarkupExtension, out bindingMarkup);
+        return TryParseBindingMarkupCore(markup, extensionKind, tryParseMarkupExtension, out bindingMarkup);
     }
 
     public static bool TryParseReflectionBindingMarkup(
@@ -43,33 +44,33 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        var extensionName = markup.Name;
-        if (!extensionName.Equals("ReflectionBinding", StringComparison.OrdinalIgnoreCase))
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
+        if (extensionKind is not XamlMarkupExtensionKind.ReflectionBinding)
         {
             return false;
         }
 
-        return TryParseBindingMarkupCore(markup, extensionName, tryParseMarkupExtension, out bindingMarkup);
+        return TryParseBindingMarkupCore(markup, extensionKind, tryParseMarkupExtension, out bindingMarkup);
     }
 
     public static bool TryParseBindingMarkupCore(
         MarkupExtensionInfo markup,
-        string extensionName,
+        XamlMarkupExtensionKind extensionKind,
         TryParseMarkupExtensionDelegate tryParseMarkupExtension,
         out BindingMarkup bindingMarkup)
     {
         var path = string.Empty;
         if (markup.NamedArguments.TryGetValue("Path", out var explicitPath))
         {
-            path = Unquote(explicitPath);
+            path = XamlQuotedValueSemantics.TrimAndUnquote(explicitPath);
         }
         else if (markup.PositionalArguments.Length > 0)
         {
-            path = Unquote(markup.PositionalArguments[0]);
+            path = XamlQuotedValueSemantics.TrimAndUnquote(markup.PositionalArguments[0]);
         }
 
         var parsedMarkup = new BindingMarkup(
-            isCompiledBinding: extensionName.Equals("CompiledBinding", StringComparison.OrdinalIgnoreCase),
+            isCompiledBinding: extensionKind is XamlMarkupExtensionKind.CompiledBinding,
             path: path,
             mode: TryGetNamedMarkupArgument(markup, "Mode"),
             elementName: TryGetNamedMarkupArgument(markup, "ElementName"),
@@ -100,7 +101,7 @@ public static class BindingEventMarkupParser
         {
             if (markup.NamedArguments.TryGetValue(argumentName, out var value))
             {
-                return Unquote(value);
+                return XamlQuotedValueSemantics.TrimAndUnquote(value);
             }
         }
 
@@ -313,9 +314,7 @@ public static class BindingEventMarkupParser
 
     public static bool IsEventBindingMarkupExtension(MarkupExtensionInfo markupExtension)
     {
-        var name = markupExtension.Name.Trim();
-        return name.Equals("EventBinding", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("x:EventBinding", StringComparison.OrdinalIgnoreCase);
+        return XamlMarkupExtensionNameSemantics.Classify(markupExtension.Name) == XamlMarkupExtensionKind.EventBinding;
     }
 
     public static bool TryParseEventBindingMarkup(
@@ -359,7 +358,7 @@ public static class BindingEventMarkupParser
         var passEventArgs = false;
         if (markupExtension.NamedArguments.TryGetValue("PassEventArgs", out var passEventArgsToken))
         {
-            if (!bool.TryParse(Unquote(passEventArgsToken), out passEventArgs))
+            if (!bool.TryParse(XamlQuotedValueSemantics.TrimAndUnquote(passEventArgsToken), out passEventArgs))
             {
                 errorMessage = "EventBinding PassEventArgs must be true or false.";
                 return false;
@@ -407,7 +406,7 @@ public static class BindingEventMarkupParser
             return true;
         }
 
-        var methodPath = Unquote(methodToken!).Trim();
+        var methodPath = XamlQuotedValueSemantics.TrimAndUnquote(methodToken!);
         if (methodPath.Length == 0)
         {
             errorMessage = "EventBinding Method must not be empty.";
@@ -437,23 +436,10 @@ public static class BindingEventMarkupParser
             return true;
         }
 
-        var normalized = Unquote(sourceToken).Trim();
-        if (normalized.Equals("DataContextThenRoot", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Default", StringComparison.OrdinalIgnoreCase))
+        if (EventBindingSourceModeSemantics.TryParse(
+                XamlQuotedValueSemantics.TrimAndUnquote(sourceToken),
+                out sourceMode))
         {
-            sourceMode = ResolvedEventBindingSourceMode.DataContextThenRoot;
-            return true;
-        }
-
-        if (normalized.Equals("DataContext", StringComparison.OrdinalIgnoreCase))
-        {
-            sourceMode = ResolvedEventBindingSourceMode.DataContext;
-            return true;
-        }
-
-        if (normalized.Equals("Root", StringComparison.OrdinalIgnoreCase))
-        {
-            sourceMode = ResolvedEventBindingSourceMode.Root;
             return true;
         }
 
@@ -492,7 +478,7 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        path = Unquote(token).Trim();
+        path = XamlQuotedValueSemantics.TrimAndUnquote(token);
         if (path.Length == 0)
         {
             errorMessage = "EventBinding command path must not be empty.";
@@ -539,9 +525,7 @@ public static class BindingEventMarkupParser
 
         if (tryParseMarkupExtension(parameterToken, out var markupExtension))
         {
-            var extensionName = markupExtension.Name.Trim();
-            if (extensionName.Equals("x:Null", StringComparison.OrdinalIgnoreCase) ||
-                extensionName.Equals("Null", StringComparison.OrdinalIgnoreCase))
+            if (XamlMarkupExtensionNameSemantics.Classify(markupExtension.Name) == XamlMarkupExtensionKind.Null)
             {
                 parameterValueExpression = "null";
                 hasParameterValueExpression = true;
@@ -552,7 +536,7 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        if (!tryConvertLiteralValueExpression(Unquote(parameterToken), out var literalExpression))
+        if (!tryConvertLiteralValueExpression(XamlQuotedValueSemantics.TrimAndUnquote(parameterToken), out var literalExpression))
         {
             errorMessage = "EventBinding parameter literal is invalid.";
             return false;
@@ -603,10 +587,9 @@ public static class BindingEventMarkupParser
 
         if (tryParseMarkupExtension(trimmed, out var markup))
         {
-            var markupName = markup.Name.Trim();
-            if (!markupName.Equals("x:Reference", StringComparison.OrdinalIgnoreCase) &&
-                !markupName.Equals("Reference", StringComparison.OrdinalIgnoreCase) &&
-                !markupName.Equals("ResolveByName", StringComparison.OrdinalIgnoreCase))
+            var kind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
+            if (kind is not XamlMarkupExtensionKind.Reference &&
+                kind is not XamlMarkupExtensionKind.ResolveByName)
             {
                 return false;
             }
@@ -633,21 +616,7 @@ public static class BindingEventMarkupParser
 
     public static bool TryNormalizeReferenceName(string? rawName, out string normalizedName)
     {
-        normalizedName = string.Empty;
-        if (string.IsNullOrWhiteSpace(rawName))
-        {
-            return false;
-        }
-
-        var unquoted = Unquote(rawName!).Trim();
-        if (unquoted.Length == 0 ||
-            unquoted.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
-        {
-            return false;
-        }
-
-        normalizedName = unquoted;
-        return true;
+        return XamlReferenceNameSemantics.TryNormalizeReferenceName(rawName, out normalizedName);
     }
 
     public static bool TryParseElementNameQuery(string path, out string elementName, out string normalizedPath)
@@ -655,40 +624,13 @@ public static class BindingEventMarkupParser
         elementName = string.Empty;
         normalizedPath = string.Empty;
 
-        if (!path.StartsWith("#", StringComparison.Ordinal))
+        if (!BindingSourceQuerySemantics.TryParseElementName(path, out var query))
         {
             return false;
         }
 
-        var index = 1;
-        while (index < path.Length && MiniLanguageSyntaxFacts.IsIdentifierPart(path[index]))
-        {
-            index++;
-        }
-
-        if (index == 1)
-        {
-            return false;
-        }
-
-        elementName = path.Substring(1, index - 1);
-        if (index == path.Length)
-        {
-            normalizedPath = ".";
-            return true;
-        }
-
-        if (path[index] != '.')
-        {
-            return false;
-        }
-
-        normalizedPath = path.Substring(index + 1).Trim();
-        if (normalizedPath.Length == 0)
-        {
-            normalizedPath = ".";
-        }
-
+        elementName = query.ElementName ?? string.Empty;
+        normalizedPath = query.NormalizedPath;
         return true;
     }
 
@@ -700,30 +642,12 @@ public static class BindingEventMarkupParser
         relativeSource = default;
         normalizedPath = string.Empty;
 
-        if (!path.StartsWith("$self", StringComparison.OrdinalIgnoreCase))
+        if (!BindingSourceQuerySemantics.TryParseSelf(path, out var query))
         {
             return false;
         }
 
-        var index = "$self".Length;
-        if (index == path.Length)
-        {
-            normalizedPath = ".";
-        }
-        else
-        {
-            if (path[index] != '.')
-            {
-                return false;
-            }
-
-            normalizedPath = path.Substring(index + 1).Trim();
-            if (normalizedPath.Length == 0)
-            {
-                normalizedPath = ".";
-            }
-        }
-
+        normalizedPath = query.NormalizedPath;
         relativeSource = new RelativeSourceMarkup(
             mode: "Self",
             ancestorTypeToken: null,
@@ -740,77 +664,16 @@ public static class BindingEventMarkupParser
         relativeSource = default;
         normalizedPath = string.Empty;
 
-        if (!path.StartsWith("$parent", StringComparison.OrdinalIgnoreCase))
+        if (!BindingSourceQuerySemantics.TryParseParent(path, out var query))
         {
             return false;
         }
 
-        var index = "$parent".Length;
-        string? ancestorTypeToken = null;
-        int? ancestorLevel = 1;
-
-        if (index < path.Length && path[index] == '[')
-        {
-            var closingBracket = path.IndexOf(']', index + 1);
-            if (closingBracket <= index + 1)
-            {
-                return false;
-            }
-
-            var inside = path.Substring(index + 1, closingBracket - index - 1).Trim();
-            if (inside.Length > 0)
-            {
-                var separators = inside.Split(new[] { ',', ';' }, 2, StringSplitOptions.None);
-                var firstPart = separators[0].Trim();
-                if (separators.Length == 1)
-                {
-                    if (int.TryParse(firstPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSingleLevel) &&
-                        parsedSingleLevel > 0)
-                    {
-                        ancestorLevel = parsedSingleLevel;
-                        ancestorTypeToken = null;
-                    }
-                    else
-                    {
-                        ancestorTypeToken = firstPart.Length > 0 ? firstPart : null;
-                    }
-                }
-                else
-                {
-                    ancestorTypeToken = firstPart.Length > 0 ? firstPart : null;
-                    if (int.TryParse(separators[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLevel) &&
-                        parsedLevel > 0)
-                    {
-                        ancestorLevel = parsedLevel;
-                    }
-                }
-            }
-
-            index = closingBracket + 1;
-        }
-
-        if (index == path.Length)
-        {
-            normalizedPath = ".";
-        }
-        else
-        {
-            if (path[index] != '.')
-            {
-                return false;
-            }
-
-            normalizedPath = path.Substring(index + 1).Trim();
-            if (normalizedPath.Length == 0)
-            {
-                normalizedPath = ".";
-            }
-        }
-
+        normalizedPath = query.NormalizedPath;
         relativeSource = new RelativeSourceMarkup(
             mode: "FindAncestor",
-            ancestorTypeToken: ancestorTypeToken,
-            ancestorLevel: ancestorLevel,
+            ancestorTypeToken: query.AncestorTypeToken,
+            ancestorLevel: query.AncestorLevel,
             tree: null);
         return true;
     }
@@ -828,33 +691,34 @@ public static class BindingEventMarkupParser
 
         if (tryParseMarkupExtension(value, out var markupExtension))
         {
-            if (!markupExtension.Name.Equals("RelativeSource", StringComparison.OrdinalIgnoreCase))
+            if (XamlMarkupExtensionNameSemantics.Classify(markupExtension.Name) !=
+                XamlMarkupExtensionKind.RelativeSource)
             {
                 return false;
             }
 
             var mode = markupExtension.NamedArguments.TryGetValue("Mode", out var explicitMode)
-                ? Unquote(explicitMode)
+                ? XamlQuotedValueSemantics.TrimAndUnquote(explicitMode)
                 : markupExtension.PositionalArguments.Length > 0
-                    ? Unquote(markupExtension.PositionalArguments[0])
+                    ? XamlQuotedValueSemantics.TrimAndUnquote(markupExtension.PositionalArguments[0])
                     : null;
 
             int? ancestorLevel = null;
             if ((markupExtension.NamedArguments.TryGetValue("AncestorLevel", out var rawAncestorLevel) ||
                  markupExtension.NamedArguments.TryGetValue("FindAncestor", out rawAncestorLevel) ||
                  markupExtension.NamedArguments.TryGetValue("Level", out rawAncestorLevel)) &&
-                int.TryParse(Unquote(rawAncestorLevel), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedAncestorLevel))
+                int.TryParse(XamlQuotedValueSemantics.TrimAndUnquote(rawAncestorLevel), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedAncestorLevel))
             {
                 ancestorLevel = parsedAncestorLevel;
             }
 
             var ancestorType = markupExtension.NamedArguments.TryGetValue("AncestorType", out var rawAncestorType)
-                ? Unquote(rawAncestorType)
+                ? XamlQuotedValueSemantics.TrimAndUnquote(rawAncestorType)
                 : null;
             var tree = markupExtension.NamedArguments.TryGetValue("Tree", out var rawTree)
-                ? Unquote(rawTree)
+                ? XamlQuotedValueSemantics.TrimAndUnquote(rawTree)
                 : markupExtension.NamedArguments.TryGetValue("TreeType", out var rawTreeType)
-                    ? Unquote(rawTreeType)
+                    ? XamlQuotedValueSemantics.TrimAndUnquote(rawTreeType)
                     : null;
 
             relativeSourceMarkup = new RelativeSourceMarkup(mode, ancestorType, ancestorLevel, tree);
@@ -862,23 +726,10 @@ public static class BindingEventMarkupParser
         }
 
         relativeSourceMarkup = new RelativeSourceMarkup(
-            mode: Unquote(value.Trim()),
+            mode: XamlQuotedValueSemantics.TrimAndUnquote(value),
             ancestorTypeToken: null,
             ancestorLevel: null,
             tree: null);
         return true;
-    }
-
-    public static string Unquote(string value)
-    {
-        var trimmed = value.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[trimmed.Length - 1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[trimmed.Length - 1] == '\'')))
-        {
-            return trimmed.Substring(1, trimmed.Length - 2);
-        }
-
-        return trimmed;
     }
 }
