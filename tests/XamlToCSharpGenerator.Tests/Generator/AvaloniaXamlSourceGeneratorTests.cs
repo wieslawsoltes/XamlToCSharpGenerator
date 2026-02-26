@@ -4875,13 +4875,100 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlIncludeRegistry.Register", generated);
         Assert.Contains("XamlIncludeGraphRegistry.Register", generated);
         Assert.Contains("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, object? ownerContext, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
-        Assert.Contains("if (item is global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude &&", generated);
+        Assert.Contains("__TryApplyStyleInclude(", generated);
+        Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);", generated);
         Assert.Contains("global::XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader.TryLoad(", generated);
         Assert.Contains("\"Text\"", generated);
         Assert.Contains("\"Content\"", generated);
         Assert.Contains("\"Caption\"", generated);
         Assert.Contains("\"Title\"", generated);
         Assert.Contains("\"Dark\"", generated);
+    }
+
+    [Fact]
+    public void Materializes_DataTemplate_XDataType_To_Runtime_DataType_Assignment()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+                public class TextBlock : Control { }
+
+                public class UserControl : Control
+                {
+                    public global::Avalonia.Collections.AvaloniaList<global::Avalonia.Controls.Templates.IDataTemplate> DataTemplates { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class ItemViewModel { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView">
+                <UserControl.DataTemplates>
+                    <DataTemplate x:DataType="vm:ItemViewModel">
+                        <TextBlock />
+                    </DataTemplate>
+                </UserControl.DataTemplates>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains(
+            ".DataType = (global::System.Type)(typeof(global::Demo.ViewModels.ItemViewModel));",
+            generated);
     }
 
     [Fact]
@@ -5032,6 +5119,147 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(
             "new global::Avalonia.Styling.Setter(global::Avalonia.Controls.ContentControl.ContentProperty, \"<Template",
             generated);
+    }
+
+    [Fact]
+    public void Does_Not_Use_RuntimeXaml_Fallback_For_Malformed_Fragment_Literal()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty
+                {
+                    public static readonly object UnsetValue = new();
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object> { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public ResourceDictionary Resources { get; } = new();
+                }
+
+                public class ContentControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Border : Control { }
+
+                public class FancyControl : ContentControl { }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class ControlTheme
+                {
+                    public global::System.Type? TargetType { get; set; }
+                    public global::System.Collections.Generic.List<Setter> Setters { get; } = new();
+                }
+
+                public class Setter
+                {
+                    public Setter() { }
+                    public Setter(global::Avalonia.AvaloniaProperty property, object? value)
+                    {
+                        Property = property;
+                        Value = value;
+                    }
+
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                    public object? Value { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Fancy" TargetType="FancyControl">
+                        <Setter Property="Content" Value="&lt;Template&gt;&lt;Border /&gt;&lt;/Templte&gt;" />
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.DoesNotContain("ProvideRuntimeXamlValue(\"<Template", generated);
+    }
+
+    [Fact]
+    public void Resolves_XType_TypeName_Named_Argument_For_ControlTheme_TargetType()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object> { }
+
+                public class UserControl : Control
+                {
+                    public ResourceDictionary Resources { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class ControlTheme
+                {
+                    public global::System.Type? TargetType { get; set; }
+                    public global::System.Collections.Generic.List<Setter> Setters { get; } = new();
+                }
+
+                public class Setter
+                {
+                    public Setter() { }
+                    public object? Property { get; set; }
+                    public object? Value { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public class FancyControl : global::Avalonia.Controls.Control { }
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="using:Demo"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Fancy" TargetType="{x:Type TypeName=local:FancyControl}" />
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__theme.TargetType = typeof(global::Demo.FancyControl);", generated);
     }
 
     [Fact]
