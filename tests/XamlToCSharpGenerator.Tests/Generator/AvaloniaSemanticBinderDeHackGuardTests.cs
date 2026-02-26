@@ -111,6 +111,8 @@ public class AvaloniaSemanticBinderDeHackGuardTests
 
         Assert.Contains("private static bool __TryApplyStyleInclude(", source, StringComparison.Ordinal);
         Assert.Contains("if (!__TryApplyStyleInclude(", source, StringComparison.Ordinal);
+        Assert.Contains("private static bool __TryResolveDictionaryEntryValue(", source, StringComparison.Ordinal);
+        Assert.Contains("if (!__TryResolveDictionaryEntryValue(dictionary, value, out dictionaryValue))", source, StringComparison.Ordinal);
     }
 
     [Fact]

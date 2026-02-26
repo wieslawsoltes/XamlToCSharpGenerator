@@ -50,7 +50,7 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
-    public void Keeps_Keyed_ResourceInclude_As_Dictionary_Value()
+    public void Resolves_Keyed_ResourceInclude_Before_Dictionary_Insertion()
     {
         const string code = "namespace Demo; public partial class ThemeHost {}";
         const string xaml = """
@@ -70,7 +70,8 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "ThemeHost");
-        Assert.Contains("map[key] = value;", generated);
+        Assert.Contains("__TryResolveDictionaryEntryValue(", generated);
+        Assert.Contains("map[key] = dictionaryValue;", generated);
         Assert.DoesNotContain("__NormalizeDictionaryValue", generated);
         Assert.Contains("__TryAddToDictionary", generated);
         Assert.Contains("CompactStyles", generated);
@@ -2606,7 +2607,7 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
-    public void Keyed_ResourceInclude_Does_Not_Normalize_Dictionary_Value()
+    public void Keyed_ResourceInclude_Uses_DictionaryEntry_Resolver()
     {
         const string code = """
             namespace Avalonia.Controls
@@ -2655,7 +2656,8 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.DoesNotContain("__NormalizeDictionaryValue(", generated);
-        Assert.Contains("map[key] = value;", generated);
+        Assert.Contains("__TryResolveDictionaryEntryValue(", generated);
+        Assert.Contains("map[key] = dictionaryValue;", generated);
     }
 
     [Fact]
