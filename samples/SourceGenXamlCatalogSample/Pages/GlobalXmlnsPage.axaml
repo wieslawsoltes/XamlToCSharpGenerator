@@ -1,5 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             xmlns:catalog="clr-namespace:SourceGenXamlCatalogSample.Catalog"
              x:Class="SourceGenXamlCatalogSample.Pages.GlobalXmlnsPage"
              x:DataType="vm:GlobalXmlnsPageViewModel"
              x:CompileBindings="True">

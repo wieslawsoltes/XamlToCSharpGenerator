@@ -21,10 +21,10 @@
   <ScrollViewer>
     <StackPanel Spacing="10" Margin="8">
       <Border Classes="catalog-card">
-        <StackPanel Spacing="6">
+        <StackPanel Spacing="6" x:DataType="vm:ExpressionBindingsPageViewModel">
           <TextBlock FontWeight="SemiBold" Text="Explicit + implicit expression syntax" />
           <TextBlock Text="{= FirstName + ' ' + LastName}" />
-          <TextBlock Text="{FirstName + '!'}" />
+          <TextBlock Text="{= FirstName + '!'}" />
           <TextBlock Text="{= (Count * 2) + 1}" />
           <TextBlock Text="{= Nickname ?? ('alias:' + FirstName)}" />
           <TextBlock Text="{= Tags[0] + ', ' + Tags[1]}" />
@@ -32,12 +32,12 @@
       </Border>
 
       <Border Classes="catalog-card">
-        <StackPanel Spacing="6">
+        <StackPanel Spacing="6" x:DataType="vm:ExpressionBindingsPageViewModel">
           <TextBlock FontWeight="SemiBold" Text="Method calls + alias operators" />
           <TextBlock Text="{= FormatSummary(FirstName, LastName, Count)}" />
           <TextBlock Text="{= (Price * (1 + TaxRate)).ToString('0.00')}" />
           <TextBlock Text="Visible when Count GT 0 AND IsAdmin"
-                     IsVisible="{Count GT 0 AND IsAdmin}" />
+                     IsVisible="{= Count > 0 &amp;&amp; IsAdmin}" />
         </StackPanel>
       </Border>
 

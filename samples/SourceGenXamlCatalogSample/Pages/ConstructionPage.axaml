@@ -31,16 +31,8 @@
 
       <Border Classes="catalog-card">
         <StackPanel Spacing="6">
-          <TextBlock FontWeight="SemiBold" Text="x:Array materialization" />
-          <catalog:ArrayHostControl>
-            <catalog:ArrayHostControl.Values>
-              <x:Array x:TypeArguments="x:String">
-                <x:String>alpha</x:String>
-                <x:String>beta</x:String>
-                <x:String>gamma</x:String>
-              </x:Array>
-            </catalog:ArrayHostControl.Values>
-          </catalog:ArrayHostControl>
+          <TextBlock FontWeight="SemiBold" Text="Array property materialization" />
+          <catalog:ArrayHostControl Values="alpha, beta, gamma" />
         </StackPanel>
       </Border>
     </StackPanel>

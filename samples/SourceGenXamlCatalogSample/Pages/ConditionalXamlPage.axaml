@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
              xmlns:present="https://github.com/avaloniaui?ApiInformation.IsTypePresent('Avalonia.Controls.TextBlock')"
              xmlns:missing="https://github.com/avaloniaui?ApiInformation.IsTypePresent('SourceGenXamlCatalogSample.DoesNotExistType')"
              xmlns:hasForeground="https://github.com/avaloniaui?ApiInformation.IsPropertyPresent('Avalonia.Controls.TextBlock','Foreground')"

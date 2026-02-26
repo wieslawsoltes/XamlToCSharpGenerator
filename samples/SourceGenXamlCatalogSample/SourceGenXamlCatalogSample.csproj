@@ -13,6 +13,7 @@
     <RootNamespace>SourceGenXamlCatalogSample</RootNamespace>
 
     <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
     <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
     <AvaloniaSourceGenHotDesignEnabled>true</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>

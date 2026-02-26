@@ -8,7 +8,7 @@
   <ScrollViewer>
     <StackPanel Spacing="10" Margin="8">
       <Border Classes="catalog-card">
-        <StackPanel Spacing="6">
+        <StackPanel Spacing="6" x:DataType="vm:MarkupExtensionsPageViewModel">
           <TextBlock FontWeight="SemiBold" Text="Built-in + custom markup extensions" />
           <TextBlock x:Name="ReferenceTarget" Text="Reference target text" />
           <TextBlock Text="{catalog:CatalogPrefix ExtensionValue, Prefix='Prefix: '}" />
@@ -21,7 +21,7 @@
       </Border>
 
       <Border Classes="catalog-card">
-        <StackPanel Spacing="6">
+        <StackPanel Spacing="6" x:DataType="vm:MarkupExtensionsPageViewModel">
           <TextBlock FontWeight="SemiBold" Text="x: primitive markup extensions" />
           <catalog:PrimitiveValuesControl x:Name="PrimitiveProbe"
                                           ByteValue="{x:Byte 5}"
@@ -37,9 +37,9 @@
         <StackPanel Spacing="6">
           <TextBlock FontWeight="SemiBold" Text="C# expression markup" />
           <TextBlock Text="{= FirstName + ' - ' + LastName}" />
-          <TextBlock Text="{FirstName + '!'}" />
+          <TextBlock Text="{= FirstName + '!'}" />
           <TextBlock Text="{= Count + 7}" />
-          <TextBlock Text="Visible only when Count GT 0" IsVisible="{Count GT 0}" />
+          <TextBlock Text="Visible only when Count GT 0" IsVisible="{= Count > 0}" />
         </StackPanel>
       </Border>
 
