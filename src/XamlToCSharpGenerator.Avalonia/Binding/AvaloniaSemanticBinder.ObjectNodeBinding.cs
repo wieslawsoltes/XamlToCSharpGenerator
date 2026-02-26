@@ -1,0 +1,1524 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Xml.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
+using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
+using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
+using XamlToCSharpGenerator.MiniLanguageParsing.Text;
+
+namespace XamlToCSharpGenerator.Avalonia.Binding;
+
+public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
+{
+
+
+    private static ResolvedObjectNode BindObjectNode(
+        XamlObjectNode node,
+        Compilation compilation,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
+        bool inheritedCompileBindingsEnabled,
+        INamedTypeSymbol? inheritedDataType,
+        INamedTypeSymbol? inheritedSetterTargetType,
+        BindingPriorityScope inheritedBindingPriorityScope,
+        INamedTypeSymbol? forcedType = null,
+        INamedTypeSymbol? rootTypeSymbol = null)
+    {
+        var symbol = forcedType ?? ResolveObjectTypeSymbol(compilation, document, node);
+        var typeName = symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
+
+        if (IsXamlArrayNode(node))
+        {
+            return BindXamlArrayNode(
+                node,
+                compilation,
+                diagnostics,
+                document,
+                options,
+                compiledBindings,
+                inheritedCompileBindingsEnabled,
+                inheritedDataType,
+                inheritedSetterTargetType,
+                inheritedBindingPriorityScope,
+                rootTypeSymbol);
+        }
+
+        var compileBindingsEnabled = node.CompileBindings ?? inheritedCompileBindingsEnabled;
+        var nodeDataType = ResolveTypeFromTypeExpression(compilation, document, node.DataType, document.ClassNamespace) ?? inheritedDataType;
+        var currentSetterTargetType = ResolveCurrentSetterTargetType(
+            symbol,
+            node,
+            compilation,
+            document,
+            inheritedSetterTargetType);
+        var currentBindingPriorityScope = ResolveCurrentBindingPriorityScope(
+            symbol,
+            compilation,
+            inheritedBindingPriorityScope);
+        var contentPropertyName = FindContentPropertyName(symbol);
+        var inferredSetterValueType = TryResolveSetterValueType(
+            symbol,
+            node.PropertyAssignments,
+            compilation,
+            document,
+            currentSetterTargetType);
+
+        var assignments = ImmutableArray.CreateBuilder<ResolvedPropertyAssignment>();
+        var propertyElementAssignments = ImmutableArray.CreateBuilder<ResolvedPropertyElementAssignment>();
+        var eventSubscriptions = ImmutableArray.CreateBuilder<ResolvedEventSubscription>();
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (ShouldSkipConditionalBranch(
+                    assignment.Condition,
+                    compilation,
+                    document,
+                    diagnostics,
+                    options))
+            {
+                continue;
+            }
+
+            if (symbol is null)
+            {
+                continue;
+            }
+
+            if (IsDesignTimePropertyToken(assignment.PropertyName))
+            {
+                continue;
+            }
+
+            var propertyAlias = ResolvePropertyAlias(symbol, assignment.PropertyName);
+
+            if (assignment.IsAttached || propertyAlias.HasAvaloniaPropertyAlias)
+            {
+                if (TryBindAttachedPropertyAssignment(
+                        assignment,
+                        symbol,
+                        typeName,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        rootTypeSymbol,
+                        explicitOwnerType: propertyAlias.AvaloniaPropertyOwnerType,
+                        explicitPropertyName: propertyAlias.ResolvedPropertyName,
+                        explicitPropertyFieldName: propertyAlias.AvaloniaPropertyFieldName,
+                        out var attachedAssignment))
+                {
+                    if (attachedAssignment is not null)
+                    {
+                        assignments.Add(attachedAssignment);
+                    }
+
+                    continue;
+                }
+
+                if (TryBindAttachedStaticSetterAssignment(
+                        assignment,
+                        symbol,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        out var staticSetterAssignment))
+                {
+                    if (staticSetterAssignment is not null)
+                    {
+                        assignments.Add(staticSetterAssignment);
+                    }
+
+                    continue;
+                }
+
+                if (TryBindAttachedClassPropertyAssignment(
+                        assignment,
+                        symbol,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        out var classPropertyAssignment))
+                {
+                    if (classPropertyAssignment is not null)
+                    {
+                        assignments.Add(classPropertyAssignment);
+                    }
+
+                    continue;
+                }
+
+                if (TryBindAttachedEventSubscription(
+                        assignment,
+                        compilation,
+                        nodeDataType,
+                        rootTypeSymbol,
+                        diagnostics,
+                        document,
+                        options,
+                        out var attachedEventSubscription))
+                {
+                    if (attachedEventSubscription is not null)
+                    {
+                        eventSubscriptions.Add(attachedEventSubscription);
+                    }
+
+                    continue;
+                }
+
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0101",
+                    $"Attached property '{assignment.PropertyName}' could not be resolved on this scope.",
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                continue;
+            }
+
+            var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
+            var property = FindProperty(symbol, normalizedPropertyName);
+            if (property is not null &&
+                property.SetMethod is null &&
+                TryBindCollectionLiteralPropertyAssignment(
+                    symbol,
+                    property,
+                    assignment,
+                    compilation,
+                    out var collectionLiteralAssignment))
+            {
+                if (collectionLiteralAssignment is not null)
+                {
+                    propertyElementAssignments.Add(collectionLiteralAssignment);
+                }
+
+                continue;
+            }
+
+            if (property is not null && property.SetMethod is not null)
+            {
+                if (TryParseBindingMarkup(assignment.Value, out var bindingMarkup))
+                {
+                    if (TryReportBindingSourceConflict(
+                            bindingMarkup,
+                            diagnostics,
+                            document,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode))
+                    {
+                        continue;
+                    }
+
+                    var shouldCompileBinding = CanUseCompiledBinding(bindingMarkup) &&
+                                               (bindingMarkup.IsCompiledBinding || compileBindingsEnabled);
+                    if (shouldCompileBinding)
+                    {
+                        if (nodeDataType is null)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(
+                                "AXSG0110",
+                                $"Compiled binding for '{property.Name}' requires x:DataType in scope.",
+                                document.FilePath,
+                                assignment.Line,
+                                assignment.Column,
+                                options.StrictMode));
+                            continue;
+                        }
+
+                        if (!TryBuildCompiledBindingAccessorExpression(
+                                compilation,
+                                document,
+                                nodeDataType,
+                                bindingMarkup.Path,
+                                out var accessorExpression,
+                                out var normalizedPath,
+                                out var errorMessage))
+                        {
+                            diagnostics.Add(new DiagnosticInfo(
+                                "AXSG0111",
+                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{nodeDataType.ToDisplayString()}': {errorMessage}",
+                                document.FilePath,
+                                assignment.Line,
+                                assignment.Column,
+                                options.StrictMode));
+                            continue;
+                        }
+
+                        compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                            TargetTypeName: typeName,
+                            TargetPropertyName: property.Name,
+                            Path: normalizedPath,
+                            SourceTypeName: nodeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            AccessorExpression: accessorExpression,
+                            IsSetterBinding: false,
+                            Line: assignment.Line,
+                            Column: assignment.Column));
+                    }
+
+                    if (TryBindAvaloniaPropertyAssignment(
+                            symbol,
+                            typeName,
+                            normalizedPropertyName,
+                            assignment,
+                            compilation,
+                            document,
+                            options,
+                            diagnostics,
+                            compiledBindings,
+                            compileBindingsEnabled,
+                            nodeDataType,
+                            property.Type,
+                            currentBindingPriorityScope,
+                            currentSetterTargetType,
+                            rootTypeSymbol,
+                            out var bindingAssignment,
+                            allowCompiledBindingRegistration: false))
+                    {
+                        if (bindingAssignment is not null)
+                        {
+                            assignments.Add(bindingAssignment);
+                        }
+
+                        continue;
+                    }
+
+                    if (TryBuildBindingValueExpression(
+                            compilation,
+                            document,
+                            bindingMarkup,
+                            property.Type,
+                            currentSetterTargetType,
+                            currentBindingPriorityScope,
+                            out var runtimeBindingExpression))
+                    {
+                        assignments.Add(new ResolvedPropertyAssignment(
+                            PropertyName: property.Name,
+                            ValueExpression: runtimeBindingExpression,
+                            AvaloniaPropertyOwnerTypeName: null,
+                            AvaloniaPropertyFieldName: null,
+                            ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            BindingPriorityExpression: null,
+                            Line: assignment.Line,
+                            Column: assignment.Column,
+                            Condition: assignment.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    if (shouldCompileBinding)
+                    {
+                        continue;
+                    }
+                }
+
+                if (currentBindingPriorityScope == BindingPriorityScope.Template &&
+                    TryBindAvaloniaPropertyAssignment(
+                        symbol,
+                        typeName,
+                        normalizedPropertyName,
+                        assignment,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        property.Type,
+                        currentBindingPriorityScope,
+                        currentSetterTargetType,
+                        rootTypeSymbol,
+                        out var templatePriorityAssignment,
+                        allowCompiledBindingRegistration: false))
+                {
+                    if (templatePriorityAssignment is not null)
+                    {
+                        assignments.Add(templatePriorityAssignment);
+                    }
+
+                    continue;
+                }
+
+                if (TryParseMarkupExtension(assignment.Value, out _) &&
+                    TryBindAvaloniaPropertyAssignment(
+                        symbol,
+                        typeName,
+                        normalizedPropertyName,
+                        assignment,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        property.Type,
+                        currentBindingPriorityScope,
+                        currentSetterTargetType,
+                        rootTypeSymbol,
+                        out var markupExtensionAssignment,
+                        allowCompiledBindingRegistration: false))
+                {
+                    if (markupExtensionAssignment is not null)
+                    {
+                        assignments.Add(markupExtensionAssignment);
+                    }
+
+                    continue;
+                }
+
+                var isSetterValueProperty = property.Name.Equals("Value", StringComparison.Ordinal) &&
+                                            IsSetterType(symbol);
+                var conversionTargetType = property.Type;
+                if (isSetterValueProperty &&
+                    inferredSetterValueType is not null)
+                {
+                    if (conversionTargetType.SpecialType == SpecialType.System_Object)
+                    {
+                        conversionTargetType = inferredSetterValueType;
+                    }
+                }
+
+                var valueExpression = string.Empty;
+                var valueKind = ResolvedValueKind.Literal;
+                var requiresStaticResourceResolver = false;
+                var valueRequirements = ResolvedValueRequirements.None;
+                if (isSetterValueProperty &&
+                    TryBuildRuntimeXamlFragmentExpression(
+                        assignment.Value,
+                        conversionTargetType,
+                        document,
+                        out var runtimeXamlSetterValueExpression))
+                {
+                    valueExpression = runtimeXamlSetterValueExpression;
+                    valueKind = ResolvedValueKind.RuntimeXamlFallback;
+                    valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+                }
+
+                var selectorNestingTypeHint =
+                    IsStyleType(symbol, compilation) &&
+                    property.Name.Equals("Selector", StringComparison.Ordinal)
+                        ? inheritedSetterTargetType
+                        : null;
+
+                if (valueExpression.Length == 0 &&
+                    HasResolveByNameSemantics(symbol, property.Name) &&
+                    TryBuildResolveByNameLiteralExpression(
+                        assignment.Value,
+                        conversionTargetType,
+                        out var resolveByNameValueExpression))
+                {
+                    valueExpression = resolveByNameValueExpression;
+                    valueKind = ResolvedValueKind.MarkupExtension;
+                }
+
+                if (valueExpression.Length == 0 &&
+                    property.Type is INamedTypeSymbol delegateType &&
+                    delegateType.TypeKind == TypeKind.Delegate &&
+                    TryBuildDelegateMethodGroupValueExpression(
+                        assignment.Value,
+                        delegateType,
+                        rootTypeSymbol,
+                        out var delegateMethodExpression))
+                {
+                    valueExpression = delegateMethodExpression;
+                }
+
+                if (valueExpression.Length == 0 && isSetterValueProperty)
+                {
+                    if (!TryResolveSetterValueWithPolicy(
+                            rawValue: assignment.Value,
+                            conversionTargetType: conversionTargetType,
+                            compilation: compilation,
+                            document: document,
+                            setterTargetType: currentSetterTargetType,
+                            bindingPriorityScope: currentBindingPriorityScope,
+                            strictMode: options.StrictMode,
+                            preferTypedStaticResourceCoercion: true,
+                            allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
+                                                                            conversionTargetType.SpecialType == SpecialType.System_Object,
+                            allowCompatibilityStringLiteralFallback: !options.StrictMode &&
+                                                                     conversionTargetType.SpecialType == SpecialType.System_Object,
+                            propertyName: property.Name,
+                            ownerDisplayName: symbol.ToDisplayString(),
+                            line: assignment.Line,
+                            column: assignment.Column,
+                            diagnostics: diagnostics,
+                            resolution: out var setterResolution,
+                            selectorNestingTypeHint: selectorNestingTypeHint,
+                            setterContext: false))
+                    {
+                        continue;
+                    }
+
+                    valueExpression = setterResolution.Expression;
+                    valueKind = setterResolution.ValueKind;
+                    requiresStaticResourceResolver = setterResolution.RequiresStaticResourceResolver;
+                    valueRequirements = setterResolution.ValueRequirements;
+                }
+                else if (valueExpression.Length == 0)
+                {
+                    if (!TryConvertValueConversion(
+                            assignment.Value,
+                            conversionTargetType,
+                            compilation,
+                            document,
+                            currentSetterTargetType,
+                            currentBindingPriorityScope,
+                            out var convertedValue,
+                            allowObjectStringLiteralFallback: !options.StrictMode &&
+                                                              conversionTargetType.SpecialType == SpecialType.System_Object,
+                            selectorNestingTypeHint: selectorNestingTypeHint))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0102",
+                            $"Could not convert literal '{assignment.Value}' for '{property.Name}' on '{symbol.ToDisplayString()}'.",
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    valueExpression = convertedValue.Expression;
+                    valueKind = convertedValue.ValueKind;
+                    requiresStaticResourceResolver = convertedValue.RequiresStaticResourceResolver;
+                    valueRequirements = convertedValue.EffectiveRequirements;
+                }
+
+                assignments.Add(new ResolvedPropertyAssignment(
+                    PropertyName: property.Name,
+                    ValueExpression: valueExpression,
+                    AvaloniaPropertyOwnerTypeName: null,
+                    AvaloniaPropertyFieldName: null,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: null,
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    ValueKind: valueKind,
+                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
+                    ValueRequirements: valueRequirements));
+                continue;
+            }
+
+            if (TryBindEventSubscription(
+                    symbol,
+                    assignment,
+                    compilation,
+                    nodeDataType,
+                    rootTypeSymbol,
+                    diagnostics,
+                    document,
+                    options,
+                    out var eventSubscription))
+            {
+                if (eventSubscription is not null)
+                {
+                    eventSubscriptions.Add(eventSubscription);
+                }
+
+                continue;
+            }
+
+            if (TryBindAvaloniaPropertyAssignment(
+                    symbol,
+                    typeName,
+                    normalizedPropertyName,
+                    assignment,
+                    compilation,
+                    document,
+                    options,
+                    diagnostics,
+                    compiledBindings,
+                    compileBindingsEnabled,
+                    nodeDataType,
+                    property?.Type,
+                    currentBindingPriorityScope,
+                    currentSetterTargetType,
+                    rootTypeSymbol,
+                    out var fallbackAssignment))
+            {
+                if (fallbackAssignment is not null)
+                {
+                    assignments.Add(fallbackAssignment);
+                }
+
+                continue;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0101",
+                $"Property '{assignment.PropertyName}' was not found on '{symbol.ToDisplayString()}'.",
+                document.FilePath,
+                assignment.Line,
+                assignment.Column,
+                options.StrictMode));
+        }
+
+        TryAddTemplateDataTypeDirectiveAssignment(
+            node,
+            symbol,
+            compilation,
+            document,
+            options,
+            diagnostics,
+            assignments);
+
+        var children = ImmutableArray.CreateBuilder<ResolvedObjectNode>();
+        foreach (var child in node.ChildObjects)
+        {
+            if (ShouldSkipConditionalBranch(
+                    child.Condition,
+                    compilation,
+                    document,
+                    diagnostics,
+                    options))
+            {
+                continue;
+            }
+
+            children.Add(BindObjectNode(
+                child,
+                compilation,
+                diagnostics,
+                document,
+                options,
+                compiledBindings,
+                compileBindingsEnabled,
+                nodeDataType,
+                currentSetterTargetType,
+                currentBindingPriorityScope,
+                rootTypeSymbol: rootTypeSymbol));
+        }
+
+        ResolvedChildAttachmentMode? explicitAttachment = null;
+        string? explicitContentPropertyName = null;
+        foreach (var propertyElement in node.PropertyElements)
+        {
+            if (ShouldSkipConditionalBranch(
+                    propertyElement.Condition,
+                    compilation,
+                    document,
+                    diagnostics,
+                    options))
+            {
+                continue;
+            }
+
+            if (IsDesignTimePropertyToken(propertyElement.PropertyName))
+            {
+                continue;
+            }
+
+            var propertyAlias = ResolvePropertyAlias(symbol, propertyElement.PropertyName);
+            var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
+            if (!string.IsNullOrWhiteSpace(contentPropertyName) &&
+                normalizedPropertyName.Equals(contentPropertyName, StringComparison.Ordinal))
+            {
+                explicitAttachment = ResolvedChildAttachmentMode.Content;
+                explicitContentPropertyName = contentPropertyName;
+                foreach (var value in propertyElement.ObjectValues)
+                {
+                    if (ShouldSkipConditionalBranch(
+                            value.Condition,
+                            compilation,
+                            document,
+                            diagnostics,
+                            options))
+                    {
+                        continue;
+                    }
+
+                    children.Add(BindObjectNode(
+                        value,
+                        compilation,
+                        diagnostics,
+                        document,
+                        options,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        rootTypeSymbol: rootTypeSymbol));
+                }
+
+                continue;
+            }
+
+            if (normalizedPropertyName.Equals("Children", StringComparison.Ordinal))
+            {
+                explicitAttachment = ResolvedChildAttachmentMode.ChildrenCollection;
+                foreach (var value in propertyElement.ObjectValues)
+                {
+                    if (ShouldSkipConditionalBranch(
+                            value.Condition,
+                            compilation,
+                            document,
+                            diagnostics,
+                            options))
+                    {
+                        continue;
+                    }
+
+                    children.Add(BindObjectNode(
+                        value,
+                        compilation,
+                        diagnostics,
+                        document,
+                        options,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        rootTypeSymbol: rootTypeSymbol));
+                }
+
+                continue;
+            }
+
+            if (normalizedPropertyName.Equals("Items", StringComparison.Ordinal))
+            {
+                explicitAttachment = ResolvedChildAttachmentMode.ItemsCollection;
+                foreach (var value in propertyElement.ObjectValues)
+                {
+                    if (ShouldSkipConditionalBranch(
+                            value.Condition,
+                            compilation,
+                            document,
+                            diagnostics,
+                            options))
+                    {
+                        continue;
+                    }
+
+                    children.Add(BindObjectNode(
+                        value,
+                        compilation,
+                        diagnostics,
+                        document,
+                        options,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        rootTypeSymbol: rootTypeSymbol));
+                }
+
+                continue;
+            }
+
+            if (symbol is null)
+            {
+                continue;
+            }
+
+            if (propertyElement.ObjectValues.Length == 0)
+            {
+                continue;
+            }
+
+            var elementValues = ImmutableArray.CreateBuilder<ResolvedObjectNode>(propertyElement.ObjectValues.Length);
+            foreach (var value in propertyElement.ObjectValues)
+            {
+                if (ShouldSkipConditionalBranch(
+                        value.Condition,
+                        compilation,
+                        document,
+                        diagnostics,
+                        options))
+                {
+                    continue;
+                }
+
+                elementValues.Add(BindObjectNode(
+                    value,
+                    compilation,
+                    diagnostics,
+                    document,
+                    options,
+                    compiledBindings,
+                    compileBindingsEnabled,
+                    nodeDataType,
+                    currentSetterTargetType,
+                    currentBindingPriorityScope,
+                    rootTypeSymbol: rootTypeSymbol));
+            }
+
+            var elementValuesArray = elementValues.ToImmutable();
+
+            if (propertyAlias.HasAvaloniaPropertyAlias &&
+                propertyAlias.AvaloniaPropertyOwnerType is not null &&
+                TryFindAvaloniaPropertyField(
+                    propertyAlias.AvaloniaPropertyOwnerType,
+                    normalizedPropertyName,
+                    out var aliasedOwnerType,
+                    out var aliasedPropertyField,
+                    propertyAlias.AvaloniaPropertyFieldName))
+            {
+                var aliasedAssignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    TryGetAvaloniaPropertyValueType(aliasedPropertyField.Type),
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (aliasedAssignmentValues.Length != 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0103",
+                        $"Aliased Avalonia property element '{propertyElement.PropertyName}' requires exactly one object value.",
+                        document.FilePath,
+                        propertyElement.Line,
+                        propertyElement.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: normalizedPropertyName,
+                    AvaloniaPropertyOwnerTypeName: aliasedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: aliasedPropertyField.Name,
+                    ClrPropertyOwnerTypeName: null,
+                    ClrPropertyTypeName: null,
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        symbol,
+                        aliasedPropertyField,
+                        compilation,
+                        currentBindingPriorityScope),
+                    IsCollectionAdd: false,
+                    IsDictionaryMerge: false,
+                    ObjectValues: aliasedAssignmentValues,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition));
+                continue;
+            }
+
+            if (TrySplitOwnerQualifiedPropertyToken(
+                    propertyElement.PropertyName,
+                    out var attachedOwnerToken,
+                    out var attachedPropertyName))
+            {
+                var attachedOwnerType = ResolveTypeToken(
+                    compilation,
+                    document,
+                    attachedOwnerToken,
+                    document.ClassNamespace);
+                if (attachedOwnerType is not null &&
+                    TryFindAvaloniaPropertyField(
+                        attachedOwnerType,
+                        attachedPropertyName,
+                        out var attachedResolvedOwnerType,
+                        out var attachedPropertyField))
+                {
+                    var attachedAssignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                        TryGetAvaloniaPropertyValueType(attachedPropertyField.Type),
+                        elementValuesArray,
+                        compilation,
+                        document,
+                        propertyElement.Line,
+                        propertyElement.Column);
+
+                    if (attachedAssignmentValues.Length != 1)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0103",
+                            $"Attached property element '{propertyElement.PropertyName}' requires exactly one object value.",
+                            document.FilePath,
+                            propertyElement.Line,
+                            propertyElement.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: attachedPropertyName,
+                        AvaloniaPropertyOwnerTypeName: attachedResolvedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        AvaloniaPropertyFieldName: attachedPropertyField.Name,
+                        ClrPropertyOwnerTypeName: null,
+                        ClrPropertyTypeName: null,
+                        BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                            symbol,
+                            attachedPropertyField,
+                            compilation,
+                            currentBindingPriorityScope),
+                        IsCollectionAdd: false,
+                        IsDictionaryMerge: false,
+                        ObjectValues: attachedAssignmentValues,
+                        Line: propertyElement.Line,
+                        Column: propertyElement.Column,
+                            Condition: propertyElement.Condition));
+                    continue;
+                }
+
+                if (attachedOwnerType is not null &&
+                    TryBindAttachedSetterPropertyElementAssignment(
+                        targetType: symbol,
+                        ownerType: attachedOwnerType,
+                        attachedPropertyName: attachedPropertyName,
+                        propertyElement: propertyElement,
+                        objectValues: elementValuesArray,
+                        compilation: compilation,
+                        document: document,
+                        options: options,
+                        diagnostics: diagnostics,
+                        out var attachedSetterAssignment))
+                {
+                    if (attachedSetterAssignment is not null)
+                    {
+                        propertyElementAssignments.Add(attachedSetterAssignment);
+                    }
+
+                    continue;
+                }
+            }
+
+            var property = FindProperty(symbol, normalizedPropertyName);
+            if (property is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0101",
+                    $"Property element '{propertyElement.PropertyName}' was not found on '{symbol.ToDisplayString()}'.",
+                    document.FilePath,
+                    propertyElement.Line,
+                    propertyElement.Column,
+                    options.StrictMode));
+                continue;
+            }
+
+            ValidateItemContainerInsideTemplateWarning(
+                symbol,
+                property,
+                propertyElement,
+                compilation,
+                document,
+                diagnostics,
+                options);
+
+            var canMergeDictionaryProperty = CanMergeDictionaryProperty(symbol, property.Name);
+            if (canMergeDictionaryProperty &&
+                TryBuildKeyedDictionaryMergeContainer(
+                    property,
+                    elementValuesArray,
+                    propertyElement.Line,
+                    propertyElement.Column,
+                    out var dictionaryMergeContainer))
+            {
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: property.Name,
+                    AvaloniaPropertyOwnerTypeName: null,
+                    AvaloniaPropertyFieldName: null,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: null,
+                    IsCollectionAdd: false,
+                    IsDictionaryMerge: true,
+                    ObjectValues: ImmutableArray.Create(dictionaryMergeContainer),
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition));
+                continue;
+            }
+
+            if (CanAddToCollectionProperty(symbol, property.Name))
+            {
+                var collectionAddInstructions = CollectionAddService.ResolveCollectionAddInstructionsForValues(
+                    property.Type,
+                    elementValuesArray,
+                    compilation,
+                    document);
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: property.Name,
+                    AvaloniaPropertyOwnerTypeName: null,
+                    AvaloniaPropertyFieldName: null,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: null,
+                    IsCollectionAdd: true,
+                    IsDictionaryMerge: false,
+                    ObjectValues: elementValuesArray,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition,
+                    CollectionAddInstructions: collectionAddInstructions));
+                continue;
+            }
+
+            if (TryFindAvaloniaPropertyField(symbol, property.Name, out var ownerType, out var propertyField))
+            {
+                var assignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    property.Type,
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (assignmentValues.Length != 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0103",
+                        $"Avalonia property element '{propertyElement.PropertyName}' requires exactly one object value.",
+                        document.FilePath,
+                        propertyElement.Line,
+                        propertyElement.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: property.Name,
+                    AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: propertyField.Name,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        symbol,
+                        propertyField,
+                        compilation,
+                        currentBindingPriorityScope),
+                    IsCollectionAdd: false,
+                    IsDictionaryMerge: false,
+                    ObjectValues: assignmentValues,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition));
+                continue;
+            }
+
+            if (property.SetMethod is not null)
+            {
+                var assignmentValues = MaterializePropertyElementValuesForTargetTypeIfNeeded(
+                    property.Type,
+                    elementValuesArray,
+                    compilation,
+                    document,
+                    propertyElement.Line,
+                    propertyElement.Column);
+
+                if (assignmentValues.Length != 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0103",
+                        $"Property element '{propertyElement.PropertyName}' requires exactly one object value.",
+                        document.FilePath,
+                        propertyElement.Line,
+                        propertyElement.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: property.Name,
+                    AvaloniaPropertyOwnerTypeName: null,
+                    AvaloniaPropertyFieldName: null,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: null,
+                    IsCollectionAdd: false,
+                    IsDictionaryMerge: false,
+                    ObjectValues: assignmentValues,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition));
+                continue;
+            }
+
+            if (canMergeDictionaryProperty)
+            {
+                if (elementValuesArray.Length != 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0103",
+                        $"Dictionary property element '{propertyElement.PropertyName}' requires exactly one object value.",
+                        document.FilePath,
+                        propertyElement.Line,
+                        propertyElement.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
+                propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                    PropertyName: property.Name,
+                    AvaloniaPropertyOwnerTypeName: null,
+                    AvaloniaPropertyFieldName: null,
+                    ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    BindingPriorityExpression: null,
+                    IsCollectionAdd: false,
+                    IsDictionaryMerge: true,
+                    ObjectValues: elementValuesArray,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition));
+                continue;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0101",
+                $"Property element '{propertyElement.PropertyName}' is not supported on '{symbol.ToDisplayString()}'.",
+                document.FilePath,
+                propertyElement.Line,
+                propertyElement.Column,
+                options.StrictMode));
+        }
+
+        string? factoryExpression = null;
+        var factoryValueRequirements = ResolvedValueRequirements.None;
+        if (TryBuildExplicitConstructionExpression(
+                node,
+                symbol,
+                typeName,
+                compilation,
+                diagnostics,
+                document,
+                options,
+                compiledBindings,
+                compileBindingsEnabled,
+                nodeDataType,
+                currentSetterTargetType,
+                currentBindingPriorityScope,
+                rootTypeSymbol,
+                out var explicitConstructionExpression))
+        {
+            factoryExpression = explicitConstructionExpression;
+            factoryValueRequirements = ResolvedValueRequirements.None;
+        }
+
+        if (symbol is not null &&
+            string.IsNullOrWhiteSpace(factoryExpression) &&
+            !string.IsNullOrWhiteSpace(node.TextContent) &&
+            children.Count == 0)
+        {
+            var inlineTextContent = node.TextContent!.Trim();
+            var handledAsContentProperty = false;
+            if (!string.IsNullOrWhiteSpace(contentPropertyName) &&
+                !HasResolvedPropertyAssignment(assignments, contentPropertyName!) &&
+                !HasResolvedPropertyElementAssignment(propertyElementAssignments, contentPropertyName!))
+            {
+                var contentProperty = FindProperty(symbol, contentPropertyName!);
+                if (contentProperty?.SetMethod is not null &&
+                    TryConvertValueConversion(
+                        inlineTextContent,
+                        contentProperty.Type,
+                        compilation,
+                        document,
+                        currentSetterTargetType,
+                        currentBindingPriorityScope,
+                        out var inlineContentConversion,
+                        allowObjectStringLiteralFallback: !options.StrictMode))
+                {
+                    assignments.Add(new ResolvedPropertyAssignment(
+                        PropertyName: contentProperty.Name,
+                        ValueExpression: inlineContentConversion.Expression,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: contentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: contentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: null,
+                        ValueKind: inlineContentConversion.ValueKind,
+                        ValueRequirements: inlineContentConversion.EffectiveRequirements));
+                    handledAsContentProperty = true;
+                }
+                else if (contentProperty is not null &&
+                         CanAddToCollectionProperty(symbol, contentProperty.Name) &&
+                         CollectionAddService.TryCreateCollectionContentValue(
+                             inlineTextContent,
+                             contentProperty.Type,
+                             compilation,
+                             document,
+                             currentSetterTargetType,
+                             (int)currentBindingPriorityScope,
+                             !options.StrictMode,
+                             node.Line,
+                             node.Column,
+                             out var inlineContentValue,
+                             out var inlineContentAddInstruction))
+                {
+                    var inlineContentValues = ImmutableArray.Create(inlineContentValue);
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: contentProperty.Name,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: contentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: contentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        IsCollectionAdd: true,
+                        IsDictionaryMerge: false,
+                        ObjectValues: inlineContentValues,
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: null,
+                        CollectionAddInstructions: ImmutableArray.Create(inlineContentAddInstruction)));
+                    handledAsContentProperty = true;
+                }
+            }
+
+            if (!handledAsContentProperty &&
+                assignments.Count == 0 &&
+                propertyElementAssignments.Count == 0 &&
+                TryConvertValueConversion(
+                    inlineTextContent,
+                    symbol,
+                    compilation,
+                    document,
+                    currentSetterTargetType,
+                    currentBindingPriorityScope,
+                    out var inlineFactoryConversion))
+            {
+                factoryExpression = inlineFactoryConversion.Expression;
+                factoryValueRequirements = inlineFactoryConversion.EffectiveRequirements;
+            }
+        }
+
+        var (defaultAttachmentMode, defaultContentPropertyName) = DetermineChildAttachment(symbol);
+        var attachmentMode = explicitAttachment ?? defaultAttachmentMode;
+        var resolvedContentPropertyName = attachmentMode == ResolvedChildAttachmentMode.Content
+            ? explicitContentPropertyName ?? defaultContentPropertyName
+            : null;
+
+        if (attachmentMode == ResolvedChildAttachmentMode.Content &&
+            children.Count > 0 &&
+            symbol is not null &&
+            !string.IsNullOrWhiteSpace(resolvedContentPropertyName))
+        {
+            var resolvedContentProperty = FindProperty(symbol, resolvedContentPropertyName!);
+            if (resolvedContentProperty is not null)
+            {
+                var contentChildrenValues = children.ToImmutableArray();
+                var useCollectionAddForContent =
+                    CanAddToCollectionProperty(symbol, resolvedContentProperty.Name) &&
+                    ShouldUseCollectionAddForContentProperty(
+                        resolvedContentProperty,
+                        contentChildrenValues,
+                        compilation,
+                        document);
+                if (useCollectionAddForContent)
+                {
+                    var collectionAddInstructions = CollectionAddService.ResolveCollectionAddInstructionsForValues(
+                        resolvedContentProperty.Type,
+                        contentChildrenValues,
+                        compilation,
+                        document);
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: resolvedContentProperty.Name,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: resolvedContentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: resolvedContentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        IsCollectionAdd: true,
+                        IsDictionaryMerge: false,
+                        ObjectValues: contentChildrenValues,
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: node.Condition,
+                        CollectionAddInstructions: collectionAddInstructions));
+
+                    children.Clear();
+                    attachmentMode = ResolvedChildAttachmentMode.None;
+                    resolvedContentPropertyName = null;
+                }
+                else if (CanMergeDictionaryProperty(symbol, resolvedContentProperty.Name) &&
+                         ShouldUseDictionaryMergeForContentProperty(
+                             resolvedContentProperty,
+                             contentChildrenValues) &&
+                         TryBuildKeyedDictionaryMergeContainer(
+                             resolvedContentProperty,
+                             contentChildrenValues,
+                             node.Line,
+                             node.Column,
+                             out var contentDictionaryMergeContainer))
+                {
+                    propertyElementAssignments.Add(new ResolvedPropertyElementAssignment(
+                        PropertyName: resolvedContentProperty.Name,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: resolvedContentProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: resolvedContentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        IsCollectionAdd: false,
+                        IsDictionaryMerge: true,
+                        ObjectValues: ImmutableArray.Create(contentDictionaryMergeContainer),
+                        Line: node.Line,
+                        Column: node.Column,
+                        Condition: node.Condition));
+
+                    children.Clear();
+                    attachmentMode = ResolvedChildAttachmentMode.None;
+                    resolvedContentPropertyName = null;
+                }
+            }
+        }
+
+        if (attachmentMode == ResolvedChildAttachmentMode.Content && children.Count > 1)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0103",
+                "More than one child object was found for a Content attachment target. Only the first child will be attached.",
+                document.FilePath,
+                node.Line,
+                node.Column,
+                options.StrictMode));
+        }
+
+        if (attachmentMode == ResolvedChildAttachmentMode.DictionaryAdd)
+        {
+            foreach (var child in children)
+            {
+                if (!string.IsNullOrWhiteSpace(child.KeyExpression))
+                {
+                    continue;
+                }
+
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0101",
+                    $"Type '{typeName}' requires x:Key for child objects added via dictionary Add(key, value).",
+                    document.FilePath,
+                    node.Line,
+                    node.Column,
+                    options.StrictMode));
+                break;
+            }
+        }
+
+        var useServiceProviderConstructor = ShouldUseServiceProviderConstructor(symbol);
+        var useTopDownInitialization = IsUsableDuringInitialization(symbol);
+        var normalizedNodeName = ResolveObjectNodeNameScopeRegistration(node, symbol, compilation);
+        var resolvedChildren = children.ToImmutable();
+        var childAddInstructions = ResolveChildAddInstructions(
+            symbol,
+            attachmentMode,
+            resolvedChildren,
+            compilation,
+            document);
+
+        return new ResolvedObjectNode(
+            KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+            Name: normalizedNodeName,
+            TypeName: typeName,
+            IsBindingObjectNode: IsBindingObjectType(symbol, compilation),
+            FactoryExpression: factoryExpression,
+            FactoryValueRequirements: factoryValueRequirements,
+            UseServiceProviderConstructor: useServiceProviderConstructor,
+            UseTopDownInitialization: useTopDownInitialization,
+            PropertyAssignments: assignments.ToImmutable(),
+            PropertyElementAssignments: propertyElementAssignments.ToImmutable(),
+            EventSubscriptions: eventSubscriptions.ToImmutable(),
+            Children: resolvedChildren,
+            ChildAttachmentMode: attachmentMode,
+            ContentPropertyName: resolvedContentPropertyName,
+            Line: node.Line,
+            Column: node.Column,
+            Condition: node.Condition,
+            ChildAddInstructions: childAddInstructions);
+    }
+
+    private static void TryAddTemplateDataTypeDirectiveAssignment(
+        XamlObjectNode node,
+        INamedTypeSymbol? symbol,
+        Compilation compilation,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        ImmutableArray<ResolvedPropertyAssignment>.Builder assignments)
+    {
+        if (symbol is null ||
+            !IsDataTemplateNode(node) ||
+            string.IsNullOrWhiteSpace(node.DataType))
+        {
+            return;
+        }
+
+        if (node.PropertyAssignments.Any(static assignment =>
+                !assignment.IsAttached &&
+                NormalizePropertyName(assignment.PropertyName).Equals("DataType", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var dataTypeProperty = FindProperty(symbol, "DataType");
+        if (dataTypeProperty is null || dataTypeProperty.SetMethod is null)
+        {
+            return;
+        }
+
+        var resolvedDataType = ResolveTypeFromTypeExpression(
+            compilation,
+            document,
+            node.DataType,
+            document.ClassNamespace);
+        if (resolvedDataType is null)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0101",
+                $"Template x:DataType '{node.DataType}' could not be resolved for runtime DataType assignment.",
+                document.FilePath,
+                node.Line,
+                node.Column,
+                options.StrictMode));
+            return;
+        }
+
+        assignments.Add(new ResolvedPropertyAssignment(
+            PropertyName: dataTypeProperty.Name,
+            ValueExpression: "typeof(" + resolvedDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")",
+            AvaloniaPropertyOwnerTypeName: null,
+            AvaloniaPropertyFieldName: null,
+            ClrPropertyOwnerTypeName: dataTypeProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            ClrPropertyTypeName: dataTypeProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            BindingPriorityExpression: null,
+            Line: node.Line,
+            Column: node.Column,
+            Condition: node.Condition));
+    }
+
+    private static bool IsXamlArrayNode(XamlObjectNode node)
+    {
+        return node.XmlNamespace == Xaml2006.NamespaceName &&
+               node.XmlTypeName.Equals("Array", StringComparison.Ordinal);
+    }
+
+    private static ResolvedObjectNode BindXamlArrayNode(
+        XamlObjectNode node,
+        Compilation compilation,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
+        bool inheritedCompileBindingsEnabled,
+        INamedTypeSymbol? inheritedDataType,
+        INamedTypeSymbol? inheritedSetterTargetType,
+        BindingPriorityScope inheritedBindingPriorityScope,
+        INamedTypeSymbol? rootTypeSymbol)
+    {
+        var elementType = ResolveTypeFromTypeExpression(
+            compilation,
+            document,
+            node.ArrayItemType,
+            document.ClassNamespace);
+        if (elementType is null && node.TypeArguments.Length > 0)
+        {
+            elementType = ResolveTypeToken(compilation, document, node.TypeArguments[0], document.ClassNamespace);
+        }
+
+        var elementTypeName = elementType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
+        var valueExpressions = new List<string>(node.ChildObjects.Length);
+
+        foreach (var child in node.ChildObjects)
+        {
+            if (ShouldSkipConditionalBranch(
+                    child.Condition,
+                    compilation,
+                    document,
+                    diagnostics,
+                    options))
+            {
+                continue;
+            }
+
+            var boundChild = BindObjectNode(
+                child,
+                compilation,
+                diagnostics,
+                document,
+                options,
+                compiledBindings,
+                inheritedCompileBindingsEnabled,
+                inheritedDataType,
+                inheritedSetterTargetType,
+                inheritedBindingPriorityScope,
+                rootTypeSymbol: rootTypeSymbol);
+
+            if (!TryBuildInlineResolvedObjectExpression(boundChild, out var inlineChildExpression))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0108",
+                    "x:Array values must be inline-constructable objects when used in source-generated construction.",
+                    document.FilePath,
+                    child.Line,
+                    child.Column,
+                    options.StrictMode));
+                continue;
+            }
+
+            valueExpressions.Add(inlineChildExpression);
+        }
+
+        var factoryExpression = valueExpressions.Count == 0
+            ? "global::System.Array.Empty<" + elementTypeName + ">()"
+            : "new " + elementTypeName + "[] { " + string.Join(", ", valueExpressions) + " }";
+        var normalizedNodeName = NormalizeObjectNodeName(node.Name);
+
+        return new ResolvedObjectNode(
+            KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+            Name: normalizedNodeName,
+            TypeName: "global::System.Array",
+            IsBindingObjectNode: false,
+            FactoryExpression: factoryExpression,
+            FactoryValueRequirements: ResolvedValueRequirements.None,
+            UseServiceProviderConstructor: false,
+            UseTopDownInitialization: false,
+            PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
+            PropertyElementAssignments: ImmutableArray<ResolvedPropertyElementAssignment>.Empty,
+            EventSubscriptions: ImmutableArray<ResolvedEventSubscription>.Empty,
+            Children: ImmutableArray<ResolvedObjectNode>.Empty,
+            ChildAttachmentMode: ResolvedChildAttachmentMode.None,
+            ContentPropertyName: null,
+            Line: node.Line,
+            Column: node.Column,
+            Condition: node.Condition);
+    }
+
+    private static string? BuildObjectNodeKeyExpression(
+        string? rawKey,
+        Compilation compilation,
+        XamlDocumentModel document)
+    {
+        if (string.IsNullOrWhiteSpace(rawKey))
+        {
+            return null;
+        }
+
+        if (TryBuildResourceKeyExpression(rawKey!, compilation, document, out var keyExpression))
+        {
+            return keyExpression.Expression;
+        }
+
+        return "\"" + Escape(rawKey!.Trim()) + "\"";
+    }
+}
