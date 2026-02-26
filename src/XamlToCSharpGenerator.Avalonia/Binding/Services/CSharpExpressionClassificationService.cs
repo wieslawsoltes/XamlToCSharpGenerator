@@ -154,7 +154,7 @@ internal sealed class CSharpExpressionClassificationService
             return false;
         }
 
-        if (token.Contains(':', StringComparison.Ordinal))
+        if (token.IndexOf(':') >= 0)
         {
             return true;
         }

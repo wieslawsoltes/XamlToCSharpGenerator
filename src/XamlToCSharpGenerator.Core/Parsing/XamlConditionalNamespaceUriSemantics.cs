@@ -23,13 +23,13 @@ public static class XamlConditionalNamespaceUriSemantics
             return false;
         }
 
-        var candidateCondition = rawNamespace[(separatorIndex + 1)..].Trim();
+        var candidateCondition = rawNamespace.Substring(separatorIndex + 1).Trim();
         if (candidateCondition.Length == 0)
         {
             return false;
         }
 
-        normalizedNamespace = rawNamespace[..separatorIndex];
+        normalizedNamespace = rawNamespace.Substring(0, separatorIndex);
         conditionExpression = candidateCondition;
         return true;
     }

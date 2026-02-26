@@ -24,4 +24,9 @@
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)README.md') and '$(IsPackable)' != 'false'">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' and !Exists('$(MSBuildProjectDirectory)/Compatibility/IsExternalInit.cs')">
+    <Compile Include="$(MSBuildThisFileDirectory)eng/compat/System.Runtime.CompilerServices.IsExternalInit.cs"
+             Link="Compatibility/System.Runtime.CompilerServices.IsExternalInit.cs" />
+  </ItemGroup>
 </Project>

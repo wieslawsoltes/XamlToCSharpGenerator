@@ -64,8 +64,15 @@ public static class DeterministicTypeResolutionSemantics
         int? genericArity = null,
         bool extensionSuffix = false)
     {
-        ArgumentNullException.ThrowIfNull(compilation);
-        ArgumentNullException.ThrowIfNull(namespacePrefixes);
+        if (compilation is null)
+        {
+            throw new ArgumentNullException(nameof(compilation));
+        }
+
+        if (namespacePrefixes is null)
+        {
+            throw new ArgumentNullException(nameof(namespacePrefixes));
+        }
 
         if (string.IsNullOrWhiteSpace(typeName))
         {

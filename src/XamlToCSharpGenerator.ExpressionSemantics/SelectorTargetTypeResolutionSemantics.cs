@@ -31,8 +31,15 @@ public static class SelectorTargetTypeResolutionSemantics
         Func<string, INamedTypeSymbol?> resolveTypeToken,
         Func<ITypeSymbol, ITypeSymbol, bool> isTypeAssignableTo)
     {
-        ArgumentNullException.ThrowIfNull(resolveTypeToken);
-        ArgumentNullException.ThrowIfNull(isTypeAssignableTo);
+        if (resolveTypeToken is null)
+        {
+            throw new ArgumentNullException(nameof(resolveTypeToken));
+        }
+
+        if (isTypeAssignableTo is null)
+        {
+            throw new ArgumentNullException(nameof(isTypeAssignableTo));
+        }
 
         if (branches.Length == 0)
         {

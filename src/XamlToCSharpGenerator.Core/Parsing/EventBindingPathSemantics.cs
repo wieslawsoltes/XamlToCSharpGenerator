@@ -36,7 +36,7 @@ public static class EventBindingPathSemantics
             return IsSimpleIdentifier(methodName);
         }
 
-        methodName = pathSegments[^1];
+        methodName = pathSegments[pathSegments.Length - 1];
         targetPath = BuildTargetPath(pathSegments, pathSegments.Length - 1);
         return targetPath.Length > 0 &&
                methodName.Length > 0 &&
@@ -124,7 +124,7 @@ public static class EventBindingPathSemantics
         var dot = normalized.LastIndexOf('.');
         if (dot > 0 && dot < normalized.Length - 1)
         {
-            return normalized[(dot + 1)..];
+            return normalized.Substring(dot + 1);
         }
 
         return normalized;

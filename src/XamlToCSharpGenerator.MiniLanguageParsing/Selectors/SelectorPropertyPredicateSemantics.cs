@@ -20,8 +20,8 @@ public static class SelectorPropertyPredicateSemantics
             return false;
         }
 
-        propertyText = predicateText[..equalsIndex].Trim();
-        valueText = predicateText[(equalsIndex + 1)..].Trim();
+        propertyText = predicateText.Substring(0, equalsIndex).Trim();
+        valueText = predicateText.Substring(equalsIndex + 1).Trim();
         return propertyText.Length > 0 && valueText.Length > 0;
     }
 
@@ -99,8 +99,8 @@ public static class SelectorPropertyPredicateSemantics
             return false;
         }
 
-        ownerToken = attachedText[..separator].Trim();
-        propertyToken = attachedText[(separator + 1)..].Trim();
+        ownerToken = attachedText.Substring(0, separator).Trim();
+        propertyToken = attachedText.Substring(separator + 1).Trim();
         return ownerToken.Length > 0 && propertyToken.Length > 0;
     }
 

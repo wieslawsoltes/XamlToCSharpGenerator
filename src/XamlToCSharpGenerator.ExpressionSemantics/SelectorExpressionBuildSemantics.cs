@@ -55,10 +55,25 @@ public static class SelectorExpressionBuildSemantics
         SelectorPropertyPredicateResolver tryResolvePropertyPredicate,
         out string expression)
     {
-        ArgumentNullException.ThrowIfNull(resolveTypeToken);
-        ArgumentNullException.ThrowIfNull(resolveWildcardType);
-        ArgumentNullException.ThrowIfNull(emitter);
-        ArgumentNullException.ThrowIfNull(tryResolvePropertyPredicate);
+        if (resolveTypeToken is null)
+        {
+            throw new ArgumentNullException(nameof(resolveTypeToken));
+        }
+
+        if (resolveWildcardType is null)
+        {
+            throw new ArgumentNullException(nameof(resolveWildcardType));
+        }
+
+        if (emitter is null)
+        {
+            throw new ArgumentNullException(nameof(emitter));
+        }
+
+        if (tryResolvePropertyPredicate is null)
+        {
+            throw new ArgumentNullException(nameof(tryResolvePropertyPredicate));
+        }
 
         return TryBuildSelectorExpressionCore(
             selector,

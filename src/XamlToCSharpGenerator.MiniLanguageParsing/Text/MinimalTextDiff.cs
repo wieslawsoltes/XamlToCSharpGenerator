@@ -69,8 +69,15 @@ public static class MinimalTextDiff
     /// <returns>A minimal replacement patch.</returns>
     public static MinimalTextPatch CreatePatch(string originalText, string updatedText)
     {
-        ArgumentNullException.ThrowIfNull(originalText);
-        ArgumentNullException.ThrowIfNull(updatedText);
+        if (originalText is null)
+        {
+            throw new ArgumentNullException(nameof(originalText));
+        }
+
+        if (updatedText is null)
+        {
+            throw new ArgumentNullException(nameof(updatedText));
+        }
 
         var original = originalText.AsSpan();
         var updated = updatedText.AsSpan();
@@ -99,7 +106,10 @@ public static class MinimalTextDiff
     /// <returns>Patched text.</returns>
     public static string ApplyPatch(string originalText, MinimalTextPatch patch)
     {
-        ArgumentNullException.ThrowIfNull(originalText);
+        if (originalText is null)
+        {
+            throw new ArgumentNullException(nameof(originalText));
+        }
 
         if (patch.Start > originalText.Length)
         {
@@ -121,29 +131,28 @@ public static class MinimalTextDiff
         var suffixLength = originalText.Length - suffixStart;
         var resultLength = prefixLength + patch.InsertedLength + suffixLength;
 
-        return string.Create(
-            resultLength,
-            (originalText, patch, prefixLength, suffixStart, suffixLength),
-            static (destination, state) =>
-            {
-                if (state.prefixLength > 0)
-                {
-                    state.originalText.AsSpan(0, state.prefixLength).CopyTo(destination);
-                }
+        var buffer = new char[resultLength];
+        var destination = buffer.AsSpan();
 
-                if (state.patch.InsertedLength > 0)
-                {
-                    state.patch.InsertedText.AsSpan().CopyTo(destination[state.prefixLength..]);
-                }
+        if (prefixLength > 0)
+        {
+            originalText.AsSpan(0, prefixLength).CopyTo(destination);
+        }
 
-                if (state.suffixLength > 0)
-                {
-                    var suffixDestinationStart = state.prefixLength + state.patch.InsertedLength;
-                    state.originalText
-                        .AsSpan(state.suffixStart, state.suffixLength)
-                        .CopyTo(destination[suffixDestinationStart..]);
-                }
-            });
+        if (patch.InsertedLength > 0)
+        {
+            patch.InsertedText.AsSpan().CopyTo(destination.Slice(prefixLength));
+        }
+
+        if (suffixLength > 0)
+        {
+            var suffixDestinationStart = prefixLength + patch.InsertedLength;
+            originalText
+                .AsSpan(suffixStart, suffixLength)
+                .CopyTo(destination.Slice(suffixDestinationStart));
+        }
+
+        return new string(buffer);
     }
 
     private static int ComputeCommonPrefixLength(ReadOnlySpan<char> left, ReadOnlySpan<char> right)

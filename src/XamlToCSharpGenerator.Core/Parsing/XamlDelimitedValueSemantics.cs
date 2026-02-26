@@ -7,6 +7,8 @@ namespace XamlToCSharpGenerator.Core.Parsing;
 
 public static class XamlDelimitedValueSemantics
 {
+    private const int TrimEntriesOptionValue = 2;
+
     public static ImmutableArray<string> SplitEnumFlagTokens(string value)
     {
         return SplitTopLevelTokens(value, [',', '|'], trimEntries: true, removeEmptyEntries: true);
@@ -22,7 +24,7 @@ public static class XamlDelimitedValueSemantics
             return ImmutableArray<string>.Empty;
         }
 
-        var trimEntries = (splitOptions & StringSplitOptions.TrimEntries) != 0;
+        var trimEntries = ((int)splitOptions & TrimEntriesOptionValue) != 0;
         var removeEmptyEntries = (splitOptions & StringSplitOptions.RemoveEmptyEntries) != 0;
 
         if (separators is null || separators.Count == 0)
@@ -46,7 +48,9 @@ public static class XamlDelimitedValueSemantics
                 removeEmptyEntries: removeEmptyEntries);
         }
 
-        var effectiveSplitOptions = splitOptions & ~StringSplitOptions.TrimEntries;
+        var effectiveSplitOptions = removeEmptyEntries
+            ? StringSplitOptions.RemoveEmptyEntries
+            : StringSplitOptions.None;
         var tokens = value.Split(separators.ToArray(), effectiveSplitOptions);
         if (tokens.Length == 0)
         {

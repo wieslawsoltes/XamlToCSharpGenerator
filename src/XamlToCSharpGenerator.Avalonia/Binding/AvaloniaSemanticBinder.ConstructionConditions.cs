@@ -405,10 +405,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         foreach (var type in namespaceSymbol.GetTypeMembers())
         {
-            if (string.Equals(
-                    type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", string.Empty, StringComparison.Ordinal),
-                    fullTypeName,
-                    StringComparison.Ordinal))
+            var fullyQualifiedTypeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (fullyQualifiedTypeName.StartsWith("global::", StringComparison.Ordinal))
+            {
+                fullyQualifiedTypeName = fullyQualifiedTypeName.Substring("global::".Length);
+            }
+
+            if (string.Equals(fullyQualifiedTypeName, fullTypeName, StringComparison.Ordinal))
             {
                 return type;
             }
@@ -445,7 +448,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
-            if (TryDecodeContractVersion(attribute.ConstructorArguments[^1], out major, out minor))
+            if (TryDecodeContractVersion(attribute.ConstructorArguments[attribute.ConstructorArguments.Length - 1], out major, out minor))
             {
                 return true;
             }

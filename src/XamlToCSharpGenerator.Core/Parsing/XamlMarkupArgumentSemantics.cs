@@ -31,16 +31,16 @@ public static class XamlMarkupArgumentSemantics
             headLength++;
         }
 
-        name = innerContent[..headLength].Trim();
+        name = innerContent.Substring(0, headLength).Trim();
         if (name.Length == 0)
         {
             return false;
         }
 
-        argumentsText = headLength < innerContent.Length ? innerContent[headLength..].Trim() : string.Empty;
+        argumentsText = headLength < innerContent.Length ? innerContent.Substring(headLength).Trim() : string.Empty;
         if (argumentsText.StartsWith(",", StringComparison.Ordinal))
         {
-            argumentsText = argumentsText[1..].TrimStart();
+            argumentsText = argumentsText.Substring(1).TrimStart();
         }
 
         return true;
@@ -90,8 +90,8 @@ public static class XamlMarkupArgumentSemantics
             return XamlMarkupNamedArgumentParseStatus.LeadingEquals;
         }
 
-        key = trimmedArgument[..equalsIndex].Trim();
-        value = trimmedArgument[(equalsIndex + 1)..].Trim();
+        key = trimmedArgument.Substring(0, equalsIndex).Trim();
+        value = trimmedArgument.Substring(equalsIndex + 1).Trim();
         return key.Length == 0
             ? XamlMarkupNamedArgumentParseStatus.EmptyName
             : XamlMarkupNamedArgumentParseStatus.Parsed;

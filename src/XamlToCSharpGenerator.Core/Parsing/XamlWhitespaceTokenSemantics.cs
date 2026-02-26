@@ -66,6 +66,6 @@ public static class XamlWhitespaceTokenSemantics
             return;
         }
 
-        tokens.Add(source[tokenStart..tokenEnd]);
+        tokens.Add(source.Substring(tokenStart, tokenEnd - tokenStart));
     }
 }

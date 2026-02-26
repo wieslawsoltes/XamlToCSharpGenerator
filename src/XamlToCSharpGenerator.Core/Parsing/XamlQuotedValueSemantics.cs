@@ -12,8 +12,8 @@ public static class XamlQuotedValueSemantics
     public static bool IsWrapped(string value)
     {
         return value.Length >= 2 &&
-               ((value[0] == '"' && value[^1] == '"') ||
-                (value[0] == '\'' && value[^1] == '\''));
+               ((value[0] == '"' && value[value.Length - 1] == '"') ||
+                (value[0] == '\'' && value[value.Length - 1] == '\''));
     }
 
     public static string UnquoteWrapped(string value)

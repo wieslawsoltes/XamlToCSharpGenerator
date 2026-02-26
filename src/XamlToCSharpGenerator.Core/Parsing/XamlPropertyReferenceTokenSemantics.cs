@@ -13,9 +13,9 @@ public static class XamlPropertyReferenceTokenSemantics
         var token = rawToken!.Trim();
         if (token.Length >= 2 &&
             token[0] == '(' &&
-            token[^1] == ')')
+            token[token.Length - 1] == ')')
         {
-            token = token[1..^1].Trim();
+            token = token.Substring(1, token.Length - 2).Trim();
         }
 
         if (token.Length == 0)

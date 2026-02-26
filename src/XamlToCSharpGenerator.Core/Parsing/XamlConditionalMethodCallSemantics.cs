@@ -56,7 +56,7 @@ public static class XamlConditionalMethodCallSemantics
             return false;
         }
 
-        methodToken = expression[..openParenthesisIndex].Trim();
+        methodToken = expression.Substring(0, openParenthesisIndex).Trim();
         var cursor = openParenthesisIndex;
         if (!TopLevelTextParser.TryReadBalancedContent(expression, ref cursor, '(', ')', out argumentsText))
         {
@@ -148,7 +148,7 @@ public static class XamlConditionalMethodCallSemantics
         if (normalizedToken.Length >= ApiInformationPrefix.Length &&
             TopLevelTextParser.EqualsOrdinalIgnoreCaseAt(normalizedToken, 0, ApiInformationPrefix))
         {
-            return normalizedToken[ApiInformationPrefix.Length..];
+            return normalizedToken.Substring(ApiInformationPrefix.Length);
         }
 
         return normalizedToken;

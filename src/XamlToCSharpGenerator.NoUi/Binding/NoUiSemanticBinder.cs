@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
@@ -63,9 +62,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
         var normalizedTargetPath = document.TargetPath
             .Replace('\\', '/')
             .TrimStart('/');
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"noui://{assemblyName}/{normalizedTargetPath}");
+        return "noui://" + assemblyName + "/" + normalizedTargetPath;
     }
 
     private static ResolvedObjectNode BindObject(

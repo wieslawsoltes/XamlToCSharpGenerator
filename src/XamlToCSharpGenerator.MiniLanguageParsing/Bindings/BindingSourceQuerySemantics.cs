@@ -163,8 +163,8 @@ public static class BindingSourceQuerySemantics
             return false;
         }
 
-        typeToken = descriptor[..separatorIndex].Trim();
-        levelToken = descriptor[(separatorIndex + 1)..].Trim();
+        typeToken = descriptor.Substring(0, separatorIndex).Trim();
+        levelToken = descriptor.Substring(separatorIndex + 1).Trim();
         return true;
     }
 

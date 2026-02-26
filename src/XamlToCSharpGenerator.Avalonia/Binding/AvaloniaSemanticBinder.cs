@@ -382,9 +382,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(XmlNamespace),
-                StringComparer.Ordinal.GetHashCode(XamlTypeName));
+            unchecked
+            {
+                var xmlNamespaceHash = StringComparer.OrdinalIgnoreCase.GetHashCode(XmlNamespace ?? string.Empty);
+                var typeNameHash = StringComparer.Ordinal.GetHashCode(XamlTypeName ?? string.Empty);
+                return (xmlNamespaceHash * 397) ^ typeNameHash;
+            }
         }
     }
 

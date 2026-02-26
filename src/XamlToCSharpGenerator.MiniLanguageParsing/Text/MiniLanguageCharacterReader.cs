@@ -19,7 +19,7 @@ public ref struct MiniLanguageCharacterReader
 
     public char Peek => End ? '\0' : _source[_index];
 
-    public ReadOnlySpan<char> Remaining => End ? ReadOnlySpan<char>.Empty : _source[_index..];
+    public ReadOnlySpan<char> Remaining => End ? ReadOnlySpan<char>.Empty : _source.Slice(_index);
 
     public bool TryTake(char token)
     {

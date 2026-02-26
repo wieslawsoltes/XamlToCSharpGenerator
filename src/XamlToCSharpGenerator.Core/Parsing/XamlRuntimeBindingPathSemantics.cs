@@ -59,7 +59,7 @@ public static class XamlRuntimeBindingPathSemantics
         }
 
         typeToken = parsedTypeToken;
-        remainder = normalized[(index + 1)..].Trim();
+        remainder = normalized.Substring(index + 1).Trim();
         return true;
     }
 

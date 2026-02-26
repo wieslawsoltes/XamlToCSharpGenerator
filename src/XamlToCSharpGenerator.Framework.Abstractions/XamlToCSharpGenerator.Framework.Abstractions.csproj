@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Framework.Abstractions</PackageId>
     <Description>Framework profile extension contracts for the standalone XAML source-generator compiler.</Description>

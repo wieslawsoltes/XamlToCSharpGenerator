@@ -45,7 +45,7 @@ public static class CompiledBindingPathSegmentSemantics
 
         if (!TrySplitAttachedOwnerAndMember(inner, out ownerTypeToken, out memberName))
         {
-            return inner.IndexOf('.', StringComparison.Ordinal) >= 0
+            return inner.IndexOf('.') >= 0
                 ? CompiledBindingAttachedPropertyParseStatus.Invalid
                 : CompiledBindingAttachedPropertyParseStatus.NotAttached;
         }

@@ -140,7 +140,7 @@ public static class XamlMemberPathSemantics
         var normalized = segment.Trim();
         if (normalized.Length >= 2 &&
             normalized[0] == '(' &&
-            normalized[^1] == ')')
+            normalized[normalized.Length - 1] == ')')
         {
             normalized = normalized.Substring(1, normalized.Length - 2).Trim();
         }
