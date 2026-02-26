@@ -162,13 +162,19 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
 
     private static ImmutableDictionary<string, string> ParseGlobalXmlnsPrefixesProperty(string? rawValue)
     {
-        if (string.IsNullOrWhiteSpace(rawValue))
+        if (rawValue is null)
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var trimmedRawValue = rawValue.Trim();
+        if (trimmedRawValue.Length == 0)
         {
             return ImmutableDictionary<string, string>.Empty;
         }
 
         var map = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
-        var entries = rawValue
+        var entries = trimmedRawValue
             .Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var entry in entries)
@@ -245,8 +251,18 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
 
         public bool IsXamlSourceItemGroup(string? sourceItemGroup)
         {
-            return string.IsNullOrWhiteSpace(sourceItemGroup) ||
-                   sourceItemGroup.Equals(XamlSourceItemGroup, StringComparison.OrdinalIgnoreCase);
+            if (sourceItemGroup is null)
+            {
+                return true;
+            }
+
+            var normalizedSourceItemGroup = sourceItemGroup.Trim();
+            if (normalizedSourceItemGroup.Length == 0)
+            {
+                return true;
+            }
+
+            return normalizedSourceItemGroup.Equals(XamlSourceItemGroup, StringComparison.OrdinalIgnoreCase);
         }
 
         public bool IsTransformRuleSourceItemGroup(string? sourceItemGroup)
@@ -256,7 +272,15 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
 
         public string NormalizeSourceItemGroup(string? sourceItemGroup)
         {
-            return string.IsNullOrWhiteSpace(sourceItemGroup) ? XamlSourceItemGroup : sourceItemGroup;
+            if (sourceItemGroup is null)
+            {
+                return XamlSourceItemGroup;
+            }
+
+            var normalizedSourceItemGroup = sourceItemGroup.Trim();
+            return normalizedSourceItemGroup.Length == 0
+                ? XamlSourceItemGroup
+                : normalizedSourceItemGroup;
         }
     }
 
@@ -428,11 +452,11 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
                     continue;
                 }
 
-                var xmlNamespace = ReadString(aliasElement, "xmlNamespace") ?? AvaloniaDefaultXmlNamespace;
+                var xmlNamespace = ReadString(aliasElement, "xmlNamespace");
                 var xamlTypeName = ReadString(aliasElement, "xamlType") ?? ReadString(aliasElement, "xamlTypeName");
                 var clrTypeName = ReadString(aliasElement, "clrType") ?? ReadString(aliasElement, "clrTypeName");
-                if (string.IsNullOrWhiteSpace(xamlTypeName) ||
-                    string.IsNullOrWhiteSpace(clrTypeName))
+                if (xamlTypeName is null || xamlTypeName.Trim().Length == 0 ||
+                    clrTypeName is null || clrTypeName.Trim().Length == 0)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0901",
@@ -444,10 +468,15 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
                     continue;
                 }
 
+                var resolvedXmlNamespace = string.IsNullOrWhiteSpace(xmlNamespace)
+                    ? AvaloniaDefaultXmlNamespace
+                    : (xmlNamespace is null ? AvaloniaDefaultXmlNamespace : xmlNamespace.Trim());
+                var resolvedXamlTypeName = xamlTypeName.Trim();
+                var resolvedClrTypeName = clrTypeName.Trim();
                 aliases.Add(new XamlTypeAliasRule(
-                    xmlNamespace.Trim(),
-                    xamlTypeName.Trim(),
-                    clrTypeName.Trim(),
+                    resolvedXmlNamespace,
+                    resolvedXamlTypeName,
+                    resolvedClrTypeName,
                     filePath,
                     1,
                     1));
@@ -498,8 +527,8 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
                 var avaloniaPropertyOwnerTypeName = ReadString(aliasElement, "avaloniaPropertyOwnerType") ?? ReadString(aliasElement, "avaloniaPropertyOwnerTypeName");
                 var avaloniaPropertyFieldName = ReadString(aliasElement, "avaloniaPropertyField") ?? ReadString(aliasElement, "avaloniaPropertyFieldName");
 
-                if (string.IsNullOrWhiteSpace(xamlPropertyName) ||
-                    (string.IsNullOrWhiteSpace(clrPropertyName) &&
+                if (xamlPropertyName is null || xamlPropertyName.Trim().Length == 0 ||
+                    ((clrPropertyName is null || clrPropertyName.Trim().Length == 0) &&
                      (string.IsNullOrWhiteSpace(avaloniaPropertyOwnerTypeName) ||
                       string.IsNullOrWhiteSpace(avaloniaPropertyFieldName))))
                 {
@@ -513,10 +542,17 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
                     continue;
                 }
 
+                var resolvedTargetTypeName = string.IsNullOrWhiteSpace(targetTypeName)
+                    ? "*"
+                    : targetTypeName.Trim();
+                var resolvedXamlPropertyName = xamlPropertyName.Trim();
+                var resolvedClrPropertyName = string.IsNullOrWhiteSpace(clrPropertyName)
+                    ? null
+                    : (clrPropertyName is null ? null : clrPropertyName.Trim());
                 aliases.Add(new XamlPropertyAliasRule(
-                    targetTypeName.Trim(),
-                    xamlPropertyName.Trim(),
-                    string.IsNullOrWhiteSpace(clrPropertyName) ? null : clrPropertyName.Trim(),
+                    resolvedTargetTypeName,
+                    resolvedXamlPropertyName,
+                    resolvedClrPropertyName,
                     filePath,
                     1,
                     1,
@@ -536,10 +572,16 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
                 return null;
             }
 
+            var normalizedOwnerTypeName = string.IsNullOrWhiteSpace(ownerTypeName)
+                ? null
+                : (ownerTypeName is null ? null : ownerTypeName.Trim());
+            var normalizedPropertyFieldName = string.IsNullOrWhiteSpace(propertyFieldName)
+                ? null
+                : (propertyFieldName is null ? null : propertyFieldName.Trim());
             return new XamlFrameworkPropertyAliasPayload(
                 FrameworkProfileIds.Avalonia,
-                string.IsNullOrWhiteSpace(ownerTypeName) ? null : ownerTypeName.Trim(),
-                string.IsNullOrWhiteSpace(propertyFieldName) ? null : propertyFieldName.Trim());
+                normalizedOwnerTypeName,
+                normalizedPropertyFieldName);
         }
 
         private static string BuildTypeAliasKey(string xmlNamespace, string xamlType)

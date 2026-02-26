@@ -800,28 +800,40 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var byKey = new Dictionary<string, ResolvedControlThemeDefinition>(StringComparer.Ordinal);
         foreach (var controlTheme in controlThemes)
         {
-            if (string.IsNullOrWhiteSpace(controlTheme.Key))
+            if (controlTheme.Key is null)
             {
                 continue;
             }
 
-            byKey[controlTheme.Key.Trim()] = controlTheme;
+            var controlThemeKey = controlTheme.Key.Trim();
+            if (controlThemeKey.Length == 0)
+            {
+                continue;
+            }
+
+            byKey[controlThemeKey] = controlTheme;
         }
 
         foreach (var controlTheme in controlThemes)
         {
             var basedOnKey = TryExtractControlThemeBasedOnKey(controlTheme.BasedOn);
-            if (string.IsNullOrWhiteSpace(basedOnKey))
+            if (basedOnKey is null)
             {
                 continue;
             }
 
-            if (!byKey.ContainsKey(basedOnKey) &&
-                !TryParseMarkupExtension(basedOnKey, out _))
+            var basedOnKeyValue = basedOnKey.Trim();
+            if (basedOnKeyValue.Length == 0)
+            {
+                continue;
+            }
+
+            if (!byKey.ContainsKey(basedOnKeyValue) &&
+                !TryParseMarkupExtension(basedOnKeyValue, out _))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0305",
-                    $"ControlTheme '{controlTheme.Key ?? "<unnamed>"}' references missing BasedOn theme key '{basedOnKey}'.",
+                    $"ControlTheme '{controlTheme.Key ?? "<unnamed>"}' references missing BasedOn theme key '{basedOnKeyValue}'.",
                     document.FilePath,
                     controlTheme.Line,
                     controlTheme.Column,
@@ -870,9 +882,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             state[key] = 1;
             var basedOnKey = TryExtractControlThemeBasedOnKey(currentTheme.BasedOn);
-            if (!string.IsNullOrWhiteSpace(basedOnKey) && byKey.ContainsKey(basedOnKey))
+            if (basedOnKey is not null)
             {
-                DetectCycle(basedOnKey, startKey);
+                var basedOnKeyValue = basedOnKey.Trim();
+                if (basedOnKeyValue.Length > 0 && byKey.ContainsKey(basedOnKeyValue))
+                {
+                    DetectCycle(basedOnKeyValue, startKey);
+                }
             }
 
             state[key] = 2;

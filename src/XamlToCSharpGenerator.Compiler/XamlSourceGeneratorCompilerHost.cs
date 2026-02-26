@@ -139,7 +139,12 @@ public static class XamlSourceGeneratorCompilerHost
                 }
 
                 var textContent = text.GetText(cancellationToken)?.ToString();
-                if (string.IsNullOrWhiteSpace(textContent))
+                if (textContent is null)
+                {
+                    return null;
+                }
+
+                if (textContent.Trim().Length == 0)
                 {
                     return null;
                 }
@@ -183,7 +188,7 @@ public static class XamlSourceGeneratorCompilerHost
                 {
                     var parseStart = Stopwatch.GetTimestamp();
                     var (document, diagnostics) = parser.Parse(input);
-                    var parseElapsed = Stopwatch.GetElapsedTime(parseStart);
+                    var parseElapsed = GetElapsedTimeSince(parseStart);
                     results.Add(new ParsedDocumentResult(input, document, diagnostics, parseElapsed));
                 }
 
@@ -206,7 +211,12 @@ public static class XamlSourceGeneratorCompilerHost
             hotReloadAssemblyHandlerSource,
             (sourceContext, source) =>
             {
-                if (string.IsNullOrWhiteSpace(source))
+                if (source is null)
+                {
+                    return;
+                }
+
+                if (source.Trim().Length == 0)
                 {
                     return;
                 }
@@ -218,16 +228,22 @@ public static class XamlSourceGeneratorCompilerHost
             });
 
         var globalGraphDiagnostics = parsedDocuments
-            .Select(static (result, _) => result.Document)
-            .Where(static document => document is not null)
-            .Select(static (document, _) => document!)
             .Collect()
             .Combine(optionsProvider)
-            .Select(static (pair, _) =>
+            .Select((pair, _) =>
             {
                 var globalGraphStart = Stopwatch.GetTimestamp();
-                var diagnostics = AnalyzeGlobalDocumentGraph(pair.Left, pair.Right);
-                var globalGraphElapsed = Stopwatch.GetElapsedTime(globalGraphStart);
+                var documents = ImmutableArray.CreateBuilder<XamlDocumentModel>(pair.Left.Length);
+                foreach (var parsed in pair.Left)
+                {
+                    if (parsed.Document is not null)
+                    {
+                        documents.Add(parsed.Document);
+                    }
+                }
+
+                var diagnostics = AnalyzeGlobalDocumentGraph(documents.ToImmutable(), pair.Right);
+                var globalGraphElapsed = GetElapsedTimeSince(globalGraphStart);
                 return new GlobalDiagnosticsResult(
                     diagnostics,
                     IsHotReloadErrorResilienceEnabled(pair.Right),
@@ -238,7 +254,7 @@ public static class XamlSourceGeneratorCompilerHost
             });
 
         context.RegisterSourceOutput(globalGraphDiagnostics,
-            static (sourceContext, diagnosticsResult) =>
+            (sourceContext, diagnosticsResult) =>
             {
                 ReportDiagnostics(
                     sourceContext,
@@ -253,7 +269,14 @@ public static class XamlSourceGeneratorCompilerHost
                 .Combine(context.CompilationProvider.Combine(optionsProvider).Combine(transformRules)),
             (sourceContext, payload) =>
             {
-                var ((parsedDocument, allParsedDocuments), ((compilation, options), transformRules)) = payload;
+                var parsedAndSnapshot = payload.Left;
+                var parsedDocument = parsedAndSnapshot.Left;
+                var allParsedDocuments = parsedAndSnapshot.Right;
+                var compilationAndRules = payload.Right;
+                var compilationAndOptions = compilationAndRules.Left;
+                var compilation = compilationAndOptions.Left;
+                var options = compilationAndOptions.Right;
+                var transformRules = compilationAndRules.Right;
                 var parseResult = parsedDocument.Document;
                 var parseDiagnostics = ApplyGlobalParityDiagnosticFilters(
                     parsedDocument.Diagnostics,
@@ -309,7 +332,7 @@ public static class XamlSourceGeneratorCompilerHost
                     var bindStart = Stopwatch.GetTimestamp();
                     IXamlFrameworkSemanticBinder binder = frameworkProfile.CreateSemanticBinder();
                     var (viewModel, semanticDiagnostics) = binder.Bind(parseResult, compilation, options, transformRules.Configuration);
-                    bindElapsed = Stopwatch.GetElapsedTime(bindStart);
+                    bindElapsed = GetElapsedTimeSince(bindStart);
                     semanticDiagnostics = ApplyGlobalParityDiagnosticFilters(
                         semanticDiagnostics,
                         allParsedDocuments);
@@ -380,7 +403,7 @@ public static class XamlSourceGeneratorCompilerHost
                     }
                     finally
                     {
-                        emitElapsed = Stopwatch.GetElapsedTime(emitStart);
+                        emitElapsed = GetElapsedTimeSince(emitStart);
                     }
                 }
                 finally
@@ -396,7 +419,7 @@ public static class XamlSourceGeneratorCompilerHost
                         parsedDocument.ParseElapsed,
                         bindElapsed,
                         emitElapsed,
-                        options.MetricsEnabled ? Stopwatch.GetElapsedTime(totalStartTimestamp) : TimeSpan.Zero,
+                        options.MetricsEnabled ? GetElapsedTimeSince(totalStartTimestamp) : TimeSpan.Zero,
                         status,
                         generatedSource,
                         usedFallbackSource,
@@ -687,7 +710,13 @@ public static class XamlSourceGeneratorCompilerHost
 
     private static Location CreateLocation(string? filePath, int line, int column)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath is null)
+        {
+            return Location.None;
+        }
+
+        var normalizedFilePath = filePath.Trim();
+        if (normalizedFilePath.Length == 0)
         {
             return Location.None;
         }
@@ -695,7 +724,7 @@ public static class XamlSourceGeneratorCompilerHost
         var lineIndex = Math.Max(0, line - 1);
         var columnIndex = Math.Max(0, column - 1);
         return Location.Create(
-            filePath,
+            normalizedFilePath,
             TextSpan.FromBounds(0, 0),
             new LinePositionSpan(
                 new LinePosition(lineIndex, columnIndex),
@@ -861,12 +890,17 @@ public static class XamlSourceGeneratorCompilerHost
             configuredPath = options.BaseIntermediateOutputPath;
         }
 
-        if (string.IsNullOrWhiteSpace(configuredPath))
+        if (configuredPath is null)
         {
             return null;
         }
 
         var trimmedPath = configuredPath.Trim();
+        if (trimmedPath.Length == 0)
+        {
+            return null;
+        }
+
         try
         {
             if (Path.IsPathRooted(trimmedPath))
@@ -955,7 +989,12 @@ public static class XamlSourceGeneratorCompilerHost
         try
         {
             File.WriteAllText(tempFilePath, contents);
-            File.Move(tempFilePath, filePath, overwrite: true);
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            File.Move(tempFilePath, filePath);
         }
         finally
         {
@@ -1082,7 +1121,7 @@ public static class XamlSourceGeneratorCompilerHost
             return "Framework";
         }
 
-        var normalized = new string(buffer.Slice(0, length));
+        var normalized = new string(buffer.Slice(0, length).ToArray());
         if (char.IsDigit(normalized[0]))
         {
             normalized = "_" + normalized;
@@ -1131,19 +1170,25 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         var inferredClassName = TryInferClassNameFromTargetPath(input.TargetPath, options);
-        if (string.IsNullOrWhiteSpace(inferredClassName))
+        if (inferredClassName is null)
         {
             return (document, diagnostics);
         }
 
-        if (compilation.GetTypeByMetadataName(inferredClassName) is null)
+        var inferredClassNameValue = inferredClassName.Trim();
+        if (inferredClassNameValue.Length == 0)
+        {
+            return (document, diagnostics);
+        }
+
+        if (compilation.GetTypeByMetadataName(inferredClassNameValue) is null)
         {
             return (document, diagnostics);
         }
 
         var adjustedDocument = document with
         {
-            ClassFullName = inferredClassName
+            ClassFullName = inferredClassNameValue
         };
 
         var diagnosticsBuilder = diagnostics.ToBuilder();
@@ -1201,14 +1246,21 @@ public static class XamlSourceGeneratorCompilerHost
         var directory = Path.GetDirectoryName(effectiveTargetPath)?
             .Replace('\\', '/');
 
-        if (!string.IsNullOrWhiteSpace(directory))
+        if (directory is not null)
         {
-            foreach (var segment in directory
-                         .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            var directoryValue = directory.Trim();
+            if (directoryValue.Length > 0)
             {
-                var normalizedSegment = NormalizeIdentifier(segment, null);
-                if (!string.IsNullOrWhiteSpace(normalizedSegment))
+                foreach (var rawSegment in directoryValue
+                             .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries))
                 {
+                    var segment = rawSegment.Trim();
+                    var normalizedSegment = NormalizeIdentifier(segment, null);
+                    if (normalizedSegment is null || normalizedSegment.Length == 0)
+                    {
+                        continue;
+                    }
+
                     namespaceSegments.Add(normalizedSegment);
                 }
             }
@@ -1221,12 +1273,18 @@ public static class XamlSourceGeneratorCompilerHost
 
     private static string NormalizeRootNamespace(string? rootNamespace)
     {
-        if (string.IsNullOrWhiteSpace(rootNamespace))
+        if (rootNamespace is null)
         {
             return string.Empty;
         }
 
-        var segments = NormalizeNamespaceSegments(rootNamespace);
+        var trimmedRootNamespace = rootNamespace.Trim();
+        if (trimmedRootNamespace.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var segments = NormalizeNamespaceSegments(trimmedRootNamespace);
         return segments.Length == 0
             ? string.Empty
             : string.Join(".", segments);
@@ -1240,14 +1298,17 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         var segments = ImmutableArray.CreateBuilder<string>();
-        foreach (var segment in rawNamespace
-                     .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var rawSegment in rawNamespace
+                     .Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries))
         {
+            var segment = rawSegment.Trim();
             var normalizedSegment = NormalizeIdentifier(segment, null);
-            if (!string.IsNullOrWhiteSpace(normalizedSegment))
+            if (normalizedSegment is null || normalizedSegment.Length == 0)
             {
-                segments.Add(normalizedSegment);
+                continue;
             }
+
+            segments.Add(normalizedSegment);
         }
 
         return segments.ToImmutable();
@@ -1255,14 +1316,20 @@ public static class XamlSourceGeneratorCompilerHost
 
     private static string? NormalizeIdentifier(string? token, string? fallback)
     {
-        if (string.IsNullOrWhiteSpace(token))
+        if (token is null)
         {
             return fallback;
         }
 
-        Span<char> buffer = stackalloc char[token.Length];
+        var trimmedToken = token.Trim();
+        if (trimmedToken.Length == 0)
+        {
+            return fallback;
+        }
+
+        Span<char> buffer = stackalloc char[trimmedToken.Length];
         var length = 0;
-        foreach (var ch in token)
+        foreach (var ch in trimmedToken)
         {
             if (char.IsLetterOrDigit(ch) || ch == '_')
             {
@@ -1275,13 +1342,19 @@ public static class XamlSourceGeneratorCompilerHost
             return fallback;
         }
 
-        var normalized = new string(buffer.Slice(0, length));
+        var normalized = new string(buffer.Slice(0, length).ToArray());
         if (char.IsDigit(normalized[0]))
         {
             normalized = "_" + normalized;
         }
 
         return normalized;
+    }
+
+    private static TimeSpan GetElapsedTimeSince(long startTimestamp)
+    {
+        var elapsedTimestamp = Stopwatch.GetTimestamp() - startTimestamp;
+        return TimeSpan.FromSeconds((double)elapsedTimestamp / Stopwatch.Frequency);
     }
 
     private static ImmutableArray<DiagnosticInfo> AnalyzeGlobalDocumentGraph(
@@ -1575,8 +1648,8 @@ public static class XamlSourceGeneratorCompilerHost
     {
         if (value.Length >= 2)
         {
-            if ((value[0] == '"' && value[^1] == '"') ||
-                (value[0] == '\'' && value[^1] == '\''))
+            if ((value[0] == '"' && value[value.Length - 1] == '"') ||
+                (value[0] == '\'' && value[value.Length - 1] == '\''))
             {
                 return value.Substring(1, value.Length - 2);
             }
@@ -1675,8 +1748,8 @@ public static class XamlSourceGeneratorCompilerHost
             if (part == "..")
             {
                 if (stack.Count > 0 &&
-                    !string.Equals(stack[^1], "..", StringComparison.Ordinal) &&
-                    !IsDriveSegment(stack[^1]))
+                    !string.Equals(stack[stack.Count - 1], "..", StringComparison.Ordinal) &&
+                    !IsDriveSegment(stack[stack.Count - 1]))
                 {
                     stack.RemoveAt(stack.Count - 1);
                     continue;

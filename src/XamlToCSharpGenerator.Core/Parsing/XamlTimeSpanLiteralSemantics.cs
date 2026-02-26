@@ -8,7 +8,7 @@ public static class XamlTimeSpanLiteralSemantics
     public static bool TryParse(string? value, out TimeSpan parsedTimeSpan)
     {
         parsedTimeSpan = default;
-        if (string.IsNullOrWhiteSpace(value))
+        if (value is null)
         {
             return false;
         }
@@ -24,7 +24,7 @@ public static class XamlTimeSpanLiteralSemantics
             return true;
         }
 
-        if (!trimmed.Contains(':', StringComparison.Ordinal) &&
+        if (trimmed.IndexOf(':') < 0 &&
             double.TryParse(
                 trimmed,
                 NumberStyles.Float | NumberStyles.AllowThousands,

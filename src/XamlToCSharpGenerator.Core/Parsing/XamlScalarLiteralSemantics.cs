@@ -7,8 +7,14 @@ public static class XamlScalarLiteralSemantics
 {
     public static bool IsNullLiteral(string? token)
     {
-        return !string.IsNullOrWhiteSpace(token) &&
-               token.Trim().Equals("null", StringComparison.OrdinalIgnoreCase);
+        if (token is null)
+        {
+            return false;
+        }
+
+        var trimmed = token.Trim();
+        return trimmed.Length > 0 &&
+               trimmed.Equals("null", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool TryParseBoolean(string? token, out bool value)

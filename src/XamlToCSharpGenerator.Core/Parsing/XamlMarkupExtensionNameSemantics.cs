@@ -102,7 +102,7 @@ public static class XamlMarkupExtensionNameSemantics
 
     public static string ToClrExtensionTypeToken(string? extensionName)
     {
-        if (string.IsNullOrWhiteSpace(extensionName))
+        if (extensionName is null)
         {
             return string.Empty;
         }
@@ -127,12 +127,17 @@ public static class XamlMarkupExtensionNameSemantics
     private static bool TryNormalizeToken(string? extensionName, out string normalized)
     {
         normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(extensionName))
+        if (extensionName is null)
         {
             return false;
         }
 
         var token = extensionName.Trim();
+        if (token.Length == 0)
+        {
+            return false;
+        }
+
         if (token.StartsWith(XamlDirectivePrefix, StringComparison.OrdinalIgnoreCase))
         {
             token = token.Substring(XamlDirectivePrefix.Length);

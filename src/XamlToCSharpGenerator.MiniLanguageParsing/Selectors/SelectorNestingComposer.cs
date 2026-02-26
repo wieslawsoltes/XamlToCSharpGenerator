@@ -8,32 +8,37 @@ public static class SelectorNestingComposer
 {
     public static string ComposeNestedStyleSelector(string? parentSelector, string? childSelector)
     {
-        var normalizedParent = parentSelector?.Trim();
-        var normalizedChild = childSelector?.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedParent))
+        var parentText = parentSelector is null
+            ? string.Empty
+            : parentSelector.Trim();
+        var childText = childSelector is null
+            ? string.Empty
+            : childSelector.Trim();
+
+        if (parentText.Length == 0)
         {
-            return normalizedChild ?? string.Empty;
+            return childText;
         }
 
-        if (string.IsNullOrWhiteSpace(normalizedChild))
+        if (childText.Length == 0)
         {
-            return normalizedParent;
+            return parentText;
         }
 
         var parentBranches = TopLevelTextParser.SplitTopLevel(
-            normalizedParent,
+            parentText,
             ',',
             trimTokens: true,
             removeEmpty: true);
         var childBranches = TopLevelTextParser.SplitTopLevel(
-            normalizedChild,
+            childText,
             ',',
             trimTokens: true,
             removeEmpty: true);
 
         if (parentBranches.Length == 0 || childBranches.Length == 0)
         {
-            return normalizedParent;
+            return parentText;
         }
 
         var composed = new List<string>(parentBranches.Length * Math.Max(childBranches.Length, 1));
@@ -78,6 +83,6 @@ public static class SelectorNestingComposer
             index++;
         }
 
-        return text[index..].Trim();
+        return text.Substring(index).Trim();
     }
 }

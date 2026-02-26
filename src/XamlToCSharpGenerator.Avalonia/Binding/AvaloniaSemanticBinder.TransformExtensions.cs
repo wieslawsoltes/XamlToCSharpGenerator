@@ -151,13 +151,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var key = BuildPropertyAliasLookupKey(targetTypeToken, propertyAlias.XamlPropertyName);
+            string? normalizedClrPropertyName = null;
+            if (propertyAlias.ClrPropertyName is not null)
+            {
+                var clrPropertyName = propertyAlias.ClrPropertyName.Trim();
+                if (clrPropertyName.Length > 0)
+                {
+                    normalizedClrPropertyName = NormalizePropertyName(clrPropertyName);
+                }
+            }
             var resolvedAlias = new ResolvedPropertyAliasRule(
                 targetTypeToken,
                 targetTypeSymbol,
                 propertyAlias.XamlPropertyName.Trim(),
-                string.IsNullOrWhiteSpace(propertyAlias.ClrPropertyName)
-                    ? null
-                    : NormalizePropertyName(propertyAlias.ClrPropertyName),
+                normalizedClrPropertyName,
                 avaloniaOwnerTypeName,
                 avaloniaOwnerTypeSymbol,
                 avaloniaPropertyFieldFromPayload,

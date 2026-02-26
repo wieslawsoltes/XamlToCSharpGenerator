@@ -34,8 +34,15 @@ public static class CSharpSourceContextExpressionBuilder
         out SourceContextExpressionBuildResult result,
         out string errorMessage)
     {
-        ArgumentNullException.ThrowIfNull(compilation);
-        ArgumentNullException.ThrowIfNull(sourceType);
+        if (compilation is null)
+        {
+            throw new ArgumentNullException(nameof(compilation));
+        }
+
+        if (sourceType is null)
+        {
+            throw new ArgumentNullException(nameof(sourceType));
+        }
 
         result = default;
         errorMessage = string.Empty;
@@ -280,10 +287,17 @@ public static class CSharpSourceContextExpressionBuilder
 
         private void AddName(string? name)
         {
-            if (!string.IsNullOrWhiteSpace(name))
+            if (name is null)
             {
-                Names.Add(name);
+                return;
             }
+
+            if (name.Trim().Length == 0)
+            {
+                return;
+            }
+
+            Names.Add(name);
         }
     }
 
@@ -404,13 +418,20 @@ public static class CSharpSourceContextExpressionBuilder
 
         private void PushScope(string? singleName)
         {
-            if (string.IsNullOrWhiteSpace(singleName))
+            if (singleName is null)
             {
                 PushScope(Enumerable.Empty<string>());
                 return;
             }
 
-            PushScope(new[] { singleName });
+            var name = singleName.Trim();
+            if (name.Length == 0)
+            {
+                PushScope(Enumerable.Empty<string>());
+                return;
+            }
+
+            PushScope(new[] { name });
         }
 
         private void PopScope()

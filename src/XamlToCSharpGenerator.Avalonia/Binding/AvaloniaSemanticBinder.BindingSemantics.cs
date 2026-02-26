@@ -2831,15 +2831,21 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        if (!string.IsNullOrWhiteSpace(compiledParameterPath))
+        if (compiledParameterPath is not null)
         {
-            if (compiledParameterPath.Equals(".", StringComparison.Ordinal))
+            var compiledParameterPathValue = compiledParameterPath.Trim();
+            if (compiledParameterPathValue.Length == 0)
+            {
+                return false;
+            }
+
+            if (compiledParameterPathValue.Equals(".", StringComparison.Ordinal))
             {
                 parameterType = sourceType;
                 return true;
             }
 
-            return TryResolveMemberPathType(sourceType, compiledParameterPath, out parameterType);
+            return TryResolveMemberPathType(sourceType, compiledParameterPathValue, out parameterType);
         }
 
         if (hasParameterValueExpression)
@@ -4425,7 +4431,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         var fieldName = string.IsNullOrWhiteSpace(explicitFieldName)
             ? propertyName + "Property"
-            : explicitFieldName.Trim();
+            : explicitFieldName is null
+                ? propertyName + "Property"
+                : explicitFieldName.Trim();
         for (INamedTypeSymbol? current = ownerType; current is not null; current = current.BaseType)
         {
             var field = current.GetMembers(fieldName).OfType<IFieldSymbol>().FirstOrDefault(member => member.IsStatic);
@@ -5266,8 +5274,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 out var normalizedMemberToken))
         {
             var shortOwner = namedType.Name;
-            var fullyQualifiedOwner = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                .Replace("global::", string.Empty, StringComparison.Ordinal);
+            var fullyQualifiedOwner = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (fullyQualifiedOwner.StartsWith("global::", StringComparison.Ordinal))
+            {
+                fullyQualifiedOwner = fullyQualifiedOwner.Substring("global::".Length);
+            }
             if (ownerToken.Equals(shortOwner, StringComparison.OrdinalIgnoreCase) ||
                 ownerToken.Equals(fullyQualifiedOwner, StringComparison.OrdinalIgnoreCase))
             {
@@ -5584,8 +5595,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
-        foreach (var (key, value) in listAttribute.NamedArguments)
+        foreach (var namedArgument in listAttribute.NamedArguments)
         {
+            var key = namedArgument.Key;
+            var value = namedArgument.Value;
             if (key.Equals("Separators", StringComparison.Ordinal) &&
                 value.Kind == TypedConstantKind.Array &&
                 !value.IsNull)

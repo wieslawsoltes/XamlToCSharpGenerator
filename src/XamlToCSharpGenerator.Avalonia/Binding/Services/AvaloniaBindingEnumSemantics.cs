@@ -86,12 +86,17 @@ internal static class AvaloniaBindingEnumSemantics
     private static bool TryNormalizeToken(string? token, out string normalized)
     {
         normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(token))
+        if (token is null)
         {
             return false;
         }
 
         normalized = token.Trim();
-        return normalized.Length > 0;
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

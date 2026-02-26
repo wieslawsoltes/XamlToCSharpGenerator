@@ -8,12 +8,17 @@ public static class EventBindingSourceModeSemantics
     public static bool TryParse(string? sourceToken, out ResolvedEventBindingSourceMode sourceMode)
     {
         sourceMode = ResolvedEventBindingSourceMode.DataContextThenRoot;
-        if (string.IsNullOrWhiteSpace(sourceToken))
+        if (sourceToken is null)
         {
             return false;
         }
 
         var normalized = sourceToken.Trim();
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
         if (normalized.Equals("DataContextThenRoot", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("Default", StringComparison.OrdinalIgnoreCase))
         {

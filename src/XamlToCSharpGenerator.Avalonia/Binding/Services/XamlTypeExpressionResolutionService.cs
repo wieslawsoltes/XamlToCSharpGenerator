@@ -44,12 +44,17 @@ internal sealed class XamlTypeExpressionResolutionService
     public bool TryExtractTypeToken(string? typeExpression, out string token)
     {
         token = string.Empty;
-        if (string.IsNullOrWhiteSpace(typeExpression))
+        if (typeExpression is null)
         {
             return false;
         }
 
         var trimmed = typeExpression.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
         if (!_tryParseMarkupExtension(trimmed, out var markup) ||
             !IsTypeMarkupExtension(markup.Name))
         {
@@ -58,12 +63,18 @@ internal sealed class XamlTypeExpressionResolutionService
         }
 
         var typeToken = ResolveTypeMarkupPayload(markup);
-        if (string.IsNullOrWhiteSpace(typeToken))
+        if (typeToken is null)
         {
             return false;
         }
 
-        token = XamlQuotedValueSemantics.TrimAndUnquote(typeToken);
+        var typeTokenValue = typeToken.Trim();
+        if (typeTokenValue.Length == 0)
+        {
+            return false;
+        }
+
+        token = XamlQuotedValueSemantics.TrimAndUnquote(typeTokenValue);
         return token.Length > 0;
     }
 

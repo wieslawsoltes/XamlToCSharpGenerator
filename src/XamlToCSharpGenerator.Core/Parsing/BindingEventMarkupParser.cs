@@ -502,12 +502,18 @@ public static class BindingEventMarkupParser
         hasParameterValueExpression = false;
         errorMessage = null;
 
-        if (string.IsNullOrWhiteSpace(parameterToken))
+        if (parameterToken is null)
         {
             return true;
         }
 
-        if (TryParseBindingMarkup(parameterToken, tryParseMarkupExtension, out var bindingMarkup))
+        var parameterTokenValue = parameterToken.Trim();
+        if (parameterTokenValue.Length == 0)
+        {
+            return true;
+        }
+
+        if (TryParseBindingMarkup(parameterTokenValue, tryParseMarkupExtension, out var bindingMarkup))
         {
             if (!TryValidateEventBindingBindingSource(
                     bindingMarkup,
@@ -523,7 +529,7 @@ public static class BindingEventMarkupParser
             return true;
         }
 
-        if (tryParseMarkupExtension(parameterToken, out var markupExtension))
+        if (tryParseMarkupExtension(parameterTokenValue, out var markupExtension))
         {
             if (XamlMarkupExtensionNameSemantics.Classify(markupExtension.Name) == XamlMarkupExtensionKind.Null)
             {
@@ -536,7 +542,7 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        if (!tryConvertLiteralValueExpression(XamlQuotedValueSemantics.TrimAndUnquote(parameterToken), out var literalExpression))
+        if (!tryConvertLiteralValueExpression(XamlQuotedValueSemantics.TrimAndUnquote(parameterTokenValue), out var literalExpression))
         {
             errorMessage = "EventBinding parameter literal is invalid.";
             return false;

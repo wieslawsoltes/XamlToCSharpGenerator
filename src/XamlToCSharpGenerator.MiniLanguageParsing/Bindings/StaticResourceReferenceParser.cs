@@ -9,12 +9,17 @@ public static class StaticResourceReferenceParser
     public static bool TryExtractResourceKey(string? expression, out string resourceKey)
     {
         resourceKey = string.Empty;
-        if (string.IsNullOrWhiteSpace(expression))
+        if (expression is null)
         {
             return false;
         }
 
         var trimmed = expression.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
         if (!LooksLikeMarkupExtension(trimmed))
         {
             resourceKey = Unquote(trimmed).Trim();
@@ -45,14 +50,14 @@ public static class StaticResourceReferenceParser
                 continue;
             }
 
-            var argumentName = token[..equalsIndex].Trim();
+            var argumentName = token.Substring(0, equalsIndex).Trim();
             if (!argumentName.Equals("ResourceKey", StringComparison.OrdinalIgnoreCase) &&
                 !argumentName.Equals("Key", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            resourceKey = Unquote(token[(equalsIndex + 1)..]).Trim();
+            resourceKey = Unquote(token.Substring(equalsIndex + 1)).Trim();
             return resourceKey.Length > 0;
         }
 
@@ -64,7 +69,7 @@ public static class StaticResourceReferenceParser
     {
         return value.Length >= 2 &&
                value[0] == '{' &&
-               value[^1] == '}';
+               value[value.Length - 1] == '}';
     }
 
     private static bool TryParseMarkupHeadAndArguments(
@@ -75,7 +80,7 @@ public static class StaticResourceReferenceParser
         markupName = string.Empty;
         argumentsText = string.Empty;
 
-        var inner = value[1..^1].Trim();
+        var inner = value.Substring(1, value.Length - 2).Trim();
         if (inner.Length == 0)
         {
             return false;
@@ -94,11 +99,11 @@ public static class StaticResourceReferenceParser
             return false;
         }
 
-        markupName = inner[..headLength].Trim();
-        argumentsText = headLength < inner.Length ? inner[headLength..].Trim() : string.Empty;
+        markupName = inner.Substring(0, headLength).Trim();
+        argumentsText = headLength < inner.Length ? inner.Substring(headLength).Trim() : string.Empty;
         if (argumentsText.StartsWith(",", StringComparison.Ordinal))
         {
-            argumentsText = argumentsText[1..].TrimStart();
+            argumentsText = argumentsText.Substring(1).TrimStart();
         }
 
         return markupName.Length > 0;
@@ -138,10 +143,10 @@ public static class StaticResourceReferenceParser
     {
         var trimmed = value.Trim();
         if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
+            ((trimmed[0] == '"' && trimmed[trimmed.Length - 1] == '"') ||
+             (trimmed[0] == '\'' && trimmed[trimmed.Length - 1] == '\'')))
         {
-            return trimmed[1..^1];
+            return trimmed.Substring(1, trimmed.Length - 2);
         }
 
         return trimmed;

@@ -167,32 +167,50 @@ public sealed partial class AvaloniaSemanticBinder
             }
             case XamlMarkupExtensionKind.DateTime:
             {
-                if (string.IsNullOrWhiteSpace(rawValue))
+                if (rawValue is null)
                 {
                     return false;
                 }
 
-                expression = "global::System.DateTime.Parse(\"" + Escape(rawValue.Trim()) + "\", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)";
+                var normalizedRawValue = rawValue.Trim();
+                if (normalizedRawValue.Length == 0)
+                {
+                    return false;
+                }
+
+                expression = "global::System.DateTime.Parse(\"" + Escape(normalizedRawValue) + "\", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)";
                 return true;
             }
             case XamlMarkupExtensionKind.TimeSpan:
             {
-                if (string.IsNullOrWhiteSpace(rawValue))
+                if (rawValue is null)
                 {
                     return false;
                 }
 
-                expression = "global::System.TimeSpan.Parse(\"" + Escape(rawValue.Trim()) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
+                var normalizedRawValue = rawValue.Trim();
+                if (normalizedRawValue.Length == 0)
+                {
+                    return false;
+                }
+
+                expression = "global::System.TimeSpan.Parse(\"" + Escape(normalizedRawValue) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
                 return true;
             }
             case XamlMarkupExtensionKind.Uri:
             {
-                if (string.IsNullOrWhiteSpace(rawValue))
+                if (rawValue is null)
                 {
                     return false;
                 }
 
-                expression = "new global::System.Uri(\"" + Escape(rawValue.Trim()) + "\", global::System.UriKind.RelativeOrAbsolute)";
+                var normalizedRawValue = rawValue.Trim();
+                if (normalizedRawValue.Length == 0)
+                {
+                    return false;
+                }
+
+                expression = "new global::System.Uri(\"" + Escape(normalizedRawValue) + "\", global::System.UriKind.RelativeOrAbsolute)";
                 return true;
             }
             case XamlMarkupExtensionKind.Null:

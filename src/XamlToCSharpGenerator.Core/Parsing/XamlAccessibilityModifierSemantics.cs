@@ -45,7 +45,7 @@ public static class XamlAccessibilityModifierSemantics
     private static bool TryNormalize(string? modifier, out string normalized)
     {
         normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(modifier))
+        if (modifier is null)
         {
             return false;
         }
@@ -102,6 +102,8 @@ public static class XamlAccessibilityModifierSemantics
             writeIndex--;
         }
 
-        return new string(buffer[..writeIndex]);
+        var result = new char[writeIndex];
+        buffer.Slice(0, writeIndex).CopyTo(result);
+        return new string(result);
     }
 }
