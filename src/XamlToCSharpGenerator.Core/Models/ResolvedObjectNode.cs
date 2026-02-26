@@ -19,4 +19,5 @@ public sealed record ResolvedObjectNode(
     string? ContentPropertyName,
     int Line,
     int Column,
-    ConditionalXamlExpression? Condition = null);
+    ConditionalXamlExpression? Condition = null,
+    ImmutableArray<ResolvedCollectionAddInstruction> ChildAddInstructions = default);

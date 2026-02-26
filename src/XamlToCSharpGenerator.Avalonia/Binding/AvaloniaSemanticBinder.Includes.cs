@@ -1,8 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -196,56 +196,16 @@ public sealed partial class AvaloniaSemanticBinder
 
     private static string GetIncludeDirectory(string targetPath)
     {
-        var lastSeparator = targetPath.LastIndexOf('/');
-        if (lastSeparator <= 0)
-        {
-            return string.Empty;
-        }
-
-        return targetPath.Substring(0, lastSeparator);
+        return XamlIncludePathSemantics.GetDirectory(targetPath);
     }
 
     private static string CombineIncludePath(string baseDirectory, string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(baseDirectory))
-        {
-            return relativePath;
-        }
-
-        return baseDirectory + "/" + relativePath;
+        return XamlIncludePathSemantics.CombinePath(baseDirectory, relativePath);
     }
 
     private static string NormalizeIncludePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return string.Empty;
-        }
-
-        var normalizedSeparators = path.Replace('\\', '/');
-        var parts = normalizedSeparators.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        var stack = new List<string>(parts.Length);
-
-        foreach (var part in parts)
-        {
-            if (part == ".")
-            {
-                continue;
-            }
-
-            if (part == "..")
-            {
-                if (stack.Count > 0)
-                {
-                    stack.RemoveAt(stack.Count - 1);
-                }
-
-                continue;
-            }
-
-            stack.Add(part);
-        }
-
-        return string.Join("/", stack);
+        return XamlIncludePathSemantics.NormalizePath(path);
     }
 }

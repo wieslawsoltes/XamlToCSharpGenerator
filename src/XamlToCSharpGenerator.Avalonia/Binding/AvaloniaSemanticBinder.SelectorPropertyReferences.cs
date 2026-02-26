@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -108,15 +109,16 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        var separatorIndex = token.LastIndexOf('.');
         var ownerType = defaultOwnerType;
         var propertyName = token;
 
-        if (separatorIndex > 0 && separatorIndex < token.Length - 1)
+        if (XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(
+                token,
+                out var ownerToken,
+                out var normalizedPropertyName))
         {
-            var ownerToken = token.Substring(0, separatorIndex);
             ownerType = ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace) ?? ownerType;
-            propertyName = token.Substring(separatorIndex + 1);
+            propertyName = normalizedPropertyName;
         }
 
         if (ownerType is null ||

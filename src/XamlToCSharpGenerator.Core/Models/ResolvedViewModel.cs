@@ -19,4 +19,6 @@ public sealed record ResolvedViewModel(
     ImmutableArray<ResolvedCompiledBindingDefinition> CompiledBindings,
     ImmutableArray<ResolvedStyleDefinition> Styles,
     ImmutableArray<ResolvedControlThemeDefinition> ControlThemes,
-    ImmutableArray<ResolvedIncludeDefinition> Includes);
+    ImmutableArray<ResolvedIncludeDefinition> Includes,
+    ResolvedHotDesignArtifactKind HotDesignArtifactKind,
+    ImmutableArray<string> HotDesignScopeHints);

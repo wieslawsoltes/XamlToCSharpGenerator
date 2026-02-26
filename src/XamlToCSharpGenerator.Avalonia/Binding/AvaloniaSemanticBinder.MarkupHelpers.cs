@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -519,14 +520,15 @@ public sealed partial class AvaloniaSemanticBinder
         out string expression)
     {
         expression = string.Empty;
-        var separatorIndex = memberToken.LastIndexOf('.');
-        if (separatorIndex <= 0 || separatorIndex >= memberToken.Length - 1)
+        if (!XamlTokenSplitSemantics.TrySplitAtLastSeparator(
+                memberToken,
+                '.',
+                out var ownerToken,
+                out var memberName))
         {
             return false;
         }
 
-        var ownerToken = memberToken.Substring(0, separatorIndex);
-        var memberName = memberToken.Substring(separatorIndex + 1);
         var ownerType = ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace);
         if (ownerType is null)
         {

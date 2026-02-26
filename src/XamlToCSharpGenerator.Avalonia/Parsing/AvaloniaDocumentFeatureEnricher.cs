@@ -240,7 +240,10 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
 
     private static bool IsSettersPropertyElement(XElement scope, XElement element)
     {
-        return element.Name.LocalName.Equals(scope.Name.LocalName + ".Setters", StringComparison.Ordinal);
+        return XamlPropertyTokenSemantics.IsPropertyElementName(
+            element.Name.LocalName,
+            "Setters",
+            ownerToken: scope.Name.LocalName);
     }
 
     private static void AddSetterDefinition(
@@ -263,7 +266,10 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
         {
             var firstValueElement = setter.Elements().FirstOrDefault();
             if (firstValueElement is not null &&
-                firstValueElement.Name.LocalName.EndsWith(".Value", StringComparison.Ordinal) &&
+                XamlPropertyTokenSemantics.IsPropertyElementName(
+                    firstValueElement.Name.LocalName,
+                    "Value",
+                    ownerToken: setter.Name.LocalName) &&
                 firstValueElement.Elements().FirstOrDefault() is { } innerValueElement)
             {
                 value = innerValueElement.ToString(SaveOptions.DisableFormatting);
@@ -332,12 +338,12 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
         while (current is not null)
         {
             var localName = current.Name.LocalName;
-            if (localName.EndsWith(".MergedDictionaries", StringComparison.Ordinal) || localName == "MergedDictionaries")
+            if (XamlPropertyTokenSemantics.IsPropertyElementName(localName, "MergedDictionaries"))
             {
                 return "MergedDictionaries";
             }
 
-            if (localName.EndsWith(".Styles", StringComparison.Ordinal) || localName == "Styles")
+            if (XamlPropertyTokenSemantics.IsPropertyElementName(localName, "Styles"))
             {
                 return "Styles";
             }

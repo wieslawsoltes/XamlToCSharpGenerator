@@ -12,7 +12,8 @@ public sealed record ResolvedPropertyElementAssignment(
     int Line,
     int Column,
     ConditionalXamlExpression? Condition = null,
-    ResolvedFrameworkPropertyPayload? FrameworkPayload = null)
+    ResolvedFrameworkPropertyPayload? FrameworkPayload = null,
+    ImmutableArray<ResolvedCollectionAddInstruction> CollectionAddInstructions = default)
 {
     // Compatibility constructor retained while Avalonia call sites migrate.
     public ResolvedPropertyElementAssignment(
@@ -27,7 +28,8 @@ public sealed record ResolvedPropertyElementAssignment(
         ImmutableArray<ResolvedObjectNode> ObjectValues,
         int Line,
         int Column,
-        ConditionalXamlExpression? Condition = null)
+        ConditionalXamlExpression? Condition = null,
+        ImmutableArray<ResolvedCollectionAddInstruction> CollectionAddInstructions = default)
         : this(
             PropertyName,
             ClrPropertyOwnerTypeName,
@@ -41,7 +43,8 @@ public sealed record ResolvedPropertyElementAssignment(
             CreateCompatibilityPayload(
                 AvaloniaPropertyOwnerTypeName,
                 AvaloniaPropertyFieldName,
-                BindingPriorityExpression))
+                BindingPriorityExpression),
+            CollectionAddInstructions)
     {
     }
 
