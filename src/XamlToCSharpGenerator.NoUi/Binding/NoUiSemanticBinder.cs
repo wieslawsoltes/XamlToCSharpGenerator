@@ -5,15 +5,13 @@ using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Framework.Abstractions;
 
 namespace XamlToCSharpGenerator.NoUi.Binding;
 
 public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
 {
-    private const string ClrNamespacePrefix = "clr-namespace:";
-    private const string UsingNamespacePrefix = "using:";
-
     public (ResolvedViewModel? ViewModel, ImmutableArray<DiagnosticInfo> Diagnostics) Bind(
         XamlDocumentModel document,
         Compilation compilation,
@@ -48,7 +46,11 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
             CompiledBindings: ImmutableArray<ResolvedCompiledBindingDefinition>.Empty,
             Styles: ImmutableArray<ResolvedStyleDefinition>.Empty,
             ControlThemes: ImmutableArray<ResolvedControlThemeDefinition>.Empty,
-            Includes: ImmutableArray<ResolvedIncludeDefinition>.Empty);
+            Includes: ImmutableArray<ResolvedIncludeDefinition>.Empty,
+            HotDesignArtifactKind: ResolvedHotDesignArtifactKind.View,
+            HotDesignScopeHints: string.IsNullOrWhiteSpace(document.RootObject.XmlTypeName)
+                ? ImmutableArray.Create("control")
+                : ImmutableArray.Create("control", document.RootObject.XmlTypeName));
 
         return (viewModel, diagnostics.ToImmutable());
     }
@@ -181,30 +183,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
 
     private static bool TryExtractClrNamespace(string xmlNamespace, out string clrNamespace)
     {
-        clrNamespace = string.Empty;
-        string? working = null;
-        if (xmlNamespace.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal))
-        {
-            working = xmlNamespace.Substring(ClrNamespacePrefix.Length);
-        }
-        else if (xmlNamespace.StartsWith(UsingNamespacePrefix, StringComparison.Ordinal))
-        {
-            working = xmlNamespace.Substring(UsingNamespacePrefix.Length);
-        }
-
-        if (working is null)
-        {
-            return false;
-        }
-
-        var assemblySeparator = working.IndexOf(';');
-        if (assemblySeparator >= 0)
-        {
-            working = working.Substring(0, assemblySeparator);
-        }
-
-        clrNamespace = working.Trim();
-        return clrNamespace.Length > 0;
+        return XamlXmlNamespaceSemantics.TryExtractClrNamespace(xmlNamespace, out clrNamespace);
     }
 
     private static string? ResolveTypeByName(string typeName, Compilation compilation)

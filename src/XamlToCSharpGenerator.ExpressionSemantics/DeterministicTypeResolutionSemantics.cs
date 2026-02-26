@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
 namespace XamlToCSharpGenerator.ExpressionSemantics;
@@ -258,20 +259,12 @@ public static class DeterministicTypeResolutionSemantics
         string xmlTypeName,
         int? genericArity)
     {
-        if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal) ||
-            xmlNamespace.StartsWith("using:", StringComparison.Ordinal))
-        {
-            var segment = xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal)
-                ? xmlNamespace.Substring("clr-namespace:".Length)
-                : xmlNamespace.Substring("using:".Length);
-            var separatorIndex = segment.IndexOf(';');
-            var clrNamespace = separatorIndex < 0 ? segment : segment.Substring(0, separatorIndex);
-            if (!string.IsNullOrWhiteSpace(clrNamespace))
-            {
-                return clrNamespace + "." + AppendGenericArity(xmlTypeName, genericArity);
-            }
-        }
-
-        return null;
+        return XamlXmlNamespaceSemantics.TryBuildClrNamespaceMetadataName(
+            xmlNamespace,
+            xmlTypeName,
+            genericArity,
+            out var metadataName)
+            ? metadataName
+            : null;
     }
 }
