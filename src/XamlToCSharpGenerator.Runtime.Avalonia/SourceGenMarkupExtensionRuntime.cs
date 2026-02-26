@@ -20,6 +20,7 @@ public static class SourceGenMarkupExtensionRuntime
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
     private const int MaxDeferredBindingRetryCount = 12;
     private static readonly bool BindingTraceEnabled = IsEnvironmentEnabled("AXSG_BINDING_TRACE");
+    private static readonly bool BindingTraceVerboseEnabled = IsEnvironmentEnabled("AXSG_BINDING_TRACE_VERBOSE");
 
     public static object? ProvideStaticResource(
         object resourceKey,
@@ -305,11 +306,16 @@ public static class SourceGenMarkupExtensionRuntime
 
         if (value is IBinding binding)
         {
-            bool TryApplyBindingNow(string stage)
+            bool TryApplyBindingNow(string stage, out InvalidOperationException? deferredException)
             {
-                if (TryBind(avaloniaObject, property, binding, anchor, out var deferredException))
+                deferredException = null;
+                if (TryBind(avaloniaObject, property, binding, anchor, out deferredException))
                 {
-                    TraceBinding($"Applied binding ({stage}): {DescribeBindingTarget(avaloniaObject, property)}.");
+                    if (!string.Equals(stage, "immediate", StringComparison.Ordinal) ||
+                        BindingTraceVerboseEnabled)
+                    {
+                        TraceBinding($"Applied binding ({stage}): {DescribeBindingTarget(avaloniaObject, property)}.");
+                    }
                     return true;
                 }
 
@@ -321,18 +327,16 @@ public static class SourceGenMarkupExtensionRuntime
                 return false;
             }
 
-            if (TryApplyBindingNow("immediate"))
+            if (TryApplyBindingNow("immediate", out var initialDeferredException))
             {
                 return;
             }
-
-            ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
 
             void AttachDeferredRetryHooks(StyledElement observedElement, Visual? observedVisual, string ownerKind)
             {
                 void TryApplyAndDetachHandlers()
                 {
-                    if (!TryApplyBindingNow("event/" + ownerKind))
+                    if (!TryApplyBindingNow("event/" + ownerKind, out _))
                     {
                         return;
                     }
@@ -376,6 +380,11 @@ public static class SourceGenMarkupExtensionRuntime
                 (target is not StyledElement styledTargetReference || !ReferenceEquals(styledAnchor, styledTargetReference)))
             {
                 AttachDeferredRetryHooks(styledAnchor, styledAnchor as Visual, "anchor");
+            }
+
+            if (ShouldScheduleTimedBindingRetry(avaloniaObject, binding, anchor, initialDeferredException))
+            {
+                ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
             }
 
             return;
@@ -431,6 +440,41 @@ public static class SourceGenMarkupExtensionRuntime
     {
         return IsDataContextUnavailableException(exception) ||
                IsTemplatedParentUnavailableException(exception);
+    }
+
+    private static bool ShouldScheduleTimedBindingRetry(
+        AvaloniaObject target,
+        IBinding _,
+        object? anchor,
+        InvalidOperationException? deferredException)
+    {
+        if (deferredException is null)
+        {
+            return false;
+        }
+
+        // DataContext-based failures should be event-driven to avoid retry storms
+        // for bindings that become valid only when a flyout/menu is opened.
+        if (IsDataContextUnavailableException(deferredException))
+        {
+            return false;
+        }
+
+        if (!IsTemplatedParentUnavailableException(deferredException))
+        {
+            return false;
+        }
+
+        // For styled targets/anchors, property change handlers already re-apply when
+        // templated parent or visual attachment changes.
+        if (target is StyledElement ||
+            anchor is StyledElement)
+        {
+            return false;
+        }
+
+        // Non-styled targets without anchor notifications need timer-based retries.
+        return true;
     }
 
     private static bool IsTemplatedParentRelativeSource(RelativeSource? relativeSource)

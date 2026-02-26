@@ -49,15 +49,27 @@ public static class AvaloniaSourceGeneratedXamlLoader
             throw new ArgumentNullException(nameof(uri));
         }
 
-        if (XamlSourceGenRegistry.TryCreate(serviceProvider, uri.ToString(), out value))
+        var lookupUris = BuildLookupUriCandidates(serviceProvider, uri);
+        for (var index = 0; index < lookupUris.Length; index++)
         {
-            return true;
+            if (XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
+            {
+                return true;
+            }
         }
 
-        if (TryEnsureAssemblyLoadedForUri(uri) &&
-            XamlSourceGenRegistry.TryCreate(serviceProvider, uri.ToString(), out value))
+        for (var index = 0; index < lookupUris.Length; index++)
         {
-            return true;
+            if (!Uri.TryCreate(lookupUris[index], UriKind.RelativeOrAbsolute, out var candidateUri))
+            {
+                continue;
+            }
+
+            if (TryEnsureAssemblyLoadedForUri(candidateUri) &&
+                XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
+            {
+                return true;
+            }
         }
 
         value = null;
@@ -211,5 +223,39 @@ public static class AvaloniaSourceGeneratedXamlLoader
         {
             return false;
         }
+    }
+
+    private static string[] BuildLookupUriCandidates(IServiceProvider? serviceProvider, Uri uri)
+    {
+        var directCandidate = uri.ToString();
+        if (uri.IsAbsoluteUri)
+        {
+            return [directCandidate];
+        }
+
+        if (serviceProvider?.GetService(typeof(IUriContext)) is not IUriContext uriContext ||
+            uriContext.BaseUri is null ||
+            !uriContext.BaseUri.IsAbsoluteUri)
+        {
+            return [directCandidate];
+        }
+
+        Uri resolvedUri;
+        try
+        {
+            resolvedUri = new Uri(uriContext.BaseUri, uri);
+        }
+        catch
+        {
+            return [directCandidate];
+        }
+
+        var resolvedCandidate = resolvedUri.ToString();
+        if (string.Equals(resolvedCandidate, directCandidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return [directCandidate];
+        }
+
+        return [resolvedCandidate, directCandidate];
     }
 }
