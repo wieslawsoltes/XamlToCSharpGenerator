@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
+using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -16,6 +18,11 @@ public static class XamlSourceGenHotReloadManager
 {
     private const int SourcePathReloadRetryCount = 5;
     private const string TraceEnvVarName = "AXSG_HOTRELOAD_TRACE";
+    private const string TransportModeEnvVarName = "AXSG_HOTRELOAD_TRANSPORT_MODE";
+    private const string HandshakeTimeoutEnvVarName = "AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS";
+    private const string IosHotReloadEnabledEnvVarName = "AXSG_IOS_HOTRELOAD_ENABLED";
+    private const int DefaultHandshakeTimeoutMs = 3000;
+    private const int MaxProcessedRemoteOperationHistory = 256;
     private static readonly TimeSpan DuplicateReloadWindow = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MetadataVsPollingDedupWindow = TimeSpan.FromSeconds(2);
 
@@ -28,6 +35,8 @@ public static class XamlSourceGenHotReloadManager
     private static readonly List<RegisteredHandler> Handlers = new();
     private static readonly HashSet<string> HandlerKeys = new(StringComparer.Ordinal);
     private static readonly HashSet<Type> PendingReloadTypes = new();
+    private static readonly HashSet<long> ProcessedRemoteOperationIds = new();
+    private static readonly Queue<long> ProcessedRemoteOperationOrder = new();
     private static readonly IXamlSourceGenUriMapper UriMapper = XamlSourceGenUriMapper.Default;
 
     private static Timer? IdePollingTimer;
@@ -38,6 +47,16 @@ public static class XamlSourceGenHotReloadManager
     private static string? LastAcceptedReloadKey;
     private static SourceGenHotReloadTrigger? LastAcceptedReloadTrigger;
     private static DateTimeOffset LastAcceptedReloadTimestampUtc;
+    private static bool TransportInitialized;
+    private static SourceGenHotReloadTransportMode TransportMode = SourceGenHotReloadTransportMode.Auto;
+    private static TimeSpan HandshakeTimeout = TimeSpan.FromMilliseconds(DefaultHandshakeTimeoutMs);
+    private static ISourceGenHotReloadTransport? ActiveTransport;
+    private static MetadataUpdateTransport? MetadataTransport;
+    private static RemoteSocketTransport? RemoteTransport;
+    private static ISourceGenHotReloadRemoteOperationTransport? ActiveRemoteOperationTransport;
+    private static Timer? MetadataHandshakeTimer;
+    private static bool MetadataHandshakePending;
+    private static bool MetadataHandshakeCompleted;
 
     static XamlSourceGenHotReloadManager()
     {
@@ -59,6 +78,10 @@ public static class XamlSourceGenHotReloadManager
 
     public static event Action<SourceGenHotReloadUpdateContext>? HotReloadPipelineCompleted;
 
+    public static event Action<SourceGenHotReloadTransportStatus>? HotReloadTransportStatusChanged;
+
+    public static event Action<SourceGenHotReloadRemoteOperationStatus>? HotReloadRemoteOperationStatusChanged;
+
     public static bool IsEnabled { get; private set; } = true;
 
     public static bool IsIdePollingFallbackEnabled { get; private set; }
@@ -66,11 +89,16 @@ public static class XamlSourceGenHotReloadManager
     public static void Enable()
     {
         IsEnabled = true;
+        EnsureTransportInitialized();
     }
 
     public static void Disable()
     {
         IsEnabled = false;
+        lock (Sync)
+        {
+            ResetTransportStateLocked();
+        }
     }
 
     public static void Register(object instance, Action<object> reloadAction, string? sourcePath = null)
@@ -181,6 +209,9 @@ public static class XamlSourceGenHotReloadManager
             LastAcceptedReloadKey = null;
             LastAcceptedReloadTrigger = null;
             LastAcceptedReloadTimestampUtc = default;
+            ProcessedRemoteOperationIds.Clear();
+            ProcessedRemoteOperationOrder.Clear();
+            ResetTransportStateLocked();
         }
     }
 
@@ -222,8 +253,832 @@ public static class XamlSourceGenHotReloadManager
 
     public static bool ShouldEnableIdePollingFallbackFromEnvironment()
     {
+        if (OperatingSystem.IsIOS() || OperatingSystem.IsTvOS())
+        {
+            return true;
+        }
+
         var modifiableAssemblies = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
         return string.Equals(modifiableAssemblies, "debug", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void EnsureTransportInitialized()
+    {
+        SourceGenHotReloadTransportMode configuredMode;
+        SourceGenHotReloadTransportCapabilities metadataCapabilities;
+        SourceGenHotReloadTransportCapabilities remoteCapabilities;
+
+        lock (Sync)
+        {
+            if (TransportInitialized)
+            {
+                return;
+            }
+
+            TransportMode = ResolveTransportModeFromEnvironment();
+            HandshakeTimeout = ResolveHandshakeTimeoutFromEnvironment();
+            MetadataTransport = new MetadataUpdateTransport(Trace);
+            RemoteTransport = new RemoteSocketTransport();
+            TransportInitialized = true;
+
+            configuredMode = TransportMode;
+            metadataCapabilities = MetadataTransport.Capabilities;
+            remoteCapabilities = RemoteTransport.Capabilities;
+        }
+
+        Trace(
+            "Hot reload transport initialization. Mode: " + configuredMode +
+            ", handshake timeout: " + HandshakeTimeout.TotalMilliseconds + "ms.");
+        Trace(
+            "Transport capability probe: MetadataUpdate(" + FormatTransportCapabilities(metadataCapabilities) +
+            "), RemoteSocket(" + FormatTransportCapabilities(remoteCapabilities) + ").");
+
+        SelectInitialTransport(configuredMode);
+    }
+
+    private static void SelectInitialTransport(SourceGenHotReloadTransportMode mode)
+    {
+        switch (mode)
+        {
+            case SourceGenHotReloadTransportMode.MetadataOnly:
+                _ = TrySelectAndStartTransport(GetMetadataTransport(), mode, isFallback: false);
+                break;
+            case SourceGenHotReloadTransportMode.RemoteOnly:
+                _ = TrySelectAndStartTransport(GetRemoteTransport(), mode, isFallback: false);
+                break;
+            default:
+                if (!TrySelectAndStartTransport(GetMetadataTransport(), mode, isFallback: false))
+                {
+                    _ = TrySelectAndStartTransport(GetRemoteTransport(), mode, isFallback: true);
+                }
+                break;
+        }
+    }
+
+    private static bool TrySelectAndStartTransport(
+        ISourceGenHotReloadTransport? transport,
+        SourceGenHotReloadTransportMode mode,
+        bool isFallback)
+    {
+        if (transport is null)
+        {
+            return false;
+        }
+
+        var capabilities = transport.Capabilities;
+        var selectedMessage = "Selected transport '" + transport.Name + "'. Capabilities: " + FormatTransportCapabilities(capabilities) + ".";
+        PublishTransportStatus(SourceGenHotReloadTransportStatusKind.TransportSelected, transport.Name, mode, selectedMessage, isFallback);
+
+        if (!capabilities.IsSupported)
+        {
+            PublishTransportStatus(
+                SourceGenHotReloadTransportStatusKind.HandshakeFailed,
+                transport.Name,
+                mode,
+                "Transport '" + transport.Name + "' is not supported in current runtime/environment: " + capabilities.Diagnostic + ".",
+                isFallback);
+            return false;
+        }
+
+        PublishTransportStatus(
+            SourceGenHotReloadTransportStatusKind.HandshakeStarted,
+            transport.Name,
+            mode,
+            "Handshake started for transport '" + transport.Name + "'.",
+            isFallback);
+
+        SourceGenHotReloadHandshakeResult handshakeResult;
+        try
+        {
+            handshakeResult = transport.StartHandshake(HandshakeTimeout);
+        }
+        catch (Exception ex)
+        {
+            PublishTransportStatus(
+                SourceGenHotReloadTransportStatusKind.HandshakeFailed,
+                transport.Name,
+                mode,
+                "Handshake threw for transport '" + transport.Name + "': " + ex.Message,
+                isFallback,
+                ex);
+            return false;
+        }
+
+        if (!handshakeResult.IsSuccess)
+        {
+            PublishTransportStatus(
+                SourceGenHotReloadTransportStatusKind.HandshakeFailed,
+                transport.Name,
+                mode,
+                handshakeResult.Message,
+                isFallback,
+                handshakeResult.Exception);
+            return false;
+        }
+
+        var publishCompleted = false;
+        lock (Sync)
+        {
+            if (!ReferenceEquals(ActiveTransport, transport))
+            {
+                try
+                {
+                    ActiveTransport?.Stop();
+                }
+                catch
+                {
+                    // Best effort transport stop only.
+                }
+            }
+
+            ActiveTransport = transport;
+            RewireRemoteTransportSubscriptionLocked(transport);
+
+            if (transport is MetadataUpdateTransport && handshakeResult.IsPending)
+            {
+                MetadataHandshakePending = true;
+                MetadataHandshakeCompleted = false;
+                if (ShouldAttemptRemoteFallbackFromMetadataTimeoutLocked())
+                {
+                    ScheduleMetadataHandshakeTimeoutLocked();
+                }
+                else
+                {
+                    StopMetadataHandshakeTimerLocked();
+                }
+            }
+            else
+            {
+                MetadataHandshakePending = false;
+                MetadataHandshakeCompleted = true;
+                StopMetadataHandshakeTimerLocked();
+                publishCompleted = true;
+            }
+        }
+
+        if (publishCompleted)
+        {
+            PublishTransportStatus(
+                SourceGenHotReloadTransportStatusKind.HandshakeCompleted,
+                transport.Name,
+                mode,
+                handshakeResult.Message,
+                isFallback);
+        }
+
+        return true;
+    }
+
+    private static MetadataUpdateTransport? GetMetadataTransport()
+    {
+        lock (Sync)
+        {
+            MetadataTransport ??= new MetadataUpdateTransport(Trace);
+            return MetadataTransport;
+        }
+    }
+
+    private static RemoteSocketTransport? GetRemoteTransport()
+    {
+        lock (Sync)
+        {
+            RemoteTransport ??= new RemoteSocketTransport();
+            return RemoteTransport;
+        }
+    }
+
+    private static void RewireRemoteTransportSubscriptionLocked(ISourceGenHotReloadTransport? transport)
+    {
+        if (ActiveRemoteOperationTransport is not null)
+        {
+            ActiveRemoteOperationTransport.RemoteUpdateReceived -= OnRemoteUpdateReceived;
+        }
+
+        ActiveRemoteOperationTransport = transport as ISourceGenHotReloadRemoteOperationTransport;
+        if (ActiveRemoteOperationTransport is not null)
+        {
+            ActiveRemoteOperationTransport.RemoteUpdateReceived += OnRemoteUpdateReceived;
+        }
+    }
+
+    private static void OnRemoteUpdateReceived(SourceGenHotReloadRemoteUpdateRequest request)
+    {
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var started = new SourceGenHotReloadRemoteOperationStatus(
+            OperationId: request.OperationId,
+            RequestId: request.RequestId,
+            CorrelationId: request.CorrelationId,
+            State: SourceGenStudioOperationState.Applying,
+            StartedAtUtc: startedAtUtc,
+            CompletedAtUtc: null,
+            Request: request);
+        PublishRemoteOperationStatus(started);
+
+        SourceGenHotReloadRemoteUpdateResult result;
+        try
+        {
+            result = ProcessRemoteUpdateRequest(request);
+        }
+        catch (Exception ex)
+        {
+            result = new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Failed,
+                IsSuccess: false,
+                Message: "Unhandled remote update exception: " + ex.Message,
+                Diagnostics: [ex.ToString()]);
+        }
+
+        PublishRemoteOperationStatus(
+            started with
+            {
+                State = result.State,
+                CompletedAtUtc = DateTimeOffset.UtcNow,
+                Result = result,
+                Diagnostics = result.Diagnostics
+            });
+
+        TryPublishRemoteOperationResult(result);
+    }
+
+    private static SourceGenHotReloadRemoteUpdateResult ProcessRemoteUpdateRequest(SourceGenHotReloadRemoteUpdateRequest request)
+    {
+        if (!IsEnabled)
+        {
+            return new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Failed,
+                IsSuccess: false,
+                Message: "Hot reload manager is disabled.",
+                Diagnostics: ["Enable hot reload manager before remote apply operations."]);
+        }
+
+        if (request.OperationId <= 0)
+        {
+            return new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Failed,
+                IsSuccess: false,
+                Message: "Remote update request must provide a positive operationId.",
+                Diagnostics: ["Invalid operationId."]);
+        }
+
+        if (IsProcessedRemoteOperation(request.OperationId))
+        {
+            return new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Succeeded,
+                IsSuccess: true,
+                Message: "Duplicate remote operation ignored; operation was already applied.");
+        }
+
+        var diagnostics = new List<string>();
+        var resolvedTypes = ResolveRemoteRequestTypes(request, diagnostics);
+        if (!request.ApplyAll && (resolvedTypes is null || resolvedTypes.Length == 0))
+        {
+            return new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Failed,
+                IsSuccess: false,
+                Message: "Remote update request did not resolve any tracked hot reload types.",
+                Diagnostics: diagnostics);
+        }
+
+        var failures = new List<string>();
+        void OnFailure(Type type, Exception exception)
+        {
+            var message = (type.FullName ?? type.Name) + ": " + exception.Message;
+            failures.Add(message);
+        }
+
+        HotReloadFailed += OnFailure;
+        try
+        {
+            UpdateApplicationCore(
+                request.ApplyAll ? null : resolvedTypes,
+                SourceGenHotReloadTrigger.RemoteTransport,
+                request);
+        }
+        finally
+        {
+            HotReloadFailed -= OnFailure;
+        }
+
+        if (failures.Count > 0)
+        {
+            if (diagnostics.Count == 0)
+            {
+                diagnostics.AddRange(failures);
+            }
+            else
+            {
+                diagnostics.AddRange(failures);
+            }
+
+            return new SourceGenHotReloadRemoteUpdateResult(
+                OperationId: request.OperationId,
+                RequestId: request.RequestId,
+                CorrelationId: request.CorrelationId,
+                State: SourceGenStudioOperationState.Failed,
+                IsSuccess: false,
+                Message: "Remote update operation completed with failures.",
+                Diagnostics: diagnostics);
+        }
+
+        MarkRemoteOperationProcessed(request.OperationId);
+        return new SourceGenHotReloadRemoteUpdateResult(
+            OperationId: request.OperationId,
+            RequestId: request.RequestId,
+            CorrelationId: request.CorrelationId,
+            State: SourceGenStudioOperationState.Succeeded,
+            IsSuccess: true,
+            Message: request.ApplyAll
+                ? "Remote update applied for all tracked types."
+                : "Remote update applied for " + resolvedTypes!.Length + " resolved types.",
+            Diagnostics: diagnostics.Count > 0 ? diagnostics : null);
+    }
+
+    private static Type[] ResolveRemoteRequestTypes(SourceGenHotReloadRemoteUpdateRequest request, List<string> diagnostics)
+    {
+        var resolved = new HashSet<Type>();
+        var hasAnyInput = false;
+
+        foreach (var typeName in request.TypeNames)
+        {
+            if (string.IsNullOrWhiteSpace(typeName))
+            {
+                continue;
+            }
+
+            hasAnyInput = true;
+            if (TryResolveTypeByName(typeName, out var resolvedType))
+            {
+                resolved.Add(NormalizeUpdatedType(resolvedType));
+            }
+            else
+            {
+                diagnostics.Add("Unable to resolve type '" + typeName + "'.");
+            }
+        }
+
+        var normalizedBuildUris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var buildUri in request.BuildUris)
+        {
+            if (string.IsNullOrWhiteSpace(buildUri))
+            {
+                continue;
+            }
+
+            hasAnyInput = true;
+            normalizedBuildUris.Add(UriMapper.Normalize(buildUri));
+        }
+
+        if (normalizedBuildUris.Count > 0)
+        {
+            lock (Sync)
+            {
+                foreach (var trackedType in Instances.Keys)
+                {
+                    if (!TryGetBuildUriForTypeOrDeclaringLocked(trackedType, out var buildUri))
+                    {
+                        continue;
+                    }
+
+                    if (normalizedBuildUris.Contains(buildUri))
+                    {
+                        resolved.Add(trackedType);
+                    }
+                }
+            }
+        }
+
+        if (!request.ApplyAll && !hasAnyInput)
+        {
+            diagnostics.Add("Remote update request contains no typeNames/buildUris and applyAll=false.");
+        }
+
+        if (!request.ApplyAll && normalizedBuildUris.Count > 0 && resolved.Count == 0)
+        {
+            diagnostics.Add("No tracked registrations matched requested buildUris.");
+        }
+
+        if (resolved.Count == 0)
+        {
+            return Array.Empty<Type>();
+        }
+
+        var types = new Type[resolved.Count];
+        resolved.CopyTo(types);
+        return types;
+    }
+
+    private static bool TryResolveTypeByName(string typeName, out Type type)
+    {
+        var normalizedTypeName = NormalizeRemoteTypeName(typeName);
+        if (normalizedTypeName.Length == 0)
+        {
+            type = default!;
+            return false;
+        }
+
+        lock (Sync)
+        {
+            if (TryResolveTypeByNameFromCollectionLocked(Instances.Keys, normalizedTypeName, out type) ||
+                TryResolveTypeByNameFromCollectionLocked(ReplacementTypeMap.Keys, normalizedTypeName, out type) ||
+                TryResolveTypeByNameFromCollectionLocked(ReplacementTypeMap.Values, normalizedTypeName, out type))
+            {
+                return true;
+            }
+        }
+
+        var knownTypes = SourceGenKnownTypeRegistry.GetRegisteredTypes();
+        for (var index = 0; index < knownTypes.Count; index++)
+        {
+            if (DoesRemoteTypeNameMatch(knownTypes[index], normalizedTypeName))
+            {
+                type = knownTypes[index];
+                return true;
+            }
+        }
+
+        type = default!;
+        return false;
+    }
+
+    private static bool TryResolveTypeByNameFromCollectionLocked(
+        IEnumerable<Type> candidates,
+        string normalizedTypeName,
+        out Type resolvedType)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!DoesRemoteTypeNameMatch(candidate, normalizedTypeName))
+            {
+                continue;
+            }
+
+            resolvedType = candidate;
+            return true;
+        }
+
+        resolvedType = default!;
+        return false;
+    }
+
+    private static bool DoesRemoteTypeNameMatch(Type candidate, string normalizedTypeName)
+    {
+        var candidateFullName = candidate.FullName;
+        if (!string.IsNullOrWhiteSpace(candidateFullName))
+        {
+            if (string.Equals(candidateFullName, normalizedTypeName, StringComparison.Ordinal) ||
+                string.Equals(StripGenericArity(candidateFullName), normalizedTypeName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        var candidateName = candidate.Name;
+        return string.Equals(candidateName, normalizedTypeName, StringComparison.Ordinal) ||
+               string.Equals(StripGenericArity(candidateName), normalizedTypeName, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeRemoteTypeName(string typeName)
+    {
+        var normalized = typeName.Trim();
+        if (normalized.StartsWith("global::", StringComparison.Ordinal))
+        {
+            normalized = normalized["global::".Length..];
+        }
+
+        normalized = StripAssemblyQualification(normalized);
+        return StripGenericArity(normalized);
+    }
+
+    private static string StripAssemblyQualification(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return string.Empty;
+        }
+
+        var bracketDepth = 0;
+        for (var index = 0; index < typeName.Length; index++)
+        {
+            var ch = typeName[index];
+            switch (ch)
+            {
+                case '[':
+                    bracketDepth++;
+                    break;
+                case ']':
+                    bracketDepth = Math.Max(0, bracketDepth - 1);
+                    break;
+                case ',' when bracketDepth == 0:
+                    return typeName[..index].Trim();
+            }
+        }
+
+        return typeName.Trim();
+    }
+
+    private static string StripGenericArity(string typeName)
+    {
+        var tickIndex = typeName.IndexOf('`');
+        return tickIndex > 0
+            ? typeName[..tickIndex]
+            : typeName;
+    }
+
+    private static bool IsProcessedRemoteOperation(long operationId)
+    {
+        lock (Sync)
+        {
+            return ProcessedRemoteOperationIds.Contains(operationId);
+        }
+    }
+
+    private static void MarkRemoteOperationProcessed(long operationId)
+    {
+        lock (Sync)
+        {
+            if (!ProcessedRemoteOperationIds.Add(operationId))
+            {
+                return;
+            }
+
+            ProcessedRemoteOperationOrder.Enqueue(operationId);
+            while (ProcessedRemoteOperationOrder.Count > MaxProcessedRemoteOperationHistory)
+            {
+                var staleOperationId = ProcessedRemoteOperationOrder.Dequeue();
+                ProcessedRemoteOperationIds.Remove(staleOperationId);
+            }
+        }
+    }
+
+    private static void TryPublishRemoteOperationResult(SourceGenHotReloadRemoteUpdateResult result)
+    {
+        ISourceGenHotReloadRemoteOperationTransport? remoteTransport;
+        lock (Sync)
+        {
+            remoteTransport = ActiveRemoteOperationTransport;
+        }
+
+        if (remoteTransport is null)
+        {
+            return;
+        }
+
+        try
+        {
+            remoteTransport.PublishRemoteUpdateResult(result);
+        }
+        catch (Exception ex)
+        {
+            Trace("Failed to publish remote operation ACK: " + ex.Message);
+        }
+    }
+
+    private static void CompleteMetadataHandshakeIfPending()
+    {
+        var shouldPublish = false;
+        lock (Sync)
+        {
+            if (ActiveTransport is not MetadataUpdateTransport ||
+                MetadataHandshakeCompleted)
+            {
+                return;
+            }
+
+            MetadataHandshakeCompleted = true;
+            MetadataHandshakePending = false;
+            StopMetadataHandshakeTimerLocked();
+            shouldPublish = true;
+        }
+
+        if (shouldPublish)
+        {
+            PublishTransportStatus(
+                SourceGenHotReloadTransportStatusKind.HandshakeCompleted,
+                "MetadataUpdate",
+                TransportMode,
+                "Metadata transport handshake completed after first metadata delta.",
+                isFallback: false);
+        }
+    }
+
+    private static void ScheduleMetadataHandshakeTimeoutLocked()
+    {
+        if (MetadataHandshakeTimer is null)
+        {
+            MetadataHandshakeTimer = new Timer(static _ => OnMetadataHandshakeTimeout(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+
+        MetadataHandshakeTimer.Change(HandshakeTimeout, Timeout.InfiniteTimeSpan);
+    }
+
+    private static void StopMetadataHandshakeTimerLocked()
+    {
+        if (MetadataHandshakeTimer is null)
+        {
+            return;
+        }
+
+        MetadataHandshakeTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        MetadataHandshakeTimer.Dispose();
+        MetadataHandshakeTimer = null;
+    }
+
+    private static void OnMetadataHandshakeTimeout()
+    {
+        SourceGenHotReloadTransportMode mode;
+        var shouldFallback = false;
+
+        lock (Sync)
+        {
+            if (!MetadataHandshakePending ||
+                ActiveTransport is not MetadataUpdateTransport ||
+                MetadataHandshakeCompleted)
+            {
+                return;
+            }
+
+            MetadataHandshakePending = false;
+            StopMetadataHandshakeTimerLocked();
+            mode = TransportMode;
+            shouldFallback = ShouldAttemptRemoteFallbackFromMetadataTimeoutLocked();
+        }
+
+        PublishTransportStatus(
+            SourceGenHotReloadTransportStatusKind.HandshakeFailed,
+            "MetadataUpdate",
+            mode,
+            "Metadata transport handshake timed out after " + HandshakeTimeout.TotalMilliseconds + "ms without receiving metadata delta.",
+            isFallback: false);
+
+        if (!shouldFallback)
+        {
+            return;
+        }
+
+        _ = TrySelectAndStartTransport(GetRemoteTransport(), mode, isFallback: true);
+    }
+
+    private static bool ShouldAttemptRemoteFallbackFromMetadataTimeoutLocked()
+    {
+        if (TransportMode != SourceGenHotReloadTransportMode.Auto)
+        {
+            return false;
+        }
+
+        if (IsEnabledByEnvironment(IosHotReloadEnabledEnvVarName))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName));
+    }
+
+    private static SourceGenHotReloadTransportMode ResolveTransportModeFromEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable(TransportModeEnvVarName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return SourceGenHotReloadTransportMode.Auto;
+        }
+
+        if (Enum.TryParse<SourceGenHotReloadTransportMode>(value, ignoreCase: true, out var mode))
+        {
+            return mode;
+        }
+
+        Trace("Invalid transport mode '" + value + "'. Falling back to Auto.");
+        return SourceGenHotReloadTransportMode.Auto;
+    }
+
+    private static TimeSpan ResolveHandshakeTimeoutFromEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable(HandshakeTimeoutEnvVarName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return TimeSpan.FromMilliseconds(DefaultHandshakeTimeoutMs);
+        }
+
+        if (!int.TryParse(value, out var timeoutMs) || timeoutMs <= 0)
+        {
+            Trace("Invalid handshake timeout '" + value + "'. Falling back to " + DefaultHandshakeTimeoutMs + "ms.");
+            return TimeSpan.FromMilliseconds(DefaultHandshakeTimeoutMs);
+        }
+
+        return TimeSpan.FromMilliseconds(timeoutMs);
+    }
+
+    private static bool IsEnabledByEnvironment(string variableName)
+    {
+        var value = Environment.GetEnvironmentVariable(variableName);
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void PublishTransportStatus(
+        SourceGenHotReloadTransportStatusKind kind,
+        string transportName,
+        SourceGenHotReloadTransportMode mode,
+        string message,
+        bool isFallback,
+        Exception? exception = null)
+    {
+        var status = new SourceGenHotReloadTransportStatus(
+            kind,
+            transportName,
+            mode,
+            message,
+            DateTimeOffset.UtcNow,
+            isFallback,
+            exception);
+
+        HotReloadTransportStatusChanged?.Invoke(status);
+        XamlSourceGenHotReloadEventBus.Instance.PublishTransportStatusChanged(status);
+        Trace(
+            "Transport status: " + kind + ", transport=" + transportName +
+            ", mode=" + mode + ", fallback=" + isFallback + ", message=" + message + ".");
+    }
+
+    private static void PublishRemoteOperationStatus(SourceGenHotReloadRemoteOperationStatus status)
+    {
+        HotReloadRemoteOperationStatusChanged?.Invoke(status);
+        XamlSourceGenHotReloadEventBus.Instance.PublishRemoteOperationStatusChanged(status);
+
+        var summary = "#" + status.OperationId +
+                      " state=" + status.State +
+                      ", requestId=" + (status.RequestId ?? "<null>") +
+                      ", correlation=" + (status.CorrelationId?.ToString() ?? "<null>") +
+                      ", diagnostics=" + (status.Diagnostics?.Count ?? 0) + ".";
+        Trace("Remote operation status: " + summary);
+    }
+
+    private static string FormatTransportCapabilities(SourceGenHotReloadTransportCapabilities capabilities)
+    {
+        return "supported=" + capabilities.IsSupported +
+               ", metadata=" + capabilities.SupportsMetadataUpdates +
+               ", remote=" + capabilities.SupportsRemoteConnection +
+               ", endpointRequired=" + capabilities.RequiresEndpointConfiguration +
+               ", diagnostic=" + capabilities.Diagnostic;
+    }
+
+    private static void ResetTransportStateLocked()
+    {
+        RewireRemoteTransportSubscriptionLocked(null);
+        StopMetadataHandshakeTimerLocked();
+        MetadataHandshakePending = false;
+        MetadataHandshakeCompleted = false;
+        TransportInitialized = false;
+        TransportMode = SourceGenHotReloadTransportMode.Auto;
+        HandshakeTimeout = TimeSpan.FromMilliseconds(DefaultHandshakeTimeoutMs);
+        ProcessedRemoteOperationIds.Clear();
+        ProcessedRemoteOperationOrder.Clear();
+
+        try
+        {
+            ActiveTransport?.Stop();
+        }
+        catch
+        {
+            // Best effort transport stop only.
+        }
+
+        try
+        {
+            MetadataTransport?.Stop();
+        }
+        catch
+        {
+            // Best effort transport stop only.
+        }
+
+        try
+        {
+            RemoteTransport?.Stop();
+        }
+        catch
+        {
+            // Best effort transport stop only.
+        }
+
+        ActiveTransport = null;
+        MetadataTransport = null;
+        RemoteTransport = null;
     }
 
     public static void ClearCache(Type[]? types)
@@ -261,7 +1116,10 @@ public static class XamlSourceGenHotReloadManager
         UpdateApplicationCore(types, SourceGenHotReloadTrigger.IdePollingFallback);
     }
 
-    private static void UpdateApplicationCore(Type[]? types, SourceGenHotReloadTrigger trigger)
+    private static void UpdateApplicationCore(
+        Type[]? types,
+        SourceGenHotReloadTrigger trigger,
+        SourceGenHotReloadRemoteUpdateRequest? remoteRequest = null)
     {
         var eventBus = XamlSourceGenHotReloadEventBus.Instance;
         var normalizedTypes = NormalizeUpdatedTypes(types);
@@ -276,6 +1134,12 @@ public static class XamlSourceGenHotReloadManager
             HotReloaded?.Invoke(normalizedTypes);
             eventBus.PublishHotReloaded(normalizedTypes);
             return;
+        }
+
+        EnsureTransportInitialized();
+        if (trigger == SourceGenHotReloadTrigger.MetadataUpdate)
+        {
+            CompleteMetadataHandshakeIfPending();
         }
 
         lock (Sync)
@@ -294,11 +1158,12 @@ public static class XamlSourceGenHotReloadManager
         {
             var currentTypes = normalizedTypes;
             var currentTrigger = trigger;
+            var currentRemoteRequest = remoteRequest;
             while (true)
             {
                 var refreshedTypes = RefreshArtifactsForUpdatedTypes(currentTypes);
                 var operations = CollectReloadOperations(currentTypes);
-                var context = BuildUpdateContext(currentTrigger, currentTypes, operations);
+                var context = BuildUpdateContext(currentTrigger, currentTypes, operations, currentRemoteRequest);
                 Trace("UpdateApplication invoked. Trigger: " + currentTrigger + ". Candidate operations: " + operations.Count + ".");
                 Trace("UpdateApplication requested types: " + FormatTypeList(currentTypes) + ".");
                 if (refreshedTypes.Count > 0)
@@ -326,6 +1191,7 @@ public static class XamlSourceGenHotReloadManager
                     }
 
                     currentTrigger = SourceGenHotReloadTrigger.Queued;
+                    currentRemoteRequest = null;
                 }
             }
         }
@@ -502,7 +1368,8 @@ public static class XamlSourceGenHotReloadManager
 
     private static bool ShouldSuppressDuplicateReloadRequest(SourceGenHotReloadTrigger trigger, Type[]? normalizedTypes)
     {
-        if (trigger == SourceGenHotReloadTrigger.Queued)
+        if (trigger == SourceGenHotReloadTrigger.Queued ||
+            trigger == SourceGenHotReloadTrigger.RemoteTransport)
         {
             return false;
         }
@@ -849,7 +1716,8 @@ public static class XamlSourceGenHotReloadManager
     private static SourceGenHotReloadUpdateContext BuildUpdateContext(
         SourceGenHotReloadTrigger trigger,
         Type[]? requestedTypes,
-        List<ReloadOperation> operations)
+        List<ReloadOperation> operations,
+        SourceGenHotReloadRemoteUpdateRequest? remoteRequest = null)
     {
         var uniqueReloadedTypes = new List<Type>();
         var seen = new HashSet<Type>();
@@ -865,7 +1733,10 @@ public static class XamlSourceGenHotReloadManager
             trigger,
             requestedTypes,
             uniqueReloadedTypes,
-            operations.Count);
+            operations.Count,
+            operationId: remoteRequest?.OperationId,
+            requestId: remoteRequest?.RequestId,
+            correlationId: remoteRequest?.CorrelationId);
     }
 
     private static void ExecuteReloadPipeline(
@@ -881,7 +1752,7 @@ public static class XamlSourceGenHotReloadManager
             InvokeBeforeVisualTreeUpdate(context, handlers);
             foreach (var operation in operations)
             {
-                ExecuteReload(operation, handlers);
+                ExecuteReload(operation, handlers, context.Trigger);
             }
 
             InvokeAfterVisualTreeUpdate(context, handlers);
@@ -1003,7 +1874,8 @@ public static class XamlSourceGenHotReloadManager
 
     private static void ExecuteReload(
         ReloadOperation operation,
-        IReadOnlyList<RegisteredHandler> handlers)
+        IReadOnlyList<RegisteredHandler> handlers,
+        SourceGenHotReloadTrigger trigger)
     {
         Trace("Applying reload operation. Target type: " + operation.Type.FullName + ", instance type: " + operation.Instance.GetType().FullName + ".");
         var applicableHandlers = ResolveApplicableHandlers(operation, handlers);
@@ -1025,7 +1897,10 @@ public static class XamlSourceGenHotReloadManager
             }
 
             operation.Registration.BeforeReload?.Invoke(operation.Instance);
-            operation.Registration.ReloadAction(operation.Instance);
+            if (!TryApplyRuntimeSourceReload(operation, trigger))
+            {
+                operation.Registration.ReloadAction(operation.Instance);
+            }
             Trace("Reload operation applied successfully for type '" + operation.Type.FullName + "'.");
         }
         catch (Exception ex)
@@ -1057,6 +1932,101 @@ public static class XamlSourceGenHotReloadManager
                     ReportHandlerFailure(operation.Type, "AfterElementReload", ex);
                 }
             }
+        }
+    }
+
+    private static bool TryApplyRuntimeSourceReload(ReloadOperation operation, SourceGenHotReloadTrigger trigger)
+    {
+        if (trigger != SourceGenHotReloadTrigger.IdePollingFallback)
+        {
+            return false;
+        }
+
+        if (!TryGetRegisteredSourcePath(operation.Type, out var sourcePath) ||
+            string.IsNullOrWhiteSpace(sourcePath) ||
+            !File.Exists(sourcePath))
+        {
+            return false;
+        }
+
+        string xamlText;
+        try
+        {
+            xamlText = File.ReadAllText(sourcePath, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Trace("Runtime source reload skipped for type '" + operation.Type.FullName + "': unable to read '" + sourcePath + "' (" + ex.Message + ").");
+            return false;
+        }
+
+        try
+        {
+            var baseUri = TryCreateBaseUriForType(operation.Type);
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xamlText));
+            var document = new RuntimeXamlLoaderDocument(baseUri, operation.Instance, stream);
+            var configuration = new RuntimeXamlLoaderConfiguration
+            {
+                LocalAssembly = operation.Instance.GetType().Assembly
+            };
+
+            var options = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;
+            options.EnableRuntimeCompilationFallback = true;
+            _ = SourceGenRuntimeXamlCompiler.Load(document, configuration, options);
+            Trace("Applied runtime source reload for type '" + operation.Type.FullName + "' from '" + sourcePath + "'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Trace("Runtime source reload failed for type '" + operation.Type.FullName + "' from '" + sourcePath + "': " + ex.Message + ". Falling back to generated reload path.");
+            return false;
+        }
+    }
+
+    private static bool TryGetRegisteredSourcePath(Type type, out string sourcePath)
+    {
+        lock (Sync)
+        {
+            if (TryGetRegisteredSourcePathLocked(type, out sourcePath))
+            {
+                return true;
+            }
+
+            var normalizedType = NormalizeType(type);
+            return TryGetRegisteredSourcePathLocked(normalizedType, out sourcePath);
+        }
+    }
+
+    private static bool TryGetRegisteredSourcePathLocked(Type type, out string sourcePath)
+    {
+        if (IdeSourcePathWatchers.TryGetValue(type, out var state))
+        {
+            sourcePath = state.SourcePath;
+            return true;
+        }
+
+        if (ReplacementTypeMap.TryGetValue(type, out var mappedType) &&
+            IdeSourcePathWatchers.TryGetValue(mappedType, out state))
+        {
+            sourcePath = state.SourcePath;
+            return true;
+        }
+
+        sourcePath = string.Empty;
+        return false;
+    }
+
+    private static Uri? TryCreateBaseUriForType(Type type)
+    {
+        lock (Sync)
+        {
+            if (!TryGetBuildUriForTypeOrDeclaringLocked(type, out var buildUri) ||
+                string.IsNullOrWhiteSpace(buildUri))
+            {
+                return null;
+            }
+
+            return Uri.TryCreate(buildUri, UriKind.Absolute, out var baseUri) ? baseUri : null;
         }
     }
 
@@ -1310,6 +2280,8 @@ public static class XamlSourceGenHotReloadManager
         {
             return new SourcePathWatchState(sourcePath, ReadLastWriteTicks(sourcePath));
         }
+
+        public string SourcePath => _sourcePath;
 
         public bool TryConsumeReloadSignal()
         {

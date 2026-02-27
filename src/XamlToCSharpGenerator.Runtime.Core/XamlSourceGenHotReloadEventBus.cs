@@ -22,6 +22,10 @@ public sealed class XamlSourceGenHotReloadEventBus : IXamlSourceGenHotReloadEven
 
     public event Action<SourceGenHotReloadUpdateContext>? HotReloadPipelineCompleted;
 
+    public event Action<SourceGenHotReloadTransportStatus>? HotReloadTransportStatusChanged;
+
+    public event Action<SourceGenHotReloadRemoteOperationStatus>? HotReloadRemoteOperationStatusChanged;
+
     public void PublishHotReloaded(Type[]? types)
     {
         HotReloaded?.Invoke(types);
@@ -50,5 +54,15 @@ public sealed class XamlSourceGenHotReloadEventBus : IXamlSourceGenHotReloadEven
     public void PublishPipelineCompleted(SourceGenHotReloadUpdateContext context)
     {
         HotReloadPipelineCompleted?.Invoke(context);
+    }
+
+    public void PublishTransportStatusChanged(SourceGenHotReloadTransportStatus status)
+    {
+        HotReloadTransportStatusChanged?.Invoke(status);
+    }
+
+    public void PublishRemoteOperationStatusChanged(SourceGenHotReloadRemoteOperationStatus status)
+    {
+        HotReloadRemoteOperationStatusChanged?.Invoke(status);
     }
 }

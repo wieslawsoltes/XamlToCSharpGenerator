@@ -9,12 +9,18 @@ public sealed class SourceGenHotReloadUpdateContext
         SourceGenHotReloadTrigger trigger,
         IReadOnlyList<Type>? requestedTypes,
         IReadOnlyList<Type> reloadedTypes,
-        int operationCount)
+        int operationCount,
+        long? operationId = null,
+        string? requestId = null,
+        long? correlationId = null)
     {
         Trigger = trigger;
         RequestedTypes = requestedTypes;
         ReloadedTypes = reloadedTypes ?? throw new ArgumentNullException(nameof(reloadedTypes));
         OperationCount = Math.Max(0, operationCount);
+        OperationId = operationId;
+        RequestId = requestId;
+        CorrelationId = correlationId;
     }
 
     public SourceGenHotReloadTrigger Trigger { get; }
@@ -24,4 +30,10 @@ public sealed class SourceGenHotReloadUpdateContext
     public IReadOnlyList<Type> ReloadedTypes { get; }
 
     public int OperationCount { get; }
+
+    public long? OperationId { get; }
+
+    public string? RequestId { get; }
+
+    public long? CorrelationId { get; }
 }

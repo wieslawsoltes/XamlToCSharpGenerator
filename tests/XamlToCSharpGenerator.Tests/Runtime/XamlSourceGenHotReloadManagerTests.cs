@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Styling;
@@ -303,6 +308,341 @@ public class XamlSourceGenHotReloadManagerTests
         void OnCompleted(SourceGenHotReloadUpdateContext context)
         {
             completedContext = context;
+        }
+    }
+
+    [Fact]
+    public void UpdateApplication_MetadataOnly_Mode_Completes_Metadata_Handshake_On_First_Metadata_Update()
+    {
+        ResetManager();
+
+        var originalMode = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE");
+        var originalTimeout = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS");
+        var originalModifiableAssemblies = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
+        var statuses = new List<SourceGenHotReloadTransportStatus>();
+
+        try
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", "MetadataOnly");
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", "1000");
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
+
+            void OnStatus(SourceGenHotReloadTransportStatus status)
+            {
+                lock (statuses)
+                {
+                    statuses.Add(status);
+                }
+            }
+
+            XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged += OnStatus;
+            try
+            {
+                XamlSourceGenHotReloadManager.Enable();
+
+                var instance = new ReloadTargetA();
+                XamlSourceGenHotReloadManager.Register(instance, _ => { });
+                XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReloadTargetA)]);
+            }
+            finally
+            {
+                XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged -= OnStatus;
+            }
+
+            Assert.True(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.TransportSelected, "MetadataUpdate"));
+            Assert.True(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.HandshakeStarted, "MetadataUpdate"));
+            Assert.True(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.HandshakeCompleted, "MetadataUpdate"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", originalMode);
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", originalTimeout);
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", originalModifiableAssemblies);
+            ResetManager();
+        }
+    }
+
+    [Fact]
+    public void Enable_Auto_Mode_Times_Out_Metadata_Handshake_And_Attempts_Remote_Fallback()
+    {
+        ResetManager();
+
+        var originalMode = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE");
+        var originalTimeout = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS");
+        var originalModifiableAssemblies = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
+        var originalRemoteEndpoint = Environment.GetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName);
+        var originalIosHotReloadEnabled = Environment.GetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED");
+        var statuses = new List<SourceGenHotReloadTransportStatus>();
+
+        try
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", "Auto");
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", "50");
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, null);
+            Environment.SetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED", "true");
+
+            void OnStatus(SourceGenHotReloadTransportStatus status)
+            {
+                lock (statuses)
+                {
+                    statuses.Add(status);
+                }
+            }
+
+            XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged += OnStatus;
+            try
+            {
+                XamlSourceGenHotReloadManager.Enable();
+
+                var completed = SpinWait.SpinUntil(
+                    () =>
+                    {
+                        lock (statuses)
+                        {
+                            return ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.HandshakeFailed, "MetadataUpdate") &&
+                                   ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.TransportSelected, "RemoteSocket", requireFallback: true);
+                        }
+                    },
+                    millisecondsTimeout: 3000);
+
+                Assert.True(completed);
+            }
+            finally
+            {
+                XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged -= OnStatus;
+            }
+
+            Assert.True(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.HandshakeFailed, "RemoteSocket"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", originalMode);
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", originalTimeout);
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", originalModifiableAssemblies);
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, originalRemoteEndpoint);
+            Environment.SetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED", originalIosHotReloadEnabled);
+            ResetManager();
+        }
+    }
+
+    [Fact]
+    public void Enable_Auto_Mode_Does_Not_Fallback_Without_Mobile_Context_Or_Remote_Endpoint()
+    {
+        ResetManager();
+
+        var originalMode = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE");
+        var originalTimeout = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS");
+        var originalModifiableAssemblies = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
+        var originalRemoteEndpoint = Environment.GetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName);
+        var originalIosHotReloadEnabled = Environment.GetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED");
+        var statuses = new List<SourceGenHotReloadTransportStatus>();
+
+        try
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", "Auto");
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", "50");
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, null);
+            Environment.SetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED", null);
+
+            void OnStatus(SourceGenHotReloadTransportStatus status)
+            {
+                lock (statuses)
+                {
+                    statuses.Add(status);
+                }
+            }
+
+            XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged += OnStatus;
+            try
+            {
+                XamlSourceGenHotReloadManager.Enable();
+
+                Thread.Sleep(200);
+            }
+            finally
+            {
+                XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged -= OnStatus;
+            }
+
+            Assert.False(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.HandshakeFailed, "MetadataUpdate"));
+            Assert.False(ContainsStatus(statuses, SourceGenHotReloadTransportStatusKind.TransportSelected, "RemoteSocket"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", originalMode);
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS", originalTimeout);
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", originalModifiableAssemblies);
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, originalRemoteEndpoint);
+            Environment.SetEnvironmentVariable("AXSG_IOS_HOTRELOAD_ENABLED", originalIosHotReloadEnabled);
+            ResetManager();
+        }
+    }
+
+    [Fact]
+    public void Disable_Resets_Transport_State_And_Next_Enable_Reinitializes_Transport()
+    {
+        ResetManager();
+
+        var originalMode = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE");
+        var originalModifiableAssemblies = Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES");
+        var statuses = new List<SourceGenHotReloadTransportStatus>();
+
+        try
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", "MetadataOnly");
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
+
+            void OnStatus(SourceGenHotReloadTransportStatus status)
+            {
+                lock (statuses)
+                {
+                    statuses.Add(status);
+                }
+            }
+
+            XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged += OnStatus;
+            try
+            {
+                XamlSourceGenHotReloadManager.Enable();
+                XamlSourceGenHotReloadManager.Disable();
+                XamlSourceGenHotReloadManager.Enable();
+            }
+            finally
+            {
+                XamlSourceGenHotReloadManager.HotReloadTransportStatusChanged -= OnStatus;
+            }
+
+            var selectedCount = CountStatuses(statuses, SourceGenHotReloadTransportStatusKind.TransportSelected, "MetadataUpdate");
+            Assert.True(selectedCount >= 2);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", originalMode);
+            Environment.SetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES", originalModifiableAssemblies);
+            ResetManager();
+        }
+    }
+
+    [Fact]
+    public async Task RemoteOnly_Transport_Applies_Remote_Operation_And_Publishes_Ack_And_Status()
+    {
+        ResetManager();
+
+        var originalMode = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE");
+        var originalEndpoint = Environment.GetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName);
+        var reloadCount = 0;
+        var operationStatuses = new List<SourceGenHotReloadRemoteOperationStatus>();
+        var ackReceived = new ManualResetEventSlim(initialState: false);
+        string? ackState = null;
+        bool? ackSuccess = null;
+        long? ackOperationId = null;
+
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptTask = Task.Run(() =>
+        {
+            using var socket = listener.AcceptTcpClient();
+            using var stream = socket.GetStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), bufferSize: 4096, leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+
+            _ = reader.ReadLine();
+            _ = reader.ReadLine();
+
+            var applyPayload = JsonSerializer.Serialize(new
+            {
+                messageType = "apply",
+                operationId = 42L,
+                requestId = "remote-request-42",
+                correlationId = 4200L,
+                typeNames = new[]
+                {
+                    typeof(RemoteTransportReloadTarget).AssemblyQualifiedName
+                }
+            });
+            writer.WriteLine(applyPayload);
+
+            var ackPayload = reader.ReadLine();
+            if (ackPayload is null)
+            {
+                return;
+            }
+
+            using var ackDocument = JsonDocument.Parse(ackPayload);
+            var ackRoot = ackDocument.RootElement;
+            if (ackRoot.TryGetProperty("operationId", out var operationElement) &&
+                operationElement.TryGetInt64(out var parsedOperationId))
+            {
+                ackOperationId = parsedOperationId;
+            }
+
+            if (ackRoot.TryGetProperty("state", out var stateElement) &&
+                stateElement.ValueKind == JsonValueKind.String)
+            {
+                ackState = stateElement.GetString();
+            }
+
+            if (ackRoot.TryGetProperty("isSuccess", out var successElement) &&
+                (successElement.ValueKind == JsonValueKind.True || successElement.ValueKind == JsonValueKind.False))
+            {
+                ackSuccess = successElement.GetBoolean();
+            }
+
+            ackReceived.Set();
+        });
+
+        try
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", "RemoteOnly");
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, "tcp://127.0.0.1:" + port);
+
+            var target = new RemoteTransportReloadTarget();
+            XamlSourceGenHotReloadManager.Register(target, _ => Interlocked.Increment(ref reloadCount));
+
+            void OnRemoteStatus(SourceGenHotReloadRemoteOperationStatus status)
+            {
+                lock (operationStatuses)
+                {
+                    operationStatuses.Add(status);
+                }
+            }
+
+            XamlSourceGenHotReloadManager.HotReloadRemoteOperationStatusChanged += OnRemoteStatus;
+            try
+            {
+                XamlSourceGenHotReloadManager.Enable();
+
+                Assert.True(ackReceived.Wait(5000));
+                Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref reloadCount) > 0, millisecondsTimeout: 3000));
+                await acceptTask.WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            finally
+            {
+                XamlSourceGenHotReloadManager.HotReloadRemoteOperationStatusChanged -= OnRemoteStatus;
+            }
+
+            Assert.Equal(1, reloadCount);
+            Assert.Equal(42L, ackOperationId);
+            Assert.Equal("Succeeded", ackState);
+            Assert.True(ackSuccess);
+
+            lock (operationStatuses)
+            {
+                Assert.Contains(operationStatuses, status => status.OperationId == 42L && status.State == SourceGenStudioOperationState.Applying);
+                Assert.Contains(operationStatuses, status => status.OperationId == 42L && status.State == SourceGenStudioOperationState.Succeeded);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AXSG_HOTRELOAD_TRANSPORT_MODE", originalMode);
+            Environment.SetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName, originalEndpoint);
+            ResetManager();
         }
     }
 
@@ -669,6 +1009,51 @@ public class XamlSourceGenHotReloadManagerTests
         XamlSourceGenTypeUriRegistry.Clear();
     }
 
+    private static bool ContainsStatus(
+        List<SourceGenHotReloadTransportStatus> statuses,
+        SourceGenHotReloadTransportStatusKind kind,
+        string transportName,
+        bool requireFallback = false)
+    {
+        for (var index = 0; index < statuses.Count; index++)
+        {
+            var status = statuses[index];
+            if (status.Kind != kind ||
+                !string.Equals(status.TransportName, transportName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (requireFallback && !status.IsFallback)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int CountStatuses(
+        List<SourceGenHotReloadTransportStatus> statuses,
+        SourceGenHotReloadTransportStatusKind kind,
+        string transportName)
+    {
+        var count = 0;
+        for (var index = 0; index < statuses.Count; index++)
+        {
+            var status = statuses[index];
+            if (status.Kind == kind &&
+                string.Equals(status.TransportName, transportName, StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     private sealed class ReloadTargetA
     {
         public int ReloadCount { get; set; }
@@ -780,6 +1165,10 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     private sealed class PipelineEventTarget
+    {
+    }
+
+    private sealed class RemoteTransportReloadTarget
     {
     }
 

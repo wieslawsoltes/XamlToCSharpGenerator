@@ -16,6 +16,10 @@ public interface IXamlSourceGenHotReloadEventBus
 
     event Action<SourceGenHotReloadUpdateContext>? HotReloadPipelineCompleted;
 
+    event Action<SourceGenHotReloadTransportStatus>? HotReloadTransportStatusChanged;
+
+    event Action<SourceGenHotReloadRemoteOperationStatus>? HotReloadRemoteOperationStatusChanged;
+
     void PublishHotReloaded(Type[]? types);
 
     void PublishHotReloadFailed(Type type, Exception exception);
@@ -27,4 +31,8 @@ public interface IXamlSourceGenHotReloadEventBus
     void PublishPipelineStarted(SourceGenHotReloadUpdateContext context);
 
     void PublishPipelineCompleted(SourceGenHotReloadUpdateContext context);
+
+    void PublishTransportStatusChanged(SourceGenHotReloadTransportStatus status);
+
+    void PublishRemoteOperationStatusChanged(SourceGenHotReloadRemoteOperationStatus status);
 }
