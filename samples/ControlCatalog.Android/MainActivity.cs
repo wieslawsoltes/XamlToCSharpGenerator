@@ -21,6 +21,9 @@ namespace ControlCatalog.Android
         {
             return base.CustomizeAppBuilder(builder)
                  .UseAvaloniaSourceGeneratedXaml()
+#if DEBUG
+                 .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000)
+#endif
                  .AfterSetup(_ =>
                  {
                      Pages.EmbedSample.Implementation = new EmbedSampleAndroid();

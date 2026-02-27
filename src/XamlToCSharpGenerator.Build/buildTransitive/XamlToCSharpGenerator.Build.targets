@@ -12,7 +12,184 @@
     <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == '' and '$(XamlSourceGenTransformRules)' != ''">$(XamlSourceGenTransformRules)</AvaloniaSourceGenTransformRules>
     <AvaloniaXamlCompilerBackend>$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled>$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
+    <_XamlSourceGenIsIosTarget>false</_XamlSourceGenIsIosTarget>
+    <_XamlSourceGenIsIosTarget Condition="'$(TargetPlatformIdentifier)' == 'iOS' or '$(TargetPlatformIdentifier)' == 'ios'">true</_XamlSourceGenIsIosTarget>
+    <_XamlSourceGenIsIosTarget Condition="'$(_XamlSourceGenIsIosTarget)' != 'true' and '$(TargetFramework)' != '' and $([System.String]::Copy('$(TargetFramework)').Contains('-ios'))">true</_XamlSourceGenIsIosTarget>
+    <_XamlSourceGenIsIosSimulator>false</_XamlSourceGenIsIosSimulator>
+    <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosTarget)' == 'true' and '$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').Contains('iossimulator'))">true</_XamlSourceGenIsIosSimulator>
+    <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenIsIosTarget)' == 'true' and ('$(Platform)' == 'iPhoneSimulator' or '$(PlatformTarget)' == 'iPhoneSimulator')">true</_XamlSourceGenIsIosSimulator>
+    <AvaloniaSourceGenIosHotReloadEnabled Condition="'$(AvaloniaSourceGenIosHotReloadEnabled)' == '' and '$(_XamlSourceGenIsIosTarget)' == 'true' and '$(Configuration)' == 'Debug'">true</AvaloniaSourceGenIosHotReloadEnabled>
+    <AvaloniaSourceGenIosHotReloadEnabled Condition="'$(AvaloniaSourceGenIosHotReloadEnabled)' == ''">false</AvaloniaSourceGenIosHotReloadEnabled>
+    <AvaloniaSourceGenIosHotReloadUseInterpreter Condition="'$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == '' and '$(AvaloniaSourceGenIosHotReloadEnabled)' == 'true'">true</AvaloniaSourceGenIosHotReloadUseInterpreter>
+    <AvaloniaSourceGenIosHotReloadUseInterpreter Condition="'$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == ''">false</AvaloniaSourceGenIosHotReloadUseInterpreter>
+    <_XamlSourceGenEnableIosDotNetWatchHotReload>false</_XamlSourceGenEnableIosDotNetWatchHotReload>
+    <_XamlSourceGenEnableIosDotNetWatchHotReload Condition="'$(_XamlSourceGenIsIosTarget)' == 'true' and '$(Configuration)' == 'Debug' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnabled)' == 'true'">true</_XamlSourceGenEnableIosDotNetWatchHotReload>
+    <UseInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(UseInterpreter)' == ''">true</UseInterpreter>
+    <MtouchInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(MtouchInterpreter)' == ''">all</MtouchInterpreter>
+    <!-- Keep dotnet watch responsive to filesystem changes while simulator app runs. -->
+    <_MlaunchCaptureOutput Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(_MlaunchCaptureOutput)' == ''">false</_MlaunchCaptureOutput>
+    <_MlaunchWaitForExit Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(_MlaunchWaitForExit)' == ''">false</_MlaunchWaitForExit>
+    <StartupHookSupport Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnableStartupHookSupport)' == 'true'">true</StartupHookSupport>
+    <_XamlSourceGenHasDotNetStartupHooksVar>false</_XamlSourceGenHasDotNetStartupHooksVar>
+    <_XamlSourceGenStartupHooksSuppressed>false</_XamlSourceGenStartupHooksSuppressed>
+    <_XamlSourceGenHasDotNetWatchNamedPipeVar>false</_XamlSourceGenHasDotNetWatchNamedPipeVar>
+    <_XamlSourceGenResolvedRemoteEndpoint>$(AvaloniaSourceGenHotReloadRemoteEndpoint)</_XamlSourceGenResolvedRemoteEndpoint>
+    <_XamlSourceGenResolvedRemoteEndpoint Condition="'$(_XamlSourceGenResolvedRemoteEndpoint)' == '' and '$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == 'true'">tcp://127.0.0.1:$(AvaloniaSourceGenHotReloadRemotePort)</_XamlSourceGenResolvedRemoteEndpoint>
+    <_XamlSourceGenRemoteEndpointWasAutoSelected>false</_XamlSourceGenRemoteEndpointWasAutoSelected>
+    <_XamlSourceGenRemoteEndpointWasAutoSelected Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenHotReloadRemoteEndpoint)' == '' and '$(_XamlSourceGenResolvedRemoteEndpoint)' != '' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == 'true'">true</_XamlSourceGenRemoteEndpointWasAutoSelected>
+    <_XamlSourceGenRequiresExplicitDeviceEndpoint>false</_XamlSourceGenRequiresExplicitDeviceEndpoint>
+    <_XamlSourceGenRequiresExplicitDeviceEndpoint Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint)' == 'true' and '$(AvaloniaSourceGenIosHotReloadTransportMode)' != 'MetadataOnly' and '$(_XamlSourceGenResolvedRemoteEndpoint)' == ''">true</_XamlSourceGenRequiresExplicitDeviceEndpoint>
+    <_XamlSourceGenEscapedAxsgRemoteEndpoint Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true'">$([System.String]::Copy('$(_XamlSourceGenResolvedRemoteEndpoint)').Replace(';', '%3B'))</_XamlSourceGenEscapedAxsgRemoteEndpoint>
+    <_XamlSourceGenMlaunchSetEnvArguments></_XamlSourceGenMlaunchSetEnvArguments>
+    <_XamlSourceGenHasSetEnvArgs>false</_XamlSourceGenHasSetEnvArgs>
+    <_XamlSourceGenHasDotNetWatchProxy>false</_XamlSourceGenHasDotNetWatchProxy>
+    <_XamlSourceGenHasDotNetWatchProxy Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyPath)' != '' and Exists('$(AvaloniaSourceGenIosDotNetWatchProxyPath)')">true</_XamlSourceGenHasDotNetWatchProxy>
   </PropertyGroup>
+
+  <Target Name="XamlToCSharpGenerator_PrepareIosMlaunchWrapper"
+          BeforeTargets="_ComputeMlaunchRunArguments;ComputeMlaunchRunArguments"
+          DependsOnTargets="_DetectSdkLocations"
+          Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true'">
+    <PropertyGroup>
+      <_XamlSourceGenOriginalMlaunchPath Condition="'$(_XamlSourceGenOriginalMlaunchPath)' == '' and '$(MlaunchPath)' != ''">$(MlaunchPath)</_XamlSourceGenOriginalMlaunchPath>
+      <_XamlSourceGenOriginalMlaunchPath Condition="'$(_XamlSourceGenOriginalMlaunchPath)' == '' and '$(_MlaunchPath)' != ''">$(_MlaunchPath)</_XamlSourceGenOriginalMlaunchPath>
+      <_XamlSourceGenMlaunchWrapperPath Condition="'$(_XamlSourceGenMlaunchWrapperPath)' == ''">$(IntermediateOutputPath)axsg-mlaunch-wrapper.sh</_XamlSourceGenMlaunchWrapperPath>
+      <_XamlSourceGenUseMlaunchWrapper>false</_XamlSourceGenUseMlaunchWrapper>
+      <_XamlSourceGenUseMlaunchWrapper Condition="'$(_XamlSourceGenOriginalMlaunchPath)' != '' and '$(_XamlSourceGenMlaunchWrapperPath)' != '' and '$(_XamlSourceGenOriginalMlaunchPath)' != '$(_XamlSourceGenMlaunchWrapperPath)'">true</_XamlSourceGenUseMlaunchWrapper>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(_XamlSourceGenUseMlaunchWrapper)' == 'true'">
+      <_XamlSourceGenMlaunchWrapperLines Include="#!/usr/bin/env bash" />
+      <_XamlSourceGenMlaunchWrapperLines Include="set -eo pipefail" />
+      <_XamlSourceGenMlaunchWrapperLines Include="REAL_MLAUNCH=&quot;$(_XamlSourceGenOriginalMlaunchPath)&quot;" />
+      <_XamlSourceGenMlaunchWrapperLines Include="declare -a AXSG_MLAUNCH_ENV_ARGS=()" />
+      <_XamlSourceGenMlaunchWrapperLines Include="axsg_export_simctl_child_env() { local name=&quot;$1&quot;; local value=&quot;${!name:-}&quot;; if [[ -n &quot;${value}&quot; ]]; then export &quot;SIMCTL_CHILD_${name}=${value}&quot;; fi; }" />
+      <_XamlSourceGenMlaunchWrapperLines Include="axsg_export_simctl_child_env DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME" />
+      <_XamlSourceGenMlaunchWrapperLines Include="axsg_export_simctl_child_env DOTNET_HOTRELOAD_NAMEDPIPE_NAME" />
+      <_XamlSourceGenMlaunchWrapperLines Include="axsg_export_simctl_child_env AXSG_HOTRELOAD_TRACE" />
+      <_XamlSourceGenMlaunchWrapperLines Include="if [[ -n &quot;${TMPDIR:-}&quot; ]]" />
+      <_XamlSourceGenMlaunchWrapperLines Include="then export SIMCTL_CHILD_AXSG_DOTNET_WATCH_PIPE_DIRECTORY=${TMPDIR}" />
+      <_XamlSourceGenMlaunchWrapperLines Include="fi" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="if [[ -n &quot;${DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME:-}&quot; ]]" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="then export SIMCTL_CHILD_AXSG_DOTNET_WATCH_PROXY_ACTIVE=true" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="if [[ -n &quot;${AXSG_HOTRELOAD_TRACE:-}&quot; ]]" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="then export AXSG_DOTNET_WATCH_PROXY_TRACE=1" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="export AXSG_DOTNET_WATCH_PROXY_LOG=${TMPDIR:-/tmp}/axsg-dotnet-watch-proxy-${DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME}.log" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="DOTNET_STARTUP_HOOKS= DOTNET_MODIFIABLE_ASSEMBLIES= DOTNET_WATCH=0 HOTRELOAD_DELTA_CLIENT_LOG_MESSAGES= dotnet exec &quot;$(AvaloniaSourceGenIosDotNetWatchProxyPath)&quot; --pipe-name &quot;${DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME}&quot; &gt;&gt;&quot;${AXSG_DOTNET_WATCH_PROXY_LOG}&quot; 2&gt;&amp;1 &amp;" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="echo &quot;[AXSG.HotReload.iOS] dotnet-watch proxy started: pipe=${DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME} log=${AXSG_DOTNET_WATCH_PROXY_LOG}&quot; &gt;&amp;2" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="else DOTNET_STARTUP_HOOKS= DOTNET_MODIFIABLE_ASSEMBLIES= DOTNET_WATCH=0 HOTRELOAD_DELTA_CLIENT_LOG_MESSAGES= dotnet exec &quot;$(AvaloniaSourceGenIosDotNetWatchProxyPath)&quot; --pipe-name &quot;${DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME}&quot; &gt;/dev/null 2&gt;&amp;1 &amp;" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="fi" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenHasDotNetWatchProxy)' == 'true'" Include="fi" />
+      <_XamlSourceGenMlaunchWrapperLines Include="export SIMCTL_CHILD_AXSG_IOS_HOTRELOAD_ENABLED=true" />
+      <_XamlSourceGenMlaunchWrapperLines Include="export SIMCTL_CHILD_AXSG_HOTRELOAD_TRANSPORT_MODE=$(AvaloniaSourceGenIosHotReloadTransportMode)" />
+      <_XamlSourceGenMlaunchWrapperLines Include="export SIMCTL_CHILD_AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS=$(AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs)" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(_XamlSourceGenResolvedRemoteEndpoint)' != ''" Include="export SIMCTL_CHILD_AXSG_HOTRELOAD_REMOTE_ENDPOINT=$(_XamlSourceGenResolvedRemoteEndpoint)" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies)' == 'true'" Include="if [[ -n &quot;${DOTNET_MODIFIABLE_ASSEMBLIES:-}&quot; ]]; then AXSG_MLAUNCH_ENV_ARGS+=(--setenv=DOTNET_MODIFIABLE_ASSEMBLIES=${DOTNET_MODIFIABLE_ASSEMBLIES}); fi" />
+      <_XamlSourceGenMlaunchWrapperLines Condition="'$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true'" Include="if [[ -n &quot;${DOTNET_STARTUP_HOOKS:-}&quot; ]]; then AXSG_MLAUNCH_ENV_ARGS+=(--setenv=DOTNET_STARTUP_HOOKS=${DOTNET_STARTUP_HOOKS}); fi" />
+      <_XamlSourceGenMlaunchWrapperLines Include="exec &quot;${REAL_MLAUNCH}&quot; &quot;${AXSG_MLAUNCH_ENV_ARGS[@]}&quot; &quot;$@&quot;" />
+    </ItemGroup>
+
+    <WriteLinesToFile Condition="'$(_XamlSourceGenUseMlaunchWrapper)' == 'true'"
+                      File="$(_XamlSourceGenMlaunchWrapperPath)"
+                      Lines="@(_XamlSourceGenMlaunchWrapperLines)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <Exec Condition="'$(_XamlSourceGenUseMlaunchWrapper)' == 'true'"
+          Command="chmod +x &quot;$(_XamlSourceGenMlaunchWrapperPath)&quot;" />
+
+    <PropertyGroup Condition="'$(_XamlSourceGenUseMlaunchWrapper)' == 'true'">
+      <MlaunchPath>$(_XamlSourceGenMlaunchWrapperPath)</MlaunchPath>
+      <_MlaunchPath>$(_XamlSourceGenMlaunchWrapperPath)</_MlaunchPath>
+    </PropertyGroup>
+    <Message Importance="Low"
+             Condition="'$(AvaloniaSourceGenIosHotReloadStartupBannerEnabled)' == 'true'"
+             Text="[AXSG.HotReload.iOS] Mlaunch wrapper: enabled=$(_XamlSourceGenUseMlaunchWrapper), original=$(_XamlSourceGenOriginalMlaunchPath), wrapper=$(_XamlSourceGenMlaunchWrapperPath)." />
+    <Message Importance="Low"
+             Condition="'$(AvaloniaSourceGenIosHotReloadStartupBannerEnabled)' == 'true'"
+             Text="[AXSG.HotReload.iOS] dotnet-watch proxy: configuredPath=$(AvaloniaSourceGenIosDotNetWatchProxyPath), exists=$(_XamlSourceGenHasDotNetWatchProxy)." />
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_BuildIosDotNetWatchProxy"
+          BeforeTargets="XamlToCSharpGenerator_PrepareIosMlaunchWrapper"
+          Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)' != '' and Exists('$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)')">
+    <MSBuild Projects="$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false"
+             BuildInParallel="false"
+             StopOnFirstFailure="true" />
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_ConfigureIosDotNetWatchHotReload"
+          BeforeTargets="_ComputeMlaunchRunArguments;ComputeMlaunchRunArguments;_PrepareRunMobile;ComputeRunArguments"
+          DependsOnTargets="_DetectSdkLocations"
+          Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true'">
+    <PropertyGroup>
+      <!-- Resolve simulator/device mode after iOS SDK targets have evaluated runtime/device state. -->
+      <_XamlSourceGenIsIosSimulator>false</_XamlSourceGenIsIosSimulator>
+      <_XamlSourceGenIsIosSimulator Condition="'$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').Contains('iossimulator'))">true</_XamlSourceGenIsIosSimulator>
+      <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_SdkIsSimulator)' == 'True'">true</_XamlSourceGenIsIosSimulator>
+      <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and ('$(Platform)' == 'iPhoneSimulator' or '$(PlatformTarget)' == 'iPhoneSimulator')">true</_XamlSourceGenIsIosSimulator>
+
+      <!-- For dotnet watch on simulator, detach launch so file watchers remain responsive. -->
+      <_MlaunchCaptureOutput Condition="'$(_XamlSourceGenIsIosSimulator)' == 'true'">false</_MlaunchCaptureOutput>
+      <_MlaunchWaitForExit Condition="'$(_XamlSourceGenIsIosSimulator)' == 'true'">false</_MlaunchWaitForExit>
+
+      <_XamlSourceGenDotNetStartupHooksValue>$(DOTNET_STARTUP_HOOKS)</_XamlSourceGenDotNetStartupHooksValue>
+      <_XamlSourceGenDotNetStartupHooksValue Condition="'$(_XamlSourceGenDotNetStartupHooksValue)' == ''">$([System.Environment]::GetEnvironmentVariable('DOTNET_STARTUP_HOOKS'))</_XamlSourceGenDotNetStartupHooksValue>
+      <_XamlSourceGenDotNetModifiableAssembliesValue>$(DOTNET_MODIFIABLE_ASSEMBLIES)</_XamlSourceGenDotNetModifiableAssembliesValue>
+      <_XamlSourceGenDotNetModifiableAssembliesValue Condition="'$(_XamlSourceGenDotNetModifiableAssembliesValue)' == ''">$([System.Environment]::GetEnvironmentVariable('DOTNET_MODIFIABLE_ASSEMBLIES'))</_XamlSourceGenDotNetModifiableAssembliesValue>
+      <_XamlSourceGenDotNetWatchNamedPipeValue>$(DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME)</_XamlSourceGenDotNetWatchNamedPipeValue>
+      <_XamlSourceGenDotNetWatchNamedPipeValue Condition="'$(_XamlSourceGenDotNetWatchNamedPipeValue)' == ''">$([System.Environment]::GetEnvironmentVariable('DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME'))</_XamlSourceGenDotNetWatchNamedPipeValue>
+      <_XamlSourceGenDotNetHotReloadNamedPipeValue>$(DOTNET_HOTRELOAD_NAMEDPIPE_NAME)</_XamlSourceGenDotNetHotReloadNamedPipeValue>
+      <_XamlSourceGenDotNetHotReloadNamedPipeValue Condition="'$(_XamlSourceGenDotNetHotReloadNamedPipeValue)' == ''">$([System.Environment]::GetEnvironmentVariable('DOTNET_HOTRELOAD_NAMEDPIPE_NAME'))</_XamlSourceGenDotNetHotReloadNamedPipeValue>
+      <_XamlSourceGenAxsgTraceValue>$(AXSG_HOTRELOAD_TRACE)</_XamlSourceGenAxsgTraceValue>
+      <_XamlSourceGenAxsgTraceValue Condition="'$(_XamlSourceGenAxsgTraceValue)' == ''">$([System.Environment]::GetEnvironmentVariable('AXSG_HOTRELOAD_TRACE'))</_XamlSourceGenAxsgTraceValue>
+
+      <_XamlSourceGenEscapedDotNetStartupHooks>$([System.String]::Copy('$(_XamlSourceGenDotNetStartupHooksValue)').Replace(';', '%3B'))</_XamlSourceGenEscapedDotNetStartupHooks>
+      <_XamlSourceGenEscapedDotNetModifiableAssemblies>$([System.String]::Copy('$(_XamlSourceGenDotNetModifiableAssembliesValue)').Replace(';', '%3B'))</_XamlSourceGenEscapedDotNetModifiableAssemblies>
+      <_XamlSourceGenEscapedDotNetWatchNamedPipe>$([System.String]::Copy('$(_XamlSourceGenDotNetWatchNamedPipeValue)').Replace(';', '%3B'))</_XamlSourceGenEscapedDotNetWatchNamedPipe>
+      <_XamlSourceGenEscapedDotNetHotReloadNamedPipe>$([System.String]::Copy('$(_XamlSourceGenDotNetHotReloadNamedPipeValue)').Replace(';', '%3B'))</_XamlSourceGenEscapedDotNetHotReloadNamedPipe>
+      <_XamlSourceGenEscapedAxsgTrace>$([System.String]::Copy('$(_XamlSourceGenAxsgTraceValue)').Replace(';', '%3B'))</_XamlSourceGenEscapedAxsgTrace>
+      <_XamlSourceGenEscapedAxsgTransportMode>$([System.String]::Copy('$(AvaloniaSourceGenIosHotReloadTransportMode)').Replace(';', '%3B'))</_XamlSourceGenEscapedAxsgTransportMode>
+      <_XamlSourceGenEscapedAxsgHandshakeTimeoutMs>$([System.String]::Copy('$(AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs)').Replace(';', '%3B'))</_XamlSourceGenEscapedAxsgHandshakeTimeoutMs>
+
+      <_XamlSourceGenResolvedRemoteEndpoint>$(AvaloniaSourceGenHotReloadRemoteEndpoint)</_XamlSourceGenResolvedRemoteEndpoint>
+      <_XamlSourceGenResolvedRemoteEndpoint Condition="'$(_XamlSourceGenResolvedRemoteEndpoint)' == '' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == 'true'">tcp://127.0.0.1:$(AvaloniaSourceGenHotReloadRemotePort)</_XamlSourceGenResolvedRemoteEndpoint>
+      <_XamlSourceGenRemoteEndpointWasAutoSelected>false</_XamlSourceGenRemoteEndpointWasAutoSelected>
+      <_XamlSourceGenRemoteEndpointWasAutoSelected Condition="'$(AvaloniaSourceGenHotReloadRemoteEndpoint)' == '' and '$(_XamlSourceGenResolvedRemoteEndpoint)' != '' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == 'true'">true</_XamlSourceGenRemoteEndpointWasAutoSelected>
+      <_XamlSourceGenRequiresExplicitDeviceEndpoint>false</_XamlSourceGenRequiresExplicitDeviceEndpoint>
+      <_XamlSourceGenRequiresExplicitDeviceEndpoint Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint)' == 'true' and '$(AvaloniaSourceGenIosHotReloadTransportMode)' != 'MetadataOnly' and '$(_XamlSourceGenResolvedRemoteEndpoint)' == ''">true</_XamlSourceGenRequiresExplicitDeviceEndpoint>
+      <_XamlSourceGenEscapedAxsgRemoteEndpoint>$([System.String]::Copy('$(_XamlSourceGenResolvedRemoteEndpoint)').Replace(';', '%3B'))</_XamlSourceGenEscapedAxsgRemoteEndpoint>
+
+      <_XamlSourceGenHasDotNetStartupHooksVar>false</_XamlSourceGenHasDotNetStartupHooksVar>
+      <_XamlSourceGenHasDotNetStartupHooksVar Condition="'$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true' and '$(_XamlSourceGenDotNetStartupHooksValue)' != ''">true</_XamlSourceGenHasDotNetStartupHooksVar>
+      <_XamlSourceGenStartupHooksSuppressed>false</_XamlSourceGenStartupHooksSuppressed>
+      <_XamlSourceGenStartupHooksSuppressed Condition="'$(_XamlSourceGenDotNetStartupHooksValue)' != '' and '$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' != 'true'">true</_XamlSourceGenStartupHooksSuppressed>
+      <_XamlSourceGenHasDotNetWatchNamedPipeVar>false</_XamlSourceGenHasDotNetWatchNamedPipeVar>
+      <_XamlSourceGenHasDotNetWatchNamedPipeVar Condition="'$(_XamlSourceGenDotNetWatchNamedPipeValue)' != '' or '$(_XamlSourceGenDotNetHotReloadNamedPipeValue)' != ''">true</_XamlSourceGenHasDotNetWatchNamedPipeVar>
+
+      <_XamlSourceGenMlaunchSetEnvArguments></_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true' and '$(_XamlSourceGenDotNetStartupHooksValue)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=DOTNET_STARTUP_HOOKS=$(_XamlSourceGenEscapedDotNetStartupHooks)</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies)' == 'true' and '$(_XamlSourceGenDotNetModifiableAssembliesValue)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=DOTNET_MODIFIABLE_ASSEMBLIES=$(_XamlSourceGenEscapedDotNetModifiableAssemblies)</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenDotNetWatchNamedPipeValue)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME=$(_XamlSourceGenEscapedDotNetWatchNamedPipe)</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenDotNetHotReloadNamedPipeValue)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=DOTNET_HOTRELOAD_NAMEDPIPE_NAME=$(_XamlSourceGenEscapedDotNetHotReloadNamedPipe)</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenAxsgTraceValue)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=AXSG_HOTRELOAD_TRACE=$(_XamlSourceGenEscapedAxsgTrace)</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true'">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=AXSG_HOTRELOAD_TRANSPORT_MODE=$(_XamlSourceGenEscapedAxsgTransportMode);--setenv=AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS=$(_XamlSourceGenEscapedAxsgHandshakeTimeoutMs);--setenv=AXSG_IOS_HOTRELOAD_ENABLED=true</_XamlSourceGenMlaunchSetEnvArguments>
+      <_XamlSourceGenMlaunchSetEnvArguments Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenResolvedRemoteEndpoint)' != ''">$(_XamlSourceGenMlaunchSetEnvArguments);--setenv=AXSG_HOTRELOAD_REMOTE_ENDPOINT=$(_XamlSourceGenEscapedAxsgRemoteEndpoint)</_XamlSourceGenMlaunchSetEnvArguments>
+
+      <_XamlSourceGenHasSetEnvArgs>false</_XamlSourceGenHasSetEnvArgs>
+      <_XamlSourceGenHasSetEnvArgs Condition="'$(_XamlSourceGenMlaunchSetEnvArguments)' != ''">true</_XamlSourceGenHasSetEnvArgs>
+      <MlaunchAdditionalArgumentsProperty Condition="'$(_XamlSourceGenHasSetEnvArgs)' == 'true' and $([System.String]::Copy('$(MlaunchAdditionalArgumentsProperty)').Contains('AXSG_IOS_HOTRELOAD_ENABLED')) != 'True'">$(MlaunchAdditionalArgumentsProperty)$(_XamlSourceGenMlaunchSetEnvArguments)</MlaunchAdditionalArgumentsProperty>
+    </PropertyGroup>
+    <Message Importance="Low"
+             Condition="'$(AvaloniaSourceGenIosHotReloadStartupBannerEnabled)' == 'true'"
+             Text="[AXSG.HotReload.iOS] Launch tuning: sdkSimulator=$(_SdkIsSimulator), simulator=$(_XamlSourceGenIsIosSimulator), waitForExit=$(_MlaunchWaitForExit), captureOutput=$(_MlaunchCaptureOutput)." />
+    <Warning Condition="'$(_XamlSourceGenRequiresExplicitDeviceEndpoint)' == 'true'"
+             Text="[AXSG.HotReload.iOS] Physical-device remote fallback requires a reachable host endpoint. Set AvaloniaSourceGenHotReloadRemoteEndpoint (or AXSG_HOTRELOAD_REMOTE_ENDPOINT), for example tcp://192.168.1.10:$(AvaloniaSourceGenHotReloadRemotePort)." />
+    <Message Importance="High"
+             Condition="'$(AvaloniaSourceGenIosHotReloadStartupBannerEnabled)' == 'true'"
+             Text="[AXSG.HotReload.iOS] Enabled for $(MSBuildProjectName) (TFM=$(TargetFramework), watchBuild=$(DotNetWatchBuild), watchEnv=$(DOTNET_WATCH), sdkSimulator=$(_SdkIsSimulator), simulator=$(_XamlSourceGenIsIosSimulator), interpreter=$(AvaloniaSourceGenIosHotReloadUseInterpreter), forwardEnv=$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment), forwardStartupHooks=$(AvaloniaSourceGenIosHotReloadForwardStartupHooks), forwardModifiableAssemblies=$(AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies), startupHookSupport=$(StartupHookSupport), transport=$(AvaloniaSourceGenIosHotReloadTransportMode), timeoutMs=$(AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs), remoteEndpoint=$(_XamlSourceGenResolvedRemoteEndpoint), remoteEndpointAuto=$(_XamlSourceGenRemoteEndpointWasAutoSelected), requiresExplicitDeviceEndpoint=$(_XamlSourceGenRequiresExplicitDeviceEndpoint), startupHooksVar=$(_XamlSourceGenHasDotNetStartupHooksVar), startupHooksSuppressed=$(_XamlSourceGenStartupHooksSuppressed), namedPipeVar=$(_XamlSourceGenHasDotNetWatchNamedPipeVar), setenvArgs=$(_XamlSourceGenHasSetEnvArgs), waitForExit=$(_MlaunchWaitForExit), captureOutput=$(_MlaunchCaptureOutput))." />
+  </Target>
 
   <PropertyGroup Condition="'$(XamlSourceGenEnabled)' == 'true'">
     <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>

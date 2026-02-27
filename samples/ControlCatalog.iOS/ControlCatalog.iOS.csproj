@@ -1,10 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\src\XamlToCSharpGenerator.Build\buildTransitive\XamlToCSharpGenerator.Build.props" />
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ProvisioningType>manual</ProvisioningType>
     <TargetFramework>net10.0-ios</TargetFramework>
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
+    <AvaloniaSourceGenIosDotNetWatchProxyProjectPath>$(MSBuildProjectDirectory)/../../src/XamlToCSharpGenerator.DotNetWatch.Proxy/XamlToCSharpGenerator.DotNetWatch.Proxy.csproj</AvaloniaSourceGenIosDotNetWatchProxyProjectPath>
+    <AvaloniaSourceGenIosDotNetWatchProxyPath>$(MSBuildProjectDirectory)/../../src/XamlToCSharpGenerator.DotNetWatch.Proxy/bin/$(Configuration)/net10.0/XamlToCSharpGenerator.DotNetWatch.Proxy.dll</AvaloniaSourceGenIosDotNetWatchProxyPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,4 +24,6 @@
     <ProjectReference Include="..\ControlCatalog\ControlCatalog.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
   </ItemGroup>
+
+  <Import Project="..\..\src\XamlToCSharpGenerator.Build\buildTransitive\XamlToCSharpGenerator.Build.targets" />
 </Project>

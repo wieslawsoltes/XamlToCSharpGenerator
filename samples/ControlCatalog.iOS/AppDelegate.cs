@@ -1,5 +1,6 @@
 using Foundation;
 using UIKit;
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.iOS;
@@ -16,12 +17,40 @@ namespace ControlCatalog
     {
         protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
         {
+            LogHotReloadEnvironment();
+
             return base.CustomizeAppBuilder(builder)
                 .UseAvaloniaSourceGeneratedXaml()
+#if DEBUG
+                .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000)
+#endif
                 .AfterSetup(_ =>
                 {
                     Pages.EmbedSample.Implementation = new EmbedSampleIOS();
                 });
+        }
+
+        private static void LogHotReloadEnvironment()
+        {
+            var trace = Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_TRACE");
+            if (string.IsNullOrWhiteSpace(trace))
+            {
+                return;
+            }
+
+            var message =
+                "[AXSG.iOS.Env] DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME=" +
+                (Environment.GetEnvironmentVariable("DOTNET_WATCH_HOTRELOAD_NAMEDPIPE_NAME") ?? "<null>") +
+                ", DOTNET_HOTRELOAD_NAMEDPIPE_NAME=" +
+                (Environment.GetEnvironmentVariable("DOTNET_HOTRELOAD_NAMEDPIPE_NAME") ?? "<null>") +
+                ", DOTNET_MODIFIABLE_ASSEMBLIES=" +
+                (Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES") ?? "<null>") +
+                ", DOTNET_STARTUP_HOOKS=" +
+                (Environment.GetEnvironmentVariable("DOTNET_STARTUP_HOOKS") ?? "<null>") +
+                ", AXSG_DOTNET_WATCH_PIPE_DIRECTORY=" +
+                (Environment.GetEnvironmentVariable("AXSG_DOTNET_WATCH_PIPE_DIRECTORY") ?? "<null>");
+
+            Console.WriteLine(message);
         }
     }
 }

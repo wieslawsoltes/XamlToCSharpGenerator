@@ -33,6 +33,19 @@
     <AvaloniaSourceGenImplicitProjectNamespacesEnabled Condition="'$(AvaloniaSourceGenImplicitProjectNamespacesEnabled)' == ''">false</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
     <AvaloniaSourceGenGlobalXmlnsPrefixes Condition="'$(AvaloniaSourceGenGlobalXmlnsPrefixes)' == ''"></AvaloniaSourceGenGlobalXmlnsPrefixes>
     <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == ''"></AvaloniaSourceGenTransformRules>
+    <AvaloniaSourceGenIosHotReloadEnableStartupHookSupport Condition="'$(AvaloniaSourceGenIosHotReloadEnableStartupHookSupport)' == ''">false</AvaloniaSourceGenIosHotReloadEnableStartupHookSupport>
+    <AvaloniaSourceGenIosHotReloadForwardWatchEnvironment Condition="'$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == ''">true</AvaloniaSourceGenIosHotReloadForwardWatchEnvironment>
+    <AvaloniaSourceGenIosHotReloadForwardStartupHooks Condition="'$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == ''">false</AvaloniaSourceGenIosHotReloadForwardStartupHooks>
+    <AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies Condition="'$(AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies)' == ''">false</AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies>
+    <AvaloniaSourceGenIosHotReloadStartupBannerEnabled Condition="'$(AvaloniaSourceGenIosHotReloadStartupBannerEnabled)' == ''">true</AvaloniaSourceGenIosHotReloadStartupBannerEnabled>
+    <AvaloniaSourceGenIosHotReloadTransportMode Condition="'$(AvaloniaSourceGenIosHotReloadTransportMode)' == ''">Auto</AvaloniaSourceGenIosHotReloadTransportMode>
+    <AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs Condition="'$(AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs)' == ''">3000</AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs>
+    <AvaloniaSourceGenHotReloadRemoteEndpoint Condition="'$(AvaloniaSourceGenHotReloadRemoteEndpoint)' == ''"></AvaloniaSourceGenHotReloadRemoteEndpoint>
+    <AvaloniaSourceGenHotReloadRemotePort Condition="'$(AvaloniaSourceGenHotReloadRemotePort)' == ''">45820</AvaloniaSourceGenHotReloadRemotePort>
+    <AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled Condition="'$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == ''">true</AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled>
+    <AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint Condition="'$(AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint)' == ''">true</AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint>
+    <AvaloniaSourceGenIosDotNetWatchProxyProjectPath Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)' == ''"></AvaloniaSourceGenIosDotNetWatchProxyProjectPath>
+    <AvaloniaSourceGenIosDotNetWatchProxyPath Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyPath)' == ''"></AvaloniaSourceGenIosDotNetWatchProxyPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -67,6 +80,19 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitProjectNamespacesEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenGlobalXmlnsPrefixes" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTransformRules" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadUseInterpreter" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadEnableStartupHookSupport" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadForwardWatchEnvironment" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadForwardStartupHooks" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadStartupBannerEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadTransportMode" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadRemoteEndpoint" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadRemotePort" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint" />
     <CompilerVisibleProperty Include="RootNamespace" />
     <CompilerVisibleProperty Include="IntermediateOutputPath" />
     <CompilerVisibleProperty Include="BaseIntermediateOutputPath" />
