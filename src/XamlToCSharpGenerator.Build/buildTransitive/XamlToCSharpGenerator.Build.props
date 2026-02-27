@@ -42,7 +42,7 @@
     <AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs Condition="'$(AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs)' == ''">3000</AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs>
     <AvaloniaSourceGenHotReloadRemoteEndpoint Condition="'$(AvaloniaSourceGenHotReloadRemoteEndpoint)' == ''"></AvaloniaSourceGenHotReloadRemoteEndpoint>
     <AvaloniaSourceGenHotReloadRemotePort Condition="'$(AvaloniaSourceGenHotReloadRemotePort)' == ''">45820</AvaloniaSourceGenHotReloadRemotePort>
-    <AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled Condition="'$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == ''">true</AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled>
+    <AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled Condition="'$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == ''">false</AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled>
     <AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint Condition="'$(AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint)' == ''">true</AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint>
     <AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenIosDotNetWatchProxyProjectPath Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)' == ''"></AvaloniaSourceGenIosDotNetWatchProxyProjectPath>

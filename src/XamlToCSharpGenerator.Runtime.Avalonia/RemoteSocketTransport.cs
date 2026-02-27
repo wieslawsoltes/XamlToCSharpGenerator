@@ -16,6 +16,8 @@ internal sealed class RemoteSocketTransport :
     ISourceGenHotReloadRemoteOperationTransport
 {
     internal const string RemoteEndpointEnvVarName = "AXSG_HOTRELOAD_REMOTE_ENDPOINT";
+    internal const string RemoteEndpointExplicitEnvVarName = "AXSG_HOTRELOAD_REMOTE_ENDPOINT_EXPLICIT";
+    private const string NoEndpointSentinel = "__AXSG_NO_ENDPOINT__";
 
     private readonly object _sync = new();
     private readonly object _sendSync = new();
@@ -28,6 +30,13 @@ internal sealed class RemoteSocketTransport :
     public SourceGenHotReloadTransportCapabilities Capabilities => BuildCapabilities();
 
     public event Action<SourceGenHotReloadRemoteUpdateRequest>? RemoteUpdateReceived;
+
+    internal static bool HasConfiguredEndpointEnvironment()
+    {
+        var raw = GetConfiguredEndpointRawValue();
+        return !string.IsNullOrWhiteSpace(raw) &&
+               !string.Equals(raw, NoEndpointSentinel, StringComparison.Ordinal);
+    }
 
     public SourceGenHotReloadHandshakeResult StartHandshake(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
@@ -339,7 +348,8 @@ internal sealed class RemoteSocketTransport :
 
     private static bool TryResolveEndpoint(out RemoteEndpoint endpoint, out string error)
     {
-        var raw = Environment.GetEnvironmentVariable(RemoteEndpointEnvVarName);
+        var raw = GetConfiguredEndpointRawValue();
+
         if (string.IsNullOrWhiteSpace(raw))
         {
             endpoint = default;
@@ -357,6 +367,23 @@ internal sealed class RemoteSocketTransport :
         error = "Invalid AXSG_HOTRELOAD_REMOTE_ENDPOINT value '" + raw + "'. Expected host:port, tcp://host:port, ws://host:port/path, or wss://host:port/path.";
         endpoint = default;
         return false;
+    }
+
+    private static string GetConfiguredEndpointRawValue()
+    {
+        var explicitFlag = Environment.GetEnvironmentVariable(RemoteEndpointExplicitEnvVarName);
+        if (string.Equals(explicitFlag, "false", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        var raw = Environment.GetEnvironmentVariable(RemoteEndpointEnvVarName);
+        if (string.Equals(raw, NoEndpointSentinel, StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        return raw ?? string.Empty;
     }
 
     private static bool TryParseUriEndpoint(string raw, out RemoteEndpoint endpoint)

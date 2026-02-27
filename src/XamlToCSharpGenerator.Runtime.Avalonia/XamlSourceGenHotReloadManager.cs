@@ -940,12 +940,7 @@ public static class XamlSourceGenHotReloadManager
             return false;
         }
 
-        if (IsEnabledByEnvironment(IosHotReloadEnabledEnvVarName))
-        {
-            return true;
-        }
-
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(RemoteSocketTransport.RemoteEndpointEnvVarName));
+        return RemoteSocketTransport.HasConfiguredEndpointEnvironment();
     }
 
     private static SourceGenHotReloadTransportMode ResolveTransportModeFromEnvironment()
