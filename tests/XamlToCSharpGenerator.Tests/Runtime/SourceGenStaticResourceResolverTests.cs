@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Avalonia.Controls;
+using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using XamlToCSharpGenerator.Runtime;
 
@@ -41,6 +42,62 @@ public class SourceGenStaticResourceResolverTests
             anchor: null,
             key: "AccentBrush",
             currentUri: "avares://Demo/Main.axaml");
+
+        Assert.Equal("Blue", resolved);
+    }
+
+    [Fact]
+    public void Resolve_Normalizes_Relative_CurrentUri_Using_UriContext_BaseUri()
+    {
+        ResetRuntimeRegistries();
+
+        XamlIncludeGraphRegistry.Register(
+            "avares://Demo/FluentTheme.xaml",
+            "avares://Demo/Accents/BaseColorsPalette.xaml",
+            "MergedDictionaries");
+
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Accents/BaseColorsPalette.xaml",
+            static _ => new Hashtable
+            {
+                ["AccentBrush"] = "Blue"
+            });
+
+        var resolved = SourceGenStaticResourceResolver.Resolve(
+            anchor: null,
+            key: "AccentBrush",
+            currentUri: "/FluentTheme.xaml",
+            serviceProvider: new UriContextServiceProvider(new Uri("avares://Demo/App.axaml")));
+
+        Assert.Equal("Blue", resolved);
+    }
+
+    [Fact]
+    public void Resolve_Normalizes_Relative_CurrentUri_Using_RootObject_Assembly_When_UriContext_Is_Missing()
+    {
+        ResetRuntimeRegistries();
+
+        var rootAssemblyName = typeof(RootAnchor).Assembly.GetName().Name;
+        Assert.False(string.IsNullOrWhiteSpace(rootAssemblyName));
+        var rootThemeUri = "avares://" + rootAssemblyName + "/FluentTheme.xaml";
+
+        XamlIncludeGraphRegistry.Register(
+            rootThemeUri,
+            "avares://" + rootAssemblyName + "/Accents/BaseColorsPalette.xaml",
+            "MergedDictionaries");
+
+        XamlSourceGenRegistry.Register(
+            "avares://" + rootAssemblyName + "/Accents/BaseColorsPalette.xaml",
+            static _ => new Hashtable
+            {
+                ["AccentBrush"] = "Blue"
+            });
+
+        var resolved = SourceGenStaticResourceResolver.Resolve(
+            anchor: null,
+            key: "AccentBrush",
+            currentUri: "/FluentTheme.xaml",
+            serviceProvider: new RootObjectServiceProvider(new RootAnchor()));
 
         Assert.Equal("Blue", resolved);
     }
@@ -426,5 +483,42 @@ public class SourceGenStaticResourceResolverTests
         {
             return null;
         }
+    }
+
+    private sealed class UriContextServiceProvider : IServiceProvider, IUriContext
+    {
+        public UriContextServiceProvider(Uri baseUri)
+        {
+            BaseUri = baseUri;
+        }
+
+        public Uri BaseUri { get; set; }
+
+        public object? GetService(Type serviceType)
+        {
+            return serviceType == typeof(IUriContext) ? this : null;
+        }
+    }
+
+    private sealed class RootObjectServiceProvider : IServiceProvider, IRootObjectProvider
+    {
+        public RootObjectServiceProvider(object rootObject)
+        {
+            RootObject = rootObject;
+            IntermediateRootObject = rootObject;
+        }
+
+        public object RootObject { get; }
+
+        public object IntermediateRootObject { get; }
+
+        public object? GetService(Type serviceType)
+        {
+            return serviceType == typeof(IRootObjectProvider) ? this : null;
+        }
+    }
+
+    private sealed class RootAnchor
+    {
     }
 }

@@ -1265,6 +1265,26 @@ public static class SourceGenMarkupExtensionRuntime
 
             throw;
         }
+        catch (XamlLoadException)
+        {
+            if (TryResolveStaticResourceFallback(
+                    resourceKey,
+                    targetObject,
+                    baseUri,
+                    effectiveServiceProvider,
+                    effectiveParentStack,
+                    out var resolvedFallback))
+            {
+                return resolvedFallback;
+            }
+
+            if (targetObject is AvaloniaObject)
+            {
+                return AvaloniaProperty.UnsetValue;
+            }
+
+            throw;
+        }
     }
 
     private static bool ShouldDeferStaticResourceResolution(
@@ -1334,24 +1354,106 @@ public static class SourceGenMarkupExtensionRuntime
             intermediateRootObject,
             targetObject,
             targetProperty,
-            ResolveBaseUri(parentServiceProvider, baseUri),
+            ResolveBaseUri(parentServiceProvider, baseUri, rootObject, intermediateRootObject, targetObject),
             BuildParentStack(targetObject, parentStack));
     }
 
-    private static Uri ResolveBaseUri(IServiceProvider? parentServiceProvider, string? baseUri)
+    private static Uri ResolveBaseUri(
+        IServiceProvider? parentServiceProvider,
+        string? baseUri,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject)
     {
-        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext parentUriContext)
+        var fallbackAssemblyName = ResolveFallbackAssemblyName(rootObject, intermediateRootObject, targetObject);
+        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext parentUriContext &&
+            parentUriContext.BaseUri is { } parentBaseUri)
         {
-            return parentUriContext.BaseUri;
+            if (parentBaseUri.IsAbsoluteUri)
+            {
+                return parentBaseUri;
+            }
+
+            if (TryResolveAbsoluteBaseUri(parentBaseUri.OriginalString, fallbackAssemblyName, out var normalizedParentBaseUri))
+            {
+                return normalizedParentBaseUri;
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(baseUri) &&
-            Uri.TryCreate(baseUri, UriKind.RelativeOrAbsolute, out var resolvedBaseUri))
+        if (TryResolveAbsoluteBaseUri(baseUri, fallbackAssemblyName, out var resolvedBaseUri))
         {
             return resolvedBaseUri;
         }
 
-        return new Uri("avares://sourcegen/");
+        return new Uri("avares://" + fallbackAssemblyName + "/");
+    }
+
+    private static bool TryResolveAbsoluteBaseUri(
+        string? baseUri,
+        string fallbackAssemblyName,
+        out Uri resolvedBaseUri)
+    {
+        resolvedBaseUri = default!;
+        if (string.IsNullOrWhiteSpace(baseUri))
+        {
+            return false;
+        }
+
+        var trimmedBaseUri = baseUri.Trim();
+        if (HasExplicitUriScheme(trimmedBaseUri) &&
+            Uri.TryCreate(trimmedBaseUri, UriKind.Absolute, out var absoluteBaseUri))
+        {
+            resolvedBaseUri = absoluteBaseUri;
+            return true;
+        }
+
+        if (!Uri.TryCreate(trimmedBaseUri, UriKind.RelativeOrAbsolute, out var candidateUri) ||
+            candidateUri.IsAbsoluteUri)
+        {
+            return false;
+        }
+
+        var normalizedPath = trimmedBaseUri.Replace('\\', '/').TrimStart('/');
+        resolvedBaseUri = normalizedPath.Length == 0
+            ? new Uri("avares://" + fallbackAssemblyName + "/")
+            : new Uri("avares://" + fallbackAssemblyName + "/" + normalizedPath);
+        return true;
+    }
+
+    private static bool HasExplicitUriScheme(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.IndexOf("://", StringComparison.Ordinal) > 0;
+    }
+
+    private static string ResolveFallbackAssemblyName(
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject)
+    {
+        var rootAssemblyName = rootObject.GetType().Assembly.GetName().Name;
+        if (!string.IsNullOrWhiteSpace(rootAssemblyName))
+        {
+            return rootAssemblyName;
+        }
+
+        var intermediateAssemblyName = intermediateRootObject.GetType().Assembly.GetName().Name;
+        if (!string.IsNullOrWhiteSpace(intermediateAssemblyName))
+        {
+            return intermediateAssemblyName;
+        }
+
+        var targetAssemblyName = targetObject.GetType().Assembly.GetName().Name;
+        if (!string.IsNullOrWhiteSpace(targetAssemblyName))
+        {
+            return targetAssemblyName;
+        }
+
+        return "sourcegen";
     }
 
     private static object[] BuildParentStack(object targetObject, IReadOnlyList<object>? parentStack)
@@ -1408,18 +1510,19 @@ public static class SourceGenMarkupExtensionRuntime
         if (!string.IsNullOrWhiteSpace(baseUri))
         {
             var trimmed = baseUri.Trim();
-            if (Uri.TryCreate(trimmed, UriKind.RelativeOrAbsolute, out var resolved))
+            if (HasExplicitUriScheme(trimmed) &&
+                Uri.TryCreate(trimmed, UriKind.RelativeOrAbsolute, out var resolved))
             {
                 if (resolved.IsAbsoluteUri)
                 {
                     return resolved;
                 }
+            }
 
-                var normalizedPath = trimmed.Replace('\\', '/').TrimStart('/');
-                if (normalizedPath.Length > 0)
-                {
-                    return new Uri("avares://" + localAssemblyName + "/" + normalizedPath);
-                }
+            var normalizedPath = trimmed.Replace('\\', '/').TrimStart('/');
+            if (normalizedPath.Length > 0)
+            {
+                return new Uri("avares://" + localAssemblyName + "/" + normalizedPath);
             }
         }
 

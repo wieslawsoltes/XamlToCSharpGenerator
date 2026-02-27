@@ -1,7 +1,6 @@
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Avalonia.Markup.Xaml;
 
@@ -9,9 +8,9 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public static class AvaloniaSourceGeneratedXamlLoader
 {
-    private const string TraceEnvVarName = "AXSG_HOTRELOAD_TRACE";
     private static readonly object Sync = new();
-    private static readonly ConcurrentDictionary<string, bool> AttemptedAssemblyLoads = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> AttemptedAssemblyLoads = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> AttemptedModuleInitializers = new(StringComparer.OrdinalIgnoreCase);
     private static SourceGenRuntimeXamlCompilationOptions _runtimeCompilationOptions = new();
 
     public static bool IsEnabled { get; private set; }
@@ -55,7 +54,7 @@ public static class AvaloniaSourceGeneratedXamlLoader
         var lookupUris = BuildLookupUriCandidates(serviceProvider, uri);
         for (var index = 0; index < lookupUris.Length; index++)
         {
-            EnsureAssemblyLoadedForUri(lookupUris[index]);
+            EnsureAssemblyLoadedForUriCandidate(serviceProvider, lookupUris[index]);
             if (XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
             {
                 return true;
@@ -174,36 +173,81 @@ public static class AvaloniaSourceGeneratedXamlLoader
             return [directCandidate];
         }
 
+        var candidates = new List<string>(capacity: 3)
+        {
+            directCandidate
+        };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            directCandidate
+        };
+
+        if (TryResolveUriAgainstContextBase(serviceProvider, uri, out var resolvedCandidate) &&
+            seen.Add(resolvedCandidate))
+        {
+            candidates.Insert(0, resolvedCandidate);
+        }
+
+        if (TryResolveUriAgainstRootObjectAssembly(serviceProvider, uri, out var assemblyResolvedCandidate) &&
+            seen.Add(assemblyResolvedCandidate))
+        {
+            candidates.Add(assemblyResolvedCandidate);
+        }
+
+        return candidates.ToArray();
+    }
+
+    private static bool TryResolveUriAgainstContextBase(
+        IServiceProvider? serviceProvider,
+        Uri relativeUri,
+        out string resolvedCandidate)
+    {
+        resolvedCandidate = string.Empty;
         if (serviceProvider?.GetService(typeof(IUriContext)) is not IUriContext uriContext ||
             uriContext.BaseUri is null ||
             !uriContext.BaseUri.IsAbsoluteUri)
         {
-            return [directCandidate];
+            return false;
         }
 
-        Uri resolvedUri;
         try
         {
-            resolvedUri = new Uri(uriContext.BaseUri, uri);
+            resolvedCandidate = new Uri(uriContext.BaseUri, relativeUri).ToString();
+            return true;
         }
         catch
         {
-            return [directCandidate];
+            return false;
         }
-
-        var resolvedCandidate = resolvedUri.ToString();
-        if (string.Equals(resolvedCandidate, directCandidate, StringComparison.OrdinalIgnoreCase))
-        {
-            return [directCandidate];
-        }
-
-        return [resolvedCandidate, directCandidate];
     }
 
-    private static void EnsureAssemblyLoadedForUri(string candidateUri)
+    private static bool TryResolveUriAgainstRootObjectAssembly(
+        IServiceProvider? serviceProvider,
+        Uri relativeUri,
+        out string resolvedCandidate)
     {
-        if (!Uri.TryCreate(candidateUri, UriKind.Absolute, out var parsedUri) ||
-            !parsedUri.IsAbsoluteUri ||
+        resolvedCandidate = string.Empty;
+        if (!relativeUri.IsAbsoluteUri &&
+            serviceProvider?.GetService(typeof(IRootObjectProvider)) is IRootObjectProvider rootObjectProvider &&
+            rootObjectProvider.RootObject is object rootObject)
+        {
+            var assemblyName = rootObject.GetType().Assembly.GetName().Name;
+            if (!string.IsNullOrWhiteSpace(assemblyName))
+            {
+                var normalizedPath = relativeUri.OriginalString.Replace('\\', '/').TrimStart('/');
+                resolvedCandidate = normalizedPath.Length == 0
+                    ? "avares://" + assemblyName + "/"
+                    : "avares://" + assemblyName + "/" + normalizedPath;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void EnsureAssemblyLoadedForUriCandidate(IServiceProvider? serviceProvider, string uriCandidate)
+    {
+        if (!Uri.TryCreate(uriCandidate, UriKind.Absolute, out var parsedUri) ||
             !string.Equals(parsedUri.Scheme, "avares", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -215,57 +259,62 @@ public static class AvaloniaSourceGeneratedXamlLoader
             return;
         }
 
-        if (!AttemptedAssemblyLoads.TryAdd(assemblyName, true))
+        if (TryGetLoadedAssemblyDescriptor(assemblyName, out var assemblyKey, out var moduleHandle))
         {
+            EnsureModuleInitializerExecuted(assemblyKey, moduleHandle);
             return;
         }
 
-        if (IsAssemblyKnown(assemblyName))
+        lock (Sync)
         {
-            Trace("Known types are already present for assembly '" + assemblyName + "'; ensuring module initializers have executed.");
-        }
-
-        Assembly? assembly = FindLoadedAssembly(assemblyName);
-        try
-        {
-            assembly ??= Assembly.Load(new AssemblyName(assemblyName));
-            Trace("Loaded assembly '" + assemblyName + "' for source-gen URI lookup.");
-        }
-        catch (Exception ex)
-        {
-            // Keep source-generated load path non-fatal; fallback remains available.
-            Trace("Failed to load assembly '" + assemblyName + "' for source-gen URI lookup: " + ex.Message);
-            return;
+            if (!AttemptedAssemblyLoads.Add(assemblyName))
+            {
+                return;
+            }
         }
 
         try
         {
-            RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
-            Trace("Executed module initializers for assembly '" + assemblyName + "'.");
+            AppDomain.CurrentDomain.Load(assemblyName);
         }
-        catch (Exception ex)
+        catch
         {
-            // Keep source-generated load path non-fatal; fallback remains available.
-            Trace("Failed to execute module initializers for assembly '" + assemblyName + "': " + ex.Message);
+            // Keep lookup non-fatal. If loading fails, try a full assembly identity from known references.
+        }
+
+        if (TryGetLoadedAssemblyDescriptor(assemblyName, out assemblyKey, out moduleHandle))
+        {
+            EnsureModuleInitializerExecuted(assemblyKey, moduleHandle);
             return;
         }
 
-        if (!IsAssemblyKnown(assemblyName))
+        if (!TryResolveReferencedAssemblyFullName(serviceProvider, assemblyName, out var fullAssemblyName))
         {
-            Trace("Assembly '" + assemblyName + "' loaded, but no source-gen known types were registered.");
+            return;
+        }
+
+        try
+        {
+            AppDomain.CurrentDomain.Load(fullAssemblyName);
+        }
+        catch
+        {
+            // Keep lookup non-fatal. XamlSourceGenRegistry lookup remains the source of truth.
+        }
+
+        if (TryGetLoadedAssemblyDescriptor(assemblyName, out assemblyKey, out moduleHandle))
+        {
+            EnsureModuleInitializerExecuted(assemblyKey, moduleHandle);
         }
     }
 
-    private static bool IsAssemblyKnown(string assemblyName)
+    private static bool IsAssemblyLoaded(string assemblyName)
     {
-        var registeredTypes = SourceGenKnownTypeRegistry.GetRegisteredTypes();
-        for (var index = 0; index < registeredTypes.Count; index++)
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < loadedAssemblies.Length; index++)
         {
-            var candidate = registeredTypes[index];
-            if (string.Equals(
-                    candidate.Assembly.GetName().Name,
-                    assemblyName,
-                    StringComparison.Ordinal))
+            var loadedName = loadedAssemblies[index].GetName().Name;
+            if (string.Equals(loadedName, assemblyName, StringComparison.Ordinal))
             {
                 return true;
             }
@@ -274,44 +323,102 @@ public static class AvaloniaSourceGeneratedXamlLoader
         return false;
     }
 
-    private static Assembly? FindLoadedAssembly(string assemblyName)
+    private static bool TryGetLoadedAssemblyDescriptor(
+        string assemblyName,
+        out string assemblyKey,
+        out ModuleHandle moduleHandle)
     {
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (var index = 0; index < assemblies.Length; index++)
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < loadedAssemblies.Length; index++)
         {
-            var candidate = assemblies[index];
-            if (string.Equals(candidate.GetName().Name, assemblyName, StringComparison.Ordinal))
+            var candidate = loadedAssemblies[index];
+            var loadedName = candidate.GetName().Name;
+            if (string.Equals(loadedName, assemblyName, StringComparison.Ordinal))
             {
-                return candidate;
+                assemblyKey = candidate.FullName ?? loadedName ?? string.Empty;
+                moduleHandle = candidate.ManifestModule.ModuleHandle;
+                return true;
             }
         }
 
-        return null;
+        assemblyKey = string.Empty;
+        moduleHandle = default;
+        return false;
     }
 
-    private static void Trace(string message)
+    private static void EnsureModuleInitializerExecuted(string assemblyKey, ModuleHandle moduleHandle)
     {
-        if (!IsTraceEnabled())
+        if (string.IsNullOrWhiteSpace(assemblyKey))
         {
             return;
         }
 
+        lock (Sync)
+        {
+            if (!AttemptedModuleInitializers.Add(assemblyKey))
+            {
+                return;
+            }
+        }
+
         try
         {
-            Console.WriteLine("[AXSG.HotReload] " + message);
+            RuntimeHelpers.RunModuleConstructor(moduleHandle);
         }
         catch
         {
+            // Keep lookup non-fatal. Registry lookup remains the source of truth.
         }
     }
 
-    private static bool IsTraceEnabled()
+    private static bool TryResolveReferencedAssemblyFullName(
+        IServiceProvider? serviceProvider,
+        string assemblyName,
+        out string fullAssemblyName)
     {
-        var value = Environment.GetEnvironmentVariable(TraceEnvVarName);
-        return !string.IsNullOrWhiteSpace(value) &&
-               (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "on", StringComparison.OrdinalIgnoreCase));
+        fullAssemblyName = string.Empty;
+
+        if (serviceProvider?.GetService(typeof(IRootObjectProvider)) is IRootObjectProvider rootObjectProvider &&
+            rootObjectProvider.RootObject is object rootObject)
+        {
+            var rootReferencedAssemblies = rootObject.GetType().Assembly.GetReferencedAssemblies();
+            for (var index = 0; index < rootReferencedAssemblies.Length; index++)
+            {
+                var referencedAssembly = rootReferencedAssemblies[index];
+                if (!string.Equals(referencedAssembly.Name, assemblyName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(referencedAssembly.FullName))
+                {
+                    fullAssemblyName = referencedAssembly.FullName!;
+                    return true;
+                }
+            }
+        }
+
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < loadedAssemblies.Length; index++)
+        {
+            var referencedAssemblies = loadedAssemblies[index].GetReferencedAssemblies();
+            for (var referencedIndex = 0; referencedIndex < referencedAssemblies.Length; referencedIndex++)
+            {
+                var referencedAssembly = referencedAssemblies[referencedIndex];
+                if (!string.Equals(referencedAssembly.Name, assemblyName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(referencedAssembly.FullName))
+                {
+                    fullAssemblyName = referencedAssembly.FullName!;
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
+
 }

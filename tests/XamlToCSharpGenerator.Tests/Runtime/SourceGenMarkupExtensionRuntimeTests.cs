@@ -307,6 +307,27 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void ProvideMarkupExtension_Normalizes_Relative_BaseUri_To_Absolute_Avares_Uri()
+    {
+        var value = SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(
+            extension: new BaseUriProbeMarkupExtension(),
+            parentServiceProvider: null,
+            rootObject: new TargetHolder(),
+            intermediateRootObject: new object(),
+            targetObject: new Border(),
+            targetProperty: null,
+            baseUri: "/Accents/BaseColorsPalette.xaml",
+            parentStack: null);
+
+        var resolvedBaseUri = Assert.IsType<string>(value);
+        var parsedBaseUri = new Uri(resolvedBaseUri, UriKind.Absolute);
+        var assemblyName = typeof(TargetHolder).Assembly.GetName().Name;
+        Assert.Equal("avares", parsedBaseUri.Scheme);
+        Assert.Equal(assemblyName, parsedBaseUri.Host, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("/Accents/BaseColorsPalette.xaml", parsedBaseUri.AbsolutePath);
+    }
+
+    [Fact]
     public void ProvideMarkupExtension_Supports_StaticResourceExtension_Fallback_Resolution()
     {
         var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<BorderTarget, object?>(
@@ -414,6 +435,15 @@ public class SourceGenMarkupExtensionRuntimeTests
             var hasParentStack = parentStackProvider?.Parents.Any() == true;
 
             return $"{hasProvideValueTarget}|{hasTargetProperty}|{hasRootObject}|{scheme}|{hasParentStack}";
+        }
+    }
+
+    private sealed class BaseUriProbeMarkupExtension : MarkupExtension
+    {
+        public override object ProvideValue(IServiceProvider serviceProvider)
+        {
+            var uriContext = serviceProvider.GetService(typeof(IUriContext)) as IUriContext;
+            return uriContext?.BaseUri?.ToString() ?? string.Empty;
         }
     }
 

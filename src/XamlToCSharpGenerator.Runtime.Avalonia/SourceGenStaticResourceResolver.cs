@@ -6,6 +6,7 @@ using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
+using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
@@ -39,7 +40,7 @@ public static class SourceGenStaticResourceResolver
         IServiceProvider? serviceProvider = null,
         IReadOnlyList<object>? parentStack = null)
     {
-        var uri = currentUri ?? string.Empty;
+        var uri = NormalizeCurrentUri(currentUri, serviceProvider);
         var resolutionFrameKey = BuildResolutionFrameKey(uri, key);
         var enteredResolutionFrame = TryEnterResolutionFrame(resolutionFrameKey);
         var enteredResolutionUri = TryEnterResolutionUri(uri);
@@ -112,6 +113,93 @@ public static class SourceGenStaticResourceResolver
 
     private static string BuildResolutionFrameKey(string uri, object resourceKey) =>
         string.Concat(uri ?? string.Empty, "|", resourceKey?.ToString() ?? string.Empty);
+
+    private static string NormalizeCurrentUri(string? currentUri, IServiceProvider? serviceProvider)
+    {
+        if (string.IsNullOrWhiteSpace(currentUri))
+        {
+            return string.Empty;
+        }
+
+        var trimmedCurrentUri = currentUri.Trim();
+        if (HasExplicitUriScheme(trimmedCurrentUri) &&
+            Uri.TryCreate(trimmedCurrentUri, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        if (serviceProvider?.GetService(typeof(IUriContext)) is IUriContext uriContext &&
+            uriContext.BaseUri is { IsAbsoluteUri: true } baseUri)
+        {
+            if (TryResolveUriAgainstBase(baseUri, trimmedCurrentUri, out var resolvedAgainstBase))
+            {
+                return resolvedAgainstBase;
+            }
+        }
+
+        if (TryResolveRootAssemblyName(serviceProvider, out var rootAssemblyName))
+        {
+            var normalizedPath = trimmedCurrentUri.Replace('\\', '/').TrimStart('/');
+            if (normalizedPath.Length == 0)
+            {
+                return "avares://" + rootAssemblyName + "/";
+            }
+
+            return "avares://" + rootAssemblyName + "/" + normalizedPath;
+        }
+
+        return trimmedCurrentUri;
+    }
+
+    private static bool HasExplicitUriScheme(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.IndexOf("://", StringComparison.Ordinal) > 0;
+    }
+
+    private static bool TryResolveUriAgainstBase(Uri baseUri, string currentUri, out string resolvedUri)
+    {
+        resolvedUri = string.Empty;
+        if (baseUri is null ||
+            string.IsNullOrWhiteSpace(currentUri) ||
+            !Uri.TryCreate(currentUri, UriKind.RelativeOrAbsolute, out var candidateUri))
+        {
+            return false;
+        }
+
+        if (candidateUri.IsAbsoluteUri)
+        {
+            resolvedUri = candidateUri.ToString();
+            return true;
+        }
+
+        try
+        {
+            resolvedUri = new Uri(baseUri, candidateUri).ToString();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryResolveRootAssemblyName(IServiceProvider? serviceProvider, out string assemblyName)
+    {
+        assemblyName = string.Empty;
+        if (serviceProvider?.GetService(typeof(IRootObjectProvider)) is not IRootObjectProvider rootObjectProvider ||
+            rootObjectProvider.RootObject is null)
+        {
+            return false;
+        }
+
+        assemblyName = rootObjectProvider.RootObject.GetType().Assembly.GetName().Name ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(assemblyName);
+    }
 
     private static bool TryEnterResolutionFrame(string frameKey)
     {
