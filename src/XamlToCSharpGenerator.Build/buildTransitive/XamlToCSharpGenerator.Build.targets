@@ -26,9 +26,6 @@
     <_XamlSourceGenEnableIosDotNetWatchHotReload Condition="'$(_XamlSourceGenIsIosTarget)' == 'true' and '$(Configuration)' == 'Debug' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnabled)' == 'true'">true</_XamlSourceGenEnableIosDotNetWatchHotReload>
     <UseInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(UseInterpreter)' == ''">true</UseInterpreter>
     <MtouchInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(MtouchInterpreter)' == ''">all</MtouchInterpreter>
-    <!-- Keep dotnet watch responsive to filesystem changes while simulator app runs. -->
-    <_MlaunchCaptureOutput Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(_MlaunchCaptureOutput)' == ''">false</_MlaunchCaptureOutput>
-    <_MlaunchWaitForExit Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(_XamlSourceGenIsIosSimulator)' == 'true' and '$(_MlaunchWaitForExit)' == ''">false</_MlaunchWaitForExit>
     <StartupHookSupport Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnableStartupHookSupport)' == 'true'">true</StartupHookSupport>
     <_XamlSourceGenHasDotNetStartupHooksVar>false</_XamlSourceGenHasDotNetStartupHooksVar>
     <_XamlSourceGenStartupHooksSuppressed>false</_XamlSourceGenStartupHooksSuppressed>
@@ -129,10 +126,6 @@
       <_XamlSourceGenIsIosSimulator Condition="'$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').Contains('iossimulator'))">true</_XamlSourceGenIsIosSimulator>
       <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_SdkIsSimulator)' == 'True'">true</_XamlSourceGenIsIosSimulator>
       <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and ('$(Platform)' == 'iPhoneSimulator' or '$(PlatformTarget)' == 'iPhoneSimulator')">true</_XamlSourceGenIsIosSimulator>
-
-      <!-- For dotnet watch on simulator, detach launch so file watchers remain responsive. -->
-      <_MlaunchCaptureOutput Condition="'$(_XamlSourceGenIsIosSimulator)' == 'true'">false</_MlaunchCaptureOutput>
-      <_MlaunchWaitForExit Condition="'$(_XamlSourceGenIsIosSimulator)' == 'true'">false</_MlaunchWaitForExit>
 
       <_XamlSourceGenDotNetStartupHooksValue>$(DOTNET_STARTUP_HOOKS)</_XamlSourceGenDotNetStartupHooksValue>
       <_XamlSourceGenDotNetStartupHooksValue Condition="'$(_XamlSourceGenDotNetStartupHooksValue)' == ''">$([System.Environment]::GetEnvironmentVariable('DOTNET_STARTUP_HOOKS'))</_XamlSourceGenDotNetStartupHooksValue>
