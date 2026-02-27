@@ -358,6 +358,39 @@ When `AvaloniaXamlCompilerBackend=SourceGen`:
 5. Runtime hot reload pipeline maps replacement types to original types and serializes reentrant updates.
 6. Runtime emits `HotReloadRudeEditDetected` when CLR/metadata shape changes are not patchable via Edit-and-Continue and require rebuild/restart.
 
+## iOS Hot Reload (dotnet watch)
+
+Simulator quickstart (`ControlCatalog.iOS`):
+
+```bash
+cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS
+AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
+```
+
+Recommended device setup (remote transport):
+
+```xml
+<PropertyGroup>
+  <AvaloniaSourceGenIosHotReloadTransportMode>RemoteOnly</AvaloniaSourceGenIosHotReloadTransportMode>
+  <AvaloniaSourceGenHotReloadRemoteEndpoint>tcp://192.168.1.10:45820</AvaloniaSourceGenHotReloadRemoteEndpoint>
+</PropertyGroup>
+```
+
+Device/network notes:
+
+1. Device and host machine must be on the same network.
+2. The remote endpoint must be reachable from device.
+3. Supported endpoint formats are:
+   - `host:port`
+   - `tcp://host:port`
+   - `ws://host:port/path`
+   - `wss://host:port/path`
+
+Detailed iOS setup and troubleshooting matrix:
+
+- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/docs/hot-reload-ios.md`
+- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS/README.md`
+
 ## Language Service (LSP)
 
 SourceGen now includes a standalone LSP server:
