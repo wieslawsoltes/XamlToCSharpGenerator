@@ -592,8 +592,27 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
     private static string NormalizeTargetPath(string targetPath)
     {
-        var normalized = targetPath.Replace('\\', '/');
-        return normalized.StartsWith("/", StringComparison.Ordinal) ? normalized.Substring(1) : normalized;
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            return string.Empty;
+        }
+
+        var normalized = targetPath.Replace('\\', '/').Trim();
+        if (normalized.StartsWith("!/", StringComparison.Ordinal))
+        {
+            normalized = normalized.Substring(2);
+        }
+        else if (normalized.StartsWith("!", StringComparison.Ordinal))
+        {
+            normalized = normalized.Substring(1);
+        }
+
+        while (normalized.StartsWith("/", StringComparison.Ordinal))
+        {
+            normalized = normalized.Substring(1);
+        }
+
+        return normalized;
     }
 
     private static string? TryGetName(XElement element)

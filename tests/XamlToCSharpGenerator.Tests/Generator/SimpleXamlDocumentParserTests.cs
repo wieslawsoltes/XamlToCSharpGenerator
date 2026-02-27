@@ -201,6 +201,27 @@ public class SimpleXamlDocumentParserTests
     }
 
     [Fact]
+    public void Parse_Normalizes_AvaloniaResource_TargetPath_Prefix()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "HamburgerMenu.xaml",
+            TargetPath: "!/HamburgerMenu/HamburgerMenu.xaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  </ResourceDictionary>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        Assert.Equal("HamburgerMenu/HamburgerMenu.xaml", document!.TargetPath);
+    }
+
+    [Fact]
     public void Parse_Captures_Inline_Text_Content_On_Object_Node()
     {
         var parser = CreateAvaloniaParser();

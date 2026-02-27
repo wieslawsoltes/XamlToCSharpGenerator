@@ -931,6 +931,38 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Classless_Artifact_BuildUri_Strips_AvaloniaResource_TargetPath_Prefix()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object> { }
+            }
+            """;
+
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var result = RunGeneratorWithResult(
+            compilation,
+            [("HamburgerMenu.xaml", xaml, "!/HamburgerMenu/HamburgerMenu.xaml")]);
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = string.Join(
+            Environment.NewLine,
+            result.RunResult.Results
+                .SelectMany(static runResult => runResult.GeneratedSources)
+                .Select(static source => source.SourceText.ToString()));
+
+        Assert.Contains("avares://Demo.Assembly/HamburgerMenu/HamburgerMenu.xaml", generated);
+        Assert.DoesNotContain("avares://Demo.Assembly/!/HamburgerMenu/HamburgerMenu.xaml", generated);
+    }
+
+    [Fact]
     public void Generates_Object_Graph_And_Property_Assignments()
     {
         const string code = """
@@ -1699,11 +1731,75 @@ public class AvaloniaXamlSourceGeneratorTests
             .Select(static source => source.SourceText.ToString())
             .ToArray();
 
-        Assert.Contains(
-            generatedSources,
-            static source => source.Contains(
+        var metadataHandlerSources = generatedSources
+            .Where(static source => source.Contains(
                 "MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))",
-                StringComparison.Ordinal));
+                StringComparison.Ordinal))
+            .ToArray();
+        Assert.Single(metadataHandlerSources);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                metadataHandlerSources[0],
+                "MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))"));
+
+        static int CountOccurrences(string text, string pattern)
+        {
+            var count = 0;
+            var index = 0;
+            while ((index = text.IndexOf(pattern, index, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                index += pattern.Length;
+            }
+
+            return count;
+        }
+    }
+
+    [Fact]
+    public void HotReload_IosDebug_Emits_Linker_Preservation_Hints_For_MetadataUpdate_Entrypoints()
+    {
+        const string code = "namespace Demo; public partial class HookedView {}";
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.HookedView">
+                <Button Content="Hook" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var result = RunGeneratorWithResult(
+            compilation,
+            [("HookedView.axaml", xaml)],
+            [
+                new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenIosHotReloadEnabled", "true"),
+            ]);
+
+        var generatedSources = result.RunResult.Results
+            .SelectMany(static output => output.GeneratedSources)
+            .Select(static source => source.SourceText.ToString())
+            .ToArray();
+        var metadataHandlerSource = Assert.Single(
+            generatedSources.Where(static source => source.Contains(
+                "MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))",
+                StringComparison.Ordinal)));
+
+        Assert.Contains(
+            "DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.ClearCache)",
+            metadataHandlerSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.UpdateApplication)",
+            metadataHandlerSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ModuleInitializer",
+            metadataHandlerSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

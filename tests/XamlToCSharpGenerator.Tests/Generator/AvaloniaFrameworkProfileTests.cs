@@ -77,6 +77,8 @@ public class AvaloniaFrameworkProfileTests
             HotReloadErrorResilienceEnabled: false,
             IdeHotReloadEnabled: false,
             HotDesignEnabled: false,
+            IosHotReloadEnabled: false,
+            IosHotReloadUseInterpreter: false,
             DotNetWatchBuild: false,
             BuildingInsideVisualStudio: false,
             BuildingByReSharper: false,

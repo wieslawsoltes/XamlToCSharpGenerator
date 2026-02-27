@@ -1676,11 +1676,31 @@ public static class XamlSourceGeneratorCompilerHost
             return null;
         }
 
+        var preserveIosDebugEntryPointsSource = options.IosHotReloadEnabled
+            ? """
+#if NET6_0_OR_GREATER && DEBUG && IOS
+namespace XamlToCSharpGenerator.Generated
+{
+    [global::System.Runtime.CompilerServices.CompilerGenerated]
+    internal static class __SourceGenHotReloadLinkerHints
+    {
+        [global::System.Runtime.CompilerServices.ModuleInitializer]
+        [global::System.Diagnostics.CodeAnalysis.DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.ClearCache), typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
+        [global::System.Diagnostics.CodeAnalysis.DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.UpdateApplication), typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
+        internal static void Initialize()
+        {
+        }
+    }
+}
+#endif
+"""
+            : string.Empty;
+
         return """
 #if NET6_0_OR_GREATER
 [assembly: global::System.Reflection.Metadata.MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
 #endif
-""";
+""" + preserveIosDebugEntryPointsSource;
     }
 
     private static bool ShouldPreferTargetPath(string candidateTargetPath, string currentTargetPath)
