@@ -47,6 +47,10 @@ namespace ControlCatalog
                 (Environment.GetEnvironmentVariable("DOTNET_MODIFIABLE_ASSEMBLIES") ?? "<null>") +
                 ", DOTNET_STARTUP_HOOKS=" +
                 (Environment.GetEnvironmentVariable("DOTNET_STARTUP_HOOKS") ?? "<null>") +
+                ", AXSG_HOTRELOAD_REMOTE_ENDPOINT=" +
+                (Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_REMOTE_ENDPOINT") ?? "<null>") +
+                ", AXSG_HOTRELOAD_REMOTE_ENDPOINT_EXPLICIT=" +
+                (Environment.GetEnvironmentVariable("AXSG_HOTRELOAD_REMOTE_ENDPOINT_EXPLICIT") ?? "<null>") +
                 ", AXSG_DOTNET_WATCH_PIPE_DIRECTORY=" +
                 (Environment.GetEnvironmentVariable("AXSG_DOTNET_WATCH_PIPE_DIRECTORY") ?? "<null>");
 
