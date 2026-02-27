@@ -44,6 +44,7 @@
     <AvaloniaSourceGenHotReloadRemotePort Condition="'$(AvaloniaSourceGenHotReloadRemotePort)' == ''">45820</AvaloniaSourceGenHotReloadRemotePort>
     <AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled Condition="'$(AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled)' == ''">true</AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled>
     <AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint Condition="'$(AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint)' == ''">true</AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint>
+    <AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenIosDotNetWatchProxyProjectPath Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyProjectPath)' == ''"></AvaloniaSourceGenIosDotNetWatchProxyProjectPath>
     <AvaloniaSourceGenIosDotNetWatchProxyPath Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyPath)' == ''"></AvaloniaSourceGenIosDotNetWatchProxyPath>
   </PropertyGroup>

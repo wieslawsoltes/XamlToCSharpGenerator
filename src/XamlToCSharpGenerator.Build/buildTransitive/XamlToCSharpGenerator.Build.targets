@@ -203,7 +203,8 @@
     <_XamlToCSharpGeneratorTransformRuleProjected Include="@(XamlSourceGenTransformRule);@(AvaloniaSourceGenTransformRule)">
       <NormalizedFullPath>%(FullPath)</NormalizedFullPath>
     </_XamlToCSharpGeneratorTransformRuleProjected>
-    <Watch Include="@(_XamlToCSharpGeneratorXamlProjected->'%(NormalizedFullPath)'->Distinct())">
+    <Watch Include="@(_XamlToCSharpGeneratorXamlProjected->'%(NormalizedFullPath)'->Distinct())"
+           Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' != 'true' or '$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == 'true'">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </Watch>
     <Watch Include="@(_XamlToCSharpGeneratorTransformRuleProjected->'%(NormalizedFullPath)'->Distinct())">
@@ -317,7 +318,8 @@
         <TargetPath Condition="'%(_XamlToCSharpGeneratorTransformRuleDistinct.Link)' == '' and '%(_XamlToCSharpGeneratorTransformRuleDistinct.TargetPath)' == '' and '%(_XamlToCSharpGeneratorTransformRuleDistinct.OriginalIdentity)' == ''">%(_XamlToCSharpGeneratorTransformRuleDistinct.Identity)</TargetPath>
       </AdditionalFiles>
 
-      <_XamlToCSharpGeneratorXamlWatch Include="@(_XamlToCSharpGeneratorXamlDistinct)" />
+      <_XamlToCSharpGeneratorXamlWatch Include="@(_XamlToCSharpGeneratorXamlDistinct)"
+                                       Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' != 'true' or '$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == 'true'" />
       <_XamlToCSharpGeneratorTransformRuleWatch Include="@(_XamlToCSharpGeneratorTransformRuleDistinct)" />
       <Watch Remove="@(_XamlToCSharpGeneratorXamlWatch)" />
       <Watch Remove="@(_XamlToCSharpGeneratorTransformRuleWatch)" />
