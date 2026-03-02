@@ -20,9 +20,11 @@ public static class SelectorPropertyPredicateSemantics
             return false;
         }
 
-        propertyText = predicateText.Substring(0, equalsIndex).Trim();
-        valueText = predicateText.Substring(equalsIndex + 1).Trim();
-        return propertyText.Length > 0 && valueText.Length > 0;
+        propertyText = predicateText.Substring(0, equalsIndex);
+        valueText = predicateText.Substring(equalsIndex + 1);
+        return propertyText.Length > 0 &&
+               valueText.Length > 0 &&
+               propertyText.Trim().Length == propertyText.Length;
     }
 
     public static SelectorAttachedPropertyParseKind TryParseAttachedPropertyToken(
@@ -38,15 +40,14 @@ public static class SelectorPropertyPredicateSemantics
             return SelectorAttachedPropertyParseKind.NotAttached;
         }
 
-        var normalizedPropertyText = propertyText.Trim();
-        if (normalizedPropertyText.Length == 0 || normalizedPropertyText[0] != '(')
+        if (propertyText.Length == 0 || propertyText[0] != '(')
         {
             return SelectorAttachedPropertyParseKind.NotAttached;
         }
 
         var cursor = 0;
         if (!TopLevelTextParser.TryReadBalancedContent(
-                normalizedPropertyText,
+                propertyText,
                 ref cursor,
                 '(',
                 ')',
@@ -55,12 +56,7 @@ public static class SelectorPropertyPredicateSemantics
             return SelectorAttachedPropertyParseKind.InvalidAttached;
         }
 
-        while (cursor < normalizedPropertyText.Length && char.IsWhiteSpace(normalizedPropertyText[cursor]))
-        {
-            cursor++;
-        }
-
-        if (cursor != normalizedPropertyText.Length)
+        if (cursor != propertyText.Length)
         {
             return SelectorAttachedPropertyParseKind.InvalidAttached;
         }
@@ -99,9 +95,12 @@ public static class SelectorPropertyPredicateSemantics
             return false;
         }
 
-        ownerToken = attachedText.Substring(0, separator).Trim();
-        propertyToken = attachedText.Substring(separator + 1).Trim();
-        return ownerToken.Length > 0 && propertyToken.Length > 0;
+        ownerToken = attachedText.Substring(0, separator);
+        propertyToken = attachedText.Substring(separator + 1);
+        return ownerToken.Length > 0 &&
+               propertyToken.Length > 0 &&
+               ownerToken.Trim().Length == ownerToken.Length &&
+               propertyToken.Trim().Length == propertyToken.Length;
     }
 
     private static int FindLastTopLevelSeparator(string value, char separator)

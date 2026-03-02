@@ -11,7 +11,17 @@ public static class MiniLanguageSyntaxFacts
 
     public static bool IsIdentifierPart(char ch)
     {
-        return char.IsLetterOrDigit(ch) || ch == '_';
+        if (IsIdentifierStart(ch))
+        {
+            return true;
+        }
+
+        var category = char.GetUnicodeCategory(ch);
+        return category is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.ConnectorPunctuation
+            or UnicodeCategory.Format
+            or UnicodeCategory.DecimalDigitNumber;
     }
 
     public static bool IsStyleClassPart(char ch)

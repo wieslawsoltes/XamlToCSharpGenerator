@@ -50,7 +50,6 @@ public static class SelectorExpressionBuildSemantics
         INamedTypeSymbol? selectorTypeFallback,
         INamedTypeSymbol? selectorNestingTypeHint,
         Func<string, INamedTypeSymbol?> resolveTypeToken,
-        Func<INamedTypeSymbol?> resolveWildcardType,
         ISelectorExpressionEmitter emitter,
         SelectorPropertyPredicateResolver tryResolvePropertyPredicate,
         out string expression)
@@ -58,11 +57,6 @@ public static class SelectorExpressionBuildSemantics
         if (resolveTypeToken is null)
         {
             throw new ArgumentNullException(nameof(resolveTypeToken));
-        }
-
-        if (resolveWildcardType is null)
-        {
-            throw new ArgumentNullException(nameof(resolveWildcardType));
         }
 
         if (emitter is null)
@@ -80,7 +74,6 @@ public static class SelectorExpressionBuildSemantics
             selectorTypeFallback,
             selectorNestingTypeHint,
             resolveTypeToken,
-            resolveWildcardType,
             emitter,
             tryResolvePropertyPredicate,
             out expression);
@@ -91,7 +84,6 @@ public static class SelectorExpressionBuildSemantics
         INamedTypeSymbol? selectorTypeFallback,
         INamedTypeSymbol? selectorNestingTypeHint,
         Func<string, INamedTypeSymbol?> resolveTypeToken,
-        Func<INamedTypeSymbol?> resolveWildcardType,
         ISelectorExpressionEmitter emitter,
         SelectorPropertyPredicateResolver tryResolvePropertyPredicate,
         out string expression)
@@ -99,6 +91,12 @@ public static class SelectorExpressionBuildSemantics
         expression = string.Empty;
         var text = selector.Trim();
         if (text.Length == 0)
+        {
+            return false;
+        }
+
+        var validation = SelectorSyntaxValidator.Validate(text);
+        if (!validation.IsValid)
         {
             return false;
         }
@@ -117,7 +115,6 @@ public static class SelectorExpressionBuildSemantics
                     selectorTypeFallback,
                     selectorNestingTypeHint,
                     resolveTypeToken,
-                    resolveWildcardType,
                     emitter,
                     tryResolvePropertyPredicate,
                     out var branchExpression))
@@ -144,7 +141,6 @@ public static class SelectorExpressionBuildSemantics
         INamedTypeSymbol? selectorTypeFallback,
         INamedTypeSymbol? selectorNestingTypeHint,
         Func<string, INamedTypeSymbol?> resolveTypeToken,
-        Func<INamedTypeSymbol?> resolveWildcardType,
         ISelectorExpressionEmitter emitter,
         SelectorPropertyPredicateResolver tryResolvePropertyPredicate,
         out string expression)
@@ -186,12 +182,13 @@ public static class SelectorExpressionBuildSemantics
             INamedTypeSymbol? selectorTypeHint = selectorTypeFallback;
             while (index < segmentText.Length && segmentText[index] == '^')
             {
-                currentExpression = emitter.EmitNesting(hasExpression ? currentExpression : "null");
-                if (selectorNestingTypeHint is not null)
+                if (selectorNestingTypeHint is null)
                 {
-                    selectorTypeHint = selectorNestingTypeHint;
+                    return false;
                 }
 
+                currentExpression = emitter.EmitNesting(hasExpression ? currentExpression : "null");
+                selectorTypeHint = selectorNestingTypeHint;
                 hasExpression = true;
                 segmentApplied = true;
                 index++;
@@ -199,13 +196,6 @@ public static class SelectorExpressionBuildSemantics
 
             while (index < segmentText.Length && char.IsWhiteSpace(segmentText[index]))
             {
-                index++;
-            }
-
-            var isWildcard = false;
-            if (index < segmentText.Length && segmentText[index] == '*')
-            {
-                isWildcard = true;
                 index++;
             }
 
@@ -243,6 +233,21 @@ public static class SelectorExpressionBuildSemantics
                 }
 
                 var tokenType = segmentText[index];
+                if (tokenType == '^')
+                {
+                    if (selectorNestingTypeHint is null)
+                    {
+                        return false;
+                    }
+
+                    index++;
+                    currentExpression = emitter.EmitNesting(hasExpression ? currentExpression : "null");
+                    selectorTypeHint = selectorNestingTypeHint;
+                    hasExpression = true;
+                    segmentApplied = true;
+                    continue;
+                }
+
                 if (tokenType == '[')
                 {
                     if (!TopLevelTextParser.TryReadBalancedContent(segmentText, ref index, '[', ']', out var predicateText) ||
@@ -312,7 +317,6 @@ public static class SelectorExpressionBuildSemantics
                             selectorTypeFallback,
                             selectorNestingTypeHint,
                             resolveTypeToken,
-                            resolveWildcardType,
                             emitter,
                             tryResolvePropertyPredicate,
                             ref currentExpression,
@@ -329,18 +333,6 @@ public static class SelectorExpressionBuildSemantics
                 currentExpression = emitter.EmitPseudoClass(hasExpression ? currentExpression : "null", tokenValue);
                 hasExpression = true;
                 segmentApplied = true;
-            }
-
-            if (!segmentApplied && isWildcard)
-            {
-                var wildcardType = resolveWildcardType();
-                if (wildcardType is not null)
-                {
-                    currentExpression = emitter.EmitIs(hasExpression ? currentExpression : "null", wildcardType);
-                    selectorTypeHint = wildcardType;
-                    hasExpression = true;
-                    segmentApplied = true;
-                }
             }
 
             if (!segmentApplied)
@@ -364,7 +356,6 @@ public static class SelectorExpressionBuildSemantics
         INamedTypeSymbol? selectorTypeFallback,
         INamedTypeSymbol? selectorNestingTypeHint,
         Func<string, INamedTypeSymbol?> resolveTypeToken,
-        Func<INamedTypeSymbol?> resolveWildcardType,
         ISelectorExpressionEmitter emitter,
         SelectorPropertyPredicateResolver tryResolvePropertyPredicate,
         ref string currentExpression,
@@ -404,7 +395,6 @@ public static class SelectorExpressionBuildSemantics
                     selectorTypeHint ?? selectorTypeFallback,
                     selectorNestingTypeHint,
                     resolveTypeToken,
-                    resolveWildcardType,
                     emitter,
                     tryResolvePropertyPredicate,
                     out var argumentExpression))

@@ -281,6 +281,24 @@ public static class SelectorBranchTokenizer
 
     public static bool IsTemplateAxisAt(string text, int index)
     {
-        return TopLevelTextParser.EqualsOrdinalIgnoreCaseAt(text, index, TemplateAxisToken);
+        if (string.IsNullOrEmpty(text) || index < 0)
+        {
+            return false;
+        }
+
+        if (index + TemplateAxisToken.Length > text.Length)
+        {
+            return false;
+        }
+
+        for (var tokenIndex = 0; tokenIndex < TemplateAxisToken.Length; tokenIndex++)
+        {
+            if (text[index + tokenIndex] != TemplateAxisToken[tokenIndex])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

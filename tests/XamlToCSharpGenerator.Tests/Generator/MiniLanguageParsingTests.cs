@@ -114,6 +114,15 @@ public class MiniLanguageParsingTests
     }
 
     [Fact]
+    public void SelectorBranchTokenizer_Requires_Case_Sensitive_Template_Axis()
+    {
+        var validation = SelectorSyntaxValidator.Validate("Button /Template/ Border");
+
+        Assert.False(validation.IsValid);
+        Assert.Contains("Unexpected token in selector.", validation.ErrorMessage);
+    }
+
+    [Fact]
     public void SelectorBranchTokenizer_Reads_Alias_Qualified_Type_Token()
     {
         var index = 0;
@@ -137,6 +146,26 @@ public class MiniLanguageParsingTests
     }
 
     [Fact]
+    public void SelectorSyntaxValidator_Clears_Branch_Type_After_Combinator()
+    {
+        var validation = SelectorSyntaxValidator.Validate("Button > .warning");
+
+        Assert.True(validation.IsValid);
+        Assert.Single(validation.Branches);
+        Assert.Null(validation.Branches[0].LastTypeToken);
+    }
+
+    [Fact]
+    public void SelectorSyntaxValidator_Allows_Middle_Nesting_And_Clears_Explicit_Target_Type()
+    {
+        var validation = SelectorSyntaxValidator.Validate("Button^:pointerover");
+
+        Assert.True(validation.IsValid);
+        Assert.Single(validation.Branches);
+        Assert.Null(validation.Branches[0].LastTypeToken);
+    }
+
+    [Fact]
     public void SelectorSyntaxValidator_Reports_Property_Selector_Without_Type_Context()
     {
         var validation = SelectorSyntaxValidator.Validate(".warning[Text=true]");
@@ -156,12 +185,42 @@ public class MiniLanguageParsingTests
     }
 
     [Fact]
+    public void SelectorSyntaxValidator_Rejects_Unknown_Pseudo_Function_With_Arguments()
+    {
+        var validation = SelectorSyntaxValidator.Validate("Button:pointerover(active)");
+
+        Assert.False(validation.IsValid);
+        Assert.Contains("Expected class name, is, nth-child or nth-last-child selector after ':'", validation.ErrorMessage);
+    }
+
+    [Fact]
+    public void SelectorSyntaxValidator_Rejects_Wildcard_Token_For_Avalonia_Parity()
+    {
+        var validation = SelectorSyntaxValidator.Validate("*");
+
+        Assert.False(validation.IsValid);
+        Assert.Contains("Unexpected token in selector.", validation.ErrorMessage);
+    }
+
+    [Fact]
     public void SelectorTokenSyntax_Reads_Standalone_Type_Token()
     {
         var ok = SelectorTokenSyntax.TryReadStandaloneTypeToken(" local|FancyButton ", out var typeToken);
 
         Assert.True(ok);
         Assert.Equal("local:FancyButton", typeToken);
+    }
+
+    [Fact]
+    public void SelectorTokenSyntax_Allows_Unicode_Identifier_Parts()
+    {
+        var input = "A\u0301Value";
+        var index = 0;
+        var ok = SelectorTokenSyntax.TryParseIdentifierToken(input, ref index, out var token);
+
+        Assert.True(ok);
+        Assert.Equal(input, token);
+        Assert.Equal(input.Length, index);
     }
 
     [Fact]
@@ -185,6 +244,24 @@ public class MiniLanguageParsingTests
         var ok = SelectorPropertyPredicateSyntax.TryParse("(Grid|)=1", out _);
 
         Assert.False(ok);
+    }
+
+    [Fact]
+    public void SelectorPropertyPredicateSyntax_Rejects_Whitespace_Around_Property_Name_Or_Equals()
+    {
+        var ok = SelectorPropertyPredicateSyntax.TryParse("Tag =1", out _);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public void SelectorPropertyPredicateSyntax_Preserves_Raw_Value_Whitespace()
+    {
+        var ok = SelectorPropertyPredicateSyntax.TryParse("Tag= value", out var predicate);
+
+        Assert.True(ok);
+        Assert.Equal("Tag", predicate.PropertyToken);
+        Assert.Equal(" value", predicate.RawValue);
     }
 
     [Fact]
@@ -260,6 +337,7 @@ public class MiniLanguageParsingTests
     [Theory]
     [InlineData("odd", true, 2, 1)]
     [InlineData("2n+1", true, 2, 1)]
+    [InlineData(" 2 \t n \n + 1 ", true, 2, 1)]
     [InlineData("2n+", false, 0, 0)]
     public void SelectorPseudoSyntax_Parses_NthChild_Expressions(
         string input,

@@ -25,7 +25,6 @@ public class SelectorExpressionBuildSemanticsTests
             selectorTypeFallback: null,
             selectorNestingTypeHint: null,
             resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
-            resolveWildcardType: () => compilation.GetTypeByMetadataName("Demo.StyledElement"),
             emitter: emitter,
             tryResolvePropertyPredicate: static (
                 string _,
@@ -64,7 +63,6 @@ public class SelectorExpressionBuildSemanticsTests
             selectorTypeFallback: null,
             selectorNestingTypeHint: null,
             resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
-            resolveWildcardType: () => compilation.GetTypeByMetadataName("Demo.StyledElement"),
             emitter: emitter,
             tryResolvePropertyPredicate: (
                 string predicateText,
@@ -106,7 +104,6 @@ public class SelectorExpressionBuildSemanticsTests
             selectorTypeFallback: null,
             selectorNestingTypeHint: null,
             resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
-            resolveWildcardType: () => compilation.GetTypeByMetadataName("Demo.StyledElement"),
             emitter: emitter,
             tryResolvePropertyPredicate: static (
                 string _,
@@ -125,6 +122,109 @@ public class SelectorExpressionBuildSemanticsTests
     }
 
     [Fact]
+    public void TryBuildSelectorExpression_Rejects_Invalid_Not_Argument_That_Fails_Syntax_Validation()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo;
+
+            public class StyledElement { }
+            public class Button : StyledElement { }
+            """);
+
+        var emitter = new TestSelectorExpressionEmitter();
+        var predicateResolverInvoked = false;
+        var success = SelectorExpressionBuildSemantics.TryBuildSelectorExpression(
+            "Button:not([Tag='Probe'])",
+            selectorTypeFallback: null,
+            selectorNestingTypeHint: compilation.GetTypeByMetadataName("Demo.Button"),
+            resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
+            emitter: emitter,
+            tryResolvePropertyPredicate: (
+                string _,
+                INamedTypeSymbol? __,
+                out string propertyExpression,
+                out string valueExpression) =>
+            {
+                predicateResolverInvoked = true;
+                propertyExpression = "property";
+                valueExpression = "value";
+                return true;
+            },
+            out _);
+
+        Assert.False(success);
+        Assert.False(predicateResolverInvoked);
+    }
+
+    [Fact]
+    public void TryBuildSelectorExpression_Builds_Middle_Nesting_When_Nesting_Context_Is_Available()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo;
+
+            public class StyledElement { }
+            public class Button : StyledElement { }
+            """);
+
+        var emitter = new TestSelectorExpressionEmitter();
+        var success = SelectorExpressionBuildSemantics.TryBuildSelectorExpression(
+            "Button^:pointerover",
+            selectorTypeFallback: null,
+            selectorNestingTypeHint: compilation.GetTypeByMetadataName("Demo.Button"),
+            resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
+            emitter: emitter,
+            tryResolvePropertyPredicate: static (
+                string _,
+                INamedTypeSymbol? __,
+                out string propertyExpression,
+                out string valueExpression) =>
+            {
+                propertyExpression = string.Empty;
+                valueExpression = string.Empty;
+                return false;
+            },
+            out var expression);
+
+        Assert.True(success);
+        Assert.Equal("pseudo(nest(of-type(null,Button)),pointerover)", expression);
+    }
+
+    [Fact]
+    public void TryBuildSelectorExpression_Fails_For_Nesting_Selector_Without_Nesting_Context()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo;
+
+            public class StyledElement { }
+            public class Button : StyledElement { }
+            """);
+
+        var emitter = new TestSelectorExpressionEmitter();
+        var success = SelectorExpressionBuildSemantics.TryBuildSelectorExpression(
+            "^:pointerover",
+            selectorTypeFallback: null,
+            selectorNestingTypeHint: null,
+            resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
+            emitter: emitter,
+            tryResolvePropertyPredicate: static (
+                string _,
+                INamedTypeSymbol? __,
+                out string propertyExpression,
+                out string valueExpression) =>
+            {
+                propertyExpression = string.Empty;
+                valueExpression = string.Empty;
+                return false;
+            },
+            out _);
+
+        Assert.False(success);
+    }
+
+    [Fact]
     public void TryBuildSelectorExpression_Fails_For_Unresolved_Type_Token()
     {
         var compilation = CreateCompilation(
@@ -140,7 +240,6 @@ public class SelectorExpressionBuildSemanticsTests
             selectorTypeFallback: null,
             selectorNestingTypeHint: null,
             resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
-            resolveWildcardType: () => compilation.GetTypeByMetadataName("Demo.StyledElement"),
             emitter: emitter,
             tryResolvePropertyPredicate: static (
                 string _,

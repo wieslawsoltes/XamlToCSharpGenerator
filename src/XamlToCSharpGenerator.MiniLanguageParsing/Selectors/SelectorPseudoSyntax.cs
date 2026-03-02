@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 
@@ -55,7 +56,7 @@ public static class SelectorPseudoSyntax
             return true;
         }
 
-        var compact = text.Replace(" ", string.Empty);
+        var compact = RemoveWhitespace(text);
         var nIndex = compact.IndexOf('n');
         if (nIndex < 0)
         {
@@ -90,5 +91,20 @@ public static class SelectorPseudoSyntax
         }
 
         return int.TryParse(offsetToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out offset);
+    }
+
+    private static string RemoveWhitespace(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (!char.IsWhiteSpace(current))
+            {
+                builder.Append(current);
+            }
+        }
+
+        return builder.ToString();
     }
 }

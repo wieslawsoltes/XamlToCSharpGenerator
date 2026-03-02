@@ -154,6 +154,8 @@ public static class SelectorSyntaxValidator
             if (index > 0 || segment.Combinator != SelectorCombinatorKind.None)
             {
                 currentTypeContext = false;
+                branchTypeToken = null;
+                branchTypeOffset = 0;
             }
 
             if (!TryValidateSimpleSelectorSegment(
@@ -192,13 +194,8 @@ public static class SelectorSyntaxValidator
             index++;
             segmentApplied = true;
             currentTypeContext = true;
-        }
-
-        if (index < segmentText.Length && segmentText[index] == '*')
-        {
-            index++;
-            segmentApplied = true;
-            currentTypeContext = true;
+            branchTypeToken = null;
+            branchTypeOffset = 0;
         }
 
         var typeProbeIndex = index;
@@ -236,6 +233,16 @@ public static class SelectorSyntaxValidator
             }
 
             var token = segmentText[index];
+            if (token == '^')
+            {
+                index++;
+                segmentApplied = true;
+                currentTypeContext = true;
+                branchTypeToken = null;
+                branchTypeOffset = 0;
+                continue;
+            }
+
             if (token == '[')
             {
                 if (!TopLevelTextParser.TryReadBalancedContent(segmentText, ref index, '[', ']', out var predicateText))
@@ -354,16 +361,23 @@ public static class SelectorSyntaxValidator
             case SelectorPseudoFunctionKind.Is:
             {
                 var typeArgument = pseudoArgument.Trim();
+                var typeArgumentOffset = pseudoArgumentOffset;
+                while (typeArgumentOffset < pseudoArgumentOffset + pseudoArgument.Length &&
+                       char.IsWhiteSpace(pseudoArgument[typeArgumentOffset - pseudoArgumentOffset]))
+                {
+                    typeArgumentOffset++;
+                }
+
                 if (!SelectorTokenSyntax.TryReadStandaloneTypeToken(typeArgument, out var typeToken))
                 {
                     errorMessage = "Expected an identifier, got end of selector.";
-                    errorOffset = pseudoArgumentOffset;
+                    errorOffset = typeArgumentOffset;
                     return false;
                 }
 
                 currentTypeContext = true;
                 branchTypeToken = typeToken;
-                branchTypeOffset = pseudoArgumentOffset;
+                branchTypeOffset = typeArgumentOffset;
                 return true;
             }
             case SelectorPseudoFunctionKind.Not:
@@ -394,7 +408,9 @@ public static class SelectorSyntaxValidator
             }
         }
 
-        return true;
+        errorMessage = "Expected class name, is, nth-child or nth-last-child selector after ':'.";
+        errorOffset = pseudoArgumentOffset;
+        return false;
     }
 
     private static bool TryValidatePropertySelector(
