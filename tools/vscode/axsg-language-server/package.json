@@ -1,0 +1,82 @@
+{
+  "name": "axsg-language-server",
+  "displayName": "AXSG XAML Language Service",
+  "description": "XAML/AXAML IntelliSense powered by XamlToCSharpGenerator.",
+  "version": "0.1.0",
+  "publisher": "xamltocsharpgenerator",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:axaml",
+    "onLanguage:xaml"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "axaml",
+        "aliases": [
+          "AXAML",
+          "axaml"
+        ],
+        "extensions": [
+          ".axaml"
+        ]
+      },
+      {
+        "id": "xaml",
+        "aliases": [
+          "XAML",
+          "xaml"
+        ],
+        "extensions": [
+          ".xaml"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "AXSG Language Server",
+      "properties": {
+        "axsg.languageServer.command": {
+          "type": "string",
+          "default": "axsg-lsp",
+          "description": "Path to AXSG language server command."
+        },
+        "axsg.languageServer.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional command-line arguments passed to the AXSG language server."
+        },
+        "axsg.languageServer.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace level for AXSG language-server protocol communication."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "echo \"no lint configured\"",
+    "package": "npx @vscode/vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.3.2"
+  }
+}
