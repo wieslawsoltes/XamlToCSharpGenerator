@@ -176,6 +176,24 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                 return;
             }
 
+            var useLocatorValue = Environment.GetEnvironmentVariable("AXSG_LANGUAGE_SERVICE_USE_MSBUILD_LOCATOR");
+            if (!string.IsNullOrWhiteSpace(useLocatorValue) &&
+                (string.Equals(useLocatorValue, "0", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(useLocatorValue, "false", StringComparison.OrdinalIgnoreCase)))
+            {
+                _locatorRegistered = true;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(useLocatorValue))
+            {
+                // On .NET (Core) hosts, MSBuildWorkspace can discover .NET SDK toolsets without
+                // MSBuildLocator. Registering locator here wires an AssemblyResolve path into the
+                // SDK folder and can force-load mismatched Microsoft.Extensions.* versions.
+                _locatorRegistered = true;
+                return;
+            }
+
             if (!MSBuildLocator.IsRegistered)
             {
                 var instances = MSBuildLocator.QueryVisualStudioInstances().ToArray();
