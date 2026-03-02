@@ -18,6 +18,7 @@ namespace ControlCatalog
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
                 .UseAvaloniaSourceGeneratedXaml()
+                .UseAvaloniaSourceGeneratedStudioFromEnvironment()
                 .LogToTrace()
                 .AfterSetup(builder =>
                 {

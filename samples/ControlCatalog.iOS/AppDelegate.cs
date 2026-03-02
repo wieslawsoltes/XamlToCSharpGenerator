@@ -21,6 +21,7 @@ namespace ControlCatalog
 
             return base.CustomizeAppBuilder(builder)
                 .UseAvaloniaSourceGeneratedXaml()
+                .UseAvaloniaSourceGeneratedStudioFromEnvironment()
 #if DEBUG
                 .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000)
 #endif

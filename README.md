@@ -44,6 +44,11 @@ Optional backend knobs:
 </PropertyGroup>
 ```
 
+## Configuration Model Docs
+
+- Configuration schema and source layering: [`docs/configuration-model.md`](docs/configuration-model.md)
+- Migration guide (legacy properties/transform rules to unified model): [`docs/configuration-migration.md`](docs/configuration-migration.md)
+
 When `AvaloniaSourceGenCreateSourceInfo=true`, generated C# also emits AXAML `#line` mappings (`// AXSG:XAML line:column` + `#line`) to improve debugger stepping and stack-trace source correlation.
 
 ## C# XAML Expressions
@@ -409,6 +414,30 @@ Supported LSP features:
 - `textDocument/definition` (Go To Definition from XAML element/property tokens)
 
 Diagnostics reuse SourceGen compiler semantics (`SimpleXamlDocumentParser` + `AvaloniaSemanticBinder`) and publish existing `AXSG####` codes directly in editor diagnostics.
+
+### AvaloniaEdit AXAML Editor Control
+
+New editor control project:
+- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.Editor.Avalonia`
+
+Control:
+- `XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor`
+
+Features:
+- completion (element/property/markup extension),
+- diagnostics underlines from SourceGen parser/semantic diagnostics,
+- hover/definition/symbol/token services through shared `XamlToCSharpGenerator.LanguageService`.
+
+Minimal usage:
+
+```csharp
+var editor = new AxamlTextEditor
+{
+    DocumentUri = "file:///absolute/path/View.axaml",
+    WorkspaceRoot = "/Users/wieslawsoltes/GitHub/MyApp",
+    Text = initialAxamlText
+};
+```
 
 ### Package and Install `axsg-lsp`
 
