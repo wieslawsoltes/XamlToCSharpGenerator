@@ -7,9 +7,12 @@
     <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == '' and '$(AvaloniaSourceGenTransformRules)' != ''">$(AvaloniaSourceGenTransformRules)</XamlSourceGenTransformRules>
     <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == ''"></XamlSourceGenTransformRules>
     <XamlSourceGenTransformRuleItemGroup Condition="'$(XamlSourceGenTransformRuleItemGroup)' == ''">AvaloniaSourceGenTransformRule</XamlSourceGenTransformRuleItemGroup>
+    <XamlSourceGenConfigurationPrecedence Condition="'$(XamlSourceGenConfigurationPrecedence)' == '' and '$(AvaloniaSourceGenConfigurationPrecedence)' != ''">$(AvaloniaSourceGenConfigurationPrecedence)</XamlSourceGenConfigurationPrecedence>
+    <XamlSourceGenConfigurationPrecedence Condition="'$(XamlSourceGenConfigurationPrecedence)' == ''"></XamlSourceGenConfigurationPrecedence>
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == '' and '$(XamlSourceGenBackend)' != ''">$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == '' and '$(XamlSourceGenEnabled)' != ''">$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaSourceGenTransformRules Condition="'$(AvaloniaSourceGenTransformRules)' == '' and '$(XamlSourceGenTransformRules)' != ''">$(XamlSourceGenTransformRules)</AvaloniaSourceGenTransformRules>
+    <AvaloniaSourceGenConfigurationPrecedence Condition="'$(AvaloniaSourceGenConfigurationPrecedence)' == '' and '$(XamlSourceGenConfigurationPrecedence)' != ''">$(XamlSourceGenConfigurationPrecedence)</AvaloniaSourceGenConfigurationPrecedence>
     <AvaloniaXamlCompilerBackend Condition="'$(AvaloniaXamlCompilerBackend)' == ''">XamlIl</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled Condition="'$(AvaloniaSourceGenCompilerEnabled)' == ''">false</AvaloniaSourceGenCompilerEnabled>
     <AvaloniaSourceGenUseCompiledBindingsByDefault Condition="'$(AvaloniaSourceGenUseCompiledBindingsByDefault)' == ''">false</AvaloniaSourceGenUseCompiledBindingsByDefault>
@@ -58,8 +61,10 @@
     <CompilerVisibleProperty Include="XamlSourceGenAdditionalFilesSourceItemGroup" />
     <CompilerVisibleProperty Include="XamlSourceGenTransformRules" />
     <CompilerVisibleProperty Include="XamlSourceGenTransformRuleItemGroup" />
+    <CompilerVisibleProperty Include="XamlSourceGenConfigurationPrecedence" />
     <CompilerVisibleProperty Include="AvaloniaXamlCompilerBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCompilerEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenConfigurationPrecedence" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenUseCompiledBindingsByDefault" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenCSharpExpressionsEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenImplicitCSharpExpressionsEnabled" />

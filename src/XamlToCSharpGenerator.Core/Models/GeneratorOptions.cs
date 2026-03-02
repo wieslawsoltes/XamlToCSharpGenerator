@@ -1,4 +1,7 @@
+using System;
+using System.Linq;
 using Microsoft.CodeAnalysis.Diagnostics;
+using XamlToCSharpGenerator.Core.Configuration;
 
 namespace XamlToCSharpGenerator.Core.Models;
 
@@ -36,6 +39,8 @@ public sealed record GeneratorOptions(
     string Backend,
     string? AssemblyName)
 {
+    private const string RawGlobalXmlnsPrefixesAdditionalPropertyKey = "RawGlobalXmlnsPrefixes";
+
     public static GeneratorOptions From(AnalyzerConfigOptions globalOptions, string? assemblyName)
     {
         var backend = GetOrDefault(
@@ -89,6 +94,61 @@ public sealed record GeneratorOptions(
             AssemblyName: assemblyName);
     }
 
+    public static GeneratorOptions FromConfiguration(
+        XamlSourceGenConfiguration configuration,
+        AnalyzerConfigOptions globalOptions,
+        string? assemblyName)
+    {
+        if (configuration is null)
+        {
+            throw new ArgumentNullException(nameof(configuration));
+        }
+
+        if (globalOptions is null)
+        {
+            throw new ArgumentNullException(nameof(globalOptions));
+        }
+
+        var globalXmlnsPrefixes = ResolveGlobalXmlnsPrefixes(configuration);
+
+        return new GeneratorOptions(
+            IsEnabled: configuration.Build.IsEnabled ||
+                       string.Equals(configuration.Build.Backend, "SourceGen", StringComparison.OrdinalIgnoreCase),
+            UseCompiledBindingsByDefault: configuration.Binding.UseCompiledBindingsByDefault,
+            CSharpExpressionsEnabled: configuration.Binding.CSharpExpressionsEnabled,
+            ImplicitCSharpExpressionsEnabled: configuration.Binding.ImplicitCSharpExpressionsEnabled,
+            CreateSourceInfo: configuration.Emitter.CreateSourceInfo,
+            StrictMode: configuration.Build.StrictMode,
+            HotReloadEnabled: configuration.Build.HotReloadEnabled,
+            HotReloadErrorResilienceEnabled: configuration.Build.HotReloadErrorResilienceEnabled,
+            IdeHotReloadEnabled: configuration.Build.IdeHotReloadEnabled,
+            HotDesignEnabled: configuration.Build.HotDesignEnabled,
+            IosHotReloadEnabled: configuration.Build.IosHotReloadEnabled,
+            IosHotReloadUseInterpreter: configuration.Build.IosHotReloadUseInterpreter,
+            DotNetWatchBuild: configuration.Build.DotNetWatchBuild,
+            BuildingInsideVisualStudio: configuration.Build.BuildingInsideVisualStudio,
+            BuildingByReSharper: configuration.Build.BuildingByReSharper,
+            TracePasses: configuration.Emitter.TracePasses,
+            MetricsEnabled: configuration.Emitter.MetricsEnabled,
+            MetricsDetailed: configuration.Emitter.MetricsDetailed,
+            MarkupParserLegacyInvalidNamedArgumentFallbackEnabled:
+                configuration.Binding.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled,
+            TypeResolutionCompatibilityFallbackEnabled:
+                configuration.Binding.TypeResolutionCompatibilityFallbackEnabled,
+            AllowImplicitXmlnsDeclaration: configuration.Parser.AllowImplicitXmlnsDeclaration,
+            ImplicitStandardXmlnsPrefixesEnabled: configuration.Parser.ImplicitStandardXmlnsPrefixesEnabled,
+            ImplicitDefaultXmlns: configuration.Parser.ImplicitDefaultXmlns,
+            InferClassFromPath: configuration.Parser.InferClassFromPath,
+            ImplicitProjectNamespacesEnabled: configuration.Parser.ImplicitProjectNamespacesEnabled,
+            GlobalXmlnsPrefixes: globalXmlnsPrefixes,
+            RootNamespace: GetNullable(globalOptions, "build_property.RootNamespace"),
+            IntermediateOutputPath: GetNullable(globalOptions, "build_property.IntermediateOutputPath"),
+            BaseIntermediateOutputPath: GetNullable(globalOptions, "build_property.BaseIntermediateOutputPath"),
+            ProjectDirectory: GetNullable(globalOptions, "build_property.MSBuildProjectDirectory"),
+            Backend: configuration.Build.Backend,
+            AssemblyName: assemblyName);
+    }
+
     private static bool GetBool(AnalyzerConfigOptions options, string key, bool fallback)
     {
         if (!options.TryGetValue(key, out var value))
@@ -134,5 +194,27 @@ public sealed record GeneratorOptions(
         }
 
         return value;
+    }
+
+    private static string? ResolveGlobalXmlnsPrefixes(XamlSourceGenConfiguration configuration)
+    {
+        if (configuration.Parser.AdditionalProperties.TryGetValue(
+                RawGlobalXmlnsPrefixesAdditionalPropertyKey,
+                out var rawGlobalXmlnsPrefixes) &&
+            !string.IsNullOrWhiteSpace(rawGlobalXmlnsPrefixes))
+        {
+            return rawGlobalXmlnsPrefixes;
+        }
+
+        if (configuration.Parser.GlobalXmlnsPrefixes.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(
+            ";",
+            configuration.Parser.GlobalXmlnsPrefixes
+                .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+                .Select(static pair => pair.Key + "=" + pair.Value));
     }
 }

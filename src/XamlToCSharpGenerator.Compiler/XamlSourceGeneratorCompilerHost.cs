@@ -7,8 +7,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
+using XamlToCSharpGenerator.Core.Configuration.Sources;
 using XamlToCSharpGenerator.Core.Diagnostics;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
@@ -32,9 +35,113 @@ public static class XamlSourceGeneratorCompilerHost
         IncrementalGeneratorInitializationContext context,
         IXamlFrameworkProfile frameworkProfile)
     {
-        var optionsProvider = context.AnalyzerConfigOptionsProvider
-            .Combine(context.CompilationProvider.Select(static (compilation, _) => compilation.AssemblyName))
-            .Select(static (pair, _) => GeneratorOptions.From(pair.Left.GlobalOptions, pair.Right));
+        var configurationFileInputs = context.AdditionalTextsProvider
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .Select((pair, cancellationToken) =>
+            {
+                var text = pair.Left;
+                var optionsProvider = pair.Right;
+                var metadataOptions = optionsProvider.GetOptions(text);
+                metadataOptions.TryGetValue(frameworkProfile.BuildContract.SourceItemGroupMetadataName, out var sourceItemGroup);
+                var fileName = Path.GetFileName(text.Path);
+
+                if (!FileConfigurationSource.IsSupportedConfigurationFileName(fileName) &&
+                    !string.Equals(sourceItemGroup, "XamlSourceGenConfiguration", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var content = text.GetText(cancellationToken)?.ToString();
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    return null;
+                }
+
+                return new ConfigurationFileInput(text.Path, content!);
+            })
+            .Where(static input => input is not null)
+            .Select(static (input, _) => input!);
+
+        var configurationFileSnapshot = configurationFileInputs
+            .Collect()
+            .Select(static (inputs, _) =>
+            {
+                if (inputs.IsDefaultOrEmpty)
+                {
+                    return ImmutableArray<ConfigurationFileInput>.Empty;
+                }
+
+                var byPath = new Dictionary<string, ConfigurationFileInput>(StringComparer.OrdinalIgnoreCase);
+                foreach (var input in inputs.OrderBy(static value => value.Path, StringComparer.OrdinalIgnoreCase))
+                {
+                    byPath[NormalizeDedupePath(input.Path)] = input;
+                }
+
+                return byPath.Values
+                    .OrderBy(static value => value.Path, StringComparer.OrdinalIgnoreCase)
+                    .ToImmutableArray();
+            });
+
+        var configurationProvider = context.CompilationProvider
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .Combine(configurationFileSnapshot)
+            .Select(static (payload, _) =>
+            {
+                var compilation = payload.Left.Left;
+                var optionsProvider = payload.Left.Right;
+                var configurationFiles = payload.Right;
+                var globalOptions = optionsProvider.GlobalOptions;
+                var projectDirectory = GetNullableAnalyzerOption(globalOptions, "build_property.MSBuildProjectDirectory");
+                var precedenceIssues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
+                var sourcePrecedence = ResolveConfigurationSourcePrecedence(globalOptions, precedenceIssues);
+                var hasDefaultConfigurationFile = configurationFiles.Any(static file =>
+                    FileConfigurationSource.IsSupportedConfigurationFileName(Path.GetFileName(file.Path)));
+
+                var configurationBuilder = new XamlSourceGenConfigurationBuilder()
+                    .AddSource(new MsBuildConfigurationSource(globalOptions, sourcePrecedence.MsBuild));
+
+                foreach (var configurationFile in configurationFiles)
+                {
+                    configurationBuilder.AddSource(new FileConfigurationSource(
+                        configurationFile.Path,
+                        configurationFile.Text,
+                        sourcePrecedence.File));
+                }
+
+                if (!hasDefaultConfigurationFile)
+                {
+                    configurationBuilder.AddSource(FileConfigurationSource.CreateProjectDefault(sourcePrecedence.ProjectDefaultFile));
+                }
+
+                configurationBuilder.AddSource(new CodeConfigurationSource(compilation, sourcePrecedence.Code));
+
+                var configurationResult = configurationBuilder.Build(new XamlSourceGenConfigurationSourceContext
+                {
+                    ProjectDirectory = projectDirectory,
+                    AssemblyName = compilation.AssemblyName
+                });
+                if (precedenceIssues.Count != 0)
+                {
+                    configurationResult = configurationResult with
+                    {
+                        Issues = configurationResult.Issues.AddRange(precedenceIssues.ToImmutable())
+                    };
+                }
+
+                var generatorOptions = GeneratorOptions.FromConfiguration(
+                    configurationResult.Configuration,
+                    globalOptions,
+                    compilation.AssemblyName);
+
+                return new GeneratorConfigurationSnapshot(generatorOptions, configurationResult);
+            });
+
+        context.RegisterSourceOutput(
+            configurationProvider,
+            static (sourceContext, snapshot) => ReportConfigurationIssues(sourceContext, snapshot.ConfigurationResult.Issues));
+
+        var optionsProvider = configurationProvider
+            .Select(static (snapshot, _) => snapshot.Options);
 
         var xamlInputs = context.AdditionalTextsProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
@@ -154,10 +261,53 @@ public static class XamlSourceGeneratorCompilerHost
             .Where(static input => input is not null)
             .Select(static (input, _) => input!);
 
-        var transformRules = transformRuleInputs
-            .Select((input, _) => frameworkProfile.TransformProvider.ParseTransformRule(input))
+        var uniqueTransformRuleInputs = transformRuleInputs
             .Collect()
-            .Select((results, _) => frameworkProfile.TransformProvider.MergeTransformRules(results));
+            .Select(static (inputs, _) =>
+            {
+                if (inputs.IsDefaultOrEmpty)
+                {
+                    return ImmutableArray<XamlFrameworkTransformRuleInput>.Empty;
+                }
+
+                var byPath = new Dictionary<string, XamlFrameworkTransformRuleInput>(StringComparer.OrdinalIgnoreCase);
+                foreach (var input in inputs.OrderBy(static value => value.FilePath, StringComparer.OrdinalIgnoreCase))
+                {
+                    byPath[NormalizeDedupePath(input.FilePath)] = input;
+                }
+
+                return byPath.Values
+                    .OrderBy(static value => value.FilePath, StringComparer.OrdinalIgnoreCase)
+                    .ToImmutableArray();
+            });
+
+        var legacyTransformRules = uniqueTransformRuleInputs
+            .Select((inputs, _) =>
+            {
+                if (inputs.IsDefaultOrEmpty)
+                {
+                    return new XamlFrameworkTransformRuleAggregateResult(
+                        XamlTransformConfiguration.Empty,
+                        ImmutableArray<DiagnosticInfo>.Empty);
+                }
+
+                var parsed = inputs
+                    .Select(frameworkProfile.TransformProvider.ParseTransformRule)
+                    .ToImmutableArray();
+                return frameworkProfile.TransformProvider.MergeTransformRules(parsed);
+            });
+
+        var transformRules = legacyTransformRules
+            .Combine(configurationProvider)
+            .Select((pair, _) =>
+            {
+                var legacy = pair.Left;
+                var configuration = pair.Right.ConfigurationResult.Configuration;
+                return BuildEffectiveTransformRules(
+                    legacy,
+                    configuration,
+                    frameworkProfile.TransformProvider);
+            });
 
         context.RegisterSourceOutput(
             transformRules,
@@ -195,6 +345,8 @@ public static class XamlSourceGeneratorCompilerHost
                 return results.ToImmutable();
             });
         var parsedDocumentsSnapshot = parsedDocuments.Collect();
+        var globalControlThemeKeys = parsedDocumentsSnapshot
+            .Select(static (documents, _) => BuildGlobalControlThemeKeySet(documents));
 
         var hotReloadAssemblyHandlerSource = uniqueXamlInputs
             .Combine(optionsProvider)
@@ -265,13 +417,13 @@ public static class XamlSourceGeneratorCompilerHost
 
         context.RegisterSourceOutput(
             parsedDocuments
-                .Combine(parsedDocumentsSnapshot)
+                .Combine(globalControlThemeKeys)
                 .Combine(context.CompilationProvider.Combine(optionsProvider).Combine(transformRules)),
             (sourceContext, payload) =>
             {
                 var parsedAndSnapshot = payload.Left;
                 var parsedDocument = parsedAndSnapshot.Left;
-                var allParsedDocuments = parsedAndSnapshot.Right;
+                var controlThemeKeys = parsedAndSnapshot.Right;
                 var compilationAndRules = payload.Right;
                 var compilationAndOptions = compilationAndRules.Left;
                 var compilation = compilationAndOptions.Left;
@@ -280,7 +432,7 @@ public static class XamlSourceGeneratorCompilerHost
                 var parseResult = parsedDocument.Document;
                 var parseDiagnostics = ApplyGlobalParityDiagnosticFilters(
                     parsedDocument.Diagnostics,
-                    allParsedDocuments);
+                    controlThemeKeys);
                 parseDiagnostics = ApplyDefaultDiagnosticPolicy(parseDiagnostics, options);
                 var resilienceEnabled = IsHotReloadErrorResilienceEnabled(options);
                 var cacheKey = BuildHotReloadCacheKey(
@@ -335,7 +487,7 @@ public static class XamlSourceGeneratorCompilerHost
                     bindElapsed = GetElapsedTimeSince(bindStart);
                     semanticDiagnostics = ApplyGlobalParityDiagnosticFilters(
                         semanticDiagnostics,
-                        allParsedDocuments);
+                        controlThemeKeys);
                     semanticDiagnostics = ApplyDefaultDiagnosticPolicy(semanticDiagnostics, options);
                     semanticDiagnosticsCount = semanticDiagnostics.Length;
                     typeResolutionFallbackCount = semanticDiagnostics.Count(static diagnostic => diagnostic.Id == "AXSG0113");
@@ -499,18 +651,197 @@ public static class XamlSourceGeneratorCompilerHost
         }
     }
 
-    private static ImmutableArray<DiagnosticInfo> ApplyGlobalParityDiagnosticFilters(
-        ImmutableArray<DiagnosticInfo> diagnostics,
-        ImmutableArray<ParsedDocumentResult> allParsedDocuments)
+    private static void ReportConfigurationIssues(
+        SourceProductionContext context,
+        ImmutableArray<XamlSourceGenConfigurationIssue> issues)
     {
-        if (diagnostics.IsDefaultOrEmpty ||
-            allParsedDocuments.IsDefaultOrEmpty)
+        if (issues.IsDefaultOrEmpty)
         {
-            return diagnostics;
+            return;
         }
 
-        var globalControlThemeKeys = BuildGlobalControlThemeKeySet(allParsedDocuments);
-        if (globalControlThemeKeys.Count == 0)
+        foreach (var issue in issues)
+        {
+            var severity = issue.Severity switch
+            {
+                XamlSourceGenConfigurationIssueSeverity.Error => DiagnosticSeverity.Error,
+                XamlSourceGenConfigurationIssueSeverity.Warning => DiagnosticSeverity.Warning,
+                _ => DiagnosticSeverity.Info
+            };
+
+            var descriptor = new DiagnosticDescriptor(
+                id: issue.Code,
+                title: "Source generator configuration issue",
+                messageFormat: "{0}",
+                category: "AXSG.Configuration",
+                defaultSeverity: severity,
+                isEnabledByDefault: true);
+
+            var sourceName = string.IsNullOrWhiteSpace(issue.SourceName) ? "Configuration" : issue.SourceName!;
+            var message = "[" + sourceName + "] " + issue.Message;
+            context.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, message));
+        }
+    }
+
+    private static XamlFrameworkTransformRuleAggregateResult BuildEffectiveTransformRules(
+        XamlFrameworkTransformRuleAggregateResult legacyTransformRules,
+        XamlSourceGenConfiguration configuration,
+        IXamlFrameworkTransformProvider transformProvider)
+    {
+        var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
+        diagnostics.AddRange(legacyTransformRules.Diagnostics);
+
+        var configurationTransformRuleResults = ParseConfigurationTransformRuleInputs(
+            configuration.Transform.RawTransformDocuments,
+            transformProvider);
+        var configurationTransformRules = transformProvider.MergeTransformRules(configurationTransformRuleResults);
+        diagnostics.AddRange(configurationTransformRules.Diagnostics);
+
+        var mergedConfiguration = MergeTransformConfigurations(
+            legacyTransformRules.Configuration,
+            TransformConfigurationSourceKind.LegacyRuleFiles,
+            configurationTransformRules.Configuration,
+            TransformConfigurationSourceKind.UnifiedConfigurationRawDocuments,
+            diagnostics);
+
+        mergedConfiguration = MergeTransformConfigurations(
+            mergedConfiguration,
+            TransformConfigurationSourceKind.UnifiedConfigurationRawDocuments,
+            configuration.Transform.Configuration,
+            TransformConfigurationSourceKind.UnifiedConfigurationTypedObject,
+            diagnostics);
+
+        return new XamlFrameworkTransformRuleAggregateResult(
+            mergedConfiguration,
+            diagnostics.ToImmutable());
+    }
+
+    private static ImmutableArray<XamlFrameworkTransformRuleResult> ParseConfigurationTransformRuleInputs(
+        ImmutableDictionary<string, string> rawTransformDocuments,
+        IXamlFrameworkTransformProvider transformProvider)
+    {
+        if (rawTransformDocuments.Count == 0)
+        {
+            return ImmutableArray<XamlFrameworkTransformRuleResult>.Empty;
+        }
+
+        var results = ImmutableArray.CreateBuilder<XamlFrameworkTransformRuleResult>(rawTransformDocuments.Count);
+        foreach (var pair in rawTransformDocuments.OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var filePath = BuildConfigurationTransformRuleDocumentPath(pair.Key);
+            var parsed = transformProvider.ParseTransformRule(new XamlFrameworkTransformRuleInput(filePath, pair.Value));
+            results.Add(parsed);
+        }
+
+        return results.ToImmutable();
+    }
+
+    private static string BuildConfigurationTransformRuleDocumentPath(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "xaml-sourcegen.config.json::transform.rawTransformDocuments[<empty>]";
+        }
+
+        return "xaml-sourcegen.config.json::transform.rawTransformDocuments[" + key.Trim() + "]";
+    }
+
+    private static XamlTransformConfiguration MergeTransformConfigurations(
+        XamlTransformConfiguration baseConfiguration,
+        TransformConfigurationSourceKind baseSourceKind,
+        XamlTransformConfiguration overlayConfiguration,
+        TransformConfigurationSourceKind overlaySourceKind,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics)
+    {
+        if (overlayConfiguration.TypeAliases.IsDefaultOrEmpty &&
+            overlayConfiguration.PropertyAliases.IsDefaultOrEmpty)
+        {
+            return baseConfiguration;
+        }
+
+        var typeAliases = new Dictionary<string, TransformTypeAliasEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var alias in baseConfiguration.TypeAliases)
+        {
+            typeAliases[BuildTypeAliasKey(alias)] = new TransformTypeAliasEntry(alias, baseSourceKind);
+        }
+
+        foreach (var alias in overlayConfiguration.TypeAliases)
+        {
+            var key = BuildTypeAliasKey(alias);
+            if (typeAliases.TryGetValue(key, out var existing) &&
+                existing.SourceKind == TransformConfigurationSourceKind.LegacyRuleFiles &&
+                overlaySourceKind != TransformConfigurationSourceKind.LegacyRuleFiles)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0903",
+                    "Type alias '" + alias.XmlNamespace + ":" + alias.XamlTypeName +
+                    "' is declared in both legacy transform rule files and unified configuration. " +
+                    "Unified configuration declaration from '" + alias.Source +
+                    "' overrides legacy declaration from '" + existing.Alias.Source + "'.",
+                    alias.Source,
+                    alias.Line,
+                    alias.Column,
+                    false));
+            }
+
+            typeAliases[key] = new TransformTypeAliasEntry(alias, overlaySourceKind);
+        }
+
+        var propertyAliases = new Dictionary<string, TransformPropertyAliasEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var alias in baseConfiguration.PropertyAliases)
+        {
+            propertyAliases[BuildPropertyAliasKey(alias)] = new TransformPropertyAliasEntry(alias, baseSourceKind);
+        }
+
+        foreach (var alias in overlayConfiguration.PropertyAliases)
+        {
+            var key = BuildPropertyAliasKey(alias);
+            if (propertyAliases.TryGetValue(key, out var existing) &&
+                existing.SourceKind == TransformConfigurationSourceKind.LegacyRuleFiles &&
+                overlaySourceKind != TransformConfigurationSourceKind.LegacyRuleFiles)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0903",
+                    "Property alias '" + alias.TargetTypeName + ":" + alias.XamlPropertyName +
+                    "' is declared in both legacy transform rule files and unified configuration. " +
+                    "Unified configuration declaration from '" + alias.Source +
+                    "' overrides legacy declaration from '" + existing.Alias.Source + "'.",
+                    alias.Source,
+                    alias.Line,
+                    alias.Column,
+                    false));
+            }
+
+            propertyAliases[key] = new TransformPropertyAliasEntry(alias, overlaySourceKind);
+        }
+
+        return new XamlTransformConfiguration(
+            typeAliases
+                .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(static entry => entry.Value.Alias)
+                .ToImmutableArray(),
+            propertyAliases
+                .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(static entry => entry.Value.Alias)
+                .ToImmutableArray());
+    }
+
+    private static string BuildTypeAliasKey(XamlTypeAliasRule alias)
+    {
+        return alias.XmlNamespace + ":" + alias.XamlTypeName;
+    }
+
+    private static string BuildPropertyAliasKey(XamlPropertyAliasRule alias)
+    {
+        return alias.TargetTypeName + ":" + alias.XamlPropertyName;
+    }
+
+    private static ImmutableArray<DiagnosticInfo> ApplyGlobalParityDiagnosticFilters(
+        ImmutableArray<DiagnosticInfo> diagnostics,
+        ImmutableHashSet<string> globalControlThemeKeys)
+    {
+        if (diagnostics.IsDefaultOrEmpty ||
+            globalControlThemeKeys.Count == 0)
         {
             return diagnostics;
         }
@@ -551,10 +882,10 @@ public static class XamlSourceGeneratorCompilerHost
         return diagnostics;
     }
 
-    private static HashSet<string> BuildGlobalControlThemeKeySet(
+    private static ImmutableHashSet<string> BuildGlobalControlThemeKeySet(
         ImmutableArray<ParsedDocumentResult> allParsedDocuments)
     {
-        var keys = new HashSet<string>(StringComparer.Ordinal);
+        var keys = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
         foreach (var parsed in allParsedDocuments)
         {
             var document = parsed.Document;
@@ -574,12 +905,12 @@ public static class XamlSourceGeneratorCompilerHost
             }
         }
 
-        return keys;
+        return keys.ToImmutable();
     }
 
     private static bool ShouldSuppressControlThemeBasedOnDiagnostic(
         DiagnosticInfo diagnostic,
-        HashSet<string> globalControlThemeKeys)
+        ImmutableHashSet<string> globalControlThemeKeys)
     {
         if (!string.Equals(diagnostic.Id, "AXSG0305", StringComparison.Ordinal))
         {
@@ -1703,6 +2034,130 @@ namespace XamlToCSharpGenerator.Generated
 """ + preserveIosDebugEntryPointsSource;
     }
 
+    private static ConfigurationSourcePrecedence ResolveConfigurationSourcePrecedence(
+        AnalyzerConfigOptions options,
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
+    {
+        var rawValue = GetNullableAnalyzerOption(options, "build_property.XamlSourceGenConfigurationPrecedence") ??
+                       GetNullableAnalyzerOption(options, "build_property.AvaloniaSourceGenConfigurationPrecedence");
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return ConfigurationSourcePrecedence.Default;
+        }
+
+        var result = ConfigurationSourcePrecedence.Default;
+        var precedenceText = rawValue!;
+        var segments = precedenceText.Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var rawSegment in segments)
+        {
+            var segment = rawSegment.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex == segment.Length - 1)
+            {
+                AddConfigurationPrecedenceIssue(
+                    issues,
+                    "Invalid configuration precedence segment '" + segment +
+                    "'. Expected 'ProjectDefaultFile=90;File=100;MsBuild=200;Code=300'.");
+                continue;
+            }
+
+            var key = segment.Substring(0, separatorIndex).Trim();
+            var valueText = segment.Substring(separatorIndex + 1).Trim();
+            if (!int.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var precedence))
+            {
+                AddConfigurationPrecedenceIssue(
+                    issues,
+                    "Invalid precedence value '" + valueText + "' for key '" + key +
+                    "'. Expected an integer.");
+                continue;
+            }
+
+            switch (NormalizeConfigurationPrecedenceKey(key))
+            {
+                case ConfigurationPrecedenceKey.ProjectDefaultFile:
+                    result = result with { ProjectDefaultFile = precedence };
+                    break;
+                case ConfigurationPrecedenceKey.File:
+                    result = result with { File = precedence };
+                    break;
+                case ConfigurationPrecedenceKey.MsBuild:
+                    result = result with { MsBuild = precedence };
+                    break;
+                case ConfigurationPrecedenceKey.Code:
+                    result = result with { Code = precedence };
+                    break;
+                default:
+                    AddConfigurationPrecedenceIssue(
+                        issues,
+                        "Unknown configuration precedence key '" + key +
+                        "'. Supported keys: ProjectDefaultFile, File, MsBuild, Code.");
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+    private static ConfigurationPrecedenceKey NormalizeConfigurationPrecedenceKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return ConfigurationPrecedenceKey.Unknown;
+        }
+
+        var normalized = key.Trim().Replace("_", string.Empty).Replace("-", string.Empty);
+        if (normalized.Equals("projectdefaultfile", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("projectdefault", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("defaultfile", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConfigurationPrecedenceKey.ProjectDefaultFile;
+        }
+
+        if (normalized.Equals("file", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConfigurationPrecedenceKey.File;
+        }
+
+        if (normalized.Equals("msbuild", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConfigurationPrecedenceKey.MsBuild;
+        }
+
+        if (normalized.Equals("code", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConfigurationPrecedenceKey.Code;
+        }
+
+        return ConfigurationPrecedenceKey.Unknown;
+    }
+
+    private static void AddConfigurationPrecedenceIssue(
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues,
+        string message)
+    {
+        issues.Add(new XamlSourceGenConfigurationIssue(
+            Code: "AXSG0933",
+            Severity: XamlSourceGenConfigurationIssueSeverity.Warning,
+            Message: message,
+            SourceName: "MsBuild"));
+    }
+
+    private static string? GetNullableAnalyzerOption(AnalyzerConfigOptions options, string key)
+    {
+        if (!options.TryGetValue(key, out var value) ||
+            string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
     private static bool ShouldPreferTargetPath(string candidateTargetPath, string currentTargetPath)
     {
         var candidateRooted = Path.IsPathRooted(candidateTargetPath);
@@ -1951,6 +2406,85 @@ namespace XamlToCSharpGenerator.Generated
         public int DocumentCount { get; }
 
         public TimeSpan Elapsed { get; }
+    }
+
+    private enum ConfigurationPrecedenceKey
+    {
+        Unknown = 0,
+        ProjectDefaultFile = 1,
+        File = 2,
+        MsBuild = 3,
+        Code = 4
+    }
+
+    private readonly record struct ConfigurationSourcePrecedence(
+        int ProjectDefaultFile,
+        int File,
+        int MsBuild,
+        int Code)
+    {
+        public static ConfigurationSourcePrecedence Default { get; } = new(90, 100, 200, 300);
+    }
+
+    private enum TransformConfigurationSourceKind
+    {
+        LegacyRuleFiles = 0,
+        UnifiedConfigurationRawDocuments = 1,
+        UnifiedConfigurationTypedObject = 2
+    }
+
+    private sealed class TransformTypeAliasEntry
+    {
+        public TransformTypeAliasEntry(XamlTypeAliasRule alias, TransformConfigurationSourceKind sourceKind)
+        {
+            Alias = alias;
+            SourceKind = sourceKind;
+        }
+
+        public XamlTypeAliasRule Alias { get; }
+
+        public TransformConfigurationSourceKind SourceKind { get; }
+    }
+
+    private sealed class TransformPropertyAliasEntry
+    {
+        public TransformPropertyAliasEntry(XamlPropertyAliasRule alias, TransformConfigurationSourceKind sourceKind)
+        {
+            Alias = alias;
+            SourceKind = sourceKind;
+        }
+
+        public XamlPropertyAliasRule Alias { get; }
+
+        public TransformConfigurationSourceKind SourceKind { get; }
+    }
+
+    private sealed class ConfigurationFileInput
+    {
+        public ConfigurationFileInput(string path, string text)
+        {
+            Path = path;
+            Text = text;
+        }
+
+        public string Path { get; }
+
+        public string Text { get; }
+    }
+
+    private sealed class GeneratorConfigurationSnapshot
+    {
+        public GeneratorConfigurationSnapshot(
+            GeneratorOptions options,
+            XamlSourceGenConfigurationBuildResult configurationResult)
+        {
+            Options = options;
+            ConfigurationResult = configurationResult;
+        }
+
+        public GeneratorOptions Options { get; }
+
+        public XamlSourceGenConfigurationBuildResult ConfigurationResult { get; }
     }
 
     private sealed class CachedGeneratedSource
