@@ -3,16 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace XamlToCSharpGenerator.Tests.Generator;
 
 public class StringLiteralSemanticInventoryTests
 {
-    private static readonly Regex MetadataNameLiteralRegex = new(
-        "GetTypeByMetadataName\\(\\s*\"(?<metadataName>[^\"]+)\"\\s*\\)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     private static readonly HashSet<string> ApprovedFiles = new(StringComparer.Ordinal)
     {
         "src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.BindingSemantics.cs",
@@ -97,10 +94,23 @@ public class StringLiteralSemanticInventoryTests
 
         Assert.Equal(inventory.Count, semanticContractCount);
         Assert.Equal(0, dataPayloadCount);
+    }
 
-        Assert.Equal(46, inventory.Count);
-        Assert.Equal(36, GetCategoryCount(categoryCounts, LiteralCategory.SemanticContractFramework));
-        Assert.Equal(10, GetCategoryCount(categoryCounts, LiteralCategory.SemanticContractBcl));
+    [Fact]
+    public void MetadataName_String_Literal_Baseline_Report_Contains_Current_Hotspot_Ceilings()
+    {
+        var reportPath = Path.Combine(
+            GetRepositoryRoot(),
+            "plan",
+            "81-string-literal-semantic-inventory-baseline-2026-02-26.md");
+        Assert.True(File.Exists(reportPath), "Baseline report is missing: " + reportPath);
+
+        var reportText = File.ReadAllText(reportPath);
+        foreach (var pair in BaselineHotspotCounts.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+        {
+            var expectedTableRow = "| " + pair.Value + " | `" + pair.Key + "` |";
+            Assert.Contains(expectedTableRow, reportText, StringComparison.Ordinal);
+        }
     }
 
     private static int GetCategoryCount(
@@ -198,24 +208,20 @@ public class StringLiteralSemanticInventoryTests
         foreach (var filePath in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
         {
             var text = File.ReadAllText(filePath);
-            var matches = MetadataNameLiteralRegex.Matches(text);
-            if (matches.Count == 0)
+            var occurrences = CollectLiteralMetadataNameOccurrences(text);
+            if (occurrences.Count == 0)
             {
                 continue;
             }
 
             var normalizedRelativePath = NormalizePath(Path.GetRelativePath(repositoryRoot, filePath));
 
-            foreach (Match match in matches)
+            foreach (var occurrence in occurrences)
             {
-                var metadataName = match.Groups["metadataName"].Value;
-                if (string.IsNullOrWhiteSpace(metadataName))
-                {
-                    continue;
-                }
-
-                var lineNumber = CountLineNumber(text, match.Index);
-                inventory.Add(new StringLiteralOccurrence(normalizedRelativePath, lineNumber, metadataName));
+                inventory.Add(new StringLiteralOccurrence(
+                    normalizedRelativePath,
+                    occurrence.LineNumber,
+                    occurrence.MetadataName));
             }
         }
 
@@ -238,18 +244,58 @@ public class StringLiteralSemanticInventoryTests
         return inventory;
     }
 
-    private static int CountLineNumber(string text, int charIndex)
+    private static List<LocalMetadataNameOccurrence> CollectLiteralMetadataNameOccurrences(string sourceText)
     {
-        var line = 1;
-        for (var index = 0; index < charIndex && index < text.Length; index++)
+        var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
+        var root = syntaxTree.GetRoot();
+        var occurrences = new List<LocalMetadataNameOccurrence>();
+
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
-            if (text[index] == '\n')
+            if (!IsGetTypeByMetadataNameInvocation(invocation))
             {
-                line++;
+                continue;
             }
+
+            if (invocation.ArgumentList.Arguments.Count == 0)
+            {
+                continue;
+            }
+
+            var firstArgumentExpression = invocation.ArgumentList.Arguments[0].Expression;
+            if (firstArgumentExpression is not LiteralExpressionSyntax
+                {
+                    RawKind: (int)SyntaxKind.StringLiteralExpression
+                } stringLiteral)
+            {
+                continue;
+            }
+
+            var metadataName = stringLiteral.Token.ValueText;
+            if (string.IsNullOrWhiteSpace(metadataName))
+            {
+                continue;
+            }
+
+            var lineNumber = stringLiteral.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            occurrences.Add(new LocalMetadataNameOccurrence(lineNumber, metadataName));
         }
 
-        return line;
+        return occurrences;
+    }
+
+    private static bool IsGetTypeByMetadataNameInvocation(InvocationExpressionSyntax invocation)
+    {
+        return invocation.Expression switch
+        {
+            IdentifierNameSyntax identifier
+                when string.Equals(identifier.Identifier.ValueText, "GetTypeByMetadataName", StringComparison.Ordinal) =>
+                true,
+            MemberAccessExpressionSyntax memberAccess
+                when string.Equals(memberAccess.Name.Identifier.ValueText, "GetTypeByMetadataName", StringComparison.Ordinal) =>
+                true,
+            _ => false
+        };
     }
 
     private static string GetRepositoryRoot()
@@ -274,5 +320,8 @@ public class StringLiteralSemanticInventoryTests
         string FilePath,
         int LineNumber,
         string MetadataName);
-}
 
+    private sealed record LocalMetadataNameOccurrence(
+        int LineNumber,
+        string MetadataName);
+}

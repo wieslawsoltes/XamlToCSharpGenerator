@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 
@@ -178,7 +179,14 @@ public sealed partial class AvaloniaSemanticBinder
                     return false;
                 }
 
-                expression = "global::System.DateTime.Parse(\"" + Escape(normalizedRawValue) + "\", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind)";
+                if (!XamlDateTimeLiteralSemantics.TryParseRoundtrip(normalizedRawValue, out var parsedDateTime))
+                {
+                    return false;
+                }
+
+                expression = "global::System.DateTime.FromBinary(" +
+                             parsedDateTime.ToBinary().ToString(CultureInfo.InvariantCulture) +
+                             "L)";
                 return true;
             }
             case XamlMarkupExtensionKind.TimeSpan:
@@ -194,7 +202,14 @@ public sealed partial class AvaloniaSemanticBinder
                     return false;
                 }
 
-                expression = "global::System.TimeSpan.Parse(\"" + Escape(normalizedRawValue) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
+                if (!XamlTimeSpanLiteralSemantics.TryParse(normalizedRawValue, out var parsedTimeSpan))
+                {
+                    return false;
+                }
+
+                expression = "global::System.TimeSpan.FromTicks(" +
+                             parsedTimeSpan.Ticks.ToString(CultureInfo.InvariantCulture) +
+                             "L)";
                 return true;
             }
             case XamlMarkupExtensionKind.Uri:
@@ -351,7 +366,9 @@ public sealed partial class AvaloniaSemanticBinder
             return true;
         }
 
-        var conversionTargetType = targetType ?? compilation.GetTypeByMetadataName("System.Object");
+        var conversionTargetType = targetType ??
+                                   ResolveContractType(compilation, TypeContractId.SystemObject) ??
+                                   compilation.ObjectType;
         if (conversionTargetType is null)
         {
             return false;
@@ -414,7 +431,7 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        var markupExtensionBase = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtension");
+        var markupExtensionBase = ResolveContractType(compilation, TypeContractId.AvaloniaMarkupExtensionBase);
         if (markupExtensionBase is null)
         {
             return false;

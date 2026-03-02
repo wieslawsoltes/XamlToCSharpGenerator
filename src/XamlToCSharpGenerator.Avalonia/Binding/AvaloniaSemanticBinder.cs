@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -137,6 +138,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static readonly AsyncLocal<ResolvedTransformExtensions?> ActiveTransformExtensions = new();
     private static readonly AsyncLocal<GeneratorOptions?> ActiveGeneratorOptions = new();
     private static readonly AsyncLocal<TypeResolutionDiagnosticContext?> ActiveTypeResolutionDiagnosticContext = new();
+    private static readonly AsyncLocal<ITypeSymbolCatalog?> ActiveTypeSymbolCatalog = new();
+    private static readonly SemanticContractMap AvaloniaSemanticContractMap = SemanticContractMaps.AvaloniaDefault;
     private static readonly CSharpExpressionClassificationService ExpressionClassificationService = new(
         TryParseMarkupExtension,
         KnownMarkupExtensionNames,
@@ -217,6 +220,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var previousTransformExtensions = ActiveTransformExtensions.Value;
         var previousGeneratorOptions = ActiveGeneratorOptions.Value;
         var previousTypeResolutionDiagnostics = ActiveTypeResolutionDiagnosticContext.Value;
+        var previousTypeSymbolCatalog = ActiveTypeSymbolCatalog.Value;
 
         try
         {
@@ -225,6 +229,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 diagnostics,
                 document.FilePath,
                 options.StrictMode);
+            var typeSymbolCatalog = CompilationTypeSymbolCatalog.Create(compilation, AvaloniaSemanticContractMap);
+            ActiveTypeSymbolCatalog.Value = typeSymbolCatalog;
+            foreach (var contractDiagnostic in typeSymbolCatalog.Diagnostics)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    contractDiagnostic.Code,
+                    contractDiagnostic.Message,
+                    document.FilePath,
+                    1,
+                    1,
+                    true));
+            }
             var context = new BindingTransformContext(
                 document,
                 compilation,
@@ -242,7 +258,33 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             ActiveTransformExtensions.Value = previousTransformExtensions;
             ActiveGeneratorOptions.Value = previousGeneratorOptions;
             ActiveTypeResolutionDiagnosticContext.Value = previousTypeResolutionDiagnostics;
+            ActiveTypeSymbolCatalog.Value = previousTypeSymbolCatalog;
         }
+    }
+
+    private static ITypeSymbolCatalog GetActiveTypeSymbolCatalog(Compilation compilation)
+    {
+        var catalog = ActiveTypeSymbolCatalog.Value;
+        if (catalog is not null &&
+            ReferenceEquals(catalog.Compilation, compilation))
+        {
+            return catalog;
+        }
+
+        return CompilationTypeSymbolCatalog.Create(compilation, AvaloniaSemanticContractMap);
+    }
+
+    private static INamedTypeSymbol? ResolveContractType(
+        Compilation compilation,
+        TypeContractId contractId)
+    {
+        var catalog = GetActiveTypeSymbolCatalog(compilation);
+        if (catalog.TryGet(contractId, out var symbol))
+        {
+            return symbol;
+        }
+
+        return null;
     }
 
     private static void ExecuteTransformPasses(BindingTransformContext context)

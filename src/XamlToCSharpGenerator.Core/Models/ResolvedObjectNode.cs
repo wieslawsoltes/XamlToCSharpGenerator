@@ -20,4 +20,11 @@ public sealed record ResolvedObjectNode(
     int Line,
     int Column,
     ConditionalXamlExpression? Condition = null,
-    ImmutableArray<ResolvedCollectionAddInstruction> ChildAddInstructions = default);
+    ImmutableArray<ResolvedCollectionAddInstruction> ChildAddInstructions = default,
+    ResolvedObjectNodeSemanticFlags SemanticFlags = ResolvedObjectNodeSemanticFlags.None)
+{
+    public bool HasSemantic(ResolvedObjectNodeSemanticFlags semanticFlag)
+    {
+        return (SemanticFlags & semanticFlag) == semanticFlag;
+    }
+}

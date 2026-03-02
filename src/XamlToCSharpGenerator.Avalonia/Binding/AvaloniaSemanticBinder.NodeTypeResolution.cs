@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -181,31 +182,31 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool IsStyleType(INamedTypeSymbol type, Compilation compilation)
     {
-        var styleType = compilation.GetTypeByMetadataName("Avalonia.Styling.Style");
+        var styleType = ResolveContractType(compilation, TypeContractId.Style);
         return styleType is not null && IsTypeAssignableTo(type, styleType);
     }
 
     private static bool IsControlThemeType(INamedTypeSymbol type, Compilation compilation)
     {
-        var controlThemeType = compilation.GetTypeByMetadataName("Avalonia.Styling.ControlTheme");
+        var controlThemeType = ResolveContractType(compilation, TypeContractId.ControlTheme);
         return controlThemeType is not null && IsTypeAssignableTo(type, controlThemeType);
     }
 
     private static bool IsControlTemplateType(INamedTypeSymbol type, Compilation compilation)
     {
-        var markupControlTemplateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.ControlTemplate");
+        var markupControlTemplateType = ResolveContractType(compilation, TypeContractId.MarkupControlTemplate);
         if (markupControlTemplateType is not null && IsTypeAssignableTo(type, markupControlTemplateType))
         {
             return true;
         }
 
-        var controlsControlTemplateType = compilation.GetTypeByMetadataName("Avalonia.Controls.Templates.ControlTemplate");
+        var controlsControlTemplateType = ResolveContractType(compilation, TypeContractId.ControlsControlTemplate);
         if (controlsControlTemplateType is not null && IsTypeAssignableTo(type, controlsControlTemplateType))
         {
             return true;
         }
 
-        var iControlTemplate = compilation.GetTypeByMetadataName("Avalonia.Controls.Templates.IControlTemplate");
+        var iControlTemplate = ResolveContractType(compilation, TypeContractId.ControlTemplateInterface);
         return iControlTemplate is not null && IsTypeAssignableTo(type, iControlTemplate);
     }
 
@@ -216,13 +217,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var itemsPanelTemplateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.ItemsPanelTemplate");
+        var itemsPanelTemplateType = ResolveContractType(compilation, TypeContractId.ItemsPanelTemplate);
         if (itemsPanelTemplateType is not null && IsTypeAssignableTo(type, itemsPanelTemplateType))
         {
             return true;
         }
 
-        var templateType = compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.Templates.Template");
+        var templateType = ResolveContractType(compilation, TypeContractId.MarkupTemplate);
         return templateType is not null && IsTypeAssignableTo(type, templateType);
     }
 }

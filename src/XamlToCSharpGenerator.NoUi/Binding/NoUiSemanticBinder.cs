@@ -135,13 +135,13 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
         var resolvedByNamespace = ResolveTypeByXmlNamespace(node.XmlNamespace, node.XmlTypeName, compilation);
         if (!string.IsNullOrWhiteSpace(resolvedByNamespace))
         {
-            return resolvedByNamespace;
+            return resolvedByNamespace!;
         }
 
         var resolvedByName = ResolveTypeByName(node.XmlTypeName, compilation);
         if (!string.IsNullOrWhiteSpace(resolvedByName))
         {
-            return resolvedByName;
+            return resolvedByName!;
         }
 
         diagnostics.Add(new DiagnosticInfo(

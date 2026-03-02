@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -590,7 +591,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var taskOfType = compilation.GetTypeByMetadataName("System.Threading.Tasks.Task`1");
+        var taskOfType = ResolveContractType(compilation, TypeContractId.SystemTaskOfT);
         if (taskOfType is not null &&
             TryFindConstructedGenericType(namedSourceType, taskOfType, out var taskOfConstructedType) &&
             taskOfConstructedType.TypeArguments.Length == 1)
@@ -600,7 +601,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var taskType = compilation.GetTypeByMetadataName("System.Threading.Tasks.Task");
+        var taskType = ResolveContractType(compilation, TypeContractId.SystemTask);
         if (taskType is not null && IsTypeAssignableTo(sourceType, taskType))
         {
             resultType = compilation.GetSpecialType(SpecialType.System_Object);
@@ -623,7 +624,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var observableType = compilation.GetTypeByMetadataName("System.IObservable`1");
+        var observableType = ResolveContractType(compilation, TypeContractId.SystemObservableOfT);
         if (observableType is null)
         {
             return false;
@@ -1132,19 +1133,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var bindingBaseType = compilation.GetTypeByMetadataName("Avalonia.Data.BindingBase");
+        var bindingBaseType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingBase);
         if (bindingBaseType is not null && IsTypeAssignableTo(typeSymbol, bindingBaseType))
         {
             return true;
         }
 
-        var bindingInterfaceType = compilation.GetTypeByMetadataName("Avalonia.Data.IBinding");
+        var bindingInterfaceType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingInterface);
         if (bindingInterfaceType is not null && IsTypeAssignableTo(typeSymbol, bindingInterfaceType))
         {
             return true;
         }
 
-        var bindingInterface2Type = compilation.GetTypeByMetadataName("Avalonia.Data.Core.IBinding2");
+        var bindingInterface2Type = ResolveContractType(compilation, TypeContractId.AvaloniaBindingInterface2);
         if (bindingInterface2Type is not null && IsTypeAssignableTo(typeSymbol, bindingInterface2Type))
         {
             return true;
@@ -2047,7 +2048,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var styledElementType = compilation.GetTypeByMetadataName("Avalonia.StyledElement");
+        var styledElementType = ResolveContractType(compilation, TypeContractId.StyledElement);
         if (styledElementType is null || !IsTypeAssignableTo(targetType, styledElementType))
         {
             return false;
@@ -3098,7 +3099,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? nodeDataType,
         INamedTypeSymbol? rootTypeSymbol)
     {
-        var commandType = compilation.GetTypeByMetadataName("System.Windows.Input.ICommand");
+        var commandType = ResolveContractType(compilation, TypeContractId.SystemICommand);
         if (commandType is null || string.IsNullOrWhiteSpace(path))
         {
             return true;
@@ -3582,7 +3583,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         expression = string.Empty;
 
-        if (compilation.GetTypeByMetadataName("Avalonia.Data.Binding") is not INamedTypeSymbol bindingType)
+        if (ResolveContractType(compilation, TypeContractId.AvaloniaBinding) is not INamedTypeSymbol bindingType)
         {
             return false;
         }
@@ -3721,7 +3722,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         expression = string.Empty;
 
-        if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.ReflectionBindingExtension") is not INamedTypeSymbol reflectionBindingExtensionType)
+        if (ResolveContractType(compilation, TypeContractId.AvaloniaReflectionBindingExtension) is not INamedTypeSymbol reflectionBindingExtensionType)
         {
             return false;
         }
@@ -4187,7 +4188,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string expression)
     {
         expression = string.Empty;
-        if (compilation.GetTypeByMetadataName("Avalonia.Data.RelativeSource") is null)
+        if (ResolveContractType(compilation, TypeContractId.AvaloniaRelativeSource) is null)
         {
             return false;
         }
@@ -4307,7 +4308,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool HasSetValueWithPriorityOverload(INamedTypeSymbol targetType, Compilation compilation)
     {
-        var bindingPriorityType = compilation.GetTypeByMetadataName("Avalonia.Data.BindingPriority");
+        var bindingPriorityType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingPriority);
         if (bindingPriorityType is null)
         {
             return false;
@@ -4346,7 +4347,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var iBindingType = compilation.GetTypeByMetadataName("Avalonia.Data.IBinding");
+        var iBindingType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingInterface);
         if (iBindingType is null)
         {
             return false;
@@ -4404,7 +4405,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool TryGetAvaloniaUnsetValueExpression(Compilation compilation, out string expression)
     {
         expression = string.Empty;
-        var avaloniaPropertyType = compilation.GetTypeByMetadataName("Avalonia.AvaloniaProperty");
+        var avaloniaPropertyType = ResolveContractType(compilation, TypeContractId.AvaloniaProperty);
         if (avaloniaPropertyType is null)
         {
             return false;
@@ -4628,14 +4629,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         out ITypeSymbol handlerType)
     {
-        handlerType = compilation.GetTypeByMetadataName("System.Delegate") ?? compilation.ObjectType;
+        handlerType = ResolveContractType(compilation, TypeContractId.SystemDelegate) ?? compilation.ObjectType;
         if (!TryGetRoutedEventArgsType(routedEventType, compilation, out var routedEventArgsType))
         {
             return false;
         }
 
-        var eventHandlerType = compilation.GetTypeByMetadataName("System.EventHandler`1");
-        var eventArgsBaseType = compilation.GetTypeByMetadataName("System.EventArgs");
+        var eventHandlerType = ResolveContractType(compilation, TypeContractId.SystemEventHandlerOfT);
+        var eventArgsBaseType = ResolveContractType(compilation, TypeContractId.SystemEventArgs);
         if (eventHandlerType is INamedTypeSymbol eventHandlerNamed &&
             eventArgsBaseType is not null &&
             IsTypeAssignableTo(routedEventArgsType, eventArgsBaseType))
@@ -4644,7 +4645,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var routedEventHandlerType = compilation.GetTypeByMetadataName("Avalonia.Interactivity.RoutedEventHandler");
+        var routedEventHandlerType = ResolveContractType(compilation, TypeContractId.AvaloniaRoutedEventHandler);
         if (routedEventHandlerType is not null)
         {
             handlerType = routedEventHandlerType;
@@ -4659,8 +4660,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         out ITypeSymbol routedEventArgsType)
     {
-        routedEventArgsType = compilation.GetTypeByMetadataName("Avalonia.Interactivity.RoutedEventArgs")
-                              ?? compilation.GetTypeByMetadataName("System.EventArgs")
+        routedEventArgsType = ResolveContractType(compilation, TypeContractId.AvaloniaRoutedEventArgs)
+                              ?? ResolveContractType(compilation, TypeContractId.SystemEventArgs)
                               ?? compilation.ObjectType;
 
         if (routedEventType is not INamedTypeSymbol namedType)
@@ -4668,8 +4669,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var routedEventTypeSymbol = compilation.GetTypeByMetadataName("Avalonia.Interactivity.RoutedEvent");
-        var genericRoutedEventTypeSymbol = compilation.GetTypeByMetadataName("Avalonia.Interactivity.RoutedEvent`1");
+        var routedEventTypeSymbol = ResolveContractType(compilation, TypeContractId.AvaloniaRoutedEvent);
+        var genericRoutedEventTypeSymbol = ResolveContractType(compilation, TypeContractId.AvaloniaGenericRoutedEvent);
         for (INamedTypeSymbol? current = namedType; current is not null; current = current.BaseType)
         {
             var isGenericRoutedEvent = genericRoutedEventTypeSymbol is not null &&
@@ -4970,7 +4971,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 setterTargetType,
                 selectorNestingTypeHint,
                 ResolveSelectorTypeToken,
-                ResolveWildcardSelectorType,
                 TryResolvePropertyReference,
                 TryConvertUntypedValueExpression,
                 TryConvertSelectorTypedValue,
@@ -5031,24 +5031,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (fullyQualifiedTypeName is "global::Avalonia.Media.FontFeatureCollection" or "global::Avalonia.Media.FontFeatureCollection?")
         {
-            conversion = CreateLiteralConversion(
-                "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ParseFontFeatureCollection(\"" +
-                escaped +
-                "\")");
-            return true;
+            if (TryConvertFontFeatureCollectionLiteralExpression(value, out var fontFeaturesExpression))
+            {
+                conversion = CreateLiteralConversion(fontFeaturesExpression);
+                return true;
+            }
         }
 
         if (fullyQualifiedTypeName is "global::Avalonia.Media.FontFamily" or "global::Avalonia.Media.FontFamily?")
         {
-            var assemblyName = compilation.AssemblyName ?? "UnknownAssembly";
-            var documentBaseUri = "avares://" + assemblyName + "/" + document.TargetPath;
-            conversion = CreateLiteralConversion(
-                "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ParseFontFamily(\"" +
-                escaped +
-                "\", \"" +
-                Escape(documentBaseUri) +
-                "\")");
-            return true;
+            if (TryConvertFontFamilyLiteralExpression(type, value, compilation, document, out var fontFamilyExpression))
+            {
+                conversion = CreateLiteralConversion(fontFamilyExpression);
+                return true;
+            }
         }
 
         if (type.SpecialType == SpecialType.System_String)
@@ -5134,6 +5130,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
+        if (TryConvertAvaloniaIntrinsicLiteralExpression(type, value, compilation, out var intrinsicExpression))
+        {
+            conversion = CreateLiteralConversion(intrinsicExpression);
+            return true;
+        }
+
         if (TryConvertAvaloniaBrushExpression(type, value, compilation, out var brushExpression))
         {
             conversion = CreateLiteralConversion(brushExpression);
@@ -5143,6 +5145,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (TryConvertAvaloniaTransformExpression(type, value, compilation, out var transformExpression))
         {
             conversion = CreateLiteralConversion(transformExpression);
+            return true;
+        }
+
+        if (TryConvertAvaloniaCursorExpression(type, value, compilation, out var cursorExpression))
+        {
+            conversion = CreateLiteralConversion(cursorExpression);
+            return true;
+        }
+
+        if (TryConvertAvaloniaKeyGestureExpression(type, value, compilation, out var keyGestureExpression))
+        {
+            conversion = CreateLiteralConversion(keyGestureExpression);
             return true;
         }
 
@@ -5408,6 +5422,914 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return true;
     }
 
+    private static bool TryConvertFontFeatureCollectionLiteralExpression(string value, out string expression)
+    {
+        expression = string.Empty;
+        var tokens = XamlDelimitedValueSemantics.SplitCollectionItems(
+            value,
+            new[] { "," },
+            StringSplitOptions.RemoveEmptyEntries);
+
+        var itemExpressions = new List<string>(tokens.Length);
+        for (var index = 0; index < tokens.Length; index++)
+        {
+            var token = tokens[index].Trim();
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            itemExpressions.Add("global::Avalonia.Media.FontFeature.Parse(\"" + Escape(token) + "\")");
+        }
+
+        if (itemExpressions.Count == 0)
+        {
+            expression = "new global::Avalonia.Media.FontFeatureCollection()";
+            return true;
+        }
+
+        expression = "new global::Avalonia.Media.FontFeatureCollection { " + string.Join(", ", itemExpressions) + " }";
+        return true;
+    }
+
+    private static bool TryConvertFontFamilyLiteralExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        XamlDocumentModel document,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (targetType is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (HasPublicStaticProperty(
+                    namedType,
+                    propertyName: "Default",
+                    returnTypeName: namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+            {
+                expression = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ".Default";
+                return true;
+            }
+
+            return false;
+        }
+
+        var escapedValue = Escape(value.Trim());
+        var typeName = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (HasPublicStaticMethod(
+                namedType,
+                methodName: "Parse",
+                returnTypeName: typeName,
+                parameterTypeNames: new[] { "global::System.String", "global::System.Uri" }))
+        {
+            var assemblyName = compilation.AssemblyName ?? "UnknownAssembly";
+            var documentBaseUri = "avares://" + assemblyName + "/" + document.TargetPath;
+            expression = typeName +
+                         ".Parse(\"" +
+                         escapedValue +
+                         "\", new global::System.Uri(\"" +
+                         Escape(documentBaseUri) +
+                         "\", global::System.UriKind.Absolute))";
+            return true;
+        }
+
+        if (HasPublicStaticMethod(
+                namedType,
+                methodName: "Parse",
+                returnTypeName: typeName,
+                parameterTypeNames: new[] { "global::System.String" }))
+        {
+            expression = typeName + ".Parse(\"" + escapedValue + "\")";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryConvertAvaloniaIntrinsicLiteralExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (targetType is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        var fullyQualifiedTypeName = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        switch (fullyQualifiedTypeName)
+        {
+            case "global::Avalonia.Thickness":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseThickness(
+                        value,
+                        out var componentCount,
+                        out var left,
+                        out var top,
+                        out var right,
+                        out var bottom))
+                {
+                    return false;
+                }
+
+                if (componentCount == 1 &&
+                    HasPublicConstructorWithParameterTypes(namedType, "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.Thickness(" + FormatDoubleLiteral(left) + ")";
+                    return true;
+                }
+
+                if (componentCount == 2 &&
+                    HasPublicConstructorWithParameterTypes(namedType, "global::System.Double", "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.Thickness(" +
+                                 FormatDoubleLiteral(left) +
+                                 ", " +
+                                 FormatDoubleLiteral(top) +
+                                 ")";
+                    return true;
+                }
+
+                if (HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.Thickness(" +
+                                 FormatDoubleLiteral(left) +
+                                 ", " +
+                                 FormatDoubleLiteral(top) +
+                                 ", " +
+                                 FormatDoubleLiteral(right) +
+                                 ", " +
+                                 FormatDoubleLiteral(bottom) +
+                                 ")";
+                    return true;
+                }
+
+                return false;
+            }
+            case "global::Avalonia.CornerRadius":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseCornerRadius(
+                        value,
+                        out var componentCount,
+                        out var topLeft,
+                        out var topRight,
+                        out var bottomRight,
+                        out var bottomLeft))
+                {
+                    return false;
+                }
+
+                if (componentCount == 1 &&
+                    HasPublicConstructorWithParameterTypes(namedType, "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.CornerRadius(" + FormatDoubleLiteral(topLeft) + ")";
+                    return true;
+                }
+
+                if (componentCount == 2 &&
+                    HasPublicConstructorWithParameterTypes(namedType, "global::System.Double", "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.CornerRadius(" +
+                                 FormatDoubleLiteral(topLeft) +
+                                 ", " +
+                                 FormatDoubleLiteral(topRight) +
+                                 ")";
+                    return true;
+                }
+
+                if (HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.CornerRadius(" +
+                                 FormatDoubleLiteral(topLeft) +
+                                 ", " +
+                                 FormatDoubleLiteral(topRight) +
+                                 ", " +
+                                 FormatDoubleLiteral(bottomRight) +
+                                 ", " +
+                                 FormatDoubleLiteral(bottomLeft) +
+                                 ")";
+                    return true;
+                }
+
+                return false;
+            }
+            case "global::Avalonia.Point":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParsePoint(value, out var x, out var y) ||
+                    !HasPublicConstructorWithParameterTypes(namedType, "global::System.Double", "global::System.Double"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.Point(" + FormatDoubleLiteral(x) + ", " + FormatDoubleLiteral(y) + ")";
+                return true;
+            }
+            case "global::Avalonia.Vector":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseVector(value, out var x, out var y) ||
+                    !HasPublicConstructorWithParameterTypes(namedType, "global::System.Double", "global::System.Double"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.Vector(" + FormatDoubleLiteral(x) + ", " + FormatDoubleLiteral(y) + ")";
+                return true;
+            }
+            case "global::Avalonia.Size":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseSize(value, out var width, out var height) ||
+                    !HasPublicConstructorWithParameterTypes(namedType, "global::System.Double", "global::System.Double"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.Size(" +
+                             FormatDoubleLiteral(width) +
+                             ", " +
+                             FormatDoubleLiteral(height) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.Rect":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseRect(
+                        value,
+                        out var x,
+                        out var y,
+                        out var width,
+                        out var height) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.Rect(" +
+                             FormatDoubleLiteral(x) +
+                             ", " +
+                             FormatDoubleLiteral(y) +
+                             ", " +
+                             FormatDoubleLiteral(width) +
+                             ", " +
+                             FormatDoubleLiteral(height) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.Matrix":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseMatrix(
+                        value,
+                        out var componentCount,
+                        out var m11,
+                        out var m12,
+                        out var m21,
+                        out var m22,
+                        out var m31,
+                        out var m32,
+                        out var m13,
+                        out var m23,
+                        out var m33))
+                {
+                    return false;
+                }
+
+                if (componentCount == 6 &&
+                    HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.Matrix(" +
+                                 FormatDoubleLiteral(m11) +
+                                 ", " +
+                                 FormatDoubleLiteral(m12) +
+                                 ", " +
+                                 FormatDoubleLiteral(m21) +
+                                 ", " +
+                                 FormatDoubleLiteral(m22) +
+                                 ", " +
+                                 FormatDoubleLiteral(m31) +
+                                 ", " +
+                                 FormatDoubleLiteral(m32) +
+                                 ")";
+                    return true;
+                }
+
+                if (componentCount == 9 &&
+                    HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    expression = "new global::Avalonia.Matrix(" +
+                                 FormatDoubleLiteral(m11) +
+                                 ", " +
+                                 FormatDoubleLiteral(m12) +
+                                 ", " +
+                                 FormatDoubleLiteral(m13) +
+                                 ", " +
+                                 FormatDoubleLiteral(m21) +
+                                 ", " +
+                                 FormatDoubleLiteral(m22) +
+                                 ", " +
+                                 FormatDoubleLiteral(m23) +
+                                 ", " +
+                                 FormatDoubleLiteral(m31) +
+                                 ", " +
+                                 FormatDoubleLiteral(m32) +
+                                 ", " +
+                                 FormatDoubleLiteral(m33) +
+                                 ")";
+                    return true;
+                }
+
+                return false;
+            }
+            case "global::Avalonia.Vector3D":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseVector3D(value, out var x, out var y, out var z) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.Vector3D(" +
+                             FormatDoubleLiteral(x) +
+                             ", " +
+                             FormatDoubleLiteral(y) +
+                             ", " +
+                             FormatDoubleLiteral(z) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.PixelPoint":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParsePixelPoint(value, out var x, out var y) ||
+                    !HasPublicConstructorWithParameterTypes(namedType, "global::System.Int32", "global::System.Int32"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.PixelPoint(" +
+                             x.ToString(CultureInfo.InvariantCulture) +
+                             ", " +
+                             y.ToString(CultureInfo.InvariantCulture) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.PixelSize":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParsePixelSize(value, out var width, out var height) ||
+                    !HasPublicConstructorWithParameterTypes(namedType, "global::System.Int32", "global::System.Int32"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.PixelSize(" +
+                             width.ToString(CultureInfo.InvariantCulture) +
+                             ", " +
+                             height.ToString(CultureInfo.InvariantCulture) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.PixelRect":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParsePixelRect(
+                        value,
+                        out var x,
+                        out var y,
+                        out var width,
+                        out var height) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Int32",
+                        "global::System.Int32",
+                        "global::System.Int32",
+                        "global::System.Int32"))
+                {
+                    return false;
+                }
+
+                expression = "new global::Avalonia.PixelRect(" +
+                             x.ToString(CultureInfo.InvariantCulture) +
+                             ", " +
+                             y.ToString(CultureInfo.InvariantCulture) +
+                             ", " +
+                             width.ToString(CultureInfo.InvariantCulture) +
+                             ", " +
+                             height.ToString(CultureInfo.InvariantCulture) +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.Controls.GridLength":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseGridLength(value, out var unit, out var numericValue))
+                {
+                    return false;
+                }
+
+                if (unit == AvaloniaGridLengthLiteralUnit.Auto &&
+                    HasPublicStaticProperty(
+                        namedType,
+                        propertyName: "Auto",
+                        returnTypeName: "global::Avalonia.Controls.GridLength"))
+                {
+                    expression = "global::Avalonia.Controls.GridLength.Auto";
+                    return true;
+                }
+
+                if (!HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::Avalonia.Controls.GridUnitType"))
+                {
+                    return false;
+                }
+
+                var unitExpression = unit == AvaloniaGridLengthLiteralUnit.Star
+                    ? "global::Avalonia.Controls.GridUnitType.Star"
+                    : "global::Avalonia.Controls.GridUnitType.Pixel";
+
+                expression = "new global::Avalonia.Controls.GridLength(" +
+                             FormatDoubleLiteral(numericValue) +
+                             ", " +
+                             unitExpression +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.Controls.RowDefinition":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseGridLength(value, out var unit, out var numericValue))
+                {
+                    return false;
+                }
+
+                if (!HasPublicConstructorWithParameterTypes(namedType, "global::Avalonia.Controls.GridLength"))
+                {
+                    return false;
+                }
+
+                var gridLengthExpression = unit == AvaloniaGridLengthLiteralUnit.Auto
+                    ? "global::Avalonia.Controls.GridLength.Auto"
+                    : "new global::Avalonia.Controls.GridLength(" +
+                      FormatDoubleLiteral(numericValue) +
+                      ", " +
+                      (unit == AvaloniaGridLengthLiteralUnit.Star
+                          ? "global::Avalonia.Controls.GridUnitType.Star"
+                          : "global::Avalonia.Controls.GridUnitType.Pixel") +
+                      ")";
+
+                expression = "new global::Avalonia.Controls.RowDefinition(" + gridLengthExpression + ")";
+                return true;
+            }
+            case "global::Avalonia.Controls.ColumnDefinition":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseGridLength(value, out var unit, out var numericValue))
+                {
+                    return false;
+                }
+
+                if (!HasPublicConstructorWithParameterTypes(namedType, "global::Avalonia.Controls.GridLength"))
+                {
+                    return false;
+                }
+
+                var gridLengthExpression = unit == AvaloniaGridLengthLiteralUnit.Auto
+                    ? "global::Avalonia.Controls.GridLength.Auto"
+                    : "new global::Avalonia.Controls.GridLength(" +
+                      FormatDoubleLiteral(numericValue) +
+                      ", " +
+                      (unit == AvaloniaGridLengthLiteralUnit.Star
+                          ? "global::Avalonia.Controls.GridUnitType.Star"
+                          : "global::Avalonia.Controls.GridUnitType.Pixel") +
+                      ")";
+
+                expression = "new global::Avalonia.Controls.ColumnDefinition(" + gridLengthExpression + ")";
+                return true;
+            }
+            case "global::Avalonia.RelativePoint":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseRelativePoint(value, out var x, out var y, out var unit) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::Avalonia.RelativeUnit"))
+                {
+                    return false;
+                }
+
+                var unitExpression = unit == AvaloniaRelativeUnitLiteral.Relative
+                    ? "global::Avalonia.RelativeUnit.Relative"
+                    : "global::Avalonia.RelativeUnit.Absolute";
+                expression = "new global::Avalonia.RelativePoint(" +
+                             FormatDoubleLiteral(x) +
+                             ", " +
+                             FormatDoubleLiteral(y) +
+                             ", " +
+                             unitExpression +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.RelativeScalar":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseRelativeScalar(value, out var scalar, out var unit) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::Avalonia.RelativeUnit"))
+                {
+                    return false;
+                }
+
+                var unitExpression = unit == AvaloniaRelativeUnitLiteral.Relative
+                    ? "global::Avalonia.RelativeUnit.Relative"
+                    : "global::Avalonia.RelativeUnit.Absolute";
+                expression = "new global::Avalonia.RelativeScalar(" +
+                             FormatDoubleLiteral(scalar) +
+                             ", " +
+                             unitExpression +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.RelativeRect":
+            {
+                if (!XamlAvaloniaValueLiteralSemantics.TryParseRelativeRect(
+                        value,
+                        out var x,
+                        out var y,
+                        out var width,
+                        out var height,
+                        out var unit) ||
+                    !HasPublicConstructorWithParameterTypes(
+                        namedType,
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::System.Double",
+                        "global::Avalonia.RelativeUnit"))
+                {
+                    return false;
+                }
+
+                var unitExpression = unit == AvaloniaRelativeUnitLiteral.Relative
+                    ? "global::Avalonia.RelativeUnit.Relative"
+                    : "global::Avalonia.RelativeUnit.Absolute";
+                expression = "new global::Avalonia.RelativeRect(" +
+                             FormatDoubleLiteral(x) +
+                             ", " +
+                             FormatDoubleLiteral(y) +
+                             ", " +
+                             FormatDoubleLiteral(width) +
+                             ", " +
+                             FormatDoubleLiteral(height) +
+                             ", " +
+                             unitExpression +
+                             ")";
+                return true;
+            }
+            case "global::Avalonia.Media.Color":
+            {
+                if (XamlAvaloniaValueLiteralSemantics.TryParseHexColor(value, out var argb) &&
+                    HasPublicStaticMethod(
+                        namedType,
+                        methodName: "FromUInt32",
+                        returnTypeName: "global::Avalonia.Media.Color",
+                        parameterTypeNames: new[] { "global::System.UInt32" }))
+                {
+                    expression = "global::Avalonia.Media.Color.FromUInt32(" + FormatHexUInt32Literal(argb) + ")";
+                    return true;
+                }
+
+                if (TryResolveAvaloniaNamedColorExpression(namedType, value, out var namedColorExpression))
+                {
+                    expression = namedColorExpression;
+                    return true;
+                }
+
+                return false;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryResolveAvaloniaNamedColorExpression(
+        INamedTypeSymbol colorType,
+        string value,
+        out string expression)
+    {
+        expression = string.Empty;
+        var token = value.Trim();
+        if (token.Length == 0)
+        {
+            return false;
+        }
+
+        if (XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(
+                token,
+                out var ownerToken,
+                out var memberToken) &&
+            ownerToken.Equals("Colors", StringComparison.OrdinalIgnoreCase))
+        {
+            token = memberToken.Trim();
+        }
+
+        if (token.Length == 0 ||
+            !XamlIdentifierSemantics.IsIdentifier(token))
+        {
+            return false;
+        }
+
+        var colorsType = colorType.ContainingNamespace.GetTypeMembers("Colors").FirstOrDefault();
+        if (colorsType is null)
+        {
+            return false;
+        }
+
+        var property = colorsType.GetMembers()
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(member =>
+                member.IsStatic &&
+                SymbolEqualityComparer.Default.Equals(member.Type, colorType) &&
+                member.Name.Equals(token, StringComparison.OrdinalIgnoreCase));
+        if (property is null)
+        {
+            return false;
+        }
+
+        expression = "global::Avalonia.Media.Colors." + property.Name;
+        return true;
+    }
+
+    private static string FormatDoubleLiteral(double value)
+    {
+        return value.ToString("R", CultureInfo.InvariantCulture) + "d";
+    }
+
+    private static string FormatHexUInt32Literal(uint value)
+    {
+        return "0x" + value.ToString("X8", CultureInfo.InvariantCulture) + "u";
+    }
+
+    private static bool HasPublicConstructorWithParameterTypes(
+        INamedTypeSymbol type,
+        params string[] parameterTypeNames)
+    {
+        for (var index = 0; index < type.Constructors.Length; index++)
+        {
+            var constructor = type.Constructors[index];
+            if (constructor.IsStatic ||
+                constructor.DeclaredAccessibility != Accessibility.Public ||
+                constructor.Parameters.Length != parameterTypeNames.Length)
+            {
+                continue;
+            }
+
+            var signatureMatches = true;
+            for (var parameterIndex = 0; parameterIndex < parameterTypeNames.Length; parameterIndex++)
+            {
+                var actualParameterTypeName = constructor.Parameters[parameterIndex].Type
+                    .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                if (!TypeNameMatches(actualParameterTypeName, parameterTypeNames[parameterIndex]))
+                {
+                    signatureMatches = false;
+                    break;
+                }
+            }
+
+            if (signatureMatches)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasPublicStaticMethod(
+        INamedTypeSymbol type,
+        string methodName,
+        string returnTypeName,
+        IReadOnlyList<string> parameterTypeNames)
+    {
+        foreach (var member in type.GetMembers(methodName))
+        {
+            if (member is not IMethodSymbol method ||
+                !method.IsStatic ||
+                method.DeclaredAccessibility != Accessibility.Public ||
+                method.Parameters.Length != parameterTypeNames.Count ||
+                !TypeNameMatches(
+                    method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    returnTypeName))
+            {
+                continue;
+            }
+
+            var signatureMatches = true;
+            for (var index = 0; index < parameterTypeNames.Count; index++)
+            {
+                var actualParameterTypeName = method.Parameters[index].Type
+                    .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                if (!TypeNameMatches(actualParameterTypeName, parameterTypeNames[index]))
+                {
+                    signatureMatches = false;
+                    break;
+                }
+            }
+
+            if (signatureMatches)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindPublicMethod(
+        INamedTypeSymbol type,
+        string methodName,
+        bool isStatic,
+        string returnTypeName,
+        IReadOnlyList<string> parameterTypeNames,
+        out IMethodSymbol method)
+    {
+        foreach (var member in type.GetMembers(methodName))
+        {
+            if (member is not IMethodSymbol candidate ||
+                candidate.IsStatic != isStatic ||
+                candidate.DeclaredAccessibility != Accessibility.Public ||
+                candidate.Parameters.Length != parameterTypeNames.Count ||
+                !TypeNameMatches(
+                    candidate.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    returnTypeName))
+            {
+                continue;
+            }
+
+            var signatureMatches = true;
+            for (var index = 0; index < parameterTypeNames.Count; index++)
+            {
+                var actualParameterTypeName = candidate.Parameters[index].Type
+                    .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                if (!TypeNameMatches(actualParameterTypeName, parameterTypeNames[index]))
+                {
+                    signatureMatches = false;
+                    break;
+                }
+            }
+
+            if (signatureMatches)
+            {
+                method = candidate;
+                return true;
+            }
+        }
+
+        method = null!;
+        return false;
+    }
+
+    private static bool HasPublicStaticProperty(
+        INamedTypeSymbol type,
+        string propertyName,
+        string returnTypeName)
+    {
+        foreach (var member in type.GetMembers(propertyName))
+        {
+            if (member is not IPropertySymbol property ||
+                !property.IsStatic ||
+                property.DeclaredAccessibility != Accessibility.Public)
+            {
+                continue;
+            }
+
+            var propertyTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (TypeNameMatches(propertyTypeName, returnTypeName))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TypeNameMatches(string actualTypeName, string expectedTypeName)
+    {
+        var normalizedActualTypeName = NormalizeTypeNameForComparison(actualTypeName);
+        var normalizedExpectedTypeName = NormalizeTypeNameForComparison(expectedTypeName);
+
+        if (normalizedActualTypeName.Equals(normalizedExpectedTypeName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (normalizedActualTypeName.EndsWith("?", StringComparison.Ordinal))
+        {
+            var nonNullableActual = normalizedActualTypeName.Substring(0, normalizedActualTypeName.Length - 1);
+            if (nonNullableActual.Equals(normalizedExpectedTypeName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (normalizedExpectedTypeName.EndsWith("?", StringComparison.Ordinal))
+        {
+            var nonNullableExpected = normalizedExpectedTypeName.Substring(0, normalizedExpectedTypeName.Length - 1);
+            if (normalizedActualTypeName.Equals(nonNullableExpected, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeTypeNameForComparison(string typeName)
+    {
+        var trimmedTypeName = typeName.Trim();
+        if (trimmedTypeName.EndsWith("?", StringComparison.Ordinal))
+        {
+            var nonNullableToken = trimmedTypeName.Substring(0, trimmedTypeName.Length - 1);
+            return NormalizeTypeNameForComparison(nonNullableToken) + "?";
+        }
+
+        switch (trimmedTypeName)
+        {
+            case "bool":
+                return "global::System.Boolean";
+            case "byte":
+                return "global::System.Byte";
+            case "sbyte":
+                return "global::System.SByte";
+            case "short":
+                return "global::System.Int16";
+            case "ushort":
+                return "global::System.UInt16";
+            case "int":
+                return "global::System.Int32";
+            case "uint":
+                return "global::System.UInt32";
+            case "long":
+                return "global::System.Int64";
+            case "ulong":
+                return "global::System.UInt64";
+            case "float":
+                return "global::System.Single";
+            case "double":
+                return "global::System.Double";
+            case "decimal":
+                return "global::System.Decimal";
+            case "char":
+                return "global::System.Char";
+            case "string":
+                return "global::System.String";
+            case "object":
+                return "global::System.Object";
+            case "void":
+                return "global::System.Void";
+            default:
+                return trimmedTypeName;
+        }
+    }
+
     private static bool TryConvertCollectionLiteralExpression(
         ITypeSymbol targetType,
         string value,
@@ -5471,7 +6393,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
-        var listTypeDefinition = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
+        var listTypeDefinition = ResolveContractType(compilation, TypeContractId.SystemListOfT);
         var listTypeSymbol = listTypeDefinition?.Construct(elementType);
         if (listTypeSymbol is not null &&
             IsTypeAssignableTo(listTypeSymbol, targetType))
@@ -5681,19 +6603,67 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var iBrushType = compilation.GetTypeByMetadataName("Avalonia.Media.IBrush");
-        var brushType = compilation.GetTypeByMetadataName("Avalonia.Media.Brush");
+        var iBrushType = ResolveContractType(compilation, TypeContractId.AvaloniaIBrush);
+        var brushType = ResolveContractType(compilation, TypeContractId.AvaloniaBrush);
         if (iBrushType is null || brushType is null)
         {
             return false;
         }
 
-        if (!IsTypeAssignableTo(iBrushType, targetType))
+        if (!IsTypeAssignableTo(targetType, iBrushType))
+        {
+            return false;
+        }
+
+        var solidColorBrushType = ResolveContractType(compilation, TypeContractId.AvaloniaSolidColorBrush);
+        var colorType = ResolveContractType(compilation, TypeContractId.AvaloniaColor);
+        if (solidColorBrushType is not null &&
+            colorType is not null &&
+            IsTypeAssignableTo(solidColorBrushType, targetType) &&
+            TryConvertDeterministicSolidColorBrushExpression(
+                value,
+                compilation,
+                solidColorBrushType,
+                colorType,
+                out expression))
+        {
+            return true;
+        }
+
+        if (!IsTypeAssignableTo(brushType, targetType))
         {
             return false;
         }
 
         expression = "global::Avalonia.Media.Brush.Parse(\"" + Escape(value.Trim()) + "\")";
+        return true;
+    }
+
+    private static bool TryConvertDeterministicSolidColorBrushExpression(
+        string value,
+        Compilation compilation,
+        INamedTypeSymbol solidColorBrushType,
+        INamedTypeSymbol colorType,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!TryConvertAvaloniaIntrinsicLiteralExpression(colorType, value, compilation, out var colorExpression))
+        {
+            return false;
+        }
+
+        if (!HasPublicConstructorWithParameterTypes(
+                solidColorBrushType,
+                colorType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+        {
+            return false;
+        }
+
+        expression = "new " +
+                     solidColorBrushType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     "(" +
+                     colorExpression +
+                     ")";
         return true;
     }
 
@@ -5710,7 +6680,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var transformOperationsType = compilation.GetTypeByMetadataName("Avalonia.Media.Transformation.TransformOperations");
+        var transformOperationsType = ResolveContractType(compilation, TypeContractId.AvaloniaTransformOperations);
         if (transformOperationsType is null)
         {
             return false;
@@ -5721,9 +6691,405 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
+        if (TryConvertDeterministicTransformOperationsExpression(
+                trimmed,
+                compilation,
+                transformOperationsType,
+                out expression))
+        {
+            return true;
+        }
+
         expression = "global::Avalonia.Media.Transformation.TransformOperations.Parse(\"" +
                      Escape(trimmed) +
                      "\")";
+        return true;
+    }
+
+    private static bool TryConvertDeterministicTransformOperationsExpression(
+        string value,
+        Compilation compilation,
+        INamedTypeSymbol transformOperationsType,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!XamlAvaloniaTransformLiteralSemantics.TryParse(value, out var isIdentity, out var operations))
+        {
+            return false;
+        }
+
+        var transformOperationsTypeName = transformOperationsType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (isIdentity)
+        {
+            if (!HasPublicStaticProperty(
+                    transformOperationsType,
+                    propertyName: "Identity",
+                    returnTypeName: transformOperationsTypeName))
+            {
+                return false;
+            }
+
+            expression = transformOperationsTypeName + ".Identity";
+            return true;
+        }
+
+        if (!TryFindPublicMethod(
+                transformOperationsType,
+                methodName: "CreateBuilder",
+                isStatic: true,
+                returnTypeName: transformOperationsTypeName + ".Builder",
+                parameterTypeNames: new[] { "global::System.Int32" },
+                out var createBuilderMethod))
+        {
+            return false;
+        }
+
+        if (createBuilderMethod.ReturnType is not INamedTypeSymbol builderType)
+        {
+            return false;
+        }
+
+        if (!TryFindPublicMethod(
+                builderType,
+                methodName: "Build",
+                isStatic: false,
+                returnTypeName: transformOperationsTypeName,
+                parameterTypeNames: Array.Empty<string>(),
+                out var buildMethod))
+        {
+            return false;
+        }
+
+        if (!TryFindPublicMethod(
+                builderType,
+                methodName: "AppendTranslate",
+                isStatic: false,
+                returnTypeName: "global::System.Void",
+                parameterTypeNames: new[] { "global::System.Double", "global::System.Double" },
+                out var appendTranslateMethod))
+        {
+            return false;
+        }
+
+        if (!TryFindPublicMethod(
+                builderType,
+                methodName: "AppendScale",
+                isStatic: false,
+                returnTypeName: "global::System.Void",
+                parameterTypeNames: new[] { "global::System.Double", "global::System.Double" },
+                out var appendScaleMethod))
+        {
+            return false;
+        }
+
+        if (!TryFindPublicMethod(
+                builderType,
+                methodName: "AppendSkew",
+                isStatic: false,
+                returnTypeName: "global::System.Void",
+                parameterTypeNames: new[] { "global::System.Double", "global::System.Double" },
+                out var appendSkewMethod))
+        {
+            return false;
+        }
+
+        if (!TryFindPublicMethod(
+                builderType,
+                methodName: "AppendRotate",
+                isStatic: false,
+                returnTypeName: "global::System.Void",
+                parameterTypeNames: new[] { "global::System.Double" },
+                out var appendRotateMethod))
+        {
+            return false;
+        }
+
+        IMethodSymbol? appendMatrixMethod = null;
+        string matrixTypeName = string.Empty;
+        var usesMatrixOperation = false;
+        for (var operationIndex = 0; operationIndex < operations.Length; operationIndex++)
+        {
+            if (operations[operationIndex].Kind == AvaloniaTransformOperationLiteralKind.Matrix)
+            {
+                usesMatrixOperation = true;
+                break;
+            }
+        }
+
+        if (usesMatrixOperation)
+        {
+            var matrixType = ResolveContractType(compilation, TypeContractId.AvaloniaMatrix);
+            if (matrixType is null)
+            {
+                return false;
+            }
+
+            matrixTypeName = matrixType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (!TryFindPublicMethod(
+                    builderType,
+                    methodName: "AppendMatrix",
+                    isStatic: false,
+                    returnTypeName: "global::System.Void",
+                    parameterTypeNames: new[] { matrixTypeName },
+                    out appendMatrixMethod))
+            {
+                return false;
+            }
+
+            if (!HasPublicConstructorWithParameterTypes(
+                    matrixType,
+                    "global::System.Double",
+                    "global::System.Double",
+                    "global::System.Double",
+                    "global::System.Double",
+                    "global::System.Double",
+                    "global::System.Double"))
+            {
+                return false;
+            }
+        }
+
+        var statements = new List<string>(operations.Length + 1);
+        statements.Add(
+            "var __builder = " +
+            transformOperationsTypeName +
+            "." +
+            createBuilderMethod.Name +
+            "(" +
+            operations.Length.ToString(CultureInfo.InvariantCulture) +
+            ");");
+
+        for (var index = 0; index < operations.Length; index++)
+        {
+            var operation = operations[index];
+            switch (operation.Kind)
+            {
+                case AvaloniaTransformOperationLiteralKind.Translate:
+                    statements.Add(
+                        "__builder." +
+                        appendTranslateMethod.Name +
+                        "(" +
+                        FormatDoubleLiteral(operation.Value1) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value2) +
+                        ");");
+                    break;
+                case AvaloniaTransformOperationLiteralKind.Scale:
+                    statements.Add(
+                        "__builder." +
+                        appendScaleMethod.Name +
+                        "(" +
+                        FormatDoubleLiteral(operation.Value1) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value2) +
+                        ");");
+                    break;
+                case AvaloniaTransformOperationLiteralKind.Skew:
+                    statements.Add(
+                        "__builder." +
+                        appendSkewMethod.Name +
+                        "(" +
+                        FormatDoubleLiteral(operation.Value1) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value2) +
+                        ");");
+                    break;
+                case AvaloniaTransformOperationLiteralKind.Rotate:
+                    statements.Add(
+                        "__builder." +
+                        appendRotateMethod.Name +
+                        "(" +
+                        FormatDoubleLiteral(operation.Value1) +
+                        ");");
+                    break;
+                case AvaloniaTransformOperationLiteralKind.Matrix:
+                    if (appendMatrixMethod is null || matrixTypeName.Length == 0)
+                    {
+                        return false;
+                    }
+
+                    statements.Add(
+                        "__builder." +
+                        appendMatrixMethod.Name +
+                        "(new " +
+                        matrixTypeName +
+                        "(" +
+                        FormatDoubleLiteral(operation.Value1) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value2) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value3) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value4) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value5) +
+                        ", " +
+                        FormatDoubleLiteral(operation.Value6) +
+                        "));");
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        expression = "((global::System.Func<" +
+                     transformOperationsTypeName +
+                     ">)(() => { " +
+                     string.Join(" ", statements) +
+                     " return __builder." +
+                     buildMethod.Name +
+                     "(); }))()";
+        return true;
+    }
+
+    private static bool TryConvertAvaloniaCursorExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (targetType.SpecialType == SpecialType.System_Object ||
+            string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var cursorType = ResolveContractType(compilation, TypeContractId.AvaloniaCursor);
+        var standardCursorType = ResolveContractType(compilation, TypeContractId.AvaloniaStandardCursorType);
+        if (cursorType is null ||
+            standardCursorType is null ||
+            standardCursorType.TypeKind != TypeKind.Enum)
+        {
+            return false;
+        }
+
+        if (!IsTypeAssignableTo(cursorType, targetType))
+        {
+            return false;
+        }
+
+        if (!XamlAvaloniaCursorLiteralSemantics.TryParseStandardCursorTypeMember(value, out var memberToken))
+        {
+            return false;
+        }
+
+        var enumMember = standardCursorType.GetMembers()
+            .OfType<IFieldSymbol>()
+            .FirstOrDefault(candidate =>
+                candidate.IsStatic &&
+                candidate.HasConstantValue &&
+                candidate.Name.Equals(memberToken, StringComparison.OrdinalIgnoreCase));
+        if (enumMember is null)
+        {
+            return false;
+        }
+
+        var cursorTypeName = cursorType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var standardCursorTypeName = standardCursorType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (!HasPublicConstructorWithParameterTypes(cursorType, standardCursorTypeName))
+        {
+            return false;
+        }
+
+        expression = "new " +
+                     cursorTypeName +
+                     "(" +
+                     standardCursorTypeName +
+                     "." +
+                     enumMember.Name +
+                     ")";
+        return true;
+    }
+
+    private static bool TryConvertAvaloniaKeyGestureExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (targetType.SpecialType == SpecialType.System_Object ||
+            string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var keyGestureType = ResolveContractType(compilation, TypeContractId.AvaloniaKeyGesture);
+        var keyType = ResolveContractType(compilation, TypeContractId.AvaloniaKey);
+        var keyModifiersType = ResolveContractType(compilation, TypeContractId.AvaloniaKeyModifiers);
+        if (keyGestureType is null ||
+            keyType is null ||
+            keyModifiersType is null ||
+            keyType.TypeKind != TypeKind.Enum ||
+            keyModifiersType.TypeKind != TypeKind.Enum)
+        {
+            return false;
+        }
+
+        if (!IsTypeAssignableTo(keyGestureType, targetType))
+        {
+            return false;
+        }
+
+        if (!XamlAvaloniaKeyGestureLiteralSemantics.TryParse(
+                value,
+                out var keyToken,
+                out var modifierTokens))
+        {
+            return false;
+        }
+
+        if (!TryConvertEnumValueExpression(
+                keyType,
+                keyToken ?? "None",
+                out var keyExpression))
+        {
+            return false;
+        }
+
+        var modifierExpressions = new List<string>(modifierTokens.Length);
+        for (var index = 0; index < modifierTokens.Length; index++)
+        {
+            if (!TryConvertEnumValueExpression(
+                    keyModifiersType,
+                    modifierTokens[index],
+                    out var modifierExpression))
+            {
+                return false;
+            }
+
+            modifierExpressions.Add(modifierExpression);
+        }
+
+        var keyGestureTypeName = keyGestureType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var keyTypeName = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var keyModifiersTypeName = keyModifiersType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (!HasPublicConstructorWithParameterTypes(keyGestureType, keyTypeName, keyModifiersTypeName))
+        {
+            return false;
+        }
+
+        var modifiersExpression = string.Empty;
+        if (modifierExpressions.Count == 0)
+        {
+            if (!TryConvertEnumValueExpression(keyModifiersType, "None", out modifiersExpression))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            modifiersExpression = string.Join(" | ", modifierExpressions.Distinct(StringComparer.Ordinal));
+        }
+
+        expression = "new " +
+                     keyGestureTypeName +
+                     "(" +
+                     keyExpression +
+                     ", " +
+                     modifiersExpression +
+                     ")";
         return true;
     }
 
@@ -5932,7 +7298,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension") is null)
+                if (ResolveContractType(compilation, TypeContractId.DynamicResourceExtension) is null)
                 {
                     return false;
                 }
@@ -6019,7 +7385,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
             case XamlMarkupExtensionKind.OnPlatform:
             {
-                if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension") is null)
+                if (ResolveContractType(compilation, TypeContractId.OnPlatformExtension) is null)
                 {
                     return false;
                 }
@@ -6043,7 +7409,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
             case XamlMarkupExtensionKind.OnFormFactor:
             {
-                if (compilation.GetTypeByMetadataName("Avalonia.Markup.Xaml.MarkupExtensions.OnFormFactorExtension") is null)
+                if (ResolveContractType(compilation, TypeContractId.OnFormFactorExtension) is null)
                 {
                     return false;
                 }
@@ -6115,7 +7481,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         : null;
                 if (string.IsNullOrWhiteSpace(propertyToken))
                 {
-                    if (compilation.GetTypeByMetadataName("Avalonia.Data.Binding") is null)
+                    if (ResolveContractType(compilation, TypeContractId.AvaloniaBinding) is null)
                     {
                         return false;
                     }
@@ -6140,7 +7506,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                if (compilation.GetTypeByMetadataName("Avalonia.Data.TemplateBinding") is null)
+                if (ResolveContractType(compilation, TypeContractId.AvaloniaTemplateBinding) is null)
                 {
                     return false;
                 }

@@ -70,10 +70,9 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "ThemeHost");
-        Assert.Contains("__TryResolveDictionaryEntryValue(", generated);
-        Assert.Contains("map[key] = dictionaryValue;", generated);
+        Assert.DoesNotContain("__TryResolveDictionaryEntryValue(", generated);
+        Assert.DoesNotContain("map[key] = dictionaryValue;", generated);
         Assert.DoesNotContain("__NormalizeDictionaryValue", generated);
-        Assert.Contains("__TryAddToDictionary", generated);
         Assert.Contains("CompactStyles", generated);
     }
 
@@ -1214,12 +1213,12 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("private static void __BeginInit(object? value)", generated);
-        Assert.Contains("private static void __EndInit(object? value)", generated);
-        Assert.Contains("private static void __TryCompleteNameScope(object? scope)", generated);
-        Assert.Contains("__BeginInit(__root);", generated);
-        Assert.Contains("__EndInit(__root);", generated);
-        Assert.Contains("__TryCompleteNameScope(__nameScope);", generated);
+        Assert.DoesNotContain("private static void __BeginInit(object? value)", generated);
+        Assert.DoesNotContain("private static void __EndInit(object? value)", generated);
+        Assert.DoesNotContain("private static void __TryCompleteNameScope(object? scope)", generated);
+        Assert.Contains("__AXSGObjectGraph.BeginInit(__root);", generated);
+        Assert.Contains("__AXSGObjectGraph.EndInit(__root);", generated);
+        Assert.Contains("__AXSGObjectGraph.TryCompleteNameScope(__nameScope);", generated);
     }
 
     [Fact]
@@ -1374,8 +1373,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
         Assert.Contains("__RegisterXamlSourceGenArtifacts();", generated);
-        Assert.Contains("XamlIncludeGraphRegistry.Clear(", generated);
-        Assert.Contains("XamlCompiledBindingRegistry.Clear(", generated);
+        Assert.Contains("SourceGenArtifactRegistryRuntime.ResetDocumentRegistries(", generated);
         Assert.Contains("__TrackAndReconcileSourceGenHotReloadState(this);", generated);
         Assert.Contains("XamlSourceGenHotReloadStateTracker.Reconcile", generated);
         Assert.Contains("XamlSourceGenHotReloadManager.Register", generated);
@@ -1602,10 +1600,10 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__TryClearDictionaryEntries(__root.Resources);", generated);
+        Assert.Contains("__AXSGObjectGraph.TryClearDictionaryEntries(__root.Resources);", generated);
         Assert.True(
             generated.Contains("__root.Resources.Add(\"PrimaryButton\",", StringComparison.Ordinal) ||
-            (generated.Contains("__TryAddToDictionary(", StringComparison.Ordinal) &&
+            (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
              generated.Contains("\"PrimaryButton\"", StringComparison.Ordinal)));
     }
 
@@ -2281,10 +2279,10 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__TryClearCollection(__n0.Children);", generated);
+        Assert.Contains("__AXSGObjectGraph.TryClearCollection(__n0.Children);", generated);
         Assert.DoesNotContain("__TryInvokeClearMethod(", generated);
-        Assert.Contains("if (list.IsReadOnly || list.IsFixedSize)", generated);
-        Assert.Contains("catch (global::System.InvalidOperationException)", generated);
+        Assert.DoesNotContain("if (list.IsReadOnly || list.IsFixedSize)", generated);
+        Assert.DoesNotContain("catch (global::System.InvalidOperationException)", generated);
         Assert.Contains("__n1.Click -= __root.OnAccept;", generated);
         Assert.Contains("__n1.Click += __root.OnAccept;", generated);
     }
@@ -2393,9 +2391,9 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__TryClearCollection(__n0.Items);", generated);
-        Assert.Contains("if (list.IsReadOnly || list.IsFixedSize)", generated);
-        Assert.Contains("catch (global::System.InvalidOperationException)", generated);
+        Assert.Contains("__AXSGObjectGraph.TryClearCollection(__n0.Items);", generated);
+        Assert.DoesNotContain("if (list.IsReadOnly || list.IsFixedSize)", generated);
+        Assert.DoesNotContain("catch (global::System.InvalidOperationException)", generated);
     }
 
     [Fact]
@@ -2510,7 +2508,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.True(
             generated.Contains(".Add(\"Greeting\",", StringComparison.Ordinal) ||
-            (generated.Contains("__TryAddToDictionary(", StringComparison.Ordinal) &&
+            (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
              generated.Contains("\"Greeting\"", StringComparison.Ordinal)));
         Assert.Contains("Text =", generated);
     }
@@ -2567,7 +2565,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.True(
             generated.Contains(".Resources.Add(\"Greeting\",", StringComparison.Ordinal) ||
-            (generated.Contains("__TryAddToDictionary(", StringComparison.Ordinal) &&
+            (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
              generated.Contains("\"Greeting\"", StringComparison.Ordinal)));
         Assert.Contains("Text =", generated);
     }
@@ -2636,12 +2634,12 @@ public class AvaloniaXamlSourceGeneratorTests
                 source.Contains("partial class MainView", StringComparison.Ordinal));
         Assert.Matches(
             new global::System.Text.RegularExpressions.Regex(
-                @"__TryClearDictionaryEntries\([^)]*\.Resources\);",
+                @"__AXSGObjectGraph\.TryClearDictionaryEntries\([^)]*\.Resources\);",
                 global::System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             generated);
         Assert.DoesNotMatch(
             new global::System.Text.RegularExpressions.Regex(
-                @"__TryClearCollection\([^)]*\.Resources\);",
+                @"__AXSGObjectGraph\.TryClearCollection\([^)]*\.Resources\);",
                 global::System.Text.RegularExpressions.RegexOptions.CultureInvariant),
             generated);
     }
@@ -2691,7 +2689,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0103");
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.True(
-            generated.Contains("__TryClearCollection(__root.Content);", StringComparison.Ordinal) ||
+            generated.Contains("__AXSGObjectGraph.TryClearCollection(__root.Content);", StringComparison.Ordinal) ||
             generated.Contains("__TrySetClrProperty(__root, \"Content\",", StringComparison.Ordinal) ||
             generated.Contains("__root.Content =", StringComparison.Ordinal));
         Assert.True(
@@ -2752,8 +2750,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.DoesNotContain("__NormalizeDictionaryValue(", generated);
-        Assert.Contains("__TryResolveDictionaryEntryValue(", generated);
-        Assert.Contains("map[key] = dictionaryValue;", generated);
+        Assert.DoesNotContain("__TryResolveDictionaryEntryValue(", generated);
+        Assert.DoesNotContain("map[key] = dictionaryValue;", generated);
+        Assert.Contains("__AXSGObjectGraph.TryAddToDictionary(", generated);
     }
 
     [Fact]
@@ -2869,7 +2868,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("global::Avalonia.Controls.SolidColorBrush.Parse(\"Red\")", generated);
         Assert.True(
             generated.Contains(".Resources.Add(\"AccentBrush\",", StringComparison.Ordinal) ||
-            (generated.Contains("__TryAddToDictionary(", StringComparison.Ordinal) &&
+            (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
              generated.Contains("\"AccentBrush\"", StringComparison.Ordinal)));
     }
 
@@ -5204,10 +5203,9 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("XamlControlThemeRegistry.Register", generated);
         Assert.Contains("XamlIncludeRegistry.Register", generated);
         Assert.Contains("XamlIncludeGraphRegistry.Register", generated);
-        Assert.Contains("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, object? ownerContext, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
-        Assert.Contains("__TryApplyStyleInclude(", generated);
-        Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);", generated);
-        Assert.Contains("global::XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader.TryLoad(", generated);
+        Assert.DoesNotContain("__TryResolveStyleInclude(global::Avalonia.Markup.Xaml.Styling.StyleInclude styleInclude, object? ownerContext, out global::Avalonia.Styling.IStyle resolvedStyle)", generated);
+        Assert.DoesNotContain("private sealed class __SourceGenIncludeLoadServiceProvider", generated);
+        Assert.DoesNotContain("destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);", generated);
         Assert.Contains("\"Text\"", generated);
         Assert.Contains("\"Content\"", generated);
         Assert.Contains("\"Caption\"", generated);
@@ -8644,7 +8642,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.True(
-            generated.Contains("__TryClearCollection(__n0.Classes);", StringComparison.Ordinal) ||
+            generated.Contains("__AXSGObjectGraph.TryClearCollection(__n0.Classes);", StringComparison.Ordinal) ||
             generated.Contains("ApplyClassValue(", StringComparison.Ordinal));
         Assert.True(
             generated.Contains("__n0.Classes.Add(", StringComparison.Ordinal) ||
@@ -10996,7 +10994,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("NameScope.SetNameScope", generated);
+        Assert.Contains("__AXSGObjectGraph.TrySetNameScope", generated);
         Assert.Contains("__nameScope.Register(\"ActionButton\"", generated);
     }
 
@@ -11306,6 +11304,7 @@ public class AvaloniaXamlSourceGeneratorTests
                 {
                     public byte ByteValue { get; set; }
                     public decimal DecimalValue { get; set; }
+                    public global::System.DateTime DateValue { get; set; }
                     public global::System.TimeSpan SpanValue { get; set; }
                     public global::System.Uri? UriValue { get; set; }
                     public char CharValue { get; set; }
@@ -11324,6 +11323,7 @@ public class AvaloniaXamlSourceGeneratorTests
                          x:Class="Demo.MainView">
                 <PrimitiveProbe ByteValue="{x:Byte 5}"
                                 DecimalValue="{x:Decimal 12.5}"
+                                DateValue="{x:DateTime 2026-03-01T10:15:30Z}"
                                 SpanValue="{x:TimeSpan 00:01:30}"
                                 UriValue="{x:Uri https://example.com}"
                                 CharValue="{x:Char X}" />
@@ -11337,9 +11337,674 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("((byte)5)", generated);
         Assert.Contains("12.5m", generated);
-        Assert.Contains("global::System.TimeSpan.Parse(\"00:01:30\", global::System.Globalization.CultureInfo.InvariantCulture)", generated);
+        Assert.Contains("global::System.DateTime.FromBinary(", generated);
+        Assert.DoesNotContain("global::System.DateTime.Parse(", generated);
+        Assert.Contains("global::System.TimeSpan.FromTicks(900000000L)", generated);
         Assert.Contains("new global::System.Uri(\"https://example.com\", global::System.UriKind.RelativeOrAbsolute)", generated);
         Assert.Contains("'X'", generated);
+    }
+
+    [Fact]
+    public void Emits_Font_Literals_Without_Runtime_Font_Parse_Helpers()
+    {
+        const string code = """
+            namespace Avalonia.Media
+            {
+                public class FontFeature
+                {
+                    public static FontFeature Parse(string value) => new FontFeature();
+                }
+
+                public class FontFeatureCollection : global::System.Collections.Generic.List<FontFeature>
+                {
+                }
+
+                public class FontFamily
+                {
+                    public static FontFamily Parse(string value) => new FontFamily();
+                    public static FontFamily Parse(string value, global::System.Uri baseUri) => new FontFamily();
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public global::Avalonia.Media.FontFeatureCollection? FontFeatures { get; set; }
+                    public global::Avalonia.Media.FontFamily? FontFamily { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <TextBlock FontFeatures="liga 1, ,  kern 0 ,   "
+                           FontFamily="Inter, Segoe UI" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("new global::Avalonia.Media.FontFeatureCollection {", generated);
+        Assert.Contains("global::Avalonia.Media.FontFeature.Parse(\"liga 1\")", generated);
+        Assert.Contains("global::Avalonia.Media.FontFeature.Parse(\"kern 0\")", generated);
+        Assert.DoesNotContain("global::Avalonia.Media.FontFeature.Parse(\"\")", generated);
+        Assert.DoesNotContain("SourceGenMarkupExtensionRuntime.ParseFontFeatureCollection(", generated);
+        Assert.DoesNotContain("SourceGenMarkupExtensionRuntime.ParseFontFamily(", generated);
+    }
+
+    [Fact]
+    public void Emits_Deterministic_SolidColorBrush_For_Color_Literals_With_Parse_Fallback_Preserved()
+    {
+        const string code = """
+            namespace Avalonia.Media
+            {
+                public interface IBrush
+                {
+                }
+
+                public class Brush : IBrush
+                {
+                    public static Brush Parse(string value) => new Brush();
+                }
+
+                public struct Color
+                {
+                    public static Color FromUInt32(uint value) => default;
+                }
+
+                public static class Colors
+                {
+                    public static Color Red => default;
+                }
+
+                public sealed class SolidColorBrush : Brush
+                {
+                    public SolidColorBrush(Color color)
+                    {
+                    }
+
+                    public static SolidColorBrush Parse(string value) => new SolidColorBrush(default);
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ProbeControl : Control
+                {
+                    public global::Avalonia.Media.IBrush? HexBrush { get; set; }
+                    public global::Avalonia.Media.IBrush? NamedBrush { get; set; }
+                    public global::Avalonia.Media.IBrush? FallbackBrush { get; set; }
+                    public global::Avalonia.Media.Brush? BrushHex { get; set; }
+                    public global::Avalonia.Media.SolidColorBrush? SolidHex { get; set; }
+                    public global::Avalonia.Media.SolidColorBrush? SolidFallback { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl HexBrush="#FF010203"
+                              NamedBrush="Red"
+                              FallbackBrush="rgba(1,2,3,1)"
+                              BrushHex="#FF102030"
+                              SolidHex="#FF506070"
+                              SolidFallback="rgba(2,3,4,1)" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains(
+            "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromUInt32(0xFF010203u))",
+            generated);
+        Assert.Contains(
+            "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Colors.Red)",
+            generated);
+        Assert.Contains("global::Avalonia.Media.Brush.Parse(\"rgba(1,2,3,1)\")", generated);
+        Assert.Contains(
+            "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromUInt32(0xFF102030u))",
+            generated);
+        Assert.Contains(
+            "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromUInt32(0xFF506070u))",
+            generated);
+        Assert.Contains("global::Avalonia.Media.SolidColorBrush.Parse(\"rgba(2,3,4,1)\")", generated);
+    }
+
+    [Fact]
+    public void Emits_Deterministic_TransformOperations_For_Canonical_Function_Forms_With_Parse_Fallback_Preserved()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public struct Matrix
+                {
+                    public Matrix(
+                        double m11,
+                        double m12,
+                        double m21,
+                        double m22,
+                        double m31,
+                        double m32)
+                    {
+                    }
+                }
+            }
+
+            namespace Avalonia.Media.Transformation
+            {
+                public sealed class TransformOperations
+                {
+                    public static TransformOperations Identity => new TransformOperations();
+                    public static TransformOperations Parse(string value) => new TransformOperations();
+                    public static Builder CreateBuilder(int capacity) => new Builder();
+
+                    public struct Builder
+                    {
+                        public void AppendTranslate(double x, double y)
+                        {
+                        }
+
+                        public void AppendScale(double x, double y)
+                        {
+                        }
+
+                        public void AppendSkew(double x, double y)
+                        {
+                        }
+
+                        public void AppendRotate(double angle)
+                        {
+                        }
+
+                        public void AppendMatrix(global::Avalonia.Matrix matrix)
+                        {
+                        }
+
+                        public TransformOperations Build() => new TransformOperations();
+                    }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ProbeControl : Control
+                {
+                    public global::Avalonia.Media.Transformation.TransformOperations? IdentityTransform { get; set; }
+                    public global::Avalonia.Media.Transformation.TransformOperations? CompositeTransform { get; set; }
+                    public global::Avalonia.Media.Transformation.TransformOperations? MatrixTransform { get; set; }
+                    public global::Avalonia.Media.Transformation.TransformOperations? ScaleXTransform { get; set; }
+                    public global::Avalonia.Media.Transformation.TransformOperations? ScaleYTransform { get; set; }
+                    public global::Avalonia.Media.Transformation.TransformOperations? FallbackTransform { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl IdentityTransform="none"
+                              CompositeTransform="translate(10px,20px) rotate(90deg) scale(2)"
+                              MatrixTransform="matrix(1,0,0,1,10,20)"
+                              ScaleXTransform="scaleX(2)"
+                              ScaleYTransform="scaleY(3)"
+                              FallbackTransform="translate(10,20,30)" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains(
+            "global::Avalonia.Media.Transformation.TransformOperations.Identity",
+            generated);
+        Assert.Contains(
+            "global::Avalonia.Media.Transformation.TransformOperations.CreateBuilder(3)",
+            generated);
+        Assert.Contains("__builder.AppendTranslate(10d, 20d);", generated);
+        Assert.Contains("__builder.AppendRotate(", generated);
+        Assert.Contains("__builder.AppendScale(2d, 2d);", generated);
+        Assert.Contains(
+            "global::Avalonia.Media.Transformation.TransformOperations.CreateBuilder(1)",
+            generated);
+        Assert.Contains(
+            "__builder.AppendMatrix(new global::Avalonia.Matrix(1d, 0d, 0d, 1d, 10d, 20d));",
+            generated);
+        Assert.Contains("__builder.AppendScale(2d, 1d);", generated);
+        Assert.Contains("__builder.AppendScale(1d, 3d);", generated);
+        Assert.Contains(
+            "global::Avalonia.Media.Transformation.TransformOperations.Parse(\"translate(10,20,30)\")",
+            generated);
+    }
+
+    [Fact]
+    public void Emits_Deterministic_Cursor_For_StandardCursorType_Literals_With_Parse_Fallback_Preserved()
+    {
+        const string code = """
+            namespace Avalonia.Input
+            {
+                public enum StandardCursorType
+                {
+                    Arrow,
+                    Hand
+                }
+
+                public class Cursor
+                {
+                    public Cursor(StandardCursorType type)
+                    {
+                    }
+
+                    public static Cursor Parse(string value) => new Cursor(StandardCursorType.Arrow);
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ProbeControl : Control
+                {
+                    public global::Avalonia.Input.Cursor? DeterministicCursor { get; set; }
+                    public global::Avalonia.Input.Cursor? FallbackCursor { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl DeterministicCursor="StandardCursorType.Hand"
+                              FallbackCursor="custom://cursor" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains(
+            "new global::Avalonia.Input.Cursor(global::Avalonia.Input.StandardCursorType.Hand)",
+            generated);
+        Assert.Contains(
+            "global::Avalonia.Input.Cursor.Parse(\"custom://cursor\")",
+            generated);
+    }
+
+    [Fact]
+    public void Emits_Deterministic_KeyGesture_Literals_With_Parse_Fallback_Preserved()
+    {
+        const string code = """
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0,
+                    A = 1,
+                    F10 = 2,
+                    OemPlus = 3
+                }
+
+                [global::System.Flags]
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Shift = 1,
+                    Control = 2,
+                    Alt = 4,
+                    Meta = 8
+                }
+
+                public class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ProbeControl : Control
+                {
+                    public global::Avalonia.Input.KeyGesture? DeterministicGesture { get; set; }
+                    public global::Avalonia.Input.KeyGesture? PlusGesture { get; set; }
+                    public global::Avalonia.Input.KeyGesture? FallbackGesture { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl DeterministicGesture="Ctrl+Shift+A"
+                              PlusGesture="Ctrl++"
+                              FallbackGesture="Ctrl+UnknownToken" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains(
+            "new global::Avalonia.Input.KeyGesture(global::Avalonia.Input.Key.A, global::Avalonia.Input.KeyModifiers.Control | global::Avalonia.Input.KeyModifiers.Shift)",
+            generated);
+        Assert.Contains(
+            "new global::Avalonia.Input.KeyGesture(global::Avalonia.Input.Key.OemPlus, global::Avalonia.Input.KeyModifiers.Control)",
+            generated);
+        Assert.Contains(
+            "global::Avalonia.Input.KeyGesture.Parse(\"Ctrl+UnknownToken\")",
+            generated);
+    }
+
+    [Fact]
+    public void Emits_Avalonia_Intrinsic_Literals_Without_Static_Parse_Fallback()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public enum RelativeUnit
+                {
+                    Absolute,
+                    Relative
+                }
+
+                public struct Thickness
+                {
+                    public Thickness(double uniform) { }
+                    public Thickness(double left, double top, double right, double bottom) { }
+                    public static Thickness Parse(string value) => default;
+                }
+
+                public struct CornerRadius
+                {
+                    public CornerRadius(double uniform) { }
+                    public CornerRadius(double topLeft, double topRight, double bottomRight, double bottomLeft) { }
+                    public static CornerRadius Parse(string value) => default;
+                }
+
+                public struct Point
+                {
+                    public Point(double x, double y) { }
+                    public static Point Parse(string value) => default;
+                }
+
+                public struct Vector
+                {
+                    public Vector(double x, double y) { }
+                    public static Vector Parse(string value) => default;
+                }
+
+                public struct Size
+                {
+                    public Size(double width, double height) { }
+                    public static Size Parse(string value) => default;
+                }
+
+                public struct Rect
+                {
+                    public Rect(double x, double y, double width, double height) { }
+                    public static Rect Parse(string value) => default;
+                }
+
+                public struct Matrix
+                {
+                    public Matrix(double m11, double m12, double m21, double m22, double m31, double m32) { }
+                    public Matrix(double m11, double m12, double m13, double m21, double m22, double m23, double m31, double m32, double m33) { }
+                    public static Matrix Parse(string value) => default;
+                }
+
+                public struct Vector3D
+                {
+                    public Vector3D(double x, double y, double z) { }
+                    public static Vector3D Parse(string value) => default;
+                }
+
+                public struct PixelPoint
+                {
+                    public PixelPoint(int x, int y) { }
+                    public static PixelPoint Parse(string value) => default;
+                }
+
+                public struct PixelSize
+                {
+                    public PixelSize(int width, int height) { }
+                    public static PixelSize Parse(string value) => default;
+                }
+
+                public struct PixelRect
+                {
+                    public PixelRect(int x, int y, int width, int height) { }
+                    public static PixelRect Parse(string value) => default;
+                }
+
+                public struct RelativePoint
+                {
+                    public RelativePoint(double x, double y, RelativeUnit unit) { }
+                    public static RelativePoint Parse(string value) => default;
+                }
+
+                public struct RelativeScalar
+                {
+                    public RelativeScalar(double scalar, RelativeUnit unit) { }
+                    public static RelativeScalar Parse(string value) => default;
+                }
+
+                public struct RelativeRect
+                {
+                    public RelativeRect(double x, double y, double width, double height, RelativeUnit unit) { }
+                    public static RelativeRect Parse(string value) => default;
+                }
+            }
+
+            namespace Avalonia.Media
+            {
+                public struct Color
+                {
+                    public static Color FromUInt32(uint value) => default;
+                    public static Color Parse(string value) => default;
+                }
+
+                public static class Colors
+                {
+                    public static Color Red => default;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public enum GridUnitType
+                {
+                    Auto,
+                    Pixel,
+                    Star
+                }
+
+                public struct GridLength
+                {
+                    public GridLength(double value, GridUnitType unit) { }
+                    public static GridLength Auto => default;
+                    public static GridLength Parse(string value) => default;
+                }
+
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ProbeControl : Control
+                {
+                    public global::Avalonia.Thickness ThicknessValue { get; set; }
+                    public global::Avalonia.CornerRadius CornerRadiusValue { get; set; }
+                    public global::Avalonia.Point PointValue { get; set; }
+                    public global::Avalonia.Vector VectorValue { get; set; }
+                    public global::Avalonia.Size SizeValue { get; set; }
+                    public global::Avalonia.Rect RectValue { get; set; }
+                    public global::Avalonia.Matrix MatrixValue { get; set; }
+                    public global::Avalonia.Vector3D Vector3DValue { get; set; }
+                    public global::Avalonia.PixelPoint PixelPointValue { get; set; }
+                    public global::Avalonia.PixelSize PixelSizeValue { get; set; }
+                    public global::Avalonia.PixelRect PixelRectValue { get; set; }
+                    public global::Avalonia.Controls.GridLength GridLengthValue { get; set; }
+                    public global::Avalonia.RelativePoint RelativePointValue { get; set; }
+                    public global::Avalonia.RelativeScalar RelativeScalarValue { get; set; }
+                    public global::Avalonia.RelativeRect RelativeRectValue { get; set; }
+                    public global::Avalonia.Media.Color ColorValue { get; set; }
+                    public global::Avalonia.Media.Color NamedColorValue { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl ThicknessValue="1,2,3,4"
+                              CornerRadiusValue="2"
+                              PointValue="10,20"
+                              VectorValue="30,40"
+                              SizeValue="50,60"
+                              RectValue="1,2,3,4"
+                              MatrixValue="1,0,0,1,10,20"
+                              Vector3DValue="1,2,3"
+                              PixelPointValue="4,5"
+                              PixelSizeValue="6,7"
+                              PixelRectValue="8,9,10,11"
+                              GridLengthValue="2*"
+                              RelativePointValue="10%,20%"
+                              RelativeScalarValue="75%"
+                              RelativeRectValue="1%,2%,3%,4%"
+                              ColorValue="#FF112233"
+                              NamedColorValue="Red" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains("ThicknessValue", generated);
+        Assert.Contains("CornerRadiusValue", generated);
+        Assert.Contains("PointValue", generated);
+        Assert.Contains("VectorValue", generated);
+        Assert.Contains("SizeValue", generated);
+        Assert.Contains("RectValue", generated);
+        Assert.Contains("MatrixValue", generated);
+        Assert.Contains("Vector3DValue", generated);
+        Assert.Contains("PixelPointValue", generated);
+        Assert.Contains("PixelSizeValue", generated);
+        Assert.Contains("PixelRectValue", generated);
+        Assert.Contains("GridLengthValue", generated);
+        Assert.Contains("RelativePointValue", generated);
+        Assert.Contains("RelativeScalarValue", generated);
+        Assert.Contains("RelativeRectValue", generated);
+        Assert.Contains("ColorValue", generated);
+        Assert.Contains("NamedColorValue", generated);
+
+        Assert.DoesNotContain("global::Avalonia.Thickness.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.CornerRadius.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Point.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Vector.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Size.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Rect.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Matrix.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Vector3D.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.PixelPoint.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.PixelSize.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.PixelRect.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Controls.GridLength.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.RelativePoint.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.RelativeScalar.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.RelativeRect.Parse(", generated);
+        Assert.DoesNotContain("global::Avalonia.Media.Color.Parse(", generated);
     }
 
     [Fact]
@@ -11846,6 +12511,168 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Applies_Type_And_Property_Aliases_From_Unified_Configuration_Transform_Documents()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public string? Foreground { get; set; }
+                }
+            }
+
+            namespace Demo.Custom
+            {
+                public class FancyAliasControl : global::Avalonia.Controls.Control { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         AccentText="Blue">
+                <FancyAlias />
+            </UserControl>
+            """;
+
+        const string configurationJson = """
+            {
+              "schemaVersion": 1,
+              "build": {
+                "backend": "SourceGen",
+                "isEnabled": true
+              },
+              "transform": {
+                "rawTransformDocuments": {
+                  "inline-rules.json": "{ \"typeAliases\": [ { \"xmlNamespace\": \"https://github.com/avaloniaui\", \"xamlType\": \"FancyAlias\", \"clrType\": \"Demo.Custom.FancyAliasControl\" } ], \"propertyAliases\": [ { \"targetType\": \"Avalonia.Controls.UserControl\", \"xamlProperty\": \"AccentText\", \"clrProperty\": \"Foreground\" } ] }"
+                }
+              }
+            }
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalFiles:
+            [
+                ("xaml-sourcegen.config.json", configurationJson, "None")
+            ]);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("new global::Demo.Custom.FancyAliasControl()", generated);
+        Assert.Contains("Foreground", generated);
+    }
+
+    [Fact]
+    public void Unified_Configuration_Transform_Documents_Override_Legacy_Rule_Files_With_Deterministic_Diagnostic()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public string? Foreground { get; set; }
+                    public string? LegacyForeground { get; set; }
+                }
+            }
+
+            namespace Demo.Custom
+            {
+                public class LegacyAliasControl : global::Avalonia.Controls.Control { }
+
+                public class ConfigAliasControl : global::Avalonia.Controls.Control { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         AccentText="Blue">
+                <FancyAlias />
+            </UserControl>
+            """;
+
+        const string legacyTransformRules = """
+            {
+              "typeAliases": [
+                {
+                  "xmlNamespace": "https://github.com/avaloniaui",
+                  "xamlType": "FancyAlias",
+                  "clrType": "Demo.Custom.LegacyAliasControl"
+                }
+              ],
+              "propertyAliases": [
+                {
+                  "targetType": "Avalonia.Controls.UserControl",
+                  "xamlProperty": "AccentText",
+                  "clrProperty": "LegacyForeground"
+                }
+              ]
+            }
+            """;
+
+        const string configurationJson = """
+            {
+              "schemaVersion": 1,
+              "build": {
+                "backend": "SourceGen",
+                "isEnabled": true
+              },
+              "transform": {
+                "rawTransformDocuments": {
+                  "inline-rules.json": "{ \"typeAliases\": [ { \"xmlNamespace\": \"https://github.com/avaloniaui\", \"xamlType\": \"FancyAlias\", \"clrType\": \"Demo.Custom.ConfigAliasControl\" } ], \"propertyAliases\": [ { \"targetType\": \"Avalonia.Controls.UserControl\", \"xamlProperty\": \"AccentText\", \"clrProperty\": \"Foreground\" } ] }"
+                }
+              }
+            }
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            additionalFiles:
+            [
+                ("transform-rules.json", legacyTransformRules, "AvaloniaSourceGenTransformRule"),
+                ("xaml-sourcegen.config.json", configurationJson, "None")
+            ]);
+
+        Assert.Contains(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0903" &&
+                          diagnostic.GetMessage().Contains("legacy transform rule files and unified configuration", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("new global::Demo.Custom.ConfigAliasControl()", generated);
+        Assert.DoesNotContain("new global::Demo.Custom.LegacyAliasControl()", generated);
+        Assert.Contains("Foreground", generated);
+    }
+
+    [Fact]
     public void Resolves_Type_And_Property_Aliases_From_Assembly_Attributes()
     {
         const string code = """
@@ -12095,7 +12922,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "App");
         Assert.Contains("partial class App", generated);
-        Assert.Contains("__TryClearCollection(__root.Styles);", generated);
+        Assert.Contains("__AXSGObjectGraph.TryClearCollection(__root.Styles);", generated);
         Assert.Contains("__root.Styles", generated);
         Assert.Contains("new global::Avalonia.Themes.Fluent.FluentTheme(", generated);
         Assert.Contains("DensityStyle", generated);
@@ -12162,9 +12989,14 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.IStyle> styleCollection:", generated);
-        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Controls.IResourceProvider> resourceProviderCollection:", generated);
-        Assert.Contains("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.SetterBase> setterCollection:", generated);
+        Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.IStyle> styleCollection:", generated);
+        Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Controls.IResourceProvider> resourceProviderCollection:", generated);
+        Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.SetterBase> setterCollection:", generated);
+
+        var trackerSource = ReadRuntimeHotReloadStateTrackerSource();
+        Assert.Contains("case Styles styles:", trackerSource);
+        Assert.Contains("case DataTemplates dataTemplates:", trackerSource);
+        Assert.Contains("case Classes classes:", trackerSource);
     }
 
     [Fact]
@@ -12481,6 +13313,17 @@ public class AvaloniaXamlSourceGeneratorTests
         }
 
         return sources.First(source => source.Contains($"partial class {className}", StringComparison.Ordinal));
+    }
+
+    private static string ReadRuntimeHotReloadStateTrackerSource()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
+        var path = Path.Combine(
+            repositoryRoot,
+            "src",
+            "XamlToCSharpGenerator.Runtime.Avalonia",
+            "XamlSourceGenHotReloadStateTracker.cs");
+        return File.ReadAllText(path);
     }
 
     private static string GetBinderSourceText()

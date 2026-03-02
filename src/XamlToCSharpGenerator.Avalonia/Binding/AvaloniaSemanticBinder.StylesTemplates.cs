@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -1143,21 +1144,21 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         GeneratorOptions options)
     {
-        var expectedTypeMetadataName = template.Kind switch
+        var expectedTypeContractId = template.Kind switch
         {
-            "ItemsPanelTemplate" => "Avalonia.Controls.Panel",
-            "ControlTemplate" => "Avalonia.Controls.Control",
-            "DataTemplate" => "Avalonia.Controls.Control",
-            "TreeDataTemplate" => "Avalonia.Controls.Control",
-            _ => null
+            "ItemsPanelTemplate" => TypeContractId.AvaloniaPanel,
+            "ControlTemplate" => TypeContractId.AvaloniaControl,
+            "DataTemplate" => TypeContractId.AvaloniaControl,
+            "TreeDataTemplate" => TypeContractId.AvaloniaControl,
+            _ => (TypeContractId?)null
         };
 
-        if (expectedTypeMetadataName is null)
+        if (expectedTypeContractId is null)
         {
             return;
         }
 
-        var expectedType = compilation.GetTypeByMetadataName(expectedTypeMetadataName);
+        var expectedType = ResolveContractType(compilation, expectedTypeContractId.Value);
         if (expectedType is null)
         {
             return;
@@ -1229,7 +1230,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
-        var itemsControlType = compilation.GetTypeByMetadataName("Avalonia.Controls.ItemsControl");
+        var itemsControlType = ResolveContractType(compilation, TypeContractId.ItemsControl);
         if (itemsControlType is null || !IsTypeAssignableTo(objectType, itemsControlType))
         {
             return;
@@ -1241,7 +1242,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
-        var contentControlType = compilation.GetTypeByMetadataName("Avalonia.Controls.ContentControl");
+        var contentControlType = ResolveContractType(compilation, TypeContractId.ContentControl);
         if (contentControlType is null)
         {
             return;
@@ -1528,6 +1529,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? resolvedType,
         Compilation compilation)
     {
+        return ResolveObjectNodeNameScopeRegistration(
+            node,
+            resolvedType,
+            compilation,
+            GetActiveTypeSymbolCatalog(compilation));
+    }
+
+    private static string? ResolveObjectNodeNameScopeRegistration(
+        XamlObjectNode node,
+        INamedTypeSymbol? resolvedType,
+        Compilation compilation,
+        ITypeSymbolCatalog? typeSymbolCatalog)
+    {
         var normalizedName = NormalizeObjectNodeName(node.Name);
         if (string.IsNullOrWhiteSpace(normalizedName))
         {
@@ -1542,7 +1556,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return normalizedName;
         }
 
-        return NameScopeRegistrationSemanticsService.SupportsRegistrationFromNameProperty(resolvedType, compilation)
+        return NameScopeRegistrationSemanticsService.SupportsRegistrationFromNameProperty(resolvedType, typeSymbolCatalog)
             ? normalizedName
             : null;
     }

@@ -88,40 +88,75 @@ public class AvaloniaSemanticBinderDeHackGuardTests
     [Fact]
     public void Emitter_MergedDictionary_Include_Resolver_Handles_ResourceInclude()
     {
-        var source = ReadEmitterSource();
+        var emitterSource = ReadEmitterSource();
+        var runtimeHelperSource = ReadObjectGraphRuntimeHelpersSource();
 
         Assert.DoesNotContain(
-            "includeValue is not global::Avalonia.Markup.Xaml.Styling.MergeResourceInclude",
-            source,
+            "includeValue is not MergeResourceInclude",
+            runtimeHelperSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "includeValue is not global::Avalonia.Markup.Xaml.Styling.ResourceInclude",
-            source,
+            "includeValue is not ResourceInclude",
+            runtimeHelperSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"global::Avalonia.Markup.Xaml.Styling.ResourceInclude\"",
-            source,
+            "__AXSGObjectGraph.TryApplyMergedResourceInclude(",
+            emitterSource,
             StringComparison.Ordinal);
     }
 
     [Fact]
     public void Emitter_StyleInclude_Is_Resolved_Before_Collection_Add()
     {
-        var source = ReadEmitterSource();
+        var emitterSource = ReadEmitterSource();
+        var runtimeHelperSource = ReadObjectGraphRuntimeHelpersSource();
 
-        Assert.Contains("private static bool __TryApplyStyleInclude(", source, StringComparison.Ordinal);
-        Assert.Contains("if (!__TryApplyStyleInclude(", source, StringComparison.Ordinal);
-        Assert.Contains("private static bool __TryResolveDictionaryEntryValue(", source, StringComparison.Ordinal);
-        Assert.Contains("if (!__TryResolveDictionaryEntryValue(dictionary, value, out dictionaryValue))", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "__AXSGObjectGraph.TryApplyStyleInclude(",
+            emitterSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "public static bool TryApplyStyleInclude(",
+            runtimeHelperSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (!TryResolveDictionaryEntryValue(dictionary, value, documentUri, out dictionaryValue))",
+            runtimeHelperSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]
     public void Emitter_MergedDictionary_Include_Preserves_MergedDictionary_Semantics()
     {
-        var source = ReadEmitterSource();
+        var source = ReadObjectGraphRuntimeHelpersSource();
 
         Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);", source, StringComparison.Ordinal);
         Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceProvider);", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emitter_Uses_ObjectNode_Semantic_Flags_For_Include_And_StaticResource_Decisions()
+    {
+        var source = ReadEmitterSource();
+
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor", source, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.IsResourceInclude", source, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.IsStyleInclude", source, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.StaticResourceMarkupExtension", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static bool ShouldUseBaseUriConstructor(string typeName)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Binder_Object_Node_Semantics_Use_Typed_Contract_Service()
+    {
+        var binderSource = ReadBinderSource();
+        var serviceSource = ReadObjectNodeSemanticContractServiceSource();
+
+        Assert.Contains("ObjectNodeSemanticContractService.Classify(", binderSource, StringComparison.Ordinal);
+        Assert.Contains("TypeContractId.ResourceInclude", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("TypeContractId.MergeResourceInclude", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("TypeContractId.StyleInclude", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("TypeContractId.StaticResourceExtension", serviceSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -439,6 +474,40 @@ public class AvaloniaSemanticBinderDeHackGuardTests
     }
 
     [Fact]
+    public void Binder_Uses_Centralized_DateTime_Literal_Semantics_Service()
+    {
+        var source = ReadMarkupHelpersSource();
+
+        Assert.Contains("XamlDateTimeLiteralSemantics.TryParseRoundtrip(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("global::System.DateTime.Parse(", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Binder_Uses_Centralized_Avalonia_Intrinsic_Literal_Semantics_Service()
+    {
+        var source = ReadBindingSemanticsSource();
+
+        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseThickness(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseGridLength(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseHexColor(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlAvaloniaTransformLiteralSemantics.TryParse(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlAvaloniaCursorLiteralSemantics.TryParseStandardCursorTypeMember(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlAvaloniaKeyGestureLiteralSemantics.TryParse(", source, StringComparison.Ordinal);
+        Assert.Contains("TryConvertDeterministicSolidColorBrushExpression(", source, StringComparison.Ordinal);
+        Assert.Contains("TryConvertDeterministicTransformOperationsExpression(", source, StringComparison.Ordinal);
+        Assert.Contains("TryConvertAvaloniaCursorExpression(", source, StringComparison.Ordinal);
+        Assert.Contains("TryConvertAvaloniaKeyGestureExpression(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SourceGenMarkupExtensionRuntime.ParseFontFeatureCollection(",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SourceGenMarkupExtensionRuntime.ParseFontFamily(",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Binder_Uses_Centralized_Event_Handler_Name_Semantics_Service()
     {
         var source = ReadBindingSemanticsSource();
@@ -680,6 +749,19 @@ public class AvaloniaSemanticBinderDeHackGuardTests
         return File.ReadAllText(path);
     }
 
+    private static string ReadObjectNodeSemanticContractServiceSource()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var path = Path.Combine(
+            repositoryRoot,
+            "src",
+            "XamlToCSharpGenerator.Avalonia",
+            "Binding",
+            "Services",
+            "ObjectNodeSemanticContractService.cs");
+        return File.ReadAllText(path);
+    }
+
     private static string ReadXamlTypeExpressionResolutionServiceSource()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
@@ -724,6 +806,17 @@ public class AvaloniaSemanticBinderDeHackGuardTests
             "src",
             "XamlToCSharpGenerator.Runtime.Avalonia",
             "SourceGenMarkupExtensionRuntime.cs");
+        return File.ReadAllText(path);
+    }
+
+    private static string ReadObjectGraphRuntimeHelpersSource()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var path = Path.Combine(
+            repositoryRoot,
+            "src",
+            "XamlToCSharpGenerator.Runtime.Avalonia",
+            "SourceGenObjectGraphRuntimeHelpers.cs");
         return File.ReadAllText(path);
     }
 

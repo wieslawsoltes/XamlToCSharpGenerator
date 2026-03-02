@@ -14,11 +14,6 @@ public sealed partial class AvaloniaSemanticBinder
         return ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace);
     }
 
-    private static INamedTypeSymbol? ResolveWildcardSelectorType(Compilation compilation)
-    {
-        return compilation.GetTypeByMetadataName("Avalonia.StyledElement");
-    }
-
     private static bool TryResolvePropertyReference(
         string propertyToken,
         Compilation compilation,

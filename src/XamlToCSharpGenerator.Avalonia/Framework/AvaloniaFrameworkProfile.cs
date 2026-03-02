@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -21,9 +22,15 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
     private const string Xaml2006Namespace = "http://schemas.microsoft.com/winfx/2006/xaml";
     private const string BlendDesignNamespace = "http://schemas.microsoft.com/expression/blend/2008";
     private const string MarkupCompatibilityNamespace = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+    private static readonly ConcurrentDictionary<string, ImmutableDictionary<string, string>> GlobalXmlnsPrefixPropertyCache =
+        new(StringComparer.Ordinal);
 
     private static readonly IXamlFrameworkBuildContract BuildContractInstance = new AvaloniaFrameworkBuildContract();
     private static readonly IXamlFrameworkTransformProvider TransformProviderInstance = new AvaloniaFrameworkTransformProvider();
+    private static readonly IXamlFrameworkSemanticBinder SemanticBinderInstance =
+        new AvaloniaFrameworkSemanticBinder(new AvaloniaSemanticBinder());
+    private static readonly IXamlFrameworkEmitter EmitterInstance =
+        new AvaloniaFrameworkEmitter(new AvaloniaCodeEmitter());
     private static readonly ImmutableArray<IXamlDocumentEnricher> DocumentEnricherInstances =
         [AvaloniaDocumentFeatureEnricher.Instance];
 
@@ -41,12 +48,12 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
 
     public IXamlFrameworkSemanticBinder CreateSemanticBinder()
     {
-        return new AvaloniaFrameworkSemanticBinder(new AvaloniaSemanticBinder());
+        return SemanticBinderInstance;
     }
 
     public IXamlFrameworkEmitter CreateEmitter()
     {
-        return new AvaloniaFrameworkEmitter(new AvaloniaCodeEmitter());
+        return EmitterInstance;
     }
 
     public ImmutableArray<IXamlDocumentEnricher> CreateDocumentEnrichers()
@@ -173,29 +180,61 @@ public sealed class AvaloniaFrameworkProfile : IXamlFrameworkProfile
             return ImmutableDictionary<string, string>.Empty;
         }
 
-        var map = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
-        var entries = trimmedRawValue
-            .Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        return GlobalXmlnsPrefixPropertyCache.GetOrAdd(trimmedRawValue, static value => ParseGlobalXmlnsPrefixesCore(value));
+    }
 
-        foreach (var entry in entries)
+    private static ImmutableDictionary<string, string> ParseGlobalXmlnsPrefixesCore(string rawValue)
+    {
+        var map = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        var span = rawValue.AsSpan();
+        var index = 0;
+
+        while (index < span.Length)
         {
+            while (index < span.Length && IsGlobalPrefixDelimiter(span[index]))
+            {
+                index++;
+            }
+
+            if (index >= span.Length)
+            {
+                break;
+            }
+
+            var entryStart = index;
+            while (index < span.Length && !IsGlobalPrefixDelimiter(span[index]))
+            {
+                index++;
+            }
+
+            var entry = span.Slice(entryStart, index - entryStart).Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
             var separatorIndex = entry.IndexOf('=');
             if (separatorIndex <= 0 || separatorIndex >= entry.Length - 1)
             {
                 continue;
             }
 
-            var prefix = entry.Substring(0, separatorIndex).Trim();
-            var xmlNamespace = entry.Substring(separatorIndex + 1).Trim();
+            var prefix = entry.Slice(0, separatorIndex).Trim();
+            var xmlNamespace = entry.Slice(separatorIndex + 1).Trim();
             if (prefix.Length == 0 || xmlNamespace.Length == 0)
             {
                 continue;
             }
 
-            map[prefix] = xmlNamespace;
+            map[prefix.ToString()] = xmlNamespace.ToString();
         }
 
         return map.ToImmutable();
+    }
+
+    private static bool IsGlobalPrefixDelimiter(char character)
+    {
+        return character == ';' || character == ',' || character == '\r' || character == '\n';
     }
 
     private sealed class AvaloniaFrameworkSemanticBinder : IXamlFrameworkSemanticBinder

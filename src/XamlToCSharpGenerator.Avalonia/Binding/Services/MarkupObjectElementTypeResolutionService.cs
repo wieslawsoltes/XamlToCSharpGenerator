@@ -1,17 +1,12 @@
 using System;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
 internal sealed class MarkupObjectElementTypeResolutionService
 {
-    private const string StaticResourceExtensionMetadataName = "Avalonia.Markup.Xaml.MarkupExtensions.StaticResourceExtension";
-    private const string DynamicResourceExtensionMetadataName = "Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension";
-    private const string OnPlatformExtensionMetadataName = "Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension";
-    private const string OnFormFactorExtensionMetadataName = "Avalonia.Markup.Xaml.MarkupExtensions.OnFormFactorExtension";
-    private const string OnMetadataName = "Avalonia.Markup.Xaml.MarkupExtensions.On";
-
     internal delegate bool IsAvaloniaDefaultXmlNamespaceDelegate(string xmlNamespace);
 
     private readonly IsAvaloniaDefaultXmlNamespaceDelegate _isAvaloniaDefaultXmlNamespace;
@@ -26,13 +21,11 @@ internal sealed class MarkupObjectElementTypeResolutionService
         _xaml2006Namespace = xaml2006Namespace ?? throw new ArgumentNullException(nameof(xaml2006Namespace));
     }
 
-    public INamedTypeSymbol? TryResolve(Compilation compilation, string xmlNamespace, string xmlTypeName)
+    public INamedTypeSymbol? TryResolve(
+        ITypeSymbolCatalog? typeSymbolCatalog,
+        string xmlNamespace,
+        string xmlTypeName)
     {
-        if (compilation is null)
-        {
-            throw new ArgumentNullException(nameof(compilation));
-        }
-
         if (!ShouldResolveFromMarkupObjectElement(xmlNamespace))
         {
             return null;
@@ -44,19 +37,19 @@ internal sealed class MarkupObjectElementTypeResolutionService
             return null;
         }
 
-        var metadataName = normalizedToken switch
+        TypeContractId? typeContractId = normalizedToken switch
         {
-            "StaticResource" or "StaticResourceExtension" => StaticResourceExtensionMetadataName,
-            "DynamicResource" or "DynamicResourceExtension" => DynamicResourceExtensionMetadataName,
-            "OnPlatform" or "OnPlatformExtension" => OnPlatformExtensionMetadataName,
-            "OnFormFactor" or "OnFormFactorExtension" => OnFormFactorExtensionMetadataName,
-            "On" => OnMetadataName,
+            "StaticResource" or "StaticResourceExtension" => TypeContractId.StaticResourceExtension,
+            "DynamicResource" or "DynamicResourceExtension" => TypeContractId.DynamicResourceExtension,
+            "OnPlatform" or "OnPlatformExtension" => TypeContractId.OnPlatformExtension,
+            "OnFormFactor" or "OnFormFactorExtension" => TypeContractId.OnFormFactorExtension,
+            "On" => TypeContractId.OnMarkupExtension,
             _ => null
         };
 
-        return metadataName is null
+        return typeContractId is null
             ? null
-            : compilation.GetTypeByMetadataName(metadataName);
+            : typeSymbolCatalog?.GetOrDefault(typeContractId.Value);
     }
 
     private bool ShouldResolveFromMarkupObjectElement(string xmlNamespace)

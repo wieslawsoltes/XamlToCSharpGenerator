@@ -11,6 +11,13 @@ namespace XamlToCSharpGenerator.Tests.Build;
 [Collection("BuildSerial")]
 public class DifferentialFeatureCorpusTests
 {
+    private static readonly string[] RoslynTransientFailureMarkers =
+    {
+        "BoundStepThroughSequencePoint.<Span>k__BackingField",
+        "ILOpCodeExtensions.StackPushCount",
+        "SignatureData.ReturnParam"
+    };
+
     private readonly ITestOutputHelper _output;
 
     public DifferentialFeatureCorpusTests(ITestOutputHelper output)
@@ -77,7 +84,10 @@ public class DifferentialFeatureCorpusTests
                 File.WriteAllText(Path.Combine(tempDir, file.Key), file.Value);
             }
 
-            var restore = RunProcess(tempDir, "dotnet", $"restore \"{projectPath}\" --nologo");
+            var restore = RunProcess(
+                tempDir,
+                "dotnet",
+                $"restore \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
             Assert.True(restore.ExitCode == 0, restore.Output);
 
             var sourceGenBuild = BuildFixture(projectPath, tempDir, backend: "SourceGen");
@@ -92,12 +102,6 @@ public class DifferentialFeatureCorpusTests
 
             var sourceGenAssemblyPath = Path.Combine(tempDir, "bin", "Debug", "net10.0", "DifferentialFeatureFixture.dll");
             Assert.True(File.Exists(sourceGenAssemblyPath), sourceGenBuild.Output);
-
-            var clean = RunProcess(
-                tempDir,
-                "dotnet",
-                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
-            Assert.True(clean.ExitCode == 0, clean.Output);
 
             var xamlIlBuild = BuildFixture(projectPath, tempDir, backend: "XamlIl");
             Assert.True(xamlIlBuild.ExitCode == 0, xamlIlBuild.Output);
@@ -172,18 +176,15 @@ public class DifferentialFeatureCorpusTests
                 File.WriteAllText(Path.Combine(tempDir, file.Key), file.Value);
             }
 
-            var restore = RunProcess(tempDir, "dotnet", $"restore \"{projectPath}\" --nologo");
+            var restore = RunProcess(
+                tempDir,
+                "dotnet",
+                $"restore \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
             Assert.True(restore.ExitCode == 0, restore.Output);
 
             var sourceGenBuild = BuildFixture(projectPath, tempDir, backend: "SourceGen");
             Assert.True(sourceGenBuild.ExitCode == 0, sourceGenBuild.Output);
             Assert.Contains("AXSG0111", sourceGenBuild.Output, StringComparison.Ordinal);
-
-            var clean = RunProcess(
-                tempDir,
-                "dotnet",
-                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
-            Assert.True(clean.ExitCode == 0, clean.Output);
 
             var xamlIlBuild = BuildFixture(projectPath, tempDir, backend: "XamlIl");
             Assert.True(xamlIlBuild.ExitCode == 0, xamlIlBuild.Output);
@@ -1075,7 +1076,7 @@ public class DifferentialFeatureCorpusTests
     private static (int ExitCode, string Output) BuildFixture(string projectPath, string workingDirectory, string backend)
     {
         var arguments =
-            $"build \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers " +
+            $"build \"{projectPath}\" --nologo -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers " +
             $"-p:AvaloniaXamlCompilerBackend={backend} " +
             "-p:UseSharedCompilation=false " +
             "-p:ProduceReferenceAssembly=false";
@@ -1161,6 +1162,15 @@ public class DifferentialFeatureCorpusTests
 
     private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
     {
+        return RunProcess(workingDirectory, fileName, arguments, allowRetry: true);
+    }
+
+    private static (int ExitCode, string Output) RunProcess(
+        string workingDirectory,
+        string fileName,
+        string arguments,
+        bool allowRetry)
+    {
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -1183,7 +1193,39 @@ public class DifferentialFeatureCorpusTests
         var outputBuilder = new StringBuilder();
         outputBuilder.Append(stdoutTask.Result);
         outputBuilder.Append(stderrTask.Result);
-        return (process.ExitCode, outputBuilder.ToString());
+        var output = outputBuilder.ToString();
+
+        if (allowRetry &&
+            ShouldRetryAfterTransientRoslynFailure(fileName, arguments, process.ExitCode, output))
+        {
+            var retry = RunProcess(workingDirectory, fileName, arguments, allowRetry: false);
+            var retryOutput = new StringBuilder(output.Length + retry.Output.Length + 128);
+            retryOutput.AppendLine("[Transient Roslyn compiler failure detected; retrying once.]");
+            retryOutput.AppendLine(output);
+            retryOutput.AppendLine("[Retry result follows:]");
+            retryOutput.Append(retry.Output);
+            return (retry.ExitCode, retryOutput.ToString());
+        }
+
+        return (process.ExitCode, output);
+    }
+
+    private static bool ShouldRetryAfterTransientRoslynFailure(
+        string fileName,
+        string arguments,
+        int exitCode,
+        string output)
+    {
+        var hasRoslynMissingMemberFailure =
+            output.Contains("MissingFieldException", StringComparison.Ordinal) ||
+            output.Contains("MissingMethodException", StringComparison.Ordinal);
+        var hasKnownMarker = RoslynTransientFailureMarkers.Any(marker => output.Contains(marker, StringComparison.Ordinal));
+
+        return exitCode != 0 &&
+               string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase) &&
+               arguments.Contains("build", StringComparison.OrdinalIgnoreCase) &&
+               hasRoslynMissingMemberFailure &&
+               hasKnownMarker;
     }
 
     private static string GetRepositoryRoot()

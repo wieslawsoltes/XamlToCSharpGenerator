@@ -13,6 +13,7 @@ using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.Avalonia.Binding.Services;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
@@ -1326,6 +1327,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             resolvedChildren,
             compilation,
             document);
+        var semanticFlags = ResolveObjectNodeSemanticFlags(symbol, compilation);
 
         return new ResolvedObjectNode(
             KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
@@ -1345,7 +1347,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             Line: node.Line,
             Column: node.Column,
             Condition: node.Condition,
-            ChildAddInstructions: childAddInstructions);
+            ChildAddInstructions: childAddInstructions,
+            SemanticFlags: semanticFlags);
     }
 
     private static void TryAddTemplateDataTypeDirectiveAssignment(
@@ -1520,5 +1523,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return "\"" + Escape(rawKey!.Trim()) + "\"";
+    }
+
+    private static ResolvedObjectNodeSemanticFlags ResolveObjectNodeSemanticFlags(
+        INamedTypeSymbol? symbol,
+        Compilation compilation)
+    {
+        return ObjectNodeSemanticContractService.Classify(
+            symbol,
+            GetActiveTypeSymbolCatalog(compilation),
+            IsTypeAssignableTo);
     }
 }

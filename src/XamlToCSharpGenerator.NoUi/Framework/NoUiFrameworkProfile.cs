@@ -84,7 +84,9 @@ public sealed class NoUiFrameworkProfile : IXamlFrameworkProfile
 
         public string NormalizeSourceItemGroup(string? sourceItemGroup)
         {
-            return string.IsNullOrWhiteSpace(sourceItemGroup) ? XamlSourceItemGroup : sourceItemGroup;
+            return string.IsNullOrWhiteSpace(sourceItemGroup)
+                ? XamlSourceItemGroup
+                : sourceItemGroup!.Trim();
         }
     }
 

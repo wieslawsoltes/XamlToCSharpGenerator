@@ -654,7 +654,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var markupObjectElementResolved = MarkupObjectElementTypeResolutionService.TryResolve(
-            compilation,
+            GetActiveTypeSymbolCatalog(compilation),
             xmlNamespace,
             xmlTypeName);
         if (markupObjectElementResolved is not null)

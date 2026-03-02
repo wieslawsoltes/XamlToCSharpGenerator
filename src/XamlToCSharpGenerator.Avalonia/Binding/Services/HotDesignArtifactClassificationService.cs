@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
@@ -17,7 +18,7 @@ internal sealed class HotDesignArtifactClassificationService
     }
 
     public HotDesignArtifactClassification Classify(
-        Compilation compilation,
+        ITypeSymbolCatalog? typeSymbolCatalog,
         XamlDocumentModel document,
         INamedTypeSymbol? rootTypeSymbol,
         ImmutableArray<ResolvedStyleDefinition> styles,
@@ -26,7 +27,7 @@ internal sealed class HotDesignArtifactClassificationService
     {
         var rootXmlTypeName = document.RootObject.XmlTypeName;
         var kind = ResolveKind(
-            compilation,
+            typeSymbolCatalog,
             rootXmlTypeName,
             rootTypeSymbol,
             styles,
@@ -37,7 +38,7 @@ internal sealed class HotDesignArtifactClassificationService
     }
 
     private ResolvedHotDesignArtifactKind ResolveKind(
-        Compilation compilation,
+        ITypeSymbolCatalog? typeSymbolCatalog,
         string rootXmlTypeName,
         INamedTypeSymbol? rootTypeSymbol,
         ImmutableArray<ResolvedStyleDefinition> styles,
@@ -45,20 +46,20 @@ internal sealed class HotDesignArtifactClassificationService
         ImmutableArray<ResolvedTemplateDefinition> templates)
     {
         if (IsRootType(rootXmlTypeName, "Application") ||
-            IsAssignableToKnownType(compilation, rootTypeSymbol, "Avalonia.Application"))
+            IsAssignableToKnownType(typeSymbolCatalog, rootTypeSymbol, TypeContractId.Application))
         {
             return ResolvedHotDesignArtifactKind.Application;
         }
 
         if (IsRootType(rootXmlTypeName, "ControlTheme") ||
             controlThemes.Length > 0 ||
-            IsAssignableToKnownType(compilation, rootTypeSymbol, "Avalonia.Styling.ControlTheme"))
+            IsAssignableToKnownType(typeSymbolCatalog, rootTypeSymbol, TypeContractId.ControlTheme))
         {
             return ResolvedHotDesignArtifactKind.ControlTheme;
         }
 
         if (IsRootType(rootXmlTypeName, "ResourceDictionary") ||
-            IsAssignableToKnownType(compilation, rootTypeSymbol, "Avalonia.Controls.ResourceDictionary"))
+            IsAssignableToKnownType(typeSymbolCatalog, rootTypeSymbol, TypeContractId.ResourceDictionary))
         {
             return ResolvedHotDesignArtifactKind.ResourceDictionary;
         }
@@ -72,7 +73,7 @@ internal sealed class HotDesignArtifactClassificationService
         if (IsRootType(rootXmlTypeName, "Style") ||
             IsRootType(rootXmlTypeName, "Styles") ||
             styles.Length > 0 ||
-            IsAssignableToKnownType(compilation, rootTypeSymbol, "Avalonia.Styling.Styles"))
+            IsAssignableToKnownType(typeSymbolCatalog, rootTypeSymbol, TypeContractId.Styles))
         {
             return ResolvedHotDesignArtifactKind.Style;
         }
@@ -108,16 +109,16 @@ internal sealed class HotDesignArtifactClassificationService
     }
 
     private bool IsAssignableToKnownType(
-        Compilation compilation,
+        ITypeSymbolCatalog? typeSymbolCatalog,
         INamedTypeSymbol? rootTypeSymbol,
-        string metadataName)
+        TypeContractId contractId)
     {
         if (rootTypeSymbol is null)
         {
             return false;
         }
 
-        var targetType = compilation.GetTypeByMetadataName(metadataName);
+        var targetType = typeSymbolCatalog?.GetOrDefault(contractId);
         return targetType is not null && _isTypeAssignable(rootTypeSymbol, targetType);
     }
 

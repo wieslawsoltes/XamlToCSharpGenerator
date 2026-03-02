@@ -1,5 +1,6 @@
 using System;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Configuration;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -16,14 +17,14 @@ internal sealed class NameScopeRegistrationSemanticsService
 
     public bool SupportsRegistrationFromNameProperty(
         INamedTypeSymbol? resolvedType,
-        Compilation compilation)
+        ITypeSymbolCatalog? typeSymbolCatalog)
     {
         if (resolvedType is null)
         {
             return true;
         }
 
-        var namedContract = compilation.GetTypeByMetadataName("Avalonia.INamed");
+        var namedContract = typeSymbolCatalog?.GetOrDefault(TypeContractId.AvaloniaInamed);
         if (namedContract is null)
         {
             return true;

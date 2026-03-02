@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -741,15 +742,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 forcedType: context.ClassSymbol,
                 rootTypeSymbol: context.ClassSymbol);
 
-            context.EmitNameScopeRegistration = context.Compilation.GetTypeByMetadataName("Avalonia.Controls.NameScope") is not null &&
-                                                context.Compilation.GetTypeByMetadataName("Avalonia.StyledElement") is not null &&
+            var typeSymbolCatalog = GetActiveTypeSymbolCatalog(context.Compilation);
+            context.EmitNameScopeRegistration = typeSymbolCatalog?.GetOrDefault(TypeContractId.NameScope) is not null &&
+                                                typeSymbolCatalog.GetOrDefault(TypeContractId.StyledElement) is not null &&
                                                 context.NamedElements.Count > 0;
             context.EmitStaticResourceResolver = RequiresStaticResourceResolver(
                 root,
                 context.Styles,
                 context.ControlThemes);
             var hotDesignClassification = HotDesignArtifactClassificationService.Classify(
-                context.Compilation,
+                typeSymbolCatalog,
                 context.Document,
                 context.ClassSymbol,
                 context.Styles,

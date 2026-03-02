@@ -149,8 +149,9 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
             return string.Empty;
         }
 
-        var escaped = new StringBuilder(value.Length + 8);
-        foreach (var ch in value)
+        var source = value!;
+        var escaped = new StringBuilder(source.Length + 8);
+        foreach (var ch in source)
         {
             switch (ch)
             {

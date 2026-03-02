@@ -25,7 +25,6 @@ internal static class AvaloniaSelectorSemanticAdapter
         INamedTypeSymbol? selectorTypeFallback,
         INamedTypeSymbol? selectorNestingTypeHint,
         Func<Compilation, XamlDocumentModel, string, INamedTypeSymbol?> resolveTypeToken,
-        Func<Compilation, INamedTypeSymbol?> resolveWildcardType,
         TryResolveSelectorPropertyReference tryResolvePropertyReference,
         TryConvertSelectorUntypedValue tryConvertUntypedValue,
         TryConvertSelectorTypedValue tryConvertTypedValue,
@@ -36,7 +35,6 @@ internal static class AvaloniaSelectorSemanticAdapter
             selectorTypeFallback,
             selectorNestingTypeHint,
             typeToken => resolveTypeToken(compilation, document, typeToken),
-            () => resolveWildcardType(compilation),
             SelectorExpressionEmitter,
             TryResolvePropertyPredicate,
             out expression);
