@@ -68,6 +68,28 @@ public static class SourceGenKnownTypeRegistry
         }
     }
 
+    public static void RegisterTypes(params Type[]? types)
+    {
+        if (types is null || types.Length == 0)
+        {
+            return;
+        }
+
+        lock (Sync)
+        {
+            for (var index = 0; index < types.Length; index++)
+            {
+                var type = types[index];
+                if (type is null)
+                {
+                    continue;
+                }
+
+                AddType(type);
+            }
+        }
+    }
+
     public static void RegisterXmlnsDefinition(string xmlNamespace, string clrNamespace)
     {
         if (string.IsNullOrWhiteSpace(xmlNamespace) ||

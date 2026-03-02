@@ -10,6 +10,49 @@ public static class XamlIncludeRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentBag<SourceGenIncludeDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Register(SourceGenIncludeDescriptor descriptor)
+    {
+        if (descriptor is null)
+        {
+            throw new ArgumentNullException(nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Kind))
+        {
+            throw new ArgumentException("Include kind must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Source))
+        {
+            throw new ArgumentException("Include source must be provided.", nameof(descriptor));
+        }
+
+        var bag = Entries.GetOrAdd(descriptor.Uri, static _ => new ConcurrentBag<SourceGenIncludeDescriptor>());
+        bag.Add(descriptor);
+    }
+
+    public static bool TryRegisterSerialized(string payload)
+    {
+        if (!SourceGenRegistryPayloadSerialization.TryDeserializeInclude(payload, out var descriptor) ||
+            descriptor is null)
+        {
+            return false;
+        }
+
+        Register(descriptor);
+        return true;
+    }
+
+    public static string Serialize(SourceGenIncludeDescriptor descriptor)
+    {
+        return SourceGenRegistryPayloadSerialization.Serialize(descriptor);
+    }
+
     public static void Register(
         string uri,
         string kind,
@@ -18,23 +61,7 @@ public static class XamlIncludeRegistry
         bool isAbsoluteUri,
         string rawXaml)
     {
-        if (string.IsNullOrWhiteSpace(uri))
-        {
-            throw new ArgumentException("URI must be provided.", nameof(uri));
-        }
-
-        if (string.IsNullOrWhiteSpace(kind))
-        {
-            throw new ArgumentException("Include kind must be provided.", nameof(kind));
-        }
-
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            throw new ArgumentException("Include source must be provided.", nameof(source));
-        }
-
-        var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenIncludeDescriptor>());
-        bag.Add(new SourceGenIncludeDescriptor(uri, kind, source, mergeTarget, isAbsoluteUri, rawXaml));
+        Register(new SourceGenIncludeDescriptor(uri, kind, source, mergeTarget, isAbsoluteUri, rawXaml));
     }
 
     public static IReadOnlyCollection<SourceGenIncludeDescriptor> GetAll(string uri)

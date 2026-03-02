@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Input;
 using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -27,7 +28,7 @@ public class SourceGenEventBindingRuntimeTests
         Assert.Equal("payload", command.LastParameter);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void InvokeCommand_Uses_DataContext_When_Source_Mode_Is_DataContext()
     {
         var command = new RecordingCommand();

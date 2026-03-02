@@ -10,20 +10,47 @@ public static class XamlTemplateRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentBag<SourceGenTemplateDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Register(SourceGenTemplateDescriptor descriptor)
+    {
+        if (descriptor is null)
+        {
+            throw new ArgumentNullException(nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Kind))
+        {
+            throw new ArgumentException("Template kind must be provided.", nameof(descriptor));
+        }
+
+        var bag = Entries.GetOrAdd(descriptor.Uri, static _ => new ConcurrentBag<SourceGenTemplateDescriptor>());
+        bag.Add(descriptor);
+    }
+
+    public static bool TryRegisterSerialized(string payload)
+    {
+        if (!SourceGenRegistryPayloadSerialization.TryDeserializeTemplate(payload, out var descriptor) ||
+            descriptor is null)
+        {
+            return false;
+        }
+
+        Register(descriptor);
+        return true;
+    }
+
+    public static string Serialize(SourceGenTemplateDescriptor descriptor)
+    {
+        return SourceGenRegistryPayloadSerialization.Serialize(descriptor);
+    }
+
     public static void Register(string uri, string kind, string? key, string? targetTypeName, string? dataType, string rawXaml)
     {
-        if (string.IsNullOrWhiteSpace(uri))
-        {
-            throw new ArgumentException("URI must be provided.", nameof(uri));
-        }
-
-        if (string.IsNullOrWhiteSpace(kind))
-        {
-            throw new ArgumentException("Template kind must be provided.", nameof(kind));
-        }
-
-        var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenTemplateDescriptor>());
-        bag.Add(new SourceGenTemplateDescriptor(uri, kind, key, targetTypeName, dataType, rawXaml));
+        Register(new SourceGenTemplateDescriptor(uri, kind, key, targetTypeName, dataType, rawXaml));
     }
 
     public static IReadOnlyCollection<SourceGenTemplateDescriptor> GetAll(string uri)

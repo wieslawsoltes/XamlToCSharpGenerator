@@ -10,6 +10,42 @@ public static class XamlCompiledBindingRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentBag<SourceGenCompiledBindingDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Register(SourceGenCompiledBindingDescriptor descriptor)
+    {
+        if (descriptor is null)
+        {
+            throw new ArgumentNullException(nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.TargetTypeName))
+        {
+            throw new ArgumentException("Target type name must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.TargetPropertyName))
+        {
+            throw new ArgumentException("Target property name must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.SourceTypeName))
+        {
+            throw new ArgumentException("Source type name must be provided.", nameof(descriptor));
+        }
+
+        if (descriptor.Accessor is null)
+        {
+            throw new ArgumentException("Compiled binding accessor must be provided.", nameof(descriptor));
+        }
+
+        var bag = Entries.GetOrAdd(descriptor.Uri, static _ => new ConcurrentBag<SourceGenCompiledBindingDescriptor>());
+        bag.Add(descriptor);
+    }
+
     public static void Register(
         string uri,
         string targetTypeName,
@@ -18,33 +54,7 @@ public static class XamlCompiledBindingRegistry
         string sourceTypeName,
         Func<object, object?> accessor)
     {
-        if (string.IsNullOrWhiteSpace(uri))
-        {
-            throw new ArgumentException("URI must be provided.", nameof(uri));
-        }
-
-        if (string.IsNullOrWhiteSpace(targetTypeName))
-        {
-            throw new ArgumentException("Target type name must be provided.", nameof(targetTypeName));
-        }
-
-        if (string.IsNullOrWhiteSpace(targetPropertyName))
-        {
-            throw new ArgumentException("Target property name must be provided.", nameof(targetPropertyName));
-        }
-
-        if (string.IsNullOrWhiteSpace(sourceTypeName))
-        {
-            throw new ArgumentException("Source type name must be provided.", nameof(sourceTypeName));
-        }
-
-        if (accessor is null)
-        {
-            throw new ArgumentNullException(nameof(accessor));
-        }
-
-        var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenCompiledBindingDescriptor>());
-        bag.Add(new SourceGenCompiledBindingDescriptor(
+        Register(new SourceGenCompiledBindingDescriptor(
             uri,
             targetTypeName,
             targetPropertyName,

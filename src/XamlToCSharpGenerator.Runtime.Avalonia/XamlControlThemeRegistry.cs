@@ -11,6 +11,26 @@ public static class XamlControlThemeRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<SourceGenControlThemeDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Register(SourceGenControlThemeDescriptor descriptor)
+    {
+        if (descriptor is null)
+        {
+            throw new ArgumentNullException(nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        var queue = Entries.GetOrAdd(descriptor.Uri, static _ => new ConcurrentQueue<SourceGenControlThemeDescriptor>());
+        queue.Enqueue(descriptor with
+        {
+            BasedOnKey = TryExtractBasedOnKey(descriptor.BasedOn),
+            NormalizedThemeVariant = NormalizeThemeVariant(descriptor.ThemeVariant)
+        });
+    }
+
     public static void Register(
         string uri,
         string? key,
@@ -36,16 +56,13 @@ public static class XamlControlThemeRegistry
             throw new ArgumentException("URI must be provided.", nameof(uri));
         }
 
-        var queue = Entries.GetOrAdd(uri, static _ => new ConcurrentQueue<SourceGenControlThemeDescriptor>());
-        queue.Enqueue(new SourceGenControlThemeDescriptor(
+        Register(new SourceGenControlThemeDescriptor(
             Uri: uri,
             Key: key,
             TargetTypeName: targetTypeName,
             BasedOn: basedOn,
             ThemeVariant: themeVariant,
             RawXaml: rawXaml,
-            BasedOnKey: TryExtractBasedOnKey(basedOn),
-            NormalizedThemeVariant: NormalizeThemeVariant(themeVariant),
             Factory: factory));
     }
 

@@ -10,20 +10,49 @@ public static class XamlResourceRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, SourceGenResourceDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Register(SourceGenResourceDescriptor descriptor)
+    {
+        if (descriptor is null)
+        {
+            throw new ArgumentNullException(nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Key))
+        {
+            throw new ArgumentException("Resource key must be provided.", nameof(descriptor));
+        }
+
+        var byKey = Entries.GetOrAdd(
+            descriptor.Uri,
+            static _ => new ConcurrentDictionary<string, SourceGenResourceDescriptor>(StringComparer.Ordinal));
+        byKey[descriptor.Key] = descriptor;
+    }
+
+    public static bool TryRegisterSerialized(string payload)
+    {
+        if (!SourceGenRegistryPayloadSerialization.TryDeserializeResource(payload, out var descriptor) ||
+            descriptor is null)
+        {
+            return false;
+        }
+
+        Register(descriptor);
+        return true;
+    }
+
+    public static string Serialize(SourceGenResourceDescriptor descriptor)
+    {
+        return SourceGenRegistryPayloadSerialization.Serialize(descriptor);
+    }
+
     public static void Register(string uri, string key, string typeName, string rawXaml)
     {
-        if (string.IsNullOrWhiteSpace(uri))
-        {
-            throw new ArgumentException("URI must be provided.", nameof(uri));
-        }
-
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            throw new ArgumentException("Resource key must be provided.", nameof(key));
-        }
-
-        var byKey = Entries.GetOrAdd(uri, static _ => new ConcurrentDictionary<string, SourceGenResourceDescriptor>(StringComparer.Ordinal));
-        byKey[key] = new SourceGenResourceDescriptor(uri, key, typeName, rawXaml);
+        Register(new SourceGenResourceDescriptor(uri, key, typeName, rawXaml));
     }
 
     public static bool TryGet(string uri, string key, out SourceGenResourceDescriptor? descriptor)

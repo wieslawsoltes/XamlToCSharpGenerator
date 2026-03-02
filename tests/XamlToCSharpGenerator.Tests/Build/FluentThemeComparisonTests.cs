@@ -12,7 +12,11 @@ namespace XamlToCSharpGenerator.Tests.Build;
 public class FluentThemeComparisonTests
 {
     private const int ProcessTimeoutMilliseconds = 300_000;
-    private const string RoslynTransientFailureMarker = "BoundStepThroughSequencePoint.<Span>k__BackingField";
+    private static readonly string[] RoslynTransientFailureMarkers =
+    {
+        "BoundStepThroughSequencePoint.<Span>k__BackingField",
+        "ILOpCodeExtensions.StackPushCount"
+    };
 
     [Fact]
     public void FluentTheme_Rebuild_Has_No_Selector_Conversion_Or_CrossFile_ControlTheme_BasedOn_Warnings()
@@ -79,15 +83,15 @@ public class FluentThemeComparisonTests
 
         var generatedSource = File.ReadAllText(generatedFiles[^1]);
         Assert.Contains(
-            "XamlIncludeRegistry.Register(\"avares://Avalonia.Themes.Fluent/FluentTheme.xaml\", \"StyleInclude\", \"/Controls/FluentControls.xaml\"",
+            "XamlIncludeRegistry.Register(new global::XamlToCSharpGenerator.Runtime.SourceGenIncludeDescriptor(\"avares://Avalonia.Themes.Fluent/FluentTheme.xaml\", \"StyleInclude\", \"/Controls/FluentControls.xaml\"",
             generatedSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "XamlIncludeRegistry.Register(\"avares://Avalonia.Themes.Fluent/FluentTheme.xaml\", \"ResourceInclude\", \"/DensityStyles/Compact.xaml\"",
+            "XamlIncludeRegistry.Register(new global::XamlToCSharpGenerator.Runtime.SourceGenIncludeDescriptor(\"avares://Avalonia.Themes.Fluent/FluentTheme.xaml\", \"ResourceInclude\", \"/DensityStyles/Compact.xaml\"",
             generatedSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "__TryAddToDictionary(__n0, \"CompactStyles\"",
+            "TryAddToDictionary(__n0, \"CompactStyles\"",
             generatedSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -372,11 +376,16 @@ public class FluentThemeComparisonTests
         int exitCode,
         string output)
     {
+        var hasRoslynMissingMemberFailure =
+            output.Contains("MissingFieldException", StringComparison.Ordinal) ||
+            output.Contains("MissingMethodException", StringComparison.Ordinal);
+        var hasKnownMarker = RoslynTransientFailureMarkers.Any(marker => output.Contains(marker, StringComparison.Ordinal));
+
         return exitCode != 0 &&
                string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase) &&
                arguments.Contains("build", StringComparison.OrdinalIgnoreCase) &&
-               output.Contains("MissingFieldException", StringComparison.Ordinal) &&
-               output.Contains(RoslynTransientFailureMarker, StringComparison.Ordinal);
+               hasRoslynMissingMemberFailure &&
+               hasKnownMarker;
     }
 
     private static string GetRepositoryRoot()

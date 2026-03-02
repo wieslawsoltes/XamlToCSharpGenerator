@@ -57,6 +57,7 @@ public static class XamlSourceGenHotReloadManager
     private static Timer? MetadataHandshakeTimer;
     private static bool MetadataHandshakePending;
     private static bool MetadataHandshakeCompleted;
+    private static bool SuppressStatefulControlTreeStateTransfer;
 
     static XamlSourceGenHotReloadManager()
     {
@@ -940,7 +941,8 @@ public static class XamlSourceGenHotReloadManager
             return false;
         }
 
-        return RemoteSocketTransport.HasConfiguredEndpointEnvironment();
+        return RemoteSocketTransport.HasConfiguredEndpointEnvironment() ||
+               IsEnabledByEnvironment(IosHotReloadEnabledEnvVarName);
     }
 
     private static SourceGenHotReloadTransportMode ResolveTransportModeFromEnvironment()
@@ -1744,14 +1746,23 @@ public static class XamlSourceGenHotReloadManager
 
         void RunPipeline()
         {
-            InvokeBeforeVisualTreeUpdate(context, handlers);
-            foreach (var operation in operations)
+            var previousSuppressStateTransfer = SuppressStatefulControlTreeStateTransfer;
+            SuppressStatefulControlTreeStateTransfer = ShouldSuppressStatefulControlTreeStateTransfer(operations);
+            try
             {
-                ExecuteReload(operation, handlers, context.Trigger);
-            }
+                InvokeBeforeVisualTreeUpdate(context, handlers);
+                foreach (var operation in operations)
+                {
+                    ExecuteReload(operation, handlers, context.Trigger);
+                }
 
-            InvokeAfterVisualTreeUpdate(context, handlers);
-            InvokeReloadCompleted(context, handlers);
+                InvokeAfterVisualTreeUpdate(context, handlers);
+                InvokeReloadCompleted(context, handlers);
+            }
+            finally
+            {
+                SuppressStatefulControlTreeStateTransfer = previousSuppressStateTransfer;
+            }
         }
 
         if (!NeedsUiDispatch(operations))
@@ -1783,6 +1794,29 @@ public static class XamlSourceGenHotReloadManager
         {
             if (RequiresUiDispatchForInstance(operation.Instance))
             {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ShouldSuppressStatefulControlTreeStateTransfer(List<ReloadOperation> operations)
+    {
+        foreach (var operation in operations)
+        {
+            if (operation.Instance is global::Avalonia.Styling.IStyle ||
+                operation.Instance is global::Avalonia.Controls.IResourceProvider)
+            {
+                Trace("Suppressing control-tree state transfer for style/resource hot reload pipeline.");
+                return true;
+            }
+
+            var operationType = operation.Type;
+            if (typeof(global::Avalonia.Styling.IStyle).IsAssignableFrom(operationType) ||
+                typeof(global::Avalonia.Controls.IResourceProvider).IsAssignableFrom(operationType))
+            {
+                Trace("Suppressing control-tree state transfer for style/resource hot reload pipeline.");
                 return true;
             }
         }
@@ -2173,6 +2207,7 @@ public static class XamlSourceGenHotReloadManager
 
     private static void AddDefaultHandlersLocked()
     {
+        AddHandlerLocked(new StatefulControlTreeHotReloadHandler(), typeof(global::Avalonia.LogicalTree.ILogical), "default");
         AddHandlerLocked(new StyledElementDataContextHotReloadHandler(), typeof(global::Avalonia.StyledElement), "default");
         AddHandlerLocked(new StyleHostVisualRefreshHotReloadHandler(), typeof(global::Avalonia.Styling.IStyle), "default");
     }
@@ -2351,6 +2386,640 @@ public static class XamlSourceGenHotReloadManager
         private sealed class StyledElementState(object? dataContext)
         {
             public object? DataContext { get; } = dataContext;
+        }
+    }
+
+    private sealed class StatefulControlTreeHotReloadHandler : ISourceGenHotReloadHandler
+    {
+        public int Priority => 200;
+
+        public bool CanHandle(Type reloadType, object instance)
+        {
+            return instance is global::Avalonia.LogicalTree.ILogical;
+        }
+
+        public object? CaptureState(Type reloadType, object instance)
+        {
+            if (SuppressStatefulControlTreeStateTransfer)
+            {
+                return null;
+            }
+
+            if (instance is not global::Avalonia.LogicalTree.ILogical logicalRoot)
+            {
+                return null;
+            }
+
+            return ControlTreeStateSnapshot.Capture(logicalRoot);
+        }
+
+        public void AfterElementReload(Type reloadType, object instance, object? state)
+        {
+            if (SuppressStatefulControlTreeStateTransfer)
+            {
+                return;
+            }
+
+            if (instance is not global::Avalonia.LogicalTree.ILogical logicalRoot ||
+                state is not ControlTreeStateSnapshot snapshot)
+            {
+                return;
+            }
+
+            snapshot.Restore(logicalRoot);
+        }
+
+        private sealed class ControlTreeStateSnapshot
+        {
+            private readonly IReadOnlyList<CapturedControlState> _states;
+
+            private ControlTreeStateSnapshot(IReadOnlyList<CapturedControlState> states)
+            {
+                _states = states;
+            }
+
+            public static ControlTreeStateSnapshot Capture(global::Avalonia.LogicalTree.ILogical root)
+            {
+                var states = new List<CapturedControlState>(32);
+                CaptureNode(root, "root", states);
+                return new ControlTreeStateSnapshot(states);
+            }
+
+            public void Restore(global::Avalonia.LogicalTree.ILogical root)
+            {
+                if (_states.Count == 0)
+                {
+                    return;
+                }
+
+                var liveControls = new List<LiveControlTarget>(_states.Count * 2);
+                BuildControlLookup(root, "root", liveControls);
+                if (liveControls.Count == 0)
+                {
+                    return;
+                }
+
+                var stateMatched = new bool[_states.Count];
+                var liveMatched = new bool[liveControls.Count];
+
+                // First pass: deterministic identity matches.
+                for (var stateIndex = 0; stateIndex < _states.Count; stateIndex++)
+                {
+                    var captured = _states[stateIndex];
+                    if (captured.Name is not null &&
+                        TryMatch(
+                            captured,
+                            liveControls,
+                            liveMatched,
+                            static (state, target) => string.Equals(state.Name, target.Name, StringComparison.Ordinal),
+                            allowSignatureFallback: true))
+                    {
+                        stateMatched[stateIndex] = true;
+                    }
+                }
+
+                for (var stateIndex = 0; stateIndex < _states.Count; stateIndex++)
+                {
+                    if (stateMatched[stateIndex])
+                    {
+                        continue;
+                    }
+
+                    var captured = _states[stateIndex];
+                    if (TryMatch(
+                            captured,
+                            liveControls,
+                            liveMatched,
+                            static (state, target) => string.Equals(state.Path, target.Path, StringComparison.Ordinal),
+                            allowSignatureFallback: false))
+                    {
+                        stateMatched[stateIndex] = true;
+                    }
+                }
+
+                // Second pass: semantic signature matches for surviving controls after sibling edits.
+                var unmatchedStateBySignature = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+                var unmatchedLiveBySignature = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+                for (var stateIndex = 0; stateIndex < _states.Count; stateIndex++)
+                {
+                    if (stateMatched[stateIndex])
+                    {
+                        continue;
+                    }
+
+                    var key = BuildSignatureKey(_states[stateIndex].ControlType, _states[stateIndex].Signature);
+                    if (!unmatchedStateBySignature.TryGetValue(key, out var stateIndexes))
+                    {
+                        stateIndexes = new List<int>();
+                        unmatchedStateBySignature.Add(key, stateIndexes);
+                    }
+
+                    stateIndexes.Add(stateIndex);
+                }
+
+                for (var liveIndex = 0; liveIndex < liveControls.Count; liveIndex++)
+                {
+                    if (liveMatched[liveIndex])
+                    {
+                        continue;
+                    }
+
+                    var live = liveControls[liveIndex];
+                    var key = BuildSignatureKey(live.Control.GetType(), live.Signature);
+                    if (!unmatchedLiveBySignature.TryGetValue(key, out var liveIndexes))
+                    {
+                        liveIndexes = new List<int>();
+                        unmatchedLiveBySignature.Add(key, liveIndexes);
+                    }
+
+                    liveIndexes.Add(liveIndex);
+                }
+
+                foreach (var pair in unmatchedStateBySignature)
+                {
+                    if (!unmatchedLiveBySignature.TryGetValue(pair.Key, out var liveIndexes) ||
+                        pair.Value.Count == 0 ||
+                        liveIndexes.Count == 0 ||
+                        pair.Value.Count != liveIndexes.Count)
+                    {
+                        continue;
+                    }
+
+                    pair.Value.Sort(static (left, right) => left.CompareTo(right));
+                    liveIndexes.Sort(static (left, right) => left.CompareTo(right));
+
+                    for (var index = 0; index < pair.Value.Count; index++)
+                    {
+                        var stateIndex = pair.Value[index];
+                        var liveIndex = liveIndexes[index];
+                        if (stateMatched[stateIndex] || liveMatched[liveIndex])
+                        {
+                            continue;
+                        }
+
+                        _states[stateIndex].State.Restore(liveControls[liveIndex].Control);
+                        stateMatched[stateIndex] = true;
+                        liveMatched[liveIndex] = true;
+                    }
+                }
+            }
+
+            private static bool TryMatch(
+                CapturedControlState state,
+                IReadOnlyList<LiveControlTarget> liveControls,
+                bool[] liveMatched,
+                Func<CapturedControlState, LiveControlTarget, bool> predicate,
+                bool allowSignatureFallback)
+            {
+                var bestMatchIndex = -1;
+                for (var liveIndex = 0; liveIndex < liveControls.Count; liveIndex++)
+                {
+                    if (liveMatched[liveIndex])
+                    {
+                        continue;
+                    }
+
+                    var live = liveControls[liveIndex];
+                    if (live.Control.GetType() != state.ControlType ||
+                        !predicate(state, live))
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(state.Signature, live.Signature, StringComparison.Ordinal))
+                    {
+                        if (!allowSignatureFallback || bestMatchIndex >= 0)
+                        {
+                            continue;
+                        }
+
+                        bestMatchIndex = liveIndex;
+                        continue;
+                    }
+
+                    bestMatchIndex = liveIndex;
+                    break;
+                }
+
+                if (bestMatchIndex < 0)
+                {
+                    return false;
+                }
+
+                state.State.Restore(liveControls[bestMatchIndex].Control);
+                liveMatched[bestMatchIndex] = true;
+                return true;
+            }
+
+            private static string BuildSignatureKey(Type type, string signature)
+            {
+                return type.AssemblyQualifiedName + "|" + signature;
+            }
+
+            private static void CaptureNode(
+                global::Avalonia.LogicalTree.ILogical node,
+                string path,
+                List<CapturedControlState> states)
+            {
+                if (node is global::Avalonia.Controls.Control control)
+                {
+                    var state = TransientLocalValueStateSnapshot.Capture(control);
+                    if (!state.IsEmpty)
+                    {
+                        states.Add(new CapturedControlState(
+                            path,
+                            TryGetNormalizedName(control),
+                            BuildControlSemanticSignature(control),
+                            control.GetType(),
+                            state));
+                    }
+                }
+                var ordinalByType = new Dictionary<Type, int>();
+                foreach (var child in node.LogicalChildren)
+                {
+                    if (child is not global::Avalonia.LogicalTree.ILogical logicalChild)
+                    {
+                        continue;
+                    }
+
+                    var childType = logicalChild.GetType();
+                    var ordinal = ordinalByType.TryGetValue(childType, out var currentOrdinal)
+                        ? currentOrdinal + 1
+                        : 0;
+                    ordinalByType[childType] = ordinal;
+                    CaptureNode(logicalChild, path + "/" + childType.FullName + "[" + ordinal + "]", states);
+                }
+            }
+
+            private static void BuildControlLookup(
+                global::Avalonia.LogicalTree.ILogical node,
+                string path,
+                List<LiveControlTarget> controls)
+            {
+                if (node is global::Avalonia.Controls.Control control)
+                {
+                    controls.Add(new LiveControlTarget(
+                        control,
+                        path,
+                        TryGetNormalizedName(control),
+                        BuildControlSemanticSignature(control)));
+                }
+
+                var ordinalByType = new Dictionary<Type, int>();
+                foreach (var child in node.LogicalChildren)
+                {
+                    if (child is not global::Avalonia.LogicalTree.ILogical logicalChild)
+                    {
+                        continue;
+                    }
+
+                    var childType = logicalChild.GetType();
+                    var ordinal = ordinalByType.TryGetValue(childType, out var currentOrdinal)
+                        ? currentOrdinal + 1
+                        : 0;
+                    ordinalByType[childType] = ordinal;
+                    BuildControlLookup(logicalChild, path + "/" + childType.FullName + "[" + ordinal + "]", controls);
+                }
+            }
+
+            private static string? TryGetNormalizedName(global::Avalonia.Controls.Control control)
+            {
+                if (string.IsNullOrWhiteSpace(control.Name))
+                {
+                    return null;
+                }
+
+                return control.Name.Trim();
+            }
+
+            private static string BuildControlSemanticSignature(global::Avalonia.Controls.Control control)
+            {
+                var builder = new StringBuilder(128);
+                builder.Append(control.GetType().FullName);
+                AppendToken(builder, "class", TryGetStableClassSignature(control.Classes));
+                AppendToken(builder, "width", double.IsNaN(control.Width) ? null : control.Width.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                AppendToken(builder, "height", double.IsNaN(control.Height) ? null : control.Height.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+
+                if (control.Margin != default)
+                {
+                    AppendToken(
+                        builder,
+                        "margin",
+                        control.Margin.Left.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + "," +
+                        control.Margin.Top.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + "," +
+                        control.Margin.Right.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + "," +
+                        control.Margin.Bottom.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                }
+
+                switch (control)
+                {
+                    case global::Avalonia.Controls.TextBox textBox:
+                        AppendToken(builder, "watermark", textBox.Watermark?.ToString());
+                        AppendToken(builder, "maxlength", textBox.MaxLength > 0 ? textBox.MaxLength.ToString(System.Globalization.CultureInfo.InvariantCulture) : null);
+                        break;
+                    case global::Avalonia.Controls.Primitives.HeaderedContentControl headeredContentControl:
+                        AppendToken(builder, "header", headeredContentControl.Header?.ToString());
+                        break;
+                    case global::Avalonia.Controls.Primitives.HeaderedSelectingItemsControl headeredSelectingItemsControl:
+                        AppendToken(builder, "header", headeredSelectingItemsControl.Header?.ToString());
+                        break;
+                    case global::Avalonia.Controls.ContentControl contentControl:
+                        if (contentControl.Content is string contentText)
+                        {
+                            AppendToken(builder, "content", contentText);
+                        }
+                        break;
+                }
+
+                return builder.ToString();
+            }
+
+            private static string? TryGetStableClassSignature(global::Avalonia.Controls.Classes classes)
+            {
+                if (classes.Count == 0)
+                {
+                    return null;
+                }
+
+                var stableClasses = new List<string>(classes.Count);
+                for (var index = 0; index < classes.Count; index++)
+                {
+                    var candidate = classes[index];
+                    if (string.IsNullOrWhiteSpace(candidate) ||
+                        candidate[0] == ':')
+                    {
+                        continue;
+                    }
+
+                    stableClasses.Add(candidate.Trim());
+                }
+
+                if (stableClasses.Count == 0)
+                {
+                    return null;
+                }
+
+                stableClasses.Sort(StringComparer.Ordinal);
+                return string.Join(",", stableClasses);
+            }
+
+            private static void AppendToken(StringBuilder builder, string key, string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return;
+                }
+
+                builder.Append('|');
+                builder.Append(key);
+                builder.Append('=');
+                builder.Append(value.Trim());
+            }
+
+            private readonly struct CapturedControlState(
+                string path,
+                string? name,
+                string signature,
+                Type controlType,
+                TransientLocalValueStateSnapshot state)
+            {
+                public string Path { get; } = path;
+
+                public string? Name { get; } = name;
+
+                public string Signature { get; } = signature;
+
+                public Type ControlType { get; } = controlType;
+
+                public TransientLocalValueStateSnapshot State { get; } = state;
+            }
+
+            private readonly struct LiveControlTarget(
+                global::Avalonia.Controls.Control control,
+                string path,
+                string? name,
+                string signature)
+            {
+                public global::Avalonia.Controls.Control Control { get; } = control;
+
+                public string Path { get; } = path;
+
+                public string? Name { get; } = name;
+
+                public string Signature { get; } = signature;
+            }
+
+        }
+    }
+
+    private readonly struct TransientLocalValueStateSnapshot
+    {
+        private readonly IReadOnlyList<CapturedLocalValue>? _values;
+
+        private TransientLocalValueStateSnapshot(IReadOnlyList<CapturedLocalValue> values)
+        {
+            _values = values;
+        }
+
+        public bool IsEmpty => _values is null || _values.Count == 0;
+
+        public static TransientLocalValueStateSnapshot Capture(global::Avalonia.AvaloniaObject target)
+        {
+            try
+            {
+                var valuesByProperty = new Dictionary<global::Avalonia.AvaloniaProperty, object?>();
+                var targetType = target.GetType();
+                foreach (var property in EnumerateCandidateProperties(targetType))
+                {
+                    if (!CanCaptureProperty(targetType, property))
+                    {
+                        continue;
+                    }
+
+                    global::Avalonia.Diagnostics.AvaloniaPropertyValue diagnostic;
+                    try
+                    {
+                        diagnostic = global::Avalonia.Diagnostics.AvaloniaObjectExtensions.GetDiagnostic(target, property);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (diagnostic.Priority != global::Avalonia.Data.BindingPriority.LocalValue)
+                    {
+                        continue;
+                    }
+
+                    var effectiveValue = diagnostic.Value;
+                    if (!IsSnapshotSafeValue(effectiveValue))
+                    {
+                        continue;
+                    }
+
+                    valuesByProperty[property] = effectiveValue;
+                }
+
+                if (valuesByProperty.Count == 0)
+                {
+                    return default;
+                }
+
+                var capturedValues = new List<CapturedLocalValue>(valuesByProperty.Count);
+                foreach (var pair in valuesByProperty)
+                {
+                    capturedValues.Add(new CapturedLocalValue(pair.Key, pair.Value));
+                }
+
+                capturedValues.Sort(static (left, right) => string.Compare(left.Property.Name, right.Property.Name, StringComparison.Ordinal));
+                return new TransientLocalValueStateSnapshot(capturedValues);
+            }
+            catch
+            {
+                return default;
+            }
+        }
+
+        public void Restore(global::Avalonia.AvaloniaObject target)
+        {
+            if (_values is null || _values.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var capturedValue in _values)
+            {
+                try
+                {
+                    if (!CanRestoreProperty(capturedValue.Property, capturedValue.Value))
+                    {
+                        continue;
+                    }
+
+                    target.SetCurrentValue(capturedValue.Property, capturedValue.Value);
+                }
+                catch
+                {
+                    // Best effort restore only.
+                }
+            }
+        }
+
+        private static bool CanCaptureProperty(Type targetType, global::Avalonia.AvaloniaProperty property)
+        {
+            if (property.IsReadOnly)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(property, global::Avalonia.Controls.Control.ThemeProperty) ||
+                ReferenceEquals(property, global::Avalonia.StyledElement.DataContextProperty))
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(property, global::Avalonia.Controls.TextBox.CaretIndexProperty) ||
+                ReferenceEquals(property, global::Avalonia.Controls.TextBox.SelectionStartProperty) ||
+                ReferenceEquals(property, global::Avalonia.Controls.TextBox.SelectionEndProperty))
+            {
+                return true;
+            }
+
+            try
+            {
+                var metadata = property.GetMetadata(targetType);
+                return metadata.DefaultBindingMode == global::Avalonia.Data.BindingMode.TwoWay;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static IEnumerable<global::Avalonia.AvaloniaProperty> EnumerateCandidateProperties(Type targetType)
+        {
+            var yielded = new HashSet<global::Avalonia.AvaloniaProperty>();
+            foreach (var property in global::Avalonia.AvaloniaPropertyRegistry.Instance.GetRegistered(targetType))
+            {
+                if (yielded.Add(property))
+                {
+                    yield return property;
+                }
+            }
+
+            foreach (var property in global::Avalonia.AvaloniaPropertyRegistry.Instance.GetRegisteredAttached(targetType))
+            {
+                if (yielded.Add(property))
+                {
+                    yield return property;
+                }
+            }
+        }
+
+        private static bool CanRestoreProperty(global::Avalonia.AvaloniaProperty property, object? value)
+        {
+            if (property.IsReadOnly)
+            {
+                return false;
+            }
+
+            if (value is null)
+            {
+                var valueType = property.PropertyType;
+                return !valueType.IsValueType || Nullable.GetUnderlyingType(valueType) is not null;
+            }
+
+            return IsSnapshotSafeValue(value);
+        }
+
+        private static bool IsSnapshotSafeValue(object? value)
+        {
+            if (value is null)
+            {
+                return true;
+            }
+
+            if (value is global::Avalonia.UnsetValueType ||
+                value is global::Avalonia.Visual ||
+                value is global::Avalonia.LogicalTree.ILogical ||
+                value is global::Avalonia.Styling.IStyle ||
+                value is global::Avalonia.Controls.Templates.IDataTemplate ||
+                value is global::Avalonia.Data.IBinding)
+            {
+                return false;
+            }
+
+            var valueType = value.GetType();
+            if (valueType.IsPrimitive || valueType.IsEnum || valueType.IsValueType)
+            {
+                return true;
+            }
+
+            if (value is string ||
+                value is Uri ||
+                value is DateTime ||
+                value is DateTimeOffset ||
+                value is TimeSpan ||
+                value is Guid ||
+                value is Version)
+            {
+                return true;
+            }
+
+            if (value is System.Collections.IDictionary ||
+                value is System.Collections.IList)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private readonly struct CapturedLocalValue(global::Avalonia.AvaloniaProperty property, object? value)
+        {
+            public global::Avalonia.AvaloniaProperty Property { get; } = property;
+
+            public object? Value { get; } = value;
         }
     }
 

@@ -195,6 +195,150 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void UpdateApplication_Default_Handlers_Preserve_TextBox_State_When_Rebuilding_Logical_Subtree()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var view = new StatefulTextView();
+        view.Content = BuildEditableSurface(includeSpacer: true);
+
+        var initialSurface = Assert.IsType<StackPanel>(view.Content);
+        var firstBefore = Assert.IsType<TextBox>(initialSurface.Children[0]);
+        var secondBefore = Assert.IsType<TextBox>(initialSurface.Children[2]);
+        firstBefore.Text = "alpha";
+        firstBefore.CaretIndex = 5;
+        secondBefore.Text = "beta";
+        secondBefore.SelectionStart = 1;
+        secondBefore.SelectionEnd = 3;
+
+        XamlSourceGenHotReloadManager.Register(
+            view,
+            static instance =>
+            {
+                var typedView = (StatefulTextView)instance;
+                typedView.Content = BuildEditableSurface(includeSpacer: false);
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(StatefulTextView)]);
+
+        var refreshedSurface = Assert.IsType<StackPanel>(view.Content);
+        var firstAfter = Assert.IsType<TextBox>(refreshedSurface.Children[0]);
+        var secondAfter = Assert.IsType<TextBox>(refreshedSurface.Children[1]);
+        Assert.Equal("alpha", firstAfter.Text);
+        Assert.Equal(5, firstAfter.CaretIndex);
+        Assert.Equal("beta", secondAfter.Text);
+        Assert.Equal(1, secondAfter.SelectionStart);
+        Assert.Equal(3, secondAfter.SelectionEnd);
+    }
+
+    [Fact]
+    public void UpdateApplication_Default_Handlers_Preserve_TextBox_State_When_Removing_Preceding_SameType_Control()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var view = new StatefulTextView();
+        view.Content = BuildSemanticEditableSurface(includeLeadingTextBox: true);
+
+        var initialSurface = Assert.IsType<StackPanel>(view.Content);
+        var usernameBefore = Assert.IsType<TextBox>(initialSurface.Children[1]);
+        var notesBefore = Assert.IsType<TextBox>(initialSurface.Children[2]);
+        usernameBefore.Text = "john";
+        usernameBefore.CaretIndex = 4;
+        notesBefore.Text = "notes-123";
+        notesBefore.SelectionStart = 0;
+        notesBefore.SelectionEnd = 5;
+
+        XamlSourceGenHotReloadManager.Register(
+            view,
+            static instance =>
+            {
+                var typedView = (StatefulTextView)instance;
+                typedView.Content = BuildSemanticEditableSurface(includeLeadingTextBox: false);
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(StatefulTextView)]);
+
+        var refreshedSurface = Assert.IsType<StackPanel>(view.Content);
+        var usernameAfter = Assert.IsType<TextBox>(refreshedSurface.Children[0]);
+        var notesAfter = Assert.IsType<TextBox>(refreshedSurface.Children[1]);
+        Assert.Equal("john", usernameAfter.Text);
+        Assert.Equal(4, usernameAfter.CaretIndex);
+        Assert.Equal("notes-123", notesAfter.Text);
+        Assert.Equal(0, notesAfter.SelectionStart);
+        Assert.Equal(5, notesAfter.SelectionEnd);
+    }
+
+    [Fact]
+    public void UpdateApplication_Default_Handlers_Preserve_TwoWay_Control_State_When_Rebuilding_Logical_Subtree()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var view = new StatefulTextView();
+        view.Content = BuildInteractiveStateSurface(includeSpacer: true);
+
+        var initialSurface = Assert.IsType<StackPanel>(view.Content);
+        var sliderBefore = Assert.IsType<Slider>(initialSurface.Children[0]);
+        var checkBoxBefore = Assert.IsType<CheckBox>(initialSurface.Children[2]);
+        var comboBoxBefore = Assert.IsType<ComboBox>(initialSurface.Children[3]);
+
+        sliderBefore.Value = 72.5;
+        checkBoxBefore.IsChecked = true;
+        comboBoxBefore.SelectedIndex = 2;
+
+        XamlSourceGenHotReloadManager.Register(
+            view,
+            static instance =>
+            {
+                var typedView = (StatefulTextView)instance;
+                typedView.Content = BuildInteractiveStateSurface(includeSpacer: false);
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(StatefulTextView)]);
+
+        var refreshedSurface = Assert.IsType<StackPanel>(view.Content);
+        var sliderAfter = Assert.IsType<Slider>(refreshedSurface.Children[0]);
+        var checkBoxAfter = Assert.IsType<CheckBox>(refreshedSurface.Children[1]);
+        var comboBoxAfter = Assert.IsType<ComboBox>(refreshedSurface.Children[2]);
+
+        Assert.Equal(72.5, sliderAfter.Value);
+        Assert.True(checkBoxAfter.IsChecked);
+        Assert.Equal(2, comboBoxAfter.SelectedIndex);
+    }
+
+    [Fact]
+    public void UpdateApplication_Default_StateTransfer_Is_Suppressed_When_Style_Reload_Operations_Are_In_Pipeline()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var view = new StatefulTextView();
+        view.Content = BuildEditableSurface(includeSpacer: true);
+
+        var styleProbe = new ThemeStyleReloadSentinel();
+        var initialSurface = Assert.IsType<StackPanel>(view.Content);
+        var firstBefore = Assert.IsType<TextBox>(initialSurface.Children[0]);
+        firstBefore.Text = "alpha";
+
+        XamlSourceGenHotReloadManager.Register(styleProbe, _ => { });
+        XamlSourceGenHotReloadManager.Register(
+            view,
+            static instance =>
+            {
+                var typedView = (StatefulTextView)instance;
+                typedView.Content = BuildEditableSurface(includeSpacer: false);
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(StatefulTextView), typeof(ThemeStyleReloadSentinel)]);
+
+        var refreshedSurface = Assert.IsType<StackPanel>(view.Content);
+        var firstAfter = Assert.IsType<TextBox>(refreshedSurface.Children[0]);
+        Assert.NotEqual("alpha", firstAfter.Text);
+    }
+
+    [Fact]
     public void UpdateApplication_Raises_RudeEdit_Event_For_Shape_Change_Failures()
     {
         ResetManager();
@@ -1168,6 +1312,14 @@ public class XamlSourceGenHotReloadManagerTests
     {
     }
 
+    private sealed class StatefulTextView : UserControl
+    {
+    }
+
+    private sealed class ThemeStyleReloadSentinel : Style
+    {
+    }
+
     private sealed class RemoteTransportReloadTarget
     {
     }
@@ -1226,5 +1378,48 @@ public class XamlSourceGenHotReloadManagerTests
         {
             ReloadCompletedCount++;
         }
+    }
+
+    private static StackPanel BuildEditableSurface(bool includeSpacer)
+    {
+        var stackPanel = new StackPanel();
+        stackPanel.Children.Add(new TextBox());
+        if (includeSpacer)
+        {
+            stackPanel.Children.Add(new Border { Height = 4 });
+        }
+
+        stackPanel.Children.Add(new TextBox());
+        return stackPanel;
+    }
+
+    private static StackPanel BuildSemanticEditableSurface(bool includeLeadingTextBox)
+    {
+        var stackPanel = new StackPanel();
+        if (includeLeadingTextBox)
+        {
+            stackPanel.Children.Add(new TextBox { Watermark = "removed-before-hot-reload" });
+        }
+
+        stackPanel.Children.Add(new TextBox { Watermark = "username" });
+        stackPanel.Children.Add(new TextBox { Watermark = "notes" });
+        return stackPanel;
+    }
+
+    private static StackPanel BuildInteractiveStateSurface(bool includeSpacer)
+    {
+        var stackPanel = new StackPanel();
+        stackPanel.Children.Add(new Slider { Minimum = 0, Maximum = 100 });
+        if (includeSpacer)
+        {
+            stackPanel.Children.Add(new Border { Height = 4 });
+        }
+
+        stackPanel.Children.Add(new CheckBox { Content = "Accept terms" });
+        stackPanel.Children.Add(new ComboBox
+        {
+            ItemsSource = new[] { "first", "second", "third" }
+        });
+        return stackPanel;
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
 using XamlToCSharpGenerator.Runtime;
@@ -61,7 +62,7 @@ public class SourceGenDeferredServiceProviderFactoryTests
         Assert.Empty(providerParentStack.Parents);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void CreateDeferredTemplateServiceProvider_Uses_Filtered_Resource_Parent_Stack_And_Appends_Upstream_Parents()
     {
         var resourceA = new ResourceDictionary

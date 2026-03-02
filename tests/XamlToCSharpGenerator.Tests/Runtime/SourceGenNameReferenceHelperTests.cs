@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -17,7 +18,7 @@ public class SourceGenNameReferenceHelperTests
         Assert.Same(target, resolved);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ResolveByName_Returns_Value_From_StyledElement_NameScope()
     {
         var nameScope = new NameScope();

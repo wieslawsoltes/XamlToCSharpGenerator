@@ -10,22 +10,49 @@ public static class XamlStyleRegistry
     private static readonly ConcurrentDictionary<string, ConcurrentBag<SourceGenStyleDescriptor>> Entries =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public static void Register(string uri, string? key, string selector, string? targetTypeName, string rawXaml)
+    public static void Register(SourceGenStyleDescriptor descriptor)
     {
-        if (string.IsNullOrWhiteSpace(uri))
+        if (descriptor is null)
         {
-            throw new ArgumentException("URI must be provided.", nameof(uri));
+            throw new ArgumentNullException(nameof(descriptor));
         }
 
-        if (string.IsNullOrWhiteSpace(selector))
+        if (string.IsNullOrWhiteSpace(descriptor.Uri))
+        {
+            throw new ArgumentException("URI must be provided.", nameof(descriptor));
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.Selector))
         {
             // Selector-less style blocks are valid as local resource containers but
             // are not targetable through the style selector registry.
             return;
         }
 
-        var bag = Entries.GetOrAdd(uri, static _ => new ConcurrentBag<SourceGenStyleDescriptor>());
-        bag.Add(new SourceGenStyleDescriptor(uri, key, selector, targetTypeName, rawXaml));
+        var bag = Entries.GetOrAdd(descriptor.Uri, static _ => new ConcurrentBag<SourceGenStyleDescriptor>());
+        bag.Add(descriptor);
+    }
+
+    public static bool TryRegisterSerialized(string payload)
+    {
+        if (!SourceGenRegistryPayloadSerialization.TryDeserializeStyle(payload, out var descriptor) ||
+            descriptor is null)
+        {
+            return false;
+        }
+
+        Register(descriptor);
+        return true;
+    }
+
+    public static string Serialize(SourceGenStyleDescriptor descriptor)
+    {
+        return SourceGenRegistryPayloadSerialization.Serialize(descriptor);
+    }
+
+    public static void Register(string uri, string? key, string selector, string? targetTypeName, string rawXaml)
+    {
+        Register(new SourceGenStyleDescriptor(uri, key, selector, targetTypeName, rawXaml));
     }
 
     public static IReadOnlyCollection<SourceGenStyleDescriptor> GetAll(string uri)
