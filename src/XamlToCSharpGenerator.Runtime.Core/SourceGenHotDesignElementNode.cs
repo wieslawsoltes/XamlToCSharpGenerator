@@ -13,4 +13,7 @@ public sealed record SourceGenHotDesignElementNode(
     int Line,
     IReadOnlyList<SourceGenHotDesignElementNode> Children,
     bool IsExpanded = false,
-    int DescendantCount = 0);
+    int DescendantCount = 0,
+    string? SourceBuildUri = null,
+    string? SourceElementId = null,
+    bool IsLive = false);

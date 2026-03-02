@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using Avalonia;
 using XamlToCSharpGenerator.Runtime;
 
@@ -266,6 +269,117 @@ public class AppBuilderExtensionsTests
         Assert.Equal(SourceGenStudioFallbackPolicy.NoFallback, snapshot.Options.FallbackPolicy);
 
         XamlSourceGenStudioHost.Stop();
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedStudioFromEnvironment_Does_Not_Start_When_Disabled()
+    {
+        XamlSourceGenStudioHost.Stop();
+        using var environmentScope = new EnvironmentVariableScope(
+            "AXSG_STUDIO_ENABLE",
+            "AXSG_STUDIO");
+
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_ENABLE", null);
+        Environment.SetEnvironmentVariable("AXSG_STUDIO", null);
+        var builder = AppBuilder.Configure<TestApp>();
+        builder.UseAvaloniaSourceGeneratedStudioFromEnvironment();
+        builder.AfterSetupCallback(builder);
+
+        Assert.False(XamlSourceGenStudioHost.IsStarted);
+        Assert.False(XamlSourceGenStudioManager.GetStatusSnapshot().IsEnabled);
+        XamlSourceGenStudioHost.Stop();
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedStudioFromEnvironment_Starts_And_Applies_Remote_Options()
+    {
+        XamlSourceGenStudioHost.Stop();
+        using var environmentScope = new EnvironmentVariableScope(
+            "AXSG_STUDIO_ENABLE",
+            "AXSG_STUDIO",
+            "AXSG_STUDIO_REMOTE_ENABLE",
+            "AXSG_STUDIO_REMOTE_HOST",
+            "AXSG_STUDIO_REMOTE_PORT",
+            "AXSG_STUDIO_VNC_ENDPOINT",
+            "AXSG_STUDIO_OVERLAY_INDICATOR",
+            "AXSG_STUDIO_EXTERNAL_WINDOW");
+        var remotePort = AllocateTcpPort();
+
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_ENABLE", "1");
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_REMOTE_ENABLE", "1");
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_REMOTE_HOST", "127.0.0.1");
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_REMOTE_PORT", remotePort.ToString());
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_VNC_ENDPOINT", "vnc://127.0.0.1:5900");
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_OVERLAY_INDICATOR", "0");
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_EXTERNAL_WINDOW", "0");
+
+        var builder = AppBuilder.Configure<TestApp>();
+        builder.UseAvaloniaSourceGeneratedStudioFromEnvironment();
+        builder.AfterSetupCallback(builder);
+
+        var snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+        Assert.True(XamlSourceGenStudioHost.IsStarted);
+        Assert.True(snapshot.IsEnabled);
+        Assert.True(snapshot.Options.EnableRemoteDesign);
+        Assert.Equal("127.0.0.1", snapshot.Options.RemoteHost);
+        Assert.Equal(remotePort, snapshot.Options.RemotePort);
+        Assert.Equal("vnc://127.0.0.1:5900", snapshot.Options.VncEndpoint);
+        Assert.False(snapshot.Options.ShowOverlayIndicator);
+        Assert.False(snapshot.Options.EnableExternalWindow);
+
+        XamlSourceGenStudioHost.Stop();
+    }
+
+    [Fact]
+    public void UseAvaloniaSourceGeneratedStudioFromEnvironment_Starts_When_Legacy_Enable_Variable_Is_Set()
+    {
+        XamlSourceGenStudioHost.Stop();
+        using var environmentScope = new EnvironmentVariableScope(
+            "AXSG_STUDIO_ENABLE",
+            "AXSG_STUDIO");
+
+        Environment.SetEnvironmentVariable("AXSG_STUDIO_ENABLE", null);
+        Environment.SetEnvironmentVariable("AXSG_STUDIO", "1");
+
+        var builder = AppBuilder.Configure<TestApp>();
+        builder.UseAvaloniaSourceGeneratedStudioFromEnvironment();
+        builder.AfterSetupCallback(builder);
+
+        Assert.True(XamlSourceGenStudioHost.IsStarted);
+        Assert.True(XamlSourceGenStudioManager.GetStatusSnapshot().IsEnabled);
+        XamlSourceGenStudioHost.Stop();
+    }
+
+    private static int AllocateTcpPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (IPEndPoint)listener.LocalEndpoint;
+        listener.Stop();
+        return endpoint.Port;
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly Dictionary<string, string?> _originalValues;
+
+        public EnvironmentVariableScope(params string[] names)
+        {
+            _originalValues = new Dictionary<string, string?>(StringComparer.Ordinal);
+            for (var index = 0; index < names.Length; index++)
+            {
+                var name = names[index];
+                _originalValues[name] = Environment.GetEnvironmentVariable(name);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (var entry in _originalValues)
+            {
+                Environment.SetEnvironmentVariable(entry.Key, entry.Value);
+            }
+        }
     }
 
     private sealed class TestApp : Application

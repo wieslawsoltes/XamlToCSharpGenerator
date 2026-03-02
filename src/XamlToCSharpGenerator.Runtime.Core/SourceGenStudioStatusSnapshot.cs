@@ -11,4 +11,5 @@ public sealed record SourceGenStudioStatusSnapshot(
     int ActiveScopeCount,
     IReadOnlyList<SourceGenStudioScopeDescriptor> Scopes,
     IReadOnlyList<SourceGenStudioOperationStatus> Operations,
-    SourceGenStudioOptions Options);
+    SourceGenStudioOptions Options,
+    SourceGenStudioRemoteStatus Remote);

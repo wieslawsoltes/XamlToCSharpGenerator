@@ -41,7 +41,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("240,130,130,130,260,*,Auto,Auto,Auto,Auto"),
+                ColumnDefinitions = new ColumnDefinitions("240,130,130,130,260,*,Auto,Auto,Auto,Auto,300"),
                 ColumnSpacing = 8
             }
         };
@@ -151,6 +151,18 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         Grid.SetColumn(applyButton, 9);
         grid.Children.Add(applyButton);
 
+        var remoteStatus = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = Avalonia.Media.TextAlignment.Right,
+            FontSize = 11,
+            Foreground = Avalonia.Media.Brushes.Gray
+        };
+        remoteStatus.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteStatusText)));
+        remoteStatus.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteVncEndpoint)));
+        Grid.SetColumn(remoteStatus, 10);
+        grid.Children.Add(remoteStatus);
+
         return toolbar;
     }
 
@@ -241,7 +253,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                 new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(SourceGenHotDesignElementNode.IsExpanded)))
             }
         });
-        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Elements)));
+        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.DisplayElements)));
         tree.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedElement), BindingMode.TwoWay));
         Grid.SetRow(tree, 1);
         elementsGrid.Children.Add(tree);

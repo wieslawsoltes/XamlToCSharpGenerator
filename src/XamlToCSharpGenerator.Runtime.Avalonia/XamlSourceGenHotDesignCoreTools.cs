@@ -1090,6 +1090,8 @@ public static class XamlSourceGenHotDesignCoreTools
             var descriptor = TryResolvePropertyDescriptor(descriptors, name);
             var propertyType = descriptor?.PropertyType;
             var isAttached = name.Contains('.', StringComparison.Ordinal) || (descriptor?.IsAttached ?? false);
+            var isReadOnly = descriptor?.IsReadOnly ?? false;
+            var enumOptions = GetEnumOptions(propertyType);
 
             properties[name] = new SourceGenHotDesignPropertyEntry(
                 Name: name,
@@ -1102,7 +1104,10 @@ public static class XamlSourceGenHotDesignCoreTools
                 Category: ClassifyPropertyCategory(name, propertyType, isAttached),
                 Source: "Local",
                 OwnerTypeName: descriptor?.OwnerType.Name ?? (resolvedType?.Name ?? string.Empty),
-                EditorKind: GetEditorKind(propertyType, isMarkup));
+                EditorKind: GetEditorKind(propertyType, isMarkup),
+                IsReadOnly: isReadOnly,
+                CanReset: !isReadOnly,
+                EnumOptions: enumOptions);
         }
 
         if (mode == SourceGenHotDesignPropertyFilterMode.All)
@@ -1126,7 +1131,10 @@ public static class XamlSourceGenHotDesignCoreTools
                     Category: ClassifyPropertyCategory(displayName, descriptor.PropertyType, descriptor.IsAttached),
                     Source: "Default",
                     OwnerTypeName: descriptor.OwnerType.Name,
-                    EditorKind: GetEditorKind(descriptor.PropertyType, isMarkupExtension: false));
+                    EditorKind: GetEditorKind(descriptor.PropertyType, isMarkupExtension: false),
+                    IsReadOnly: descriptor.IsReadOnly,
+                    CanReset: false,
+                    EnumOptions: GetEnumOptions(descriptor.PropertyType));
             }
         }
 
@@ -1342,7 +1350,23 @@ public static class XamlSourceGenHotDesignCoreTools
                 DisplayName: projectType.Name,
                 Category: "Project",
                 XamlSnippet: "<" + projectType.Name + " />",
-                IsProjectControl: true));
+                IsProjectControl: true,
+                Tags: BuildToolboxTags("Project", projectType.Name, "project", projectType.Assembly.GetName().Name)));
+        }
+
+        for (var index = 0; index < allItems.Count; index++)
+        {
+            var item = allItems[index];
+            if (item.Tags is { Count: > 0 })
+            {
+                continue;
+            }
+
+            var sourceTag = item.IsProjectControl ? "project" : "framework";
+            allItems[index] = item with
+            {
+                Tags = BuildToolboxTags(item.Category, item.Name, sourceTag, assemblyName: null)
+            };
         }
 
         if (!string.IsNullOrWhiteSpace(query))
@@ -1879,7 +1903,46 @@ public static class XamlSourceGenHotDesignCoreTools
             propertyName,
             property.PropertyType,
             property.IsAttached,
-            property.OwnerType);
+            property.OwnerType,
+            property.IsReadOnly);
+    }
+
+    private static IReadOnlyList<string>? GetEnumOptions(Type? propertyType)
+    {
+        if (propertyType is null)
+        {
+            return null;
+        }
+
+        var effectiveType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+        if (!effectiveType.IsEnum)
+        {
+            return null;
+        }
+
+        var names = Enum.GetNames(effectiveType);
+        return names.Length == 0 ? null : names;
+    }
+
+    private static IReadOnlyList<string> BuildToolboxTags(
+        string category,
+        string controlName,
+        string sourceTag,
+        string? assemblyName)
+    {
+        var tags = new List<string>(4)
+        {
+            category,
+            controlName,
+            sourceTag
+        };
+
+        if (!string.IsNullOrWhiteSpace(assemblyName))
+        {
+            tags.Add(assemblyName!);
+        }
+
+        return tags;
     }
 
     private static IReadOnlyList<SourceGenHotDesignPropertyQuickSet> GetQuickSets(string propertyName, Type? propertyType = null)
@@ -2004,5 +2067,6 @@ public static class XamlSourceGenHotDesignCoreTools
         string Name,
         Type PropertyType,
         bool IsAttached,
-        Type OwnerType);
+        Type OwnerType,
+        bool IsReadOnly);
 }

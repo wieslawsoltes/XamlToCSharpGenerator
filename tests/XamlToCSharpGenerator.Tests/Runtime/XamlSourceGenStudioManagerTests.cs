@@ -129,6 +129,60 @@ public class XamlSourceGenStudioManagerTests
         Assert.Equal("avares://tests/Template.axaml", scope.BuildUri);
     }
 
+    [Fact]
+    public void Enable_With_RemoteDesign_Initializes_Remote_Status_Snapshot()
+    {
+        ResetManagers();
+
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions
+        {
+            ShowOverlayIndicator = false,
+            EnableExternalWindow = false,
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = 45831,
+            VncEndpoint = "vnc://127.0.0.1:5900"
+        });
+
+        var snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+        Assert.True(snapshot.Remote.IsEnabled);
+        Assert.False(snapshot.Remote.IsListening);
+        Assert.Equal("127.0.0.1", snapshot.Remote.Host);
+        Assert.Equal(45831, snapshot.Remote.Port);
+        Assert.Equal("vnc://127.0.0.1:5900", snapshot.Remote.VncEndpoint);
+    }
+
+    [Fact]
+    public void UpdateRemoteStatus_Overrides_Current_Remote_Status()
+    {
+        ResetManagers();
+
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions
+        {
+            ShowOverlayIndicator = false,
+            EnableExternalWindow = false,
+            EnableRemoteDesign = true
+        });
+
+        var expected = new SourceGenStudioRemoteStatus(
+            IsEnabled: true,
+            IsListening: true,
+            Host: "0.0.0.0",
+            Port: 49991,
+            ActiveClientCount: 2,
+            LastError: null,
+            VncEndpoint: "vnc://10.0.0.2:5900",
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+
+        XamlSourceGenStudioManager.UpdateRemoteStatus(expected);
+
+        var snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+        Assert.True(snapshot.Remote.IsListening);
+        Assert.Equal(49991, snapshot.Remote.Port);
+        Assert.Equal(2, snapshot.Remote.ActiveClientCount);
+        Assert.Equal("vnc://10.0.0.2:5900", snapshot.Remote.VncEndpoint);
+    }
+
     private static void ResetManagers()
     {
         XamlSourceGenStudioManager.Disable();

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace XamlToCSharpGenerator.Runtime;
 
 public sealed record SourceGenHotDesignToolboxItem(
@@ -5,4 +7,5 @@ public sealed record SourceGenHotDesignToolboxItem(
     string DisplayName,
     string Category,
     string XamlSnippet,
-    bool IsProjectControl);
+    bool IsProjectControl,
+    IReadOnlyList<string>? Tags = null);

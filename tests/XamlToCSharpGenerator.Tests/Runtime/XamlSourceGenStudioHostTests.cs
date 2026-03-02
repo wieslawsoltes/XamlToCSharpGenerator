@@ -1,12 +1,12 @@
 using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
 using XamlToCSharpGenerator.Runtime;
-using Xunit;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 public class XamlSourceGenStudioHostTests
 {
-    [Fact]
+    [AvaloniaFact]
     public void ResolveLiveSurfaceDataContextBinding_Uses_Window_Source_For_Inherited_Content_DataContext()
     {
         var windowRoot = new Grid();
@@ -18,7 +18,7 @@ public class XamlSourceGenStudioHostTests
         Assert.Null(result.InitialValue);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ResolveLiveSurfaceDataContextBinding_Uses_InitialValue_For_Explicit_Content_DataContext()
     {
         var windowRoot = new Grid();

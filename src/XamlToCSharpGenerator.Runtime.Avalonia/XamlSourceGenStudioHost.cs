@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -21,6 +22,7 @@ public static class XamlSourceGenStudioHost
     private static readonly Dictionary<Window, StudioOverlayAttachment> OverlayAttachments = new();
     private static readonly HashSet<Window> TrackedWindows = new();
     private static DispatcherTimer? OverlayRefreshTimer;
+    private static XamlSourceGenStudioRemoteDesignServer? RemoteDesignServer;
     private static bool Started;
 
     public static bool IsStarted
@@ -37,6 +39,12 @@ public static class XamlSourceGenStudioHost
     public static void Start(SourceGenStudioOptions? options = null)
     {
         SourceGenStudioStatusSnapshot snapshot;
+        XamlSourceGenStudioRemoteDesignServer? remoteDesignServer;
+        bool isDesktopWindowing;
+        bool autoOpenStudioWindow;
+        bool autoOpenVncViewer;
+        string? vncEndpoint;
+
         lock (Sync)
         {
             ActiveOptions = options?.Clone() ?? ActiveOptions.Clone();
@@ -50,26 +58,43 @@ public static class XamlSourceGenStudioHost
             XamlSourceGenStudioManager.StartSession();
             ShellViewModel = new XamlSourceGenStudioShellViewModel(ActiveOptions);
             XamlSourceGenStudioManager.StudioStatusChanged += OnStudioStatusChanged;
+            RemoteDesignServer = new XamlSourceGenStudioRemoteDesignServer(ActiveOptions);
+            remoteDesignServer = RemoteDesignServer;
             snapshot = XamlSourceGenStudioManager.GetStatusSnapshot();
+            isDesktopWindowing = IsDesktopWindowingAvailable();
+            autoOpenStudioWindow = ActiveOptions.AutoOpenStudioWindowOnStartup;
+            autoOpenVncViewer = ActiveOptions.AutoOpenVncViewerOnDesktop;
+            vncEndpoint = ActiveOptions.VncEndpoint;
         }
 
-        if (ActiveOptions.ShowOverlayIndicator)
+        remoteDesignServer.Start();
+
+        if (isDesktopWindowing && ActiveOptions.ShowOverlayIndicator)
         {
             EnsureIndicatorWindow(snapshot);
         }
 
-        EnsureOverlayRefreshTimer();
-        AttachStudioOverlayToTopLevels();
+        if (isDesktopWindowing)
+        {
+            EnsureOverlayRefreshTimer();
+            AttachStudioOverlayToTopLevels();
+        }
 
-        if (ActiveOptions.AutoOpenStudioWindowOnStartup && ActiveOptions.EnableExternalWindow)
+        if (isDesktopWindowing && autoOpenStudioWindow && ActiveOptions.EnableExternalWindow)
         {
             OpenStudioWindow();
+        }
+
+        if (isDesktopWindowing && autoOpenVncViewer && !string.IsNullOrWhiteSpace(vncEndpoint))
+        {
+            TryOpenVncViewer(vncEndpoint!);
         }
     }
 
     public static void Stop()
     {
         XamlSourceGenStudioShellViewModel? shellViewModel;
+        XamlSourceGenStudioRemoteDesignServer? remoteDesignServer;
         lock (Sync)
         {
             if (!Started)
@@ -81,9 +106,12 @@ public static class XamlSourceGenStudioHost
             XamlSourceGenStudioManager.StudioStatusChanged -= OnStudioStatusChanged;
             shellViewModel = ShellViewModel;
             ShellViewModel = null;
-            XamlSourceGenStudioManager.Disable();
+            remoteDesignServer = RemoteDesignServer;
+            RemoteDesignServer = null;
         }
 
+        remoteDesignServer?.Stop();
+        XamlSourceGenStudioManager.Disable();
         shellViewModel?.Dispose();
 
         Dispatcher.UIThread.Post(static () =>
@@ -137,8 +165,11 @@ public static class XamlSourceGenStudioHost
             return;
         }
 
-        AttachStudioOverlayToTopLevels();
-        EnsureIndicatorWindow(snapshot);
+        if (IsDesktopWindowingAvailable())
+        {
+            AttachStudioOverlayToTopLevels();
+            EnsureIndicatorWindow(snapshot);
+        }
     }
 
     private static void AttachStudioOverlayToTopLevels()
@@ -348,6 +379,49 @@ public static class XamlSourceGenStudioHost
         }
     }
 
+    private static bool IsDesktopWindowingAvailable()
+    {
+        return Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+    }
+
+    private static void TryOpenVncViewer(string endpoint)
+    {
+        var normalized = NormalizeVncEndpoint(endpoint);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = normalized,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Best effort launch only.
+        }
+    }
+
+    private static string? NormalizeVncEndpoint(string endpoint)
+    {
+        var trimmed = endpoint.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return null;
+        }
+
+        if (trimmed.Contains("://", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        return "vnc://" + trimmed;
+    }
+
     private static void EnsureIndicatorWindow(SourceGenStudioStatusSnapshot snapshot)
     {
         lock (Sync)
@@ -432,7 +506,10 @@ public static class XamlSourceGenStudioHost
 
             _statusText.Text = "Studio: " + snapshot.CurrentState +
                                " | Session: " + (snapshot.SessionId == Guid.Empty ? "<none>" : snapshot.SessionId.ToString("N")[..8]) +
-                               " | Ops: " + snapshot.Operations.Count;
+                               " | Ops: " + snapshot.Operations.Count +
+                               " | Remote: " + (snapshot.Remote.IsListening
+                                   ? snapshot.Remote.Host + ":" + snapshot.Remote.Port + " (" + snapshot.Remote.ActiveClientCount + ")"
+                                   : "off");
         }
     }
 

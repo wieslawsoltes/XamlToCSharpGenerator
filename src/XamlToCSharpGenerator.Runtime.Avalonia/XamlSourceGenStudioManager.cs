@@ -16,6 +16,7 @@ public static class XamlSourceGenStudioManager
 
     private static SourceGenStudioOptions ActiveOptions = new();
     private static SourceGenStudioOperationState CurrentState = SourceGenStudioOperationState.Ready;
+    private static SourceGenStudioRemoteStatus RemoteStatus = SourceGenStudioRemoteStatus.Disabled();
     private static Guid SessionId = Guid.Empty;
     private static long OperationSequence;
     private static bool? TraceEnabledCached;
@@ -54,6 +55,15 @@ public static class XamlSourceGenStudioManager
             }
 
             ConfigureHotDesignManagerLocked();
+            RemoteStatus = new SourceGenStudioRemoteStatus(
+                IsEnabled: ActiveOptions.EnableRemoteDesign,
+                IsListening: false,
+                Host: ActiveOptions.RemoteHost,
+                Port: ActiveOptions.RemotePort,
+                ActiveClientCount: 0,
+                LastError: null,
+                VncEndpoint: ActiveOptions.VncEndpoint,
+                UpdatedAtUtc: DateTimeOffset.UtcNow);
             snapshot = CreateSnapshotLocked();
         }
 
@@ -68,6 +78,7 @@ public static class XamlSourceGenStudioManager
         {
             IsEnabled = false;
             CurrentState = SourceGenStudioOperationState.Ready;
+            RemoteStatus = SourceGenStudioRemoteStatus.Disabled(ActiveOptions.VncEndpoint);
             XamlSourceGenHotDesignManager.Disable();
             snapshot = CreateSnapshotLocked();
         }
@@ -90,6 +101,19 @@ public static class XamlSourceGenStudioManager
             if (IsEnabled)
             {
                 ConfigureHotDesignManagerLocked();
+            }
+
+            if (!IsEnabled || !RemoteStatus.IsListening)
+            {
+                RemoteStatus = new SourceGenStudioRemoteStatus(
+                    IsEnabled: clone.EnableRemoteDesign,
+                    IsListening: false,
+                    Host: clone.RemoteHost,
+                    Port: clone.RemotePort,
+                    ActiveClientCount: 0,
+                    LastError: null,
+                    VncEndpoint: clone.VncEndpoint,
+                    UpdatedAtUtc: DateTimeOffset.UtcNow);
             }
 
             snapshot = CreateSnapshotLocked();
@@ -134,6 +158,23 @@ public static class XamlSourceGenStudioManager
         {
             return CreateSnapshotLocked();
         }
+    }
+
+    internal static void UpdateRemoteStatus(SourceGenStudioRemoteStatus status)
+    {
+        if (status is null)
+        {
+            return;
+        }
+
+        SourceGenStudioStatusSnapshot? snapshot;
+        lock (Sync)
+        {
+            RemoteStatus = status;
+            snapshot = CreateSnapshotLocked();
+        }
+
+        PublishStatusChanged(snapshot);
     }
 
     public static IReadOnlyList<SourceGenStudioScopeDescriptor> GetScopes()
@@ -355,7 +396,8 @@ public static class XamlSourceGenStudioManager
             scopes.Count,
             scopes,
             Operations.ToArray(),
-            ActiveOptions.Clone());
+            ActiveOptions.Clone(),
+            RemoteStatus);
     }
 
     private static IReadOnlyList<SourceGenStudioScopeDescriptor> BuildScopesLocked(

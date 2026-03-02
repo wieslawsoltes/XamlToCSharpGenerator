@@ -94,7 +94,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,320"),
             ColumnSpacing = 8
         };
         toolbar.Child = grid;
@@ -177,6 +177,18 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         Grid.SetColumn(scopeSelector, 9);
         grid.Children.Add(scopeSelector);
 
+        var remoteState = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = Avalonia.Media.TextAlignment.Right,
+            FontSize = 11,
+            Foreground = Avalonia.Media.Brushes.Gray
+        };
+        remoteState.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteStatusText)));
+        remoteState.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteVncEndpoint)));
+        Grid.SetColumn(remoteState, 10);
+        grid.Children.Add(remoteState);
+
         return toolbar;
     }
 
@@ -247,7 +259,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                 new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(SourceGenHotDesignElementNode.IsExpanded)))
             }
         });
-        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Elements)));
+        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.DisplayElements)));
         tree.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedElement), BindingMode.TwoWay));
         Grid.SetRow(tree, 2);
         grid.Children.Add(tree);
@@ -800,6 +812,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             _hoveredControl = null;
             RefreshAdorners();
+            RefreshLiveTreeProjection();
         }
 
         if (e.PropertyName == nameof(XamlSourceGenStudioShellViewModel.SelectedElement))
@@ -826,10 +839,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             _hoveredControl = null;
             _selectedControl = null;
             HideAdorners();
+            _viewModel?.ClearLiveElementTree();
         }
         else
         {
             RefreshAdorners();
+            RefreshLiveTreeProjection();
         }
     }
 
@@ -887,6 +902,52 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private void OnLiveLayerLayoutUpdated(object? sender, EventArgs e)
     {
         RefreshAdorners();
+        RefreshLiveTreeProjection();
+    }
+
+    private void RefreshLiveTreeProjection()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_viewModel.IsInteractiveMode)
+        {
+            _viewModel.ClearLiveElementTree();
+            return;
+        }
+
+        if (TryResolveLiveRootControl() is { } liveRootControl)
+        {
+            _viewModel.UpdateLiveElementTree(liveRootControl);
+            return;
+        }
+
+        _viewModel.ClearLiveElementTree();
+    }
+
+    private Control? TryResolveLiveRootControl()
+    {
+        if (_livePresenter?.Content is not Visual rootVisual)
+        {
+            return null;
+        }
+
+        if (rootVisual is Control rootControl)
+        {
+            return rootControl;
+        }
+
+        foreach (var visual in rootVisual.GetVisualDescendants())
+        {
+            if (visual is Control control)
+            {
+                return control;
+            }
+        }
+
+        return null;
     }
 
     private void SynchronizeSelectionFromWorkspace()
@@ -1033,82 +1094,17 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         }
 
         var point = e.GetPosition(_liveLayer);
-        var mode = _viewModel.HitTestMode;
-        if (TryResolveControlAtPoint(point, mode, out var resolved))
+        if (_livePresenter is not null &&
+            XamlSourceGenStudioHitTestingService.ResolveControlAtPoint(
+                _liveLayer,
+                _livePresenter,
+                point,
+                _viewModel.HitTestMode) is { } resolved)
         {
             return resolved;
         }
 
         return TryResolveLiveContentControl(e.Source);
-    }
-
-    private bool TryResolveControlAtPoint(Point point, SourceGenHotDesignHitTestMode mode, out Control? resolvedControl)
-    {
-        resolvedControl = null;
-        if (_liveLayer is null)
-        {
-            return false;
-        }
-
-        var controls = CaptureLiveControls();
-        if (controls.Count == 0)
-        {
-            return false;
-        }
-
-        var bestDepth = int.MinValue;
-        var bestArea = double.PositiveInfinity;
-        var bestNamed = false;
-
-        for (var index = 0; index < controls.Count; index++)
-        {
-            var candidate = controls[index];
-            if (!TryGetControlBoundsInLayer(candidate, _liveLayer, out var bounds) ||
-                !bounds.Contains(point))
-            {
-                continue;
-            }
-
-            if (mode == SourceGenHotDesignHitTestMode.Logical && !IsLogicalDescendantOfLiveRoot(candidate))
-            {
-                continue;
-            }
-
-            var depth = mode == SourceGenHotDesignHitTestMode.Visual
-                ? GetVisualDepth(candidate)
-                : GetLogicalDepth(candidate);
-            var area = bounds.Width * bounds.Height;
-            var hasName = !string.IsNullOrWhiteSpace(candidate.Name);
-
-            if (resolvedControl is not null &&
-                depth < bestDepth)
-            {
-                continue;
-            }
-
-            if (resolvedControl is not null &&
-                depth == bestDepth &&
-                hasName == bestNamed &&
-                area >= bestArea)
-            {
-                continue;
-            }
-
-            if (resolvedControl is not null &&
-                depth == bestDepth &&
-                bestNamed &&
-                !hasName)
-            {
-                continue;
-            }
-
-            resolvedControl = candidate;
-            bestDepth = depth;
-            bestArea = area;
-            bestNamed = hasName;
-        }
-
-        return resolvedControl is not null;
     }
 
     private Control? TryResolveLiveContentControl(object? pointerSource)
@@ -1188,18 +1184,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private static bool IsDescendantOf(Visual candidate, Visual ancestor)
     {
-        var current = candidate;
-        while (current is not null)
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
-            }
-
-            current = current.GetVisualParent();
-        }
-
-        return false;
+        return XamlSourceGenStudioHitTestingService.IsDescendantOf(candidate, ancestor);
     }
 
     private static Border CreateAdornerBorder(IBrush borderBrush, IBrush fillBrush, double thickness)
@@ -1329,76 +1314,6 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private static bool TryGetControlBoundsInLayer(Control control, Visual layer, out Rect bounds)
     {
-        bounds = default;
-
-        if (!control.IsEffectivelyVisible || control.Bounds.Width <= 0 || control.Bounds.Height <= 0)
-        {
-            return false;
-        }
-
-        var matrix = control.TransformToVisual(layer);
-        if (!matrix.HasValue)
-        {
-            return false;
-        }
-
-        var transformedBounds = control.Bounds.TransformToAABB(matrix.Value);
-        if (transformedBounds.Width <= 0 || transformedBounds.Height <= 0)
-        {
-            return false;
-        }
-
-        var clipped = transformedBounds;
-        var current = control as Visual;
-        while (current is not null && !ReferenceEquals(current, layer))
-        {
-            var parent = current.GetVisualParent();
-            if (parent is null)
-            {
-                break;
-            }
-
-            if (parent.ClipToBounds)
-            {
-                var parentMatrix = parent.TransformToVisual(layer);
-                if (!parentMatrix.HasValue)
-                {
-                    return false;
-                }
-
-                var parentBounds = parent.Bounds.TransformToAABB(parentMatrix.Value);
-                clipped = clipped.Intersect(parentBounds);
-                if (clipped.Width <= 0 || clipped.Height <= 0)
-                {
-                    return false;
-                }
-            }
-
-            current = parent;
-        }
-
-        var layerBounds = layer.Bounds;
-        clipped = clipped.Intersect(layerBounds);
-        if (clipped.Width <= 0 || clipped.Height <= 0)
-        {
-            return false;
-        }
-
-        bounds = AlignToPixelBounds(clipped);
-        if (bounds.Width <= 0 || bounds.Height <= 0)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static Rect AlignToPixelBounds(Rect rect)
-    {
-        var left = Math.Floor(rect.Left);
-        var top = Math.Floor(rect.Top);
-        var right = Math.Ceiling(rect.Right);
-        var bottom = Math.Ceiling(rect.Bottom);
-        return new Rect(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+        return XamlSourceGenStudioHitTestingService.TryGetControlBoundsInLayer(control, layer, out bounds);
     }
 }

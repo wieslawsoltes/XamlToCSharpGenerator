@@ -39,6 +39,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private string _searchText = string.Empty;
     private string _statusMessage = "Ready.";
     private string _studioStateText = "Ready";
+    private string _remoteStatusText = "Remote: disabled";
+    private string _remoteVncEndpoint = string.Empty;
     private string _previewStatus = "Preview unavailable.";
     private string _xamlText = string.Empty;
     private string _templateXamlText = string.Empty;
@@ -58,6 +60,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private bool _isRefreshing;
     private bool _isDisposed;
     private object? _canvasPreviewContent;
+    private IReadOnlyList<SourceGenHotDesignElementNode> _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
     private SourceGenHotDesignPropertyFilterMode _propertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
     private SourceGenHotDesignHitTestMode _hitTestMode = SourceGenHotDesignHitTestMode.Logical;
@@ -100,6 +103,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public ObservableCollection<SourceGenHotDesignDocumentDescriptor> TemplateDocuments { get; } = [];
 
     public ObservableCollection<SourceGenHotDesignElementNode> Elements { get; } = [];
+
+    public ObservableCollection<SourceGenHotDesignElementNode> DisplayElements { get; } = [];
 
     public ObservableCollection<SourceGenHotDesignPropertyEntry> Properties { get; } = [];
 
@@ -202,7 +207,10 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
                 return;
             }
 
-            SelectElement(value.Id);
+            var targetElementId = value.IsLive && !string.IsNullOrWhiteSpace(value.SourceElementId)
+                ? value.SourceElementId
+                : value.Id;
+            SelectElement(targetElementId);
         }
     }
 
@@ -279,6 +287,18 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     {
         get => _studioStateText;
         set => SetProperty(ref _studioStateText, value);
+    }
+
+    public string RemoteStatusText
+    {
+        get => _remoteStatusText;
+        set => SetProperty(ref _remoteStatusText, value);
+    }
+
+    public string RemoteVncEndpoint
+    {
+        get => _remoteVncEndpoint;
+        set => SetProperty(ref _remoteVncEndpoint, value);
     }
 
     public string PreviewStatus
@@ -584,6 +604,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         {
             ReplaceCollection(Documents, snapshot.Documents);
             ReplaceCollection(Elements, snapshot.Elements);
+            RefreshDisplayElements(snapshot.SelectedElementId);
             ReplaceCollection(ToolboxItems, FlattenToolbox(snapshot.Toolbox));
 
             var templates = snapshot.Documents.Where(static document =>
@@ -627,7 +648,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
                 TemplateXamlText = string.Empty;
             }
 
-            var selectedElement = FindById(snapshot.Elements, snapshot.SelectedElementId);
+            var selectedElement = ResolveSelectedElement(snapshot.SelectedElementId);
             _selectedElement = selectedElement;
             OnPropertyChanged(nameof(SelectedElement));
 
@@ -641,7 +662,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             SelectedProperty = selectedProperty;
 
             StatusMessage = snapshot.Status.IsEnabled
-                ? "Hot Design active. Documents=" + snapshot.Documents.Count + ", Elements=" + snapshot.Elements.Count + "."
+                ? "Hot Design active. Documents=" + snapshot.Documents.Count + ", Elements=" + DisplayElements.Count + "."
                 : "Hot Design is currently disabled.";
             NotifyWorkspaceModeChanged();
             OnPropertyChanged(nameof(PropertySummaryText));
@@ -650,6 +671,54 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         {
             _isRefreshing = false;
         }
+    }
+
+    public void UpdateLiveElementTree(Control? liveRootControl)
+    {
+        if (liveRootControl is null)
+        {
+            return;
+        }
+
+        _liveElements = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+            liveRootControl,
+            HitTestMode,
+            string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri,
+            string.IsNullOrWhiteSpace(SelectedElementId) ? null : SelectedElementId,
+            string.IsNullOrWhiteSpace(SearchText) ? null : SearchText);
+
+        RefreshDisplayElements(SelectedElementId);
+    }
+
+    public void ClearLiveElementTree()
+    {
+        _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
+        RefreshDisplayElements(SelectedElementId);
+    }
+
+    private void RefreshDisplayElements(string? selectedElementId)
+    {
+        var source = _liveElements.Count > 0 ? _liveElements : Elements.ToArray();
+        ReplaceCollection(DisplayElements, source);
+
+        _selectedElement = ResolveSelectedElement(selectedElementId);
+        OnPropertyChanged(nameof(SelectedElement));
+    }
+
+    private SourceGenHotDesignElementNode? ResolveSelectedElement(string? selectedElementId)
+    {
+        if (DisplayElements.Count == 0)
+        {
+            return null;
+        }
+
+        var selected = FindBySourceElementId(DisplayElements, selectedElementId);
+        if (selected is not null)
+        {
+            return selected;
+        }
+
+        return FindById(DisplayElements, selectedElementId);
     }
 
     private void RefreshStudioStatus()
@@ -681,6 +750,26 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
         var session = snapshot.SessionId == Guid.Empty ? "<none>" : snapshot.SessionId.ToString("N")[..8];
         StudioStateText = "Studio " + (snapshot.IsEnabled ? "On" : "Off") + " | State=" + snapshot.CurrentState + " | Session=" + session;
+
+        if (!snapshot.Remote.IsEnabled)
+        {
+            RemoteStatusText = "Remote: disabled";
+        }
+        else if (snapshot.Remote.IsListening)
+        {
+            RemoteStatusText = "Remote: listening " + snapshot.Remote.Host + ":" + snapshot.Remote.Port +
+                               " (clients=" + snapshot.Remote.ActiveClientCount + ")";
+        }
+        else if (!string.IsNullOrWhiteSpace(snapshot.Remote.LastError))
+        {
+            RemoteStatusText = "Remote: error - " + snapshot.Remote.LastError;
+        }
+        else
+        {
+            RemoteStatusText = "Remote: configured " + snapshot.Remote.Host + ":" + snapshot.Remote.Port;
+        }
+
+        RemoteVncEndpoint = snapshot.Remote.VncEndpoint ?? string.Empty;
     }
 
     private void RefreshCanvasPreview()
@@ -977,33 +1066,82 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         return null;
     }
 
+    private static SourceGenHotDesignElementNode? FindBySourceElementId(
+        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
+        string? sourceElementId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceElementId))
+        {
+            return null;
+        }
+
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            var node = nodes[index];
+            if (string.Equals(node.SourceElementId, sourceElementId, StringComparison.Ordinal))
+            {
+                return node;
+            }
+
+            var found = FindBySourceElementId(node.Children, sourceElementId);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private bool TrySelectElementForControl(Control control, SourceGenHotDesignHitTestMode mode)
     {
         var controlNames = new List<string>(4);
         var controlTypeNames = new List<string>(6);
-        CollectControlIdentityCandidates(control, mode, controlNames, controlTypeNames);
+        XamlSourceGenStudioHitTestingService.CollectIdentityCandidates(
+            control,
+            mode,
+            controlNames,
+            controlTypeNames);
 
         if (controlNames.Count == 0 && controlTypeNames.Count == 0)
         {
             return false;
         }
 
-        if (Elements.Count > 0)
+        if (DisplayElements.Count > 0)
         {
-            var flattened = FlattenElements(Elements);
+            var flattened = FlattenElements(DisplayElements);
             if (flattened.Count > 0 &&
-                TryFindMatchingElement(flattened, controlNames, controlTypeNames, out var matchInCurrentDocument))
+                XamlSourceGenStudioSelectionResolver.TryFindBestMatchingElementNode(
+                    flattened,
+                    controlNames,
+                    controlTypeNames,
+                    out var matchInCurrentDocument))
             {
-                SelectElement(matchInCurrentDocument!.Id);
+                if (matchInCurrentDocument!.IsLive && !string.IsNullOrWhiteSpace(matchInCurrentDocument.SourceElementId))
+                {
+                    if (!string.IsNullOrWhiteSpace(matchInCurrentDocument.SourceBuildUri) &&
+                        !string.Equals(ActiveBuildUri, matchInCurrentDocument.SourceBuildUri, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ActiveBuildUri = matchInCurrentDocument.SourceBuildUri!;
+                        XamlSourceGenHotDesignTool.SelectDocument(ActiveBuildUri);
+                    }
+
+                    SelectElement(matchInCurrentDocument.SourceElementId);
+                }
+                else
+                {
+                    SelectElement(matchInCurrentDocument.Id);
+                }
+
                 return true;
             }
         }
 
-        if (!XamlSourceGenHotDesignTool.TryResolveElementForLiveSelection(
-                controlNames,
-                controlTypeNames,
+        if (!XamlSourceGenStudioSelectionResolver.TryResolveSourceElementForControl(
+                control,
+                mode,
                 ActiveBuildUri,
-                allowAmbiguousTypeFallback: false,
                 out var resolvedBuildUri,
                 out var resolvedElementId) ||
             string.IsNullOrWhiteSpace(resolvedBuildUri) ||
@@ -1051,103 +1189,6 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         return null;
     }
 
-    private static void CollectControlIdentityCandidates(
-        Control control,
-        SourceGenHotDesignHitTestMode mode,
-        ICollection<string> controlNames,
-        ICollection<string> controlTypeNames)
-    {
-        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenTypes = new HashSet<string>(StringComparer.Ordinal);
-
-        if (mode == SourceGenHotDesignHitTestMode.Visual)
-        {
-            if (!string.IsNullOrWhiteSpace(control.Name) && seenNames.Add(control.Name))
-            {
-                controlNames.Add(control.Name);
-            }
-
-            var selfTypeName = control.GetType().Name;
-            if (!string.IsNullOrWhiteSpace(selfTypeName) && seenTypes.Add(selfTypeName))
-            {
-                controlTypeNames.Add(selfTypeName);
-            }
-
-            foreach (var ancestor in control.GetVisualAncestors())
-            {
-                if (ancestor is not Control ancestorControl)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(ancestorControl.Name) && seenNames.Add(ancestorControl.Name))
-                {
-                    controlNames.Add(ancestorControl.Name);
-                }
-
-                var ancestorTypeName = ancestorControl.GetType().Name;
-                if (!string.IsNullOrWhiteSpace(ancestorTypeName) && seenTypes.Add(ancestorTypeName))
-                {
-                    controlTypeNames.Add(ancestorTypeName);
-                }
-            }
-
-            return;
-        }
-
-        var current = control;
-        while (current is not null)
-        {
-            var controlName = current.Name;
-            if (!string.IsNullOrWhiteSpace(controlName) && seenNames.Add(controlName))
-            {
-                controlNames.Add(controlName);
-            }
-
-            var typeName = current.GetType().Name;
-            if (!string.IsNullOrWhiteSpace(typeName) && seenTypes.Add(typeName))
-            {
-                controlTypeNames.Add(typeName);
-            }
-
-            current = current.Parent as Control;
-        }
-    }
-
-    private static bool TryFindMatchingElement(
-        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
-        IReadOnlyList<string> controlNames,
-        IReadOnlyList<string> controlTypeNames,
-        out SourceGenHotDesignElementNode? matched)
-    {
-        for (var index = 0; index < controlNames.Count; index++)
-        {
-            var byName = FindByXamlName(nodes, controlNames[index]);
-            if (byName is null)
-            {
-                continue;
-            }
-
-            matched = byName;
-            return true;
-        }
-
-        for (var index = 0; index < controlTypeNames.Count; index++)
-        {
-            var byType = FindByTypeName(nodes, controlTypeNames[index]);
-            if (byType is null)
-            {
-                continue;
-            }
-
-            matched = byType;
-            return true;
-        }
-
-        matched = null;
-        return false;
-    }
-
     private static List<SourceGenHotDesignElementNode> FlattenElements(
         IReadOnlyCollection<SourceGenHotDesignElementNode> roots)
     {
@@ -1167,50 +1208,6 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         {
             Flatten(node.Children[index], output);
         }
-    }
-
-    private static SourceGenHotDesignElementNode? FindByXamlName(
-        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
-        string controlName)
-    {
-        SourceGenHotDesignElementNode? best = null;
-        for (var index = 0; index < nodes.Count; index++)
-        {
-            var node = nodes[index];
-            if (!string.Equals(node.XamlName, controlName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (best is null || node.Depth > best.Depth)
-            {
-                best = node;
-            }
-        }
-
-        return best;
-    }
-
-    private static SourceGenHotDesignElementNode? FindByTypeName(
-        IReadOnlyList<SourceGenHotDesignElementNode> nodes,
-        string typeName)
-    {
-        SourceGenHotDesignElementNode? best = null;
-        for (var index = 0; index < nodes.Count; index++)
-        {
-            var node = nodes[index];
-            if (!string.Equals(node.TypeName, typeName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (best is null || node.Depth > best.Depth)
-            {
-                best = node;
-            }
-        }
-
-        return best;
     }
 
     private void TogglePropertyPin(SourceGenHotDesignPropertyEntry? property)

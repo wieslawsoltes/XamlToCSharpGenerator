@@ -22,6 +22,16 @@ public sealed class SourceGenStudioOptions
 
     public int MaxOperationHistoryEntries { get; set; } = 200;
 
+    public bool EnableRemoteDesign { get; set; }
+
+    public string RemoteHost { get; set; } = "0.0.0.0";
+
+    public int RemotePort { get; set; } = 45831;
+
+    public string? VncEndpoint { get; set; }
+
+    public bool AutoOpenVncViewerOnDesktop { get; set; }
+
     public SourceGenStudioOptions Clone()
     {
         return new SourceGenStudioOptions
@@ -34,7 +44,12 @@ public sealed class SourceGenStudioOptions
             EnableExternalWindow = EnableExternalWindow,
             AutoOpenStudioWindowOnStartup = AutoOpenStudioWindowOnStartup,
             EnableTracing = EnableTracing,
-            MaxOperationHistoryEntries = MaxOperationHistoryEntries
+            MaxOperationHistoryEntries = MaxOperationHistoryEntries,
+            EnableRemoteDesign = EnableRemoteDesign,
+            RemoteHost = RemoteHost,
+            RemotePort = RemotePort,
+            VncEndpoint = VncEndpoint,
+            AutoOpenVncViewerOnDesktop = AutoOpenVncViewerOnDesktop
         };
     }
 }

@@ -14,4 +14,7 @@ public sealed record SourceGenHotDesignPropertyEntry(
     string Source = "Local",
     string OwnerTypeName = "",
     string EditorKind = "Text",
-    bool IsPinned = false);
+    bool IsPinned = false,
+    bool IsReadOnly = false,
+    bool CanReset = true,
+    IReadOnlyList<string>? EnumOptions = null);
