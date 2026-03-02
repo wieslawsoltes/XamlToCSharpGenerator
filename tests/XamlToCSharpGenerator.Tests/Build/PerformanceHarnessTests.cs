@@ -1,18 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
 [Collection("BuildSerial")]
 public class PerformanceHarnessTests
 {
-    private const int ProcessTimeoutMilliseconds = 180_000;
+    private static readonly int ProcessTimeoutMilliseconds = ReadTimeoutMilliseconds("AXSG_PERF_PROCESS_TIMEOUT_MS", 180_000);
+    private static readonly int TotalTimeoutMilliseconds = ReadTimeoutMilliseconds("AXSG_PERF_TOTAL_TIMEOUT_MS", 600_000);
+    private static readonly int StreamDrainTimeoutMilliseconds = ReadTimeoutMilliseconds("AXSG_PERF_STREAM_DRAIN_TIMEOUT_MS", 15_000);
+    private static readonly int ProcessKillWaitMilliseconds = ReadTimeoutMilliseconds("AXSG_PERF_PROCESS_KILL_WAIT_MS", 5_000);
 
     [PerfFact]
-    public void SourceGen_Incremental_Build_Harness_Captures_Full_And_Edit_Rebuild_Timings()
+    public async Task SourceGen_Incremental_Build_Harness_Captures_Full_And_Edit_Rebuild_Timings()
     {
+        var totalStopwatch = Stopwatch.StartNew();
         var repositoryRoot = GetRepositoryRoot();
         var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
         var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
@@ -104,25 +111,33 @@ public class PerformanceHarnessTests
                 </ResourceDictionary>
                 """);
 
-            var restore = RunProcess(tempDir, "dotnet", $"restore \"{projectPath}\" --nologo");
+            var restore = await RunProcessAsync(
+                tempDir,
+                "dotnet",
+                $"restore \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
             Assert.True(restore.ExitCode == 0, restore.Output);
+            AssertNotTimedOut(totalStopwatch, "restore");
 
-            var clean = RunProcess(
+            var clean = await RunProcessAsync(
                 tempDir,
                 "dotnet",
                 $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
             Assert.True(clean.ExitCode == 0, clean.Output);
+            AssertNotTimedOut(totalStopwatch, "clean");
 
-            var fullBuild = TimedBuild(projectPath, tempDir);
+            var fullBuild = await TimedBuildAsync(projectPath, tempDir);
             Assert.True(fullBuild.Result.ExitCode == 0, fullBuild.Result.Output);
+            AssertNotTimedOut(totalStopwatch, "full-build");
 
             File.AppendAllText(mainXamlPath, Environment.NewLine + "<!-- incremental-edit-main -->");
-            var singleFileBuild = TimedBuild(projectPath, tempDir);
+            var singleFileBuild = await TimedBuildAsync(projectPath, tempDir);
             Assert.True(singleFileBuild.Result.ExitCode == 0, singleFileBuild.Result.Output);
+            AssertNotTimedOut(totalStopwatch, "single-edit-build");
 
             File.AppendAllText(colorsXamlPath, Environment.NewLine + "<!-- incremental-edit-include -->");
-            var includeBuild = TimedBuild(projectPath, tempDir);
+            var includeBuild = await TimedBuildAsync(projectPath, tempDir);
             Assert.True(includeBuild.Result.ExitCode == 0, includeBuild.Result.Output);
+            AssertNotTimedOut(totalStopwatch, "include-edit-build");
 
             Assert.True(singleFileBuild.Elapsed.TotalMilliseconds > 0);
             Assert.True(includeBuild.Elapsed.TotalMilliseconds > 0);
@@ -150,6 +165,8 @@ public class PerformanceHarnessTests
             Assert.True(
                 includeBuild.Elapsed.TotalMilliseconds < fullBuild.Elapsed.TotalMilliseconds * incrementalRatioMax,
                 $"Include-edit incremental ratio exceeded threshold. include={includeBuild.Elapsed.TotalMilliseconds:F2}ms full={fullBuild.Elapsed.TotalMilliseconds:F2}ms ratioLimit={incrementalRatioMax:F2}");
+
+            TryWritePerfResult(repositoryRoot, fullBuild.Elapsed, singleFileBuild.Elapsed, includeBuild.Elapsed, totalStopwatch.Elapsed);
         }
         finally
         {
@@ -164,12 +181,22 @@ public class PerformanceHarnessTests
         }
     }
 
-    private static (TimeSpan Elapsed, (int ExitCode, string Output) Result) TimedBuild(string projectPath, string workingDirectory)
+    private static async Task<(TimeSpan Elapsed, (int ExitCode, string Output) Result)> TimedBuildAsync(string projectPath, string workingDirectory)
     {
         var stopwatch = Stopwatch.StartNew();
-        var result = RunProcess(workingDirectory, "dotnet", BuildArguments(projectPath));
+        var result = await RunProcessAsync(workingDirectory, "dotnet", BuildArguments(projectPath));
         stopwatch.Stop();
         return (stopwatch.Elapsed, result);
+    }
+
+    private static void AssertNotTimedOut(Stopwatch totalStopwatch, string stage)
+    {
+        if (totalStopwatch.Elapsed.TotalMilliseconds > TotalTimeoutMilliseconds)
+        {
+            throw new TimeoutException(
+                $"Performance harness exceeded total timeout after stage '{stage}'. " +
+                $"elapsed={totalStopwatch.Elapsed.TotalMilliseconds:F2}ms timeout={TotalTimeoutMilliseconds}ms");
+        }
     }
 
     private static string BuildArguments(string projectPath)
@@ -197,7 +224,61 @@ public class PerformanceHarnessTests
         return fallbackValue;
     }
 
-    private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
+    private static int ReadTimeoutMilliseconds(string environmentVariable, int fallbackValue)
+    {
+        var raw = Environment.GetEnvironmentVariable(environmentVariable);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return fallbackValue;
+        }
+
+        if (int.TryParse(raw, out var parsed) && parsed > 0)
+        {
+            return parsed;
+        }
+
+        return fallbackValue;
+    }
+
+    private static void TryWritePerfResult(
+        string repositoryRoot,
+        TimeSpan fullBuild,
+        TimeSpan singleEditBuild,
+        TimeSpan includeEditBuild,
+        TimeSpan totalElapsed)
+    {
+        var configuredPath = Environment.GetEnvironmentVariable("AXSG_PERF_RESULTS_PATH");
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return;
+        }
+
+        var outputPath = configuredPath!;
+        if (!Path.IsPathRooted(outputPath))
+        {
+            outputPath = Path.Combine(repositoryRoot, outputPath);
+        }
+
+        var result = new Dictionary<string, object>
+        {
+            ["fullBuildMs"] = fullBuild.TotalMilliseconds,
+            ["singleEditBuildMs"] = singleEditBuild.TotalMilliseconds,
+            ["includeEditBuildMs"] = includeEditBuild.TotalMilliseconds,
+            ["totalElapsedMs"] = totalElapsed.TotalMilliseconds,
+            ["timestampUtc"] = DateTime.UtcNow.ToString("O")
+        };
+
+        var outputDirectory = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrWhiteSpace(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }
+
+        var json = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(outputPath, json);
+    }
+
+    private static async Task<(int ExitCode, string Output)> RunProcessAsync(string workingDirectory, string fileName, string arguments)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -215,7 +296,12 @@ public class PerformanceHarnessTests
 
         var stdoutTask = process!.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit(ProcessTimeoutMilliseconds))
+        using var timeoutCancellation = new System.Threading.CancellationTokenSource(ProcessTimeoutMilliseconds);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCancellation.Token);
+        }
+        catch (OperationCanceledException)
         {
             try
             {
@@ -226,15 +312,77 @@ public class PerformanceHarnessTests
                 // Best-effort cleanup for timed-out process.
             }
 
-            return (-1, $"Timed out after {ProcessTimeoutMilliseconds}ms while running: {fileName} {arguments}");
+            using var killWaitCancellation = new System.Threading.CancellationTokenSource(ProcessKillWaitMilliseconds);
+            try
+            {
+                await process.WaitForExitAsync(killWaitCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Best-effort cleanup for timed-out process kill.
+            }
+
+            var drainedOutput = await TryDrainProcessStreamsAsync(stdoutTask, stderrTask);
+            return (
+                -1,
+                $"Timed out after {ProcessTimeoutMilliseconds}ms while running: {fileName} {arguments}" +
+                (drainedOutput.StreamDrainTimedOut ? $" (stream drain timed out after {StreamDrainTimeoutMilliseconds}ms)" : string.Empty) +
+                (drainedOutput.Length == 0 ? string.Empty : Environment.NewLine + drainedOutput));
         }
 
-        System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
+        var output = await TryDrainProcessStreamsAsync(stdoutTask, stderrTask);
+        if (output.StreamDrainTimedOut)
+        {
+            return (
+                -1,
+                $"Timed out after {StreamDrainTimeoutMilliseconds}ms while draining process output: {fileName} {arguments}" +
+                (output.Length == 0 ? string.Empty : Environment.NewLine + output));
+        }
+
+        return (process.ExitCode, output);
+    }
+
+    private static async Task<ProcessStreamDrainResult> TryDrainProcessStreamsAsync(
+        System.Threading.Tasks.Task<string> stdoutTask,
+        System.Threading.Tasks.Task<string> stderrTask)
+    {
+        var combinedReadTask = Task.WhenAll(stdoutTask, stderrTask);
+        var delayTask = Task.Delay(StreamDrainTimeoutMilliseconds);
+        var completed = await Task.WhenAny(combinedReadTask, delayTask);
+        var timedOut = completed != combinedReadTask;
 
         var outputBuilder = new StringBuilder();
-        outputBuilder.Append(stdoutTask.Result);
-        outputBuilder.Append(stderrTask.Result);
-        return (process.ExitCode, outputBuilder.ToString());
+        AppendCompletedTaskOutput(outputBuilder, stdoutTask);
+        AppendCompletedTaskOutput(outputBuilder, stderrTask);
+        return new ProcessStreamDrainResult(outputBuilder.ToString(), timedOut);
+    }
+
+    private static void AppendCompletedTaskOutput(
+        StringBuilder outputBuilder,
+        System.Threading.Tasks.Task<string> task)
+    {
+        if (task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion &&
+            !string.IsNullOrEmpty(task.Result))
+        {
+            outputBuilder.Append(task.Result);
+            return;
+        }
+
+        if (task.Status == System.Threading.Tasks.TaskStatus.Faulted &&
+            task.Exception is not null)
+        {
+            outputBuilder.AppendLine(task.Exception.ToString());
+        }
+    }
+
+    private readonly record struct ProcessStreamDrainResult(string Output, bool StreamDrainTimedOut)
+    {
+        public int Length => Output.Length;
+
+        public static implicit operator string(ProcessStreamDrainResult value)
+        {
+            return value.Output;
+        }
     }
 
     private static string BuildProjectText(
