@@ -9,6 +9,7 @@ using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Framework.Abstractions;
+using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Diagnostics;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -90,12 +91,15 @@ public sealed class XamlCompilerAnalysisService
         var typeIndex = snapshot.Compilation is null
             ? null
             : AvaloniaTypeIndex.Create(snapshot.Compilation);
+        var prefixMap = XamlXmlNamespaceResolver.BuildPrefixMap(parsedDocument);
 
         return new XamlAnalysisResult(
             Document: document,
+            ProjectPath: snapshot.ProjectPath,
             Compilation: snapshot.Compilation,
             ParsedDocument: parsedDocument,
             XmlDocument: xmlDocument,
+            PrefixMap: prefixMap,
             TypeIndex: typeIndex,
             Diagnostics: diagnostics.ToImmutable());
     }

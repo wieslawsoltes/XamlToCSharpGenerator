@@ -7,5 +7,7 @@ public sealed record AvaloniaTypeInfo(
     string FullTypeName,
     string XmlNamespace,
     string ClrNamespace,
+    string AssemblyName,
     ImmutableArray<AvaloniaPropertyInfo> Properties,
-    string Summary);
+    string Summary,
+    AvaloniaSymbolSourceLocation? SourceLocation = null);

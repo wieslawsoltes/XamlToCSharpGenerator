@@ -7,6 +7,8 @@ namespace XamlToCSharpGenerator.LanguageService.Completion;
 
 internal static class XamlXmlNamespaceResolver
 {
+    private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
+
     public static ImmutableDictionary<string, string> BuildPrefixMap(XamlDocumentModel? document)
     {
         if (document is null)
@@ -43,8 +45,8 @@ internal static class XamlXmlNamespaceResolver
             if (!prefixMap.TryGetValue(string.Empty, out var defaultNamespace) ||
                 string.IsNullOrWhiteSpace(defaultNamespace))
             {
-                xmlNamespace = string.Empty;
-                return false;
+                xmlNamespace = AvaloniaDefaultXmlNamespace;
+                return true;
             }
 
             xmlNamespace = defaultNamespace;

@@ -15,7 +15,7 @@ public sealed class XamlHoverService
             return null;
         }
 
-        var prefixMap = XamlXmlNamespaceResolver.BuildPrefixMap(analysis.ParsedDocument);
+        var prefixMap = analysis.PrefixMap;
 
         if (context.Kind == XamlCompletionContextKind.ElementName && analysis.TypeIndex is not null)
         {

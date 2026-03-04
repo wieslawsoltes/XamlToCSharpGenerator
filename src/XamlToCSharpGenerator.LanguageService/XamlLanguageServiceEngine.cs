@@ -26,8 +26,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlReferenceService _referenceService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
-    private readonly ConcurrentDictionary<string, (int Version, XamlAnalysisResult Result)> _analysisCache =
-        new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<AnalysisCacheKey, (int Version, XamlAnalysisResult Result)> _analysisCache =
+        new();
+    private readonly ConcurrentDictionary<DocumentCacheKey, ImmutableArray<XamlSemanticToken>> _semanticTokenCache =
+        new();
+    private readonly ConcurrentDictionary<PositionRequestCacheKey, ImmutableArray<XamlDefinitionLocation>> _definitionCache =
+        new();
+    private readonly ConcurrentDictionary<PositionRequestCacheKey, ImmutableArray<XamlReferenceLocation>> _referenceCache =
+        new();
 
     public XamlLanguageServiceEngine()
         : this(new MsBuildCompilationProvider())
@@ -54,12 +60,20 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
+        options ??= XamlLanguageServiceOptions.Default;
         var document = _documentStore.Open(uri, text, version);
-        _compilationProvider.Invalidate(document.FilePath);
-        _analysisCache.TryRemove(uri, out _);
+        InvalidateUriCaches(uri);
 
         var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
+        _analysisCache[BuildAnalysisCacheKey(uri, options)] = (document.Version, analysis);
         return analysis.Diagnostics;
+    }
+
+    public void UpsertDocument(string uri, string text, int version)
+    {
+        var document = _documentStore.Update(uri, text, version) ?? _documentStore.Open(uri, text, version);
+        _ = document;
+        InvalidateUriCaches(uri);
     }
 
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> UpdateDocumentAsync(
@@ -69,23 +83,19 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
+        options ??= XamlLanguageServiceOptions.Default;
         var document = _documentStore.Update(uri, text, version) ?? _documentStore.Open(uri, text, version);
-        _analysisCache.TryRemove(uri, out _);
+        InvalidateUriCaches(uri);
 
         var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
+        _analysisCache[BuildAnalysisCacheKey(uri, options)] = (document.Version, analysis);
         return analysis.Diagnostics;
     }
 
     public void CloseDocument(string uri)
     {
-        var document = _documentStore.Get(uri);
-        if (document is not null)
-        {
-            _compilationProvider.Invalidate(document.FilePath);
-        }
-
         _documentStore.Close(uri);
-        _analysisCache.TryRemove(uri, out _);
+        InvalidateUriCaches(uri);
     }
 
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> GetDiagnosticsAsync(
@@ -128,9 +138,20 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
-        return analysis is null
-            ? ImmutableArray<XamlDefinitionLocation>.Empty
-            : _definitionService.GetDefinitions(analysis, position);
+        if (analysis is null)
+        {
+            return ImmutableArray<XamlDefinitionLocation>.Empty;
+        }
+
+        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, options, position);
+        if (_definitionCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var definitions = _definitionService.GetDefinitions(analysis, position);
+        _definitionCache[cacheKey] = definitions;
+        return definitions;
     }
 
     public async Task<ImmutableArray<XamlReferenceLocation>> GetReferencesAsync(
@@ -140,9 +161,20 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
-        return analysis is null
-            ? ImmutableArray<XamlReferenceLocation>.Empty
-            : _referenceService.GetReferences(analysis, position);
+        if (analysis is null)
+        {
+            return ImmutableArray<XamlReferenceLocation>.Empty;
+        }
+
+        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, options, position);
+        if (_referenceCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var references = _referenceService.GetReferences(analysis, position);
+        _referenceCache[cacheKey] = references;
+        return references;
     }
 
     public async Task<ImmutableArray<XamlDocumentSymbol>> GetDocumentSymbolsAsync(
@@ -162,9 +194,20 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
-        return analysis is null
-            ? ImmutableArray<XamlSemanticToken>.Empty
-            : _semanticTokenService.GetTokens(analysis.Document.Text);
+        if (analysis is null)
+        {
+            return ImmutableArray<XamlSemanticToken>.Empty;
+        }
+
+        var cacheKey = new DocumentCacheKey(uri, analysis.Document.Version);
+        if (_semanticTokenCache.TryGetValue(cacheKey, out var cachedTokens))
+        {
+            return cachedTokens;
+        }
+
+        var tokens = _semanticTokenService.GetTokens(analysis.Document.Text);
+        _semanticTokenCache[cacheKey] = tokens;
+        return tokens;
     }
 
     public void Dispose()
@@ -177,19 +220,23 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
+        options ??= XamlLanguageServiceOptions.Default;
+
         var document = _documentStore.Get(uri);
         if (document is null)
         {
             return null;
         }
 
-        if (_analysisCache.TryGetValue(uri, out var cached) && cached.Version == document.Version)
+        var cacheKey = BuildAnalysisCacheKey(uri, options);
+
+        if (_analysisCache.TryGetValue(cacheKey, out var cached) && cached.Version == document.Version)
         {
             return cached.Result;
         }
 
         var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
-        _analysisCache[uri] = (document.Version, analysis);
+        _analysisCache[cacheKey] = (document.Version, analysis);
         return analysis;
     }
 
@@ -200,4 +247,85 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     {
         return _analysisService.AnalyzeAsync(document, options, cancellationToken);
     }
+
+    private void InvalidateUriCaches(string uri)
+    {
+        foreach (var cacheKey in _analysisCache.Keys)
+        {
+            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
+            {
+                _analysisCache.TryRemove(cacheKey, out _);
+            }
+        }
+
+        foreach (var cacheKey in _semanticTokenCache.Keys)
+        {
+            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
+            {
+                _semanticTokenCache.TryRemove(cacheKey, out _);
+            }
+        }
+
+        foreach (var cacheKey in _definitionCache.Keys)
+        {
+            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
+            {
+                _definitionCache.TryRemove(cacheKey, out _);
+            }
+        }
+
+        foreach (var cacheKey in _referenceCache.Keys)
+        {
+            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
+            {
+                _referenceCache.TryRemove(cacheKey, out _);
+            }
+        }
+    }
+
+    private static PositionRequestCacheKey BuildPositionRequestCacheKey(
+        string uri,
+        int documentVersion,
+        XamlLanguageServiceOptions options,
+        SourcePosition position)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        return new PositionRequestCacheKey(
+            Uri: uri,
+            Version: documentVersion,
+            WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
+            IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
+            IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics,
+            Line: position.Line,
+            Character: position.Character);
+    }
+
+    private static AnalysisCacheKey BuildAnalysisCacheKey(
+        string uri,
+        XamlLanguageServiceOptions options)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        return new AnalysisCacheKey(
+            Uri: uri,
+            WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
+            IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
+            IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics);
+    }
+
+    private readonly record struct AnalysisCacheKey(
+        string Uri,
+        string WorkspaceRoot,
+        bool IncludeCompilationDiagnostics,
+        bool IncludeSemanticDiagnostics);
+
+    private readonly record struct PositionRequestCacheKey(
+        string Uri,
+        int Version,
+        string WorkspaceRoot,
+        bool IncludeCompilationDiagnostics,
+        bool IncludeSemanticDiagnostics,
+        int Line,
+        int Character);
+
+    private readonly record struct DocumentCacheKey(string Uri, int Version);
 }

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -15,11 +16,19 @@ namespace XamlToCSharpGenerator.LanguageService.Workspace;
 
 public sealed class MsBuildCompilationProvider : ICompilationProvider
 {
+    private static readonly TimeSpan ProjectResolutionCacheTtl = TimeSpan.FromSeconds(5);
     private static readonly object LocatorGate = new();
     private static bool _locatorRegistered;
+    private const string MissingMetadataReferencePrefix =
+        "Found project reference without a matching metadata reference:";
 
     private readonly MSBuildWorkspace _workspace;
+    private readonly SemaphoreSlim _workspaceGate = new(1, 1);
     private readonly ConcurrentDictionary<string, Lazy<Task<CompilationSnapshot>>> _projectCompilationCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CachedProjectPathResolution> _fileProjectPathCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ImmutableHashSet<string>> _analyzerOnlyProjectReferenceCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public MsBuildCompilationProvider()
@@ -33,7 +42,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         string? workspaceRoot,
         CancellationToken cancellationToken)
     {
-        var projectPath = FindNearestProjectPath(filePath, workspaceRoot);
+        var projectPath = ResolveProjectPath(filePath, workspaceRoot);
         if (projectPath is null)
         {
             return Task.FromResult(new CompilationSnapshot(
@@ -41,6 +50,8 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                 Compilation: null,
                 Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
         }
+
+        projectPath = NormalizePath(projectPath);
 
         var lazyTask = _projectCompilationCache.GetOrAdd(
             projectPath,
@@ -53,15 +64,28 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
     public void Invalidate(string filePath)
     {
-        var projectPath = FindNearestProjectPath(filePath, workspaceRoot: null);
+        var projectPath = ResolveProjectPath(filePath, workspaceRoot: null);
         if (projectPath is not null)
         {
-            _projectCompilationCache.TryRemove(projectPath, out _);
+            _projectCompilationCache.TryRemove(NormalizePath(projectPath), out _);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filePath))
+        {
+            var normalizedFilePath = NormalizePath(filePath);
+            foreach (var key in _fileProjectPathCache.Keys)
+            {
+                if (key.StartsWith(normalizedFilePath + "|", StringComparison.OrdinalIgnoreCase))
+                {
+                    _fileProjectPathCache.TryRemove(key, out _);
+                }
+            }
         }
     }
 
     public void Dispose()
     {
+        _workspaceGate.Dispose();
         _workspace.Dispose();
     }
 
@@ -69,8 +93,22 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     {
         try
         {
-            var project = await _workspace.OpenProjectAsync(projectPath, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await _workspaceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            Project? project;
+            try
+            {
+                project = TryGetLoadedProject(projectPath);
+                if (project is null)
+                {
+                    project = await _workspace.OpenProjectAsync(projectPath, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _workspaceGate.Release();
+            }
+
             var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             if (compilation is null)
             {
@@ -86,8 +124,14 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
             }
 
             var diagnosticsBuilder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>();
+            var analyzerOnlyReferences = GetAnalyzerOnlyProjectReferences(projectPath);
             foreach (var workspaceDiagnostic in _workspace.Diagnostics)
             {
+                if (ShouldSuppressWorkspaceDiagnostic(workspaceDiagnostic.Message, analyzerOnlyReferences))
+                {
+                    continue;
+                }
+
                 diagnosticsBuilder.Add(new LanguageServiceDiagnostic(
                     "AXSGLS0002",
                     workspaceDiagnostic.Message,
@@ -111,6 +155,117 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                     EmptyRange,
                     LanguageServiceDiagnosticSeverity.Error,
                     Source: "MSBuildWorkspace")));
+        }
+    }
+
+    private Project? TryGetLoadedProject(string projectPath)
+    {
+        var normalizedProjectPath = NormalizePath(projectPath);
+
+        foreach (var project in _workspace.CurrentSolution.Projects)
+        {
+            if (project.FilePath is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    NormalizePath(project.FilePath),
+                    normalizedProjectPath,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return project;
+            }
+        }
+
+        return null;
+    }
+
+    private ImmutableHashSet<string> GetAnalyzerOnlyProjectReferences(string projectPath)
+    {
+        return _analyzerOnlyProjectReferenceCache.GetOrAdd(projectPath, static path =>
+        {
+            try
+            {
+                var document = XDocument.Load(path);
+                var projectDirectory = Path.GetDirectoryName(path);
+                if (projectDirectory is null)
+                {
+                    return ImmutableHashSet<string>.Empty;
+                }
+
+                var references = ImmutableHashSet.CreateBuilder<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var projectReference in document.Descendants().Where(static element => element.Name.LocalName == "ProjectReference"))
+                {
+                    var include = projectReference.Attribute("Include")?.Value;
+                    if (string.IsNullOrWhiteSpace(include))
+                    {
+                        continue;
+                    }
+
+                    var outputItemType = projectReference.Attribute("OutputItemType")?.Value
+                        ?? projectReference.Elements().FirstOrDefault(static element => element.Name.LocalName == "OutputItemType")?.Value;
+                    var referenceOutputAssembly = projectReference.Attribute("ReferenceOutputAssembly")?.Value
+                        ?? projectReference.Elements().FirstOrDefault(static element => element.Name.LocalName == "ReferenceOutputAssembly")?.Value;
+                    var isAnalyzerOutput = string.Equals(outputItemType, "Analyzer", StringComparison.OrdinalIgnoreCase);
+                    var excludesMetadataReference = string.Equals(referenceOutputAssembly, "false", StringComparison.OrdinalIgnoreCase);
+                    if (!isAnalyzerOutput && !excludesMetadataReference)
+                    {
+                        continue;
+                    }
+
+                    var resolvedPath = Path.GetFullPath(Path.Combine(projectDirectory, include));
+                    references.Add(resolvedPath);
+                }
+
+                return references.ToImmutable();
+            }
+            catch
+            {
+                return ImmutableHashSet<string>.Empty;
+            }
+        });
+    }
+
+    private static bool ShouldSuppressWorkspaceDiagnostic(
+        string message,
+        ImmutableHashSet<string> analyzerOnlyReferences)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        var prefixIndex = message.IndexOf(MissingMetadataReferencePrefix, StringComparison.Ordinal);
+        if (prefixIndex < 0)
+        {
+            return false;
+        }
+
+        // This warning is expected for analyzer-only ProjectReference entries and is noisy in editor diagnostics.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AXSG_LANGUAGE_SERVICE_REPORT_MISSING_METADATA_REFERENCE")))
+        {
+            return true;
+        }
+
+        if (analyzerOnlyReferences.Count == 0)
+        {
+            return false;
+        }
+
+        var projectReferencePath = message.Substring(prefixIndex + MissingMetadataReferencePrefix.Length).Trim();
+        if (string.IsNullOrWhiteSpace(projectReferencePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return analyzerOnlyReferences.Contains(Path.GetFullPath(projectReferencePath));
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -214,7 +369,60 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         }
     }
 
+    private static string NormalizePath(string path)
+    {
+        return Path.GetFullPath(path);
+    }
+
+    private string? ResolveProjectPath(string filePath, string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return null;
+        }
+
+        var normalizedFilePath = NormalizePath(filePath);
+        var normalizedWorkspaceRoot = NormalizeWorkspaceRoot(workspaceRoot);
+        var cacheKey = BuildProjectResolutionCacheKey(normalizedFilePath, normalizedWorkspaceRoot);
+        var now = DateTimeOffset.UtcNow;
+        if (_fileProjectPathCache.TryGetValue(cacheKey, out var cachedResolution) &&
+            now - cachedResolution.CachedAtUtc <= ProjectResolutionCacheTtl)
+        {
+            return cachedResolution.ProjectPath;
+        }
+
+        var resolvedProjectPath = FindNearestProjectPath(normalizedFilePath, normalizedWorkspaceRoot);
+        _fileProjectPathCache[cacheKey] = new CachedProjectPathResolution(now, resolvedProjectPath);
+        return resolvedProjectPath;
+    }
+
+    private static string BuildProjectResolutionCacheKey(string normalizedFilePath, string? normalizedWorkspaceRoot)
+    {
+        return normalizedFilePath + "|" + (normalizedWorkspaceRoot ?? string.Empty);
+    }
+
+    private static string? NormalizeWorkspaceRoot(string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            return null;
+        }
+
+        try
+        {
+            return NormalizePath(workspaceRoot);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static readonly SourceRange EmptyRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
+
+    private readonly record struct CachedProjectPathResolution(
+        DateTimeOffset CachedAtUtc,
+        string? ProjectPath);
 }

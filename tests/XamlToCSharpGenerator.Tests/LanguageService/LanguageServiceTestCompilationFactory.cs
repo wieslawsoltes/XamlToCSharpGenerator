@@ -11,14 +11,61 @@ namespace XamlToCSharpGenerator.Tests.LanguageService;
 
 internal static class LanguageServiceTestCompilationFactory
 {
+    public const string SymbolSourceFilePath = "/tmp/LanguageServiceTestTypes.cs";
+
     public static Compilation CreateCompilation()
     {
-        const string source = "using System;" +
-                              "namespace Avalonia.Metadata { [AttributeUsage(AttributeTargets.Assembly, AllowMultiple=true)] public sealed class XmlnsDefinitionAttribute : Attribute { public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { } } }" +
-                              "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]" +
-                              "namespace TestApp.Controls { public class UserControl { } public class StackPanel { } public class Button { public string Content { get; set; } = string.Empty; } public class TextBlock { public string Text { get; set; } = string.Empty; } }";
+        const string source = """
+                              using System;
 
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+                              namespace Avalonia.Metadata
+                              {
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsDefinitionAttribute : Attribute
+                                  {
+                                      public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                  }
+                              }
+
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
+                              namespace TestApp.Controls
+                              {
+                                  public class UserControl { }
+                                  public class StackPanel { }
+
+                                  public class Visual
+                                  {
+                                      public double Opacity { get; set; }
+                                  }
+
+                                  public class Shape : Visual
+                                  {
+                                      public string Stroke { get; set; } = string.Empty;
+                                  }
+
+                                  public class Path : Shape
+                                  {
+                                      public string Data { get; set; } = string.Empty;
+                                  }
+
+                                  public class Button
+                                  {
+                                      public string Content { get; set; } = string.Empty;
+                                  }
+
+                                  public class TextBlock
+                                  {
+                                      public string Text { get; set; } = string.Empty;
+                                  }
+
+                                  public class MyExtension
+                                  {
+                                  }
+                              }
+                              """;
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: SymbolSourceFilePath);
         var references = new[]
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),

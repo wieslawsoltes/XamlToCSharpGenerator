@@ -4,4 +4,5 @@ public sealed record AvaloniaPropertyInfo(
     string Name,
     string TypeName,
     bool IsSettable,
-    bool IsAttached);
+    bool IsAttached,
+    AvaloniaSymbolSourceLocation? SourceLocation = null);

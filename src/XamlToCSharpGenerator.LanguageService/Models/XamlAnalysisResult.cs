@@ -8,8 +8,10 @@ namespace XamlToCSharpGenerator.LanguageService.Models;
 
 public sealed record XamlAnalysisResult(
     LanguageServiceDocument Document,
+    string? ProjectPath,
     Compilation? Compilation,
     XamlDocumentModel? ParsedDocument,
     XDocument? XmlDocument,
+    ImmutableDictionary<string, string> PrefixMap,
     AvaloniaTypeIndex? TypeIndex,
     ImmutableArray<LanguageServiceDiagnostic> Diagnostics);

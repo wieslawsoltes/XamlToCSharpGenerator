@@ -4,6 +4,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Text;
 
 namespace XamlToCSharpGenerator.LanguageService.Symbols;
 
@@ -16,10 +18,17 @@ public sealed class AvaloniaTypeIndex
     private static readonly ConditionalWeakTable<Compilation, AvaloniaTypeIndex> Cache = new();
 
     private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByXmlNamespace;
+    private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByClrNamespace;
+    private readonly ImmutableDictionary<string, AvaloniaTypeInfo> _typesByFullTypeName;
 
-    private AvaloniaTypeIndex(ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> typesByXmlNamespace)
+    private AvaloniaTypeIndex(
+        ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> typesByXmlNamespace,
+        ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> typesByClrNamespace,
+        ImmutableDictionary<string, AvaloniaTypeInfo> typesByFullTypeName)
     {
         _typesByXmlNamespace = typesByXmlNamespace;
+        _typesByClrNamespace = typesByClrNamespace;
+        _typesByFullTypeName = typesByFullTypeName;
     }
 
     public static AvaloniaTypeIndex Create(Compilation compilation)
@@ -63,15 +72,49 @@ public sealed class AvaloniaTypeIndex
         return byName.TryGetValue(xmlTypeName, out typeInfo);
     }
 
+    public bool TryGetTypeByClrNamespace(string clrNamespace, string xmlTypeName, out AvaloniaTypeInfo? typeInfo)
+    {
+        typeInfo = null;
+        if (string.IsNullOrWhiteSpace(clrNamespace) || string.IsNullOrWhiteSpace(xmlTypeName))
+        {
+            return false;
+        }
+
+        if (!_typesByClrNamespace.TryGetValue(clrNamespace, out var byName))
+        {
+            return false;
+        }
+
+        return byName.TryGetValue(xmlTypeName, out typeInfo);
+    }
+
+    public bool TryGetTypeByFullTypeName(string fullTypeName, out AvaloniaTypeInfo? typeInfo)
+    {
+        typeInfo = null;
+        if (string.IsNullOrWhiteSpace(fullTypeName))
+        {
+            return false;
+        }
+
+        return _typesByFullTypeName.TryGetValue(fullTypeName, out typeInfo);
+    }
+
     private static AvaloniaTypeIndex BuildIndex(Compilation compilation)
     {
         var map = BuildXmlNamespaceToClrNamespaceMap(compilation);
-        if (!map.ContainsKey(AvaloniaDefaultXmlNamespace))
+        var fallbackNamespaces = BuildFallbackClrNamespaces(compilation);
+        if (map.TryGetValue(AvaloniaDefaultXmlNamespace, out var defaultNamespaces))
         {
-            map = map.SetItem(AvaloniaDefaultXmlNamespace, BuildFallbackClrNamespaces(compilation));
+            map = map.SetItem(AvaloniaDefaultXmlNamespace, defaultNamespaces.Union(fallbackNamespaces));
+        }
+        else
+        {
+            map = map.SetItem(AvaloniaDefaultXmlNamespace, fallbackNamespaces);
         }
 
         var result = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, AvaloniaTypeInfo>>(StringComparer.Ordinal);
+        var byClrNamespace = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, AvaloniaTypeInfo>>(StringComparer.Ordinal);
+        var byFullTypeName = ImmutableDictionary.CreateBuilder<string, AvaloniaTypeInfo>(StringComparer.Ordinal);
 
         foreach (var pair in map)
         {
@@ -91,19 +134,77 @@ public sealed class AvaloniaTypeIndex
                     }
 
                     var xmlTypeName = GetXamlTypeName(type);
+                    var typeInfo = BuildTypeInfo(pair.Key, type);
+                    AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
+
                     if (byTypeName.ContainsKey(xmlTypeName))
                     {
                         continue;
                     }
 
-                    byTypeName[xmlTypeName] = BuildTypeInfo(pair.Key, type);
+                    byTypeName[xmlTypeName] = typeInfo;
                 }
             }
 
             result[pair.Key] = byTypeName.ToImmutable();
         }
 
-        return new AvaloniaTypeIndex(result.ToImmutable());
+        PopulateClrNamespaceIndexWithAllAssemblies(compilation, byClrNamespace, byFullTypeName);
+        return new AvaloniaTypeIndex(result.ToImmutable(), byClrNamespace.ToImmutable(), byFullTypeName.ToImmutable());
+    }
+
+    private static void AddTypeByClrNamespace(
+        ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>>.Builder byClrNamespace,
+        ImmutableDictionary<string, AvaloniaTypeInfo>.Builder byFullTypeName,
+        AvaloniaTypeInfo typeInfo)
+    {
+        if (!byClrNamespace.TryGetValue(typeInfo.ClrNamespace, out var byTypeName))
+        {
+            byTypeName = ImmutableDictionary<string, AvaloniaTypeInfo>.Empty.WithComparers(StringComparer.Ordinal);
+        }
+
+        if (!byTypeName.ContainsKey(typeInfo.XmlTypeName))
+        {
+            byClrNamespace[typeInfo.ClrNamespace] = byTypeName.SetItem(typeInfo.XmlTypeName, typeInfo);
+        }
+
+        if (!byFullTypeName.ContainsKey(typeInfo.FullTypeName))
+        {
+            byFullTypeName[typeInfo.FullTypeName] = typeInfo;
+        }
+    }
+
+    private static void PopulateClrNamespaceIndexWithAllAssemblies(
+        Compilation compilation,
+        ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>>.Builder byClrNamespace,
+        ImmutableDictionary<string, AvaloniaTypeInfo>.Builder byFullTypeName)
+    {
+        foreach (var assembly in EnumerateAssemblies(compilation))
+        {
+            foreach (var type in EnumerateTypes(assembly.GlobalNamespace))
+            {
+                if (type.DeclaredAccessibility != Accessibility.Public || type.IsAbstract)
+                {
+                    continue;
+                }
+
+                var clrNamespace = type.ContainingNamespace.ToDisplayString();
+                if (string.IsNullOrWhiteSpace(clrNamespace))
+                {
+                    continue;
+                }
+
+                var xmlTypeName = GetXamlTypeName(type);
+                if (byClrNamespace.TryGetValue(clrNamespace, out var byName) &&
+                    byName.ContainsKey(xmlTypeName))
+                {
+                    continue;
+                }
+
+                var typeInfo = BuildTypeInfo(AvaloniaDefaultXmlNamespace, type);
+                AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
+            }
+        }
     }
 
     private static string GetXamlTypeName(INamedTypeSymbol type)
@@ -115,54 +216,55 @@ public sealed class AvaloniaTypeIndex
     private static AvaloniaTypeInfo BuildTypeInfo(string xmlNamespace, INamedTypeSymbol type)
     {
         var properties = ImmutableArray.CreateBuilder<AvaloniaPropertyInfo>();
+        var seenPropertyNames = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
+        foreach (var currentType in EnumerateTypeHierarchy(type))
         {
-            if (property.DeclaredAccessibility != Accessibility.Public || property.IsStatic)
+            foreach (var property in currentType.GetMembers().OfType<IPropertySymbol>())
             {
-                continue;
+                if (property.DeclaredAccessibility != Accessibility.Public || property.IsStatic)
+                {
+                    continue;
+                }
+
+                if (property.IsImplicitlyDeclared || !seenPropertyNames.Add(property.Name))
+                {
+                    continue;
+                }
+
+                properties.Add(new AvaloniaPropertyInfo(
+                    property.Name,
+                    property.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    property.SetMethod is not null && property.SetMethod.DeclaredAccessibility == Accessibility.Public,
+                    IsAttached: false,
+                    SourceLocation: TryCreateSourceLocation(property)));
             }
 
-            if (property.IsImplicitlyDeclared)
+            foreach (var field in currentType.GetMembers().OfType<IFieldSymbol>())
             {
-                continue;
+                if (field.DeclaredAccessibility != Accessibility.Public || !field.IsStatic)
+                {
+                    continue;
+                }
+
+                if (!field.Name.EndsWith("Property", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var propertyName = field.Name.Substring(0, field.Name.Length - "Property".Length);
+                if (propertyName.Length == 0 || !seenPropertyNames.Add(propertyName))
+                {
+                    continue;
+                }
+
+                properties.Add(new AvaloniaPropertyInfo(
+                    propertyName,
+                    field.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    IsSettable: true,
+                    IsAttached: true,
+                    SourceLocation: TryCreateSourceLocation(field)));
             }
-
-            properties.Add(new AvaloniaPropertyInfo(
-                property.Name,
-                property.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                property.SetMethod is not null && property.SetMethod.DeclaredAccessibility == Accessibility.Public,
-                IsAttached: false));
-        }
-
-        foreach (var field in type.GetMembers().OfType<IFieldSymbol>())
-        {
-            if (field.DeclaredAccessibility != Accessibility.Public || !field.IsStatic)
-            {
-                continue;
-            }
-
-            if (!field.Name.EndsWith("Property", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var propertyName = field.Name.Substring(0, field.Name.Length - "Property".Length);
-            if (propertyName.Length == 0)
-            {
-                continue;
-            }
-
-            if (properties.Any(value => value.Name == propertyName))
-            {
-                continue;
-            }
-
-            properties.Add(new AvaloniaPropertyInfo(
-                propertyName,
-                field.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                IsSettable: true,
-                IsAttached: true));
         }
 
         var fullTypeName = type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
@@ -173,8 +275,43 @@ public sealed class AvaloniaTypeIndex
             FullTypeName: fullTypeName,
             XmlNamespace: xmlNamespace,
             ClrNamespace: type.ContainingNamespace.ToDisplayString(),
+            AssemblyName: type.ContainingAssembly.Identity.Name,
             Properties: properties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToImmutableArray(),
-            Summary: summary);
+            Summary: summary,
+            SourceLocation: TryCreateSourceLocation(type));
+    }
+
+    private static IEnumerable<INamedTypeSymbol> EnumerateTypeHierarchy(INamedTypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            yield return current;
+        }
+    }
+
+    private static AvaloniaSymbolSourceLocation? TryCreateSourceLocation(ISymbol symbol)
+    {
+        foreach (var location in symbol.Locations)
+        {
+            if (!location.IsInSource || location.SourceTree?.FilePath is null)
+            {
+                continue;
+            }
+
+            var lineSpan = location.GetLineSpan();
+            var start = new SourcePosition(
+                lineSpan.StartLinePosition.Line,
+                lineSpan.StartLinePosition.Character);
+            var end = new SourcePosition(
+                lineSpan.EndLinePosition.Line,
+                lineSpan.EndLinePosition.Character);
+
+            return new AvaloniaSymbolSourceLocation(
+                UriPathHelper.ToDocumentUri(location.SourceTree.FilePath),
+                new SourceRange(start, end));
+        }
+
+        return null;
     }
 
     private static ImmutableDictionary<string, ImmutableHashSet<string>> BuildXmlNamespaceToClrNamespaceMap(Compilation compilation)

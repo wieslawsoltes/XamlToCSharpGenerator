@@ -38,7 +38,7 @@ public sealed class XamlCompletionService
             return ImmutableArray<XamlCompletionItem>.Empty;
         }
 
-        var prefixMap = XamlXmlNamespaceResolver.BuildPrefixMap(analysis.ParsedDocument);
+        var prefixMap = analysis.PrefixMap;
         var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>();
 
         switch (context.Kind)
