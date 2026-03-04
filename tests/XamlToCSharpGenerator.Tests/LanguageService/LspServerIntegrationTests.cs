@@ -32,6 +32,7 @@ public sealed class LspServerIntegrationTests
 
         Assert.True(capabilities.GetProperty("hoverProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("definitionProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("declarationProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("referencesProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("documentSymbolProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("semanticTokensProvider").GetProperty("full").GetBoolean());
@@ -114,6 +115,60 @@ public sealed class LspServerIntegrationTests
         }
 
         Assert.True(hasUserControl);
+    }
+
+    [Fact]
+    public async Task Completion_Request_UsesSnippetInsertTextFormat_ForPropertyTemplate()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/CompletionSnippetView.axaml";
+        const string xaml = "<Path xmlns=\"https://github.com/avaloniaui\" ";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(201, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.Length
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(201);
+        var items = response.RootElement
+            .GetProperty("result")
+            .GetProperty("items");
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (!item.TryGetProperty("label", out var label) ||
+                !string.Equals(label.GetString(), "Data", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            Assert.Equal("Data=\"$0\"", item.GetProperty("insertText").GetString());
+            Assert.Equal(2, item.GetProperty("insertTextFormat").GetInt32());
+            return;
+        }
+
+        Assert.Fail("Expected completion item for Path.Data was not returned.");
     }
 
     [Fact]
@@ -201,6 +256,338 @@ public sealed class LspServerIntegrationTests
         using var response = await harness.ReadResponseAsync(3);
         var references = response.RootElement.GetProperty("result");
         Assert.True(references.GetArrayLength() >= 2);
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForXDataTypeAttributeValue_ReturnsTypeLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionXDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:Button\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(31, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("vm:Button", StringComparison.Ordinal) + 5
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(31);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForXClassAttributeValue_ReturnsTypeLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionXClassView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.Button\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(32, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("TestApp.Controls.Button", StringComparison.Ordinal) + 8
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(32);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Declaration_Request_ForXClassAttributeValue_ReturnsTypeLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DeclarationXClassView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.Button\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(35, "textDocument/declaration", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("TestApp.Controls.Button", StringComparison.Ordinal) + 8
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(35);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task References_Request_ForXDataTypeAttributeValue_ReturnsDeclarationAndUsage()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ReferencesXDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:Button\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(33, "textDocument/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("vm:Button", StringComparison.Ordinal) + 5
+            },
+            ["context"] = new JsonObject
+            {
+                ["includeDeclaration"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(33);
+        Assert.True(
+            response.RootElement.TryGetProperty("result", out var references),
+            "Expected result payload for references request. Actual: " + response.RootElement.GetRawText());
+        Assert.True(references.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task References_Request_ForXClassAttributeValue_ReturnsDeclarationAndUsage()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ReferencesXClassView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.Button\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(34, "textDocument/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("TestApp.Controls.Button", StringComparison.Ordinal) + 8
+            },
+            ["context"] = new JsonObject
+            {
+                ["includeDeclaration"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(34);
+        Assert.True(
+            response.RootElement.TryGetProperty("result", out var references),
+            "Expected result payload for references request. Actual: " + response.RootElement.GetRawText());
+        Assert.True(references.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task References_Request_WithStringId_DoesNotCrashAndPreservesId()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ReferencesStringIdView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <Button x:Name=\"SubmitButton\" Content=\"Save\"/>\n" +
+                            "  <TextBlock Text=\"{Binding ElementName=SubmitButton, Path=Content}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        const string requestId = "internal-refs-1";
+        await harness.SendRequestAsync(requestId, "textDocument/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 2,
+                ["character"] = 45
+            },
+            ["context"] = new JsonObject
+            {
+                ["includeDeclaration"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(requestId);
+        Assert.Equal(requestId, response.RootElement.GetProperty("id").GetString());
+        Assert.True(response.RootElement.GetProperty("result").GetArrayLength() >= 2);
+    }
+
+    [Fact]
+    public async Task UnknownMethod_Request_WithObjectId_DoesNotCrash()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        await harness.SendRawRequestAsync(new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = new JsonObject
+            {
+                ["k"] = "i-token"
+            },
+            ["method"] = "axsg/unknownMethod",
+            ["params"] = new JsonObject()
+        });
+
+        using var response = await harness.ReadErrorResponseWithObjectIdAsync("k", "i-token");
+        var errorCode = response.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+        Assert.Equal(-32601, errorCode);
+    }
+
+    [Fact]
+    public async Task CancelRequest_Notification_DoesNotBlockSubsequentRequests()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/CancelRequestView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <Button x:Name=\"SubmitButton\" Content=\"Save\"/>\n" +
+                            "  <TextBlock Text=\"{Binding ElementName=SubmitButton, Path=Content}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(90, "textDocument/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 2,
+                ["character"] = 45
+            },
+            ["context"] = new JsonObject
+            {
+                ["includeDeclaration"] = true
+            }
+        });
+
+        await harness.SendNotificationAsync("$/cancelRequest", new JsonObject
+        {
+            ["id"] = 90
+        });
+
+        await harness.SendRequestAsync(91, "textDocument/hover", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 1,
+                ["character"] = 3
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(91);
+        Assert.True(response.RootElement.TryGetProperty("result", out _));
     }
 
     [Fact]
@@ -460,6 +847,19 @@ public sealed class LspServerIntegrationTests
             return SendAsync(payload);
         }
 
+        public Task SendRequestAsync(string id, string method, JsonObject parameters)
+        {
+            var payload = new JsonObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = id,
+                ["method"] = method,
+                ["params"] = parameters
+            };
+
+            return SendAsync(payload);
+        }
+
         public Task SendNotificationAsync(string method, JsonObject parameters)
         {
             var payload = new JsonObject
@@ -469,6 +869,11 @@ public sealed class LspServerIntegrationTests
                 ["params"] = parameters
             };
 
+            return SendAsync(payload);
+        }
+
+        public Task SendRawRequestAsync(JsonObject payload)
+        {
             return SendAsync(payload);
         }
 
@@ -483,6 +888,17 @@ public sealed class LspServerIntegrationTests
             }).ConfigureAwait(false);
         }
 
+        public async Task<JsonDocument> ReadResponseAsync(string id)
+        {
+            return await ReadMatchingMessageAsync(document =>
+            {
+                var root = document.RootElement;
+                return root.TryGetProperty("id", out var idElement) &&
+                       idElement.ValueKind == JsonValueKind.String &&
+                       string.Equals(idElement.GetString(), id, StringComparison.Ordinal);
+            }).ConfigureAwait(false);
+        }
+
         public async Task<JsonDocument> ReadNotificationAsync(string method)
         {
             return await ReadMatchingMessageAsync(document =>
@@ -490,6 +906,27 @@ public sealed class LspServerIntegrationTests
                 var root = document.RootElement;
                 return root.TryGetProperty("method", out var methodElement) &&
                        string.Equals(methodElement.GetString(), method, StringComparison.Ordinal);
+            }).ConfigureAwait(false);
+        }
+
+        public async Task<JsonDocument> ReadErrorResponseWithObjectIdAsync(string key, string value)
+        {
+            return await ReadMatchingMessageAsync(document =>
+            {
+                var root = document.RootElement;
+                if (!root.TryGetProperty("id", out var idElement) || idElement.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                if (!idElement.TryGetProperty(key, out var keyElement) ||
+                    keyElement.ValueKind != JsonValueKind.String ||
+                    !string.Equals(keyElement.GetString(), value, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                return root.TryGetProperty("error", out _);
             }).ConfigureAwait(false);
         }
 

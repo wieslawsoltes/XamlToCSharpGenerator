@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,7 +19,12 @@ internal sealed class AxsgLanguageServer : IDisposable
     private readonly LspMessageWriter _writer;
     private readonly XamlLanguageServiceEngine _engine;
     private readonly XamlLanguageServiceOptions _options;
-    private readonly Dictionary<string, DocumentState> _openDocuments = new(StringComparer.Ordinal);
+    private readonly XamlLanguageServiceOptions _navigationOptions;
+    private readonly ConcurrentDictionary<string, DocumentState> _openDocuments = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _diagnosticUpdateTokens = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _requestCancellationTokens = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<long, Task> _inflightRequests = new();
+    private long _nextInflightRequestId;
 
     private bool _shutdownRequested;
     private bool _exitRequested;
@@ -32,6 +39,11 @@ internal sealed class AxsgLanguageServer : IDisposable
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _navigationOptions = _options with
+        {
+            IncludeCompilationDiagnostics = false,
+            IncludeSemanticDiagnostics = false
+        };
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -47,11 +59,27 @@ internal sealed class AxsgLanguageServer : IDisposable
             await HandleMessageAsync(message.RootElement, cancellationToken).ConfigureAwait(false);
         }
 
+        await DrainInflightRequestsAsync().ConfigureAwait(false);
         return _shutdownRequested ? 0 : 1;
     }
 
     public void Dispose()
     {
+        foreach (var pair in _diagnosticUpdateTokens)
+        {
+            try
+            {
+                pair.Value.Cancel();
+                pair.Value.Dispose();
+            }
+            catch
+            {
+                // Ignore shutdown cancellation failures.
+            }
+        }
+
+        _diagnosticUpdateTokens.Clear();
+        CancelAndDisposeRequestTokens();
         _engine.Dispose();
     }
 
@@ -85,8 +113,13 @@ internal sealed class AxsgLanguageServer : IDisposable
             case "initialized":
                 break;
 
+            case "$/cancelRequest":
+                HandleCancelRequest(parameters);
+                break;
+
             case "shutdown":
                 _shutdownRequested = true;
+                CancelAndDisposeRequestTokens();
                 if (hasId)
                 {
                     await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
@@ -116,42 +149,63 @@ internal sealed class AxsgLanguageServer : IDisposable
             case "textDocument/completion":
                 if (hasId)
                 {
-                    await HandleCompletionAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleCompletionAsync(requestId, requestParameters, token));
                 }
                 break;
 
             case "textDocument/hover":
                 if (hasId)
                 {
-                    await HandleHoverAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleHoverAsync(requestId, requestParameters, token));
                 }
                 break;
 
             case "textDocument/definition":
                 if (hasId)
                 {
-                    await HandleDefinitionAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleDefinitionAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/declaration":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleDeclarationAsync(requestId, requestParameters, token));
                 }
                 break;
 
             case "textDocument/references":
                 if (hasId)
                 {
-                    await HandleReferencesAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleReferencesAsync(requestId, requestParameters, token));
                 }
                 break;
 
             case "textDocument/documentSymbol":
                 if (hasId)
                 {
-                    await HandleDocumentSymbolAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleDocumentSymbolAsync(requestId, requestParameters, token));
                 }
                 break;
 
             case "textDocument/semanticTokens/full":
                 if (hasId)
                 {
-                    await HandleSemanticTokensAsync(id, parameters, cancellationToken).ConfigureAwait(false);
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleSemanticTokensAsync(requestId, requestParameters, token));
                 }
                 break;
 
@@ -168,7 +222,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         }
     }
 
-    private async Task HandleDidOpenAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private Task HandleDidOpenAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
         var textDocument = parameters.GetProperty("textDocument");
         var uri = textDocument.GetProperty("uri").GetString() ?? string.Empty;
@@ -178,14 +232,12 @@ internal sealed class AxsgLanguageServer : IDisposable
             : 0;
 
         _openDocuments[uri] = new DocumentState(text, version);
-
-        var diagnostics = await _engine
-            .OpenDocumentAsync(uri, text, version, _options, cancellationToken)
-            .ConfigureAwait(false);
-        await PublishDiagnosticsAsync(uri, diagnostics, cancellationToken).ConfigureAwait(false);
+        _engine.UpsertDocument(uri, text, version);
+        QueueDiagnosticsUpdate(uri, version);
+        return Task.CompletedTask;
     }
 
-    private async Task HandleDidChangeAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private Task HandleDidChangeAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
         var textDocument = parameters.GetProperty("textDocument");
         var uri = textDocument.GetProperty("uri").GetString() ?? string.Empty;
@@ -200,11 +252,7 @@ internal sealed class AxsgLanguageServer : IDisposable
 
         if (version < state.Version)
         {
-            var staleDiagnostics = await _engine
-                .GetDiagnosticsAsync(uri, _options, cancellationToken)
-                .ConfigureAwait(false);
-            await PublishDiagnosticsAsync(uri, staleDiagnostics, cancellationToken).ConfigureAwait(false);
-            return;
+            return Task.CompletedTask;
         }
 
         var text = state.Text;
@@ -215,13 +263,12 @@ internal sealed class AxsgLanguageServer : IDisposable
         }
 
         _openDocuments[uri] = new DocumentState(text, version);
-        var diagnostics = await _engine
-            .UpdateDocumentAsync(uri, text, version, _options, cancellationToken)
-            .ConfigureAwait(false);
-        await PublishDiagnosticsAsync(uri, diagnostics, cancellationToken).ConfigureAwait(false);
+        _engine.UpsertDocument(uri, text, version);
+        QueueDiagnosticsUpdate(uri, version);
+        return Task.CompletedTask;
     }
 
-    private async Task HandleDidSaveAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private Task HandleDidSaveAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
         var textDocument = parameters.GetProperty("textDocument");
         var uri = textDocument.GetProperty("uri").GetString() ?? string.Empty;
@@ -239,8 +286,12 @@ internal sealed class AxsgLanguageServer : IDisposable
             }
         }
 
-        var diagnostics = await _engine.GetDiagnosticsAsync(uri, _options, cancellationToken).ConfigureAwait(false);
-        await PublishDiagnosticsAsync(uri, diagnostics, cancellationToken).ConfigureAwait(false);
+        if (_openDocuments.TryGetValue(uri, out var documentState))
+        {
+            QueueDiagnosticsUpdate(uri, documentState.Version);
+        }
+
+        return Task.CompletedTask;
     }
 
     private Task HandleDidCloseAsync(JsonElement parameters, CancellationToken cancellationToken)
@@ -248,9 +299,204 @@ internal sealed class AxsgLanguageServer : IDisposable
         var textDocument = parameters.GetProperty("textDocument");
         var uri = textDocument.GetProperty("uri").GetString() ?? string.Empty;
 
-        _openDocuments.Remove(uri);
+        _openDocuments.TryRemove(uri, out _);
+        if (_diagnosticUpdateTokens.TryRemove(uri, out var updateTokenSource))
+        {
+            updateTokenSource.Cancel();
+            updateTokenSource.Dispose();
+        }
+
         _engine.CloseDocument(uri);
         return PublishDiagnosticsAsync(uri, ImmutableArray<LanguageServiceDiagnostic>.Empty, cancellationToken);
+    }
+
+    private void QueueDiagnosticsUpdate(string uri, int expectedVersion)
+    {
+        var tokenSource = new CancellationTokenSource();
+        _diagnosticUpdateTokens.AddOrUpdate(
+            uri,
+            tokenSource,
+            (_, existing) =>
+            {
+                existing.Cancel();
+                existing.Dispose();
+                return tokenSource;
+            });
+
+        _ = Task.Run(
+            () => RunDiagnosticsUpdateAsync(uri, expectedVersion, tokenSource),
+            CancellationToken.None);
+    }
+
+    private async Task RunDiagnosticsUpdateAsync(string uri, int expectedVersion, CancellationTokenSource tokenSource)
+    {
+        try
+        {
+            var diagnostics = await _engine
+                .GetDiagnosticsAsync(uri, _options, tokenSource.Token)
+                .ConfigureAwait(false);
+
+            if (tokenSource.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!_openDocuments.TryGetValue(uri, out var state) || state.Version != expectedVersion)
+            {
+                return;
+            }
+
+            await PublishDiagnosticsAsync(uri, diagnostics, tokenSource.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit.
+        }
+        catch
+        {
+            // Do not terminate language server loop on background diagnostics failures.
+        }
+        finally
+        {
+            if (_diagnosticUpdateTokens.TryGetValue(uri, out var activeToken) &&
+                ReferenceEquals(activeToken, tokenSource))
+            {
+                _diagnosticUpdateTokens.TryRemove(uri, out _);
+            }
+
+            tokenSource.Dispose();
+        }
+    }
+
+    private void HandleCancelRequest(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("id", out var id))
+        {
+            return;
+        }
+
+        var requestKey = CreateRequestKey(id);
+        if (string.IsNullOrEmpty(requestKey))
+        {
+            return;
+        }
+
+        if (_requestCancellationTokens.TryRemove(requestKey, out var tokenSource))
+        {
+            tokenSource.Cancel();
+            tokenSource.Dispose();
+        }
+    }
+
+    private void QueueRequest(
+        JsonElement id,
+        CancellationToken serverCancellationToken,
+        Func<CancellationToken, Task> requestHandler)
+    {
+        var requestKey = CreateRequestKey(id);
+        if (string.IsNullOrEmpty(requestKey))
+        {
+            return;
+        }
+
+        var requestTokenSource = CancellationTokenSource.CreateLinkedTokenSource(serverCancellationToken);
+        _requestCancellationTokens.AddOrUpdate(
+            requestKey,
+            requestTokenSource,
+            (_, existing) =>
+            {
+                existing.Cancel();
+                existing.Dispose();
+                return requestTokenSource;
+            });
+
+        var inflightId = Interlocked.Increment(ref _nextInflightRequestId);
+        var requestTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await requestHandler(requestTokenSource.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation is expected for stale requests.
+                }
+                catch (Exception ex)
+                {
+                    if (!requestTokenSource.IsCancellationRequested &&
+                        !serverCancellationToken.IsCancellationRequested)
+                    {
+                        await SendErrorAsync(
+                                id,
+                                code: -32603,
+                                message: "Request failed: " + ex.Message,
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    if (_requestCancellationTokens.TryGetValue(requestKey, out var active) &&
+                        ReferenceEquals(active, requestTokenSource))
+                    {
+                        _requestCancellationTokens.TryRemove(requestKey, out _);
+                    }
+
+                    requestTokenSource.Dispose();
+                    _inflightRequests.TryRemove(inflightId, out _);
+                }
+            },
+            CancellationToken.None);
+
+        _inflightRequests[inflightId] = requestTask;
+    }
+
+    private static string CreateRequestKey(JsonElement id)
+    {
+        if (id.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return string.Empty;
+        }
+
+        return id.GetRawText();
+    }
+
+    private void CancelAndDisposeRequestTokens()
+    {
+        foreach (var pair in _requestCancellationTokens)
+        {
+            try
+            {
+                pair.Value.Cancel();
+                pair.Value.Dispose();
+            }
+            catch
+            {
+                // Ignore shutdown cancellation failures.
+            }
+        }
+
+        _requestCancellationTokens.Clear();
+    }
+
+    private async Task DrainInflightRequestsAsync()
+    {
+        var pendingRequests = _inflightRequests.Values.ToArray();
+
+        if (pendingRequests.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.WhenAll(pendingRequests).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Individual request failures are handled per-request.
+        }
     }
 
     private async Task HandleCompletionAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
@@ -259,13 +505,13 @@ internal sealed class AxsgLanguageServer : IDisposable
         var completions = await _engine.GetCompletionsAsync(
             request.Uri,
             request.Position,
-            _options,
+            _navigationOptions,
             cancellationToken).ConfigureAwait(false);
 
         var items = new JsonArray();
         foreach (var completion in completions)
         {
-            items.Add(new JsonObject
+            var completionItem = new JsonObject
             {
                 ["label"] = completion.Label,
                 ["kind"] = ToCompletionKind(completion.Kind),
@@ -273,7 +519,14 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["detail"] = completion.Detail,
                 ["documentation"] = completion.Documentation,
                 ["deprecated"] = completion.IsDeprecated
-            });
+            };
+
+            if (ContainsSnippetPlaceholder(completion.InsertText))
+            {
+                completionItem["insertTextFormat"] = 2;
+            }
+
+            items.Add(completionItem);
         }
 
         var result = new JsonObject
@@ -291,7 +544,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         var hover = await _engine.GetHoverAsync(
             request.Uri,
             request.Position,
-            _options,
+            _navigationOptions,
             cancellationToken).ConfigureAwait(false);
 
         if (hover is null)
@@ -323,7 +576,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         var definitions = await _engine.GetDefinitionsAsync(
             request.Uri,
             request.Position,
-            _options,
+            _navigationOptions,
             cancellationToken).ConfigureAwait(false);
 
         var payload = new JsonArray();
@@ -332,11 +585,17 @@ internal sealed class AxsgLanguageServer : IDisposable
             payload.Add(new JsonObject
             {
                 ["uri"] = definition.Uri,
-                ["range"] = SerializeRange(definition.Range)
+                ["range"] = SerializeRange(NormalizeTransportRange(definition.Range))
             });
         }
 
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task HandleDeclarationAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        // Declaration semantics are aligned with definition for XAML symbols.
+        return HandleDefinitionAsync(id, parameters, cancellationToken);
     }
 
     private async Task HandleReferencesAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
@@ -353,7 +612,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         var references = await _engine.GetReferencesAsync(
             request.Uri,
             request.Position,
-            _options,
+            _navigationOptions,
             cancellationToken).ConfigureAwait(false);
 
         var payload = new JsonArray();
@@ -367,7 +626,7 @@ internal sealed class AxsgLanguageServer : IDisposable
             payload.Add(new JsonObject
             {
                 ["uri"] = reference.Uri,
-                ["range"] = SerializeRange(reference.Range)
+                ["range"] = SerializeRange(NormalizeTransportRange(reference.Range))
             });
         }
 
@@ -439,8 +698,8 @@ internal sealed class AxsgLanguageServer : IDisposable
         var response = new JsonObject
         {
             ["jsonrpc"] = "2.0",
-            ["id"] = JsonNode.Parse(id.GetRawText()),
-            ["result"] = value is null ? null : JsonSerializer.SerializeToNode(value)
+            ["id"] = CloneJsonElement(id),
+            ["result"] = SerializeResultValue(value)
         };
 
         return _writer.WriteAsync(response, cancellationToken);
@@ -451,7 +710,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         var response = new JsonObject
         {
             ["jsonrpc"] = "2.0",
-            ["id"] = JsonNode.Parse(id.GetRawText()),
+            ["id"] = CloneJsonElement(id),
             ["error"] = new JsonObject
             {
                 ["code"] = code,
@@ -460,6 +719,100 @@ internal sealed class AxsgLanguageServer : IDisposable
         };
 
         return _writer.WriteAsync(response, cancellationToken);
+    }
+
+    private static JsonNode? CloneJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => JsonValue.Create(element.GetString()),
+            JsonValueKind.Number => CloneNumberElement(element),
+            JsonValueKind.True => JsonValue.Create(true),
+            JsonValueKind.False => JsonValue.Create(false),
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            JsonValueKind.Object => CloneObjectElement(element),
+            JsonValueKind.Array => CloneArrayElement(element),
+            _ => JsonValue.Create(element.GetRawText())
+        };
+    }
+
+    private static JsonNode CloneNumberElement(JsonElement element)
+    {
+        if (element.TryGetInt64(out var int64Value))
+        {
+            return JsonValue.Create(int64Value)!;
+        }
+
+        if (element.TryGetUInt64(out var uint64Value))
+        {
+            return JsonValue.Create(uint64Value)!;
+        }
+
+        if (element.TryGetDecimal(out var decimalValue))
+        {
+            return JsonValue.Create(decimalValue)!;
+        }
+
+        if (element.TryGetDouble(out var doubleValue))
+        {
+            return JsonValue.Create(doubleValue)!;
+        }
+
+        var rawNumber = element.GetRawText();
+        if (decimal.TryParse(rawNumber, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDecimal))
+        {
+            return JsonValue.Create(parsedDecimal)!;
+        }
+
+        if (double.TryParse(rawNumber, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDouble))
+        {
+            return JsonValue.Create(parsedDouble)!;
+        }
+
+        return JsonValue.Create(rawNumber)!;
+    }
+
+    private static JsonObject CloneObjectElement(JsonElement element)
+    {
+        var objectNode = new JsonObject();
+        foreach (var property in element.EnumerateObject())
+        {
+            objectNode[property.Name] = CloneJsonElement(property.Value);
+        }
+
+        return objectNode;
+    }
+
+    private static JsonArray CloneArrayElement(JsonElement element)
+    {
+        var arrayNode = new JsonArray();
+        foreach (var item in element.EnumerateArray())
+        {
+            arrayNode.Add(CloneJsonElement(item));
+        }
+
+        return arrayNode;
+    }
+
+    private static JsonNode? SerializeResultValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonNode node)
+        {
+            return node.DeepClone();
+        }
+
+        if (value is JsonElement element)
+        {
+            return CloneJsonElement(element);
+        }
+
+        return JsonSerializer.SerializeToNode(value);
     }
 
     private static TextDocumentPositionRequest ParseTextDocumentPosition(JsonElement parameters)
@@ -498,6 +851,7 @@ internal sealed class AxsgLanguageServer : IDisposable
                 },
                 ["hoverProvider"] = true,
                 ["definitionProvider"] = true,
+                ["declarationProvider"] = true,
                 ["referencesProvider"] = true,
                 ["documentSymbolProvider"] = true,
                 ["semanticTokensProvider"] = new JsonObject
@@ -534,6 +888,30 @@ internal sealed class AxsgLanguageServer : IDisposable
         };
     }
 
+    private static bool ContainsSnippetPlaceholder(string? insertText)
+    {
+        if (string.IsNullOrWhiteSpace(insertText))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < insertText.Length - 1; i++)
+        {
+            if (insertText[i] != '$')
+            {
+                continue;
+            }
+
+            var next = insertText[i + 1];
+            if (char.IsDigit(next) || next == '{')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static JsonObject SerializeRange(SourceRange range)
     {
         return new JsonObject
@@ -549,6 +927,24 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["character"] = range.End.Character
             }
         };
+    }
+
+    private static SourceRange NormalizeTransportRange(SourceRange range)
+    {
+        var startLine = Math.Max(0, range.Start.Line);
+        var startCharacter = Math.Max(0, range.Start.Character);
+        var endLine = Math.Max(0, range.End.Line);
+        var endCharacter = Math.Max(0, range.End.Character);
+
+        if (endLine < startLine || (endLine == startLine && endCharacter <= startCharacter))
+        {
+            endLine = startLine;
+            endCharacter = startCharacter + 1;
+        }
+
+        return new SourceRange(
+            new SourcePosition(startLine, startCharacter),
+            new SourcePosition(endLine, endCharacter));
     }
 
     private static JsonObject SerializeSymbol(XamlDocumentSymbol symbol)
