@@ -4,6 +4,12 @@
   "description": "XAML/AXAML IntelliSense powered by XamlToCSharpGenerator.",
   "version": "0.1.0",
   "publisher": "xamltocsharpgenerator",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wieslawsoltes/XamlToCSharpGenerator.git",
+    "directory": "tools/vscode/axsg-language-server"
+  },
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -15,6 +21,15 @@
     "onLanguage:xaml"
   ],
   "main": "./extension.js",
+  "files": [
+    "extension.js",
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "node_modules/**",
+    "scripts/**",
+    "server/**"
+  ],
   "contributes": {
     "languages": [
       {
@@ -38,9 +53,212 @@
         ]
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "xamlDelimiter",
+        "description": "XAML delimiters and punctuation.",
+        "superType": "operator"
+      },
+      {
+        "id": "xamlName",
+        "description": "XAML element or type names.",
+        "superType": "type"
+      },
+      {
+        "id": "xamlAttribute",
+        "description": "XAML attribute names.",
+        "superType": "property"
+      },
+      {
+        "id": "xamlAttributeValue",
+        "description": "XAML attribute values.",
+        "superType": "string"
+      },
+      {
+        "id": "xamlAttributeQuotes",
+        "description": "XAML attribute quotes.",
+        "superType": "string"
+      },
+      {
+        "id": "xamlComment",
+        "description": "XAML comments.",
+        "superType": "comment"
+      },
+      {
+        "id": "xamlKeyword",
+        "description": "XAML keywords and directives.",
+        "superType": "keyword"
+      },
+      {
+        "id": "xamlMarkupExtensionClass",
+        "description": "Markup extension class names.",
+        "superType": "type"
+      },
+      {
+        "id": "xamlMarkupExtensionParameterName",
+        "description": "Markup extension parameter names.",
+        "superType": "property"
+      },
+      {
+        "id": "xamlMarkupExtensionParameterValue",
+        "description": "Markup extension parameter values.",
+        "superType": "string"
+      },
+      {
+        "id": "xamlNamespacePrefix",
+        "description": "XML namespace prefixes in XAML.",
+        "superType": "namespace"
+      },
+      {
+        "id": "xamlText",
+        "description": "Text nodes in XAML.",
+        "superType": "string"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "xaml",
+        "scopes": {
+          "xamlDelimiter": [
+            "punctuation.definition.tag.xml",
+            "punctuation.separator.key-value.xml"
+          ],
+          "xamlName": [
+            "entity.name.tag.xml"
+          ],
+          "xamlAttribute": [
+            "entity.other.attribute-name.xml"
+          ],
+          "xamlAttributeValue": [
+            "string.quoted.double.xml",
+            "string.quoted.single.xml"
+          ],
+          "xamlAttributeQuotes": [
+            "punctuation.definition.string.begin.xml",
+            "punctuation.definition.string.end.xml"
+          ],
+          "xamlComment": [
+            "comment.block.xml"
+          ],
+          "xamlKeyword": [
+            "keyword.other.xml"
+          ],
+          "xamlMarkupExtensionClass": [
+            "support.class.xml",
+            "entity.name.type.xml"
+          ],
+          "xamlMarkupExtensionParameterName": [
+            "variable.parameter.xml"
+          ],
+          "xamlMarkupExtensionParameterValue": [
+            "string.unquoted.xml"
+          ],
+          "xamlNamespacePrefix": [
+            "entity.name.namespace.xml"
+          ],
+          "xamlText": [
+            "text.xml"
+          ]
+        }
+      },
+      {
+        "language": "axaml",
+        "scopes": {
+          "xamlDelimiter": [
+            "punctuation.definition.tag.xml",
+            "punctuation.separator.key-value.xml"
+          ],
+          "xamlName": [
+            "entity.name.tag.xml"
+          ],
+          "xamlAttribute": [
+            "entity.other.attribute-name.xml"
+          ],
+          "xamlAttributeValue": [
+            "string.quoted.double.xml",
+            "string.quoted.single.xml"
+          ],
+          "xamlAttributeQuotes": [
+            "punctuation.definition.string.begin.xml",
+            "punctuation.definition.string.end.xml"
+          ],
+          "xamlComment": [
+            "comment.block.xml"
+          ],
+          "xamlKeyword": [
+            "keyword.other.xml"
+          ],
+          "xamlMarkupExtensionClass": [
+            "support.class.xml",
+            "entity.name.type.xml"
+          ],
+          "xamlMarkupExtensionParameterName": [
+            "variable.parameter.xml"
+          ],
+          "xamlMarkupExtensionParameterValue": [
+            "string.unquoted.xml"
+          ],
+          "xamlNamespacePrefix": [
+            "entity.name.namespace.xml"
+          ],
+          "xamlText": [
+            "text.xml"
+          ]
+        }
+      }
+    ],
+    "configurationDefaults": {
+      "[xaml]": {
+        "editor.semanticHighlighting.enabled": true,
+        "editor.semanticTokenColorCustomizations": {
+          "rules": {
+            "xamlDelimiter": "#0000FF",
+            "xamlName": "#A31515",
+            "xamlAttribute": "#FF0000",
+            "xamlAttributeValue": "#0000FF",
+            "xamlAttributeQuotes": "#0000FF",
+            "xamlComment": "#008000",
+            "xamlKeyword": "#0000FF",
+            "xamlMarkupExtensionClass": "#2B91AF",
+            "xamlMarkupExtensionParameterName": "#FF0000",
+            "xamlMarkupExtensionParameterValue": "#0000FF",
+            "xamlNamespacePrefix": "#008080",
+            "number": "#098658"
+          }
+        }
+      },
+      "[axaml]": {
+        "editor.semanticHighlighting.enabled": true,
+        "editor.semanticTokenColorCustomizations": {
+          "rules": {
+            "xamlDelimiter": "#0000FF",
+            "xamlName": "#A31515",
+            "xamlAttribute": "#FF0000",
+            "xamlAttributeValue": "#0000FF",
+            "xamlAttributeQuotes": "#0000FF",
+            "xamlComment": "#008000",
+            "xamlKeyword": "#0000FF",
+            "xamlMarkupExtensionClass": "#2B91AF",
+            "xamlMarkupExtensionParameterName": "#FF0000",
+            "xamlMarkupExtensionParameterValue": "#0000FF",
+            "xamlNamespacePrefix": "#008080",
+            "number": "#098658"
+          }
+        }
+      }
+    },
     "configuration": {
       "title": "AXSG Language Server",
       "properties": {
+        "axsg.languageServer.mode": {
+          "type": "string",
+          "enum": [
+            "bundled",
+            "custom"
+          ],
+          "default": "bundled",
+          "description": "Language server launch mode. 'bundled' runs the managed server packaged in the extension via dotnet. 'custom' runs the command configured below."
+        },
         "axsg.languageServer.command": {
           "type": "string",
           "default": "axsg-lsp",
@@ -65,9 +283,25 @@
           "description": "Trace level for AXSG language-server protocol communication."
         }
       }
+    },
+    "commands": [
+      {
+        "command": "axsg.languageServer.showInfo",
+        "title": "AXSG: Show Language Server Info",
+        "category": "AXSG"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "axsg.languageServer.showInfo"
+        }
+      ]
     }
   },
   "scripts": {
+    "prepare:server": "node ./scripts/prepare-server.js",
+    "vscode:prepublish": "npm run prepare:server",
     "lint": "echo \"no lint configured\"",
     "package": "npx @vscode/vsce package"
   },
