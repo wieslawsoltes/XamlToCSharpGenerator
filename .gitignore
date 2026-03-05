@@ -402,3 +402,4 @@ FodyWeavers.xsd
 /.idea
 /.tmp-tests
 /tools/vscode/axsg-language-server/server
+*.vsix
