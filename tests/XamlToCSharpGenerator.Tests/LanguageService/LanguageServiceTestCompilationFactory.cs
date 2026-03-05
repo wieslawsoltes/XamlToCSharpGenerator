@@ -18,6 +18,8 @@ internal static class LanguageServiceTestCompilationFactory
         const string source = """
                               using System;
 
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
                               namespace Avalonia.Metadata
                               {
                                   [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
@@ -26,8 +28,6 @@ internal static class LanguageServiceTestCompilationFactory
                                       public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
                                   }
                               }
-
-                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
 
                               namespace TestApp.Controls
                               {

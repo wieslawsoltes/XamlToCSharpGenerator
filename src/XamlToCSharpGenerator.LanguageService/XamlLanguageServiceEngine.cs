@@ -8,6 +8,7 @@ using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
 using XamlToCSharpGenerator.LanguageService.Hover;
+using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -22,6 +23,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlCompilerAnalysisService _analysisService;
     private readonly XamlCompletionService _completionService;
     private readonly XamlHoverService _hoverService;
+    private readonly XamlInlayHintService _inlayHintService;
     private readonly XamlDefinitionService _definitionService;
     private readonly XamlReferenceService _referenceService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
@@ -33,6 +35,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly ConcurrentDictionary<PositionRequestCacheKey, ImmutableArray<XamlDefinitionLocation>> _definitionCache =
         new();
     private readonly ConcurrentDictionary<PositionRequestCacheKey, ImmutableArray<XamlReferenceLocation>> _referenceCache =
+        new();
+    private readonly ConcurrentDictionary<InlayHintCacheKey, ImmutableArray<XamlInlayHint>> _inlayHintCache =
         new();
 
     public XamlLanguageServiceEngine()
@@ -47,6 +51,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _analysisService = new XamlCompilerAnalysisService(_compilationProvider);
         _completionService = new XamlCompletionService();
         _hoverService = new XamlHoverService();
+        _inlayHintService = new XamlInlayHintService();
         _definitionService = new XamlDefinitionService();
         _referenceService = new XamlReferenceService();
         _documentSymbolService = new XamlDocumentSymbolService();
@@ -177,6 +182,40 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return references;
     }
 
+    public async Task<ImmutableArray<XamlInlayHint>> GetInlayHintsAsync(
+        string uri,
+        SourceRange requestedRange,
+        XamlLanguageServiceOptions options,
+        XamlInlayHintOptions inlayHintOptions,
+        CancellationToken cancellationToken)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        inlayHintOptions ??= XamlInlayHintOptions.Default;
+
+        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        if (analysis is null)
+        {
+            return ImmutableArray<XamlInlayHint>.Empty;
+        }
+
+        var cacheKey = new InlayHintCacheKey(
+            Uri: uri,
+            Version: analysis.Document.Version,
+            WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
+            IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
+            IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics,
+            EnableBindingTypeHints: inlayHintOptions.EnableBindingTypeHints,
+            DisplayStyle: inlayHintOptions.TypeDisplayStyle);
+        if (_inlayHintCache.TryGetValue(cacheKey, out var cached))
+        {
+            return FilterInlayHints(cached, requestedRange);
+        }
+
+        var hints = _inlayHintService.GetInlayHints(analysis, inlayHintOptions);
+        _inlayHintCache[cacheKey] = hints;
+        return FilterInlayHints(hints, requestedRange);
+    }
+
     public async Task<ImmutableArray<XamlDocumentSymbol>> GetDocumentSymbolsAsync(
         string uri,
         XamlLanguageServiceOptions options,
@@ -281,6 +320,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
                 _referenceCache.TryRemove(cacheKey, out _);
             }
         }
+
+        foreach (var cacheKey in _inlayHintCache.Keys)
+        {
+            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
+            {
+                _inlayHintCache.TryRemove(cacheKey, out _);
+            }
+        }
     }
 
     private static PositionRequestCacheKey BuildPositionRequestCacheKey(
@@ -312,6 +359,41 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics);
     }
 
+    private static ImmutableArray<XamlInlayHint> FilterInlayHints(
+        ImmutableArray<XamlInlayHint> hints,
+        SourceRange requestedRange)
+    {
+        if (hints.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlInlayHint>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlInlayHint>();
+        foreach (var hint in hints)
+        {
+            if (ComparePositions(hint.Position, requestedRange.Start) < 0 ||
+                ComparePositions(hint.Position, requestedRange.End) > 0)
+            {
+                continue;
+            }
+
+            builder.Add(hint);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static int ComparePositions(SourcePosition left, SourcePosition right)
+    {
+        var lineComparison = left.Line.CompareTo(right.Line);
+        if (lineComparison != 0)
+        {
+            return lineComparison;
+        }
+
+        return left.Character.CompareTo(right.Character);
+    }
+
     private readonly record struct AnalysisCacheKey(
         string Uri,
         string WorkspaceRoot,
@@ -326,6 +408,15 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         bool IncludeSemanticDiagnostics,
         int Line,
         int Character);
+
+    private readonly record struct InlayHintCacheKey(
+        string Uri,
+        int Version,
+        string WorkspaceRoot,
+        bool IncludeCompilationDiagnostics,
+        bool IncludeSemanticDiagnostics,
+        bool EnableBindingTypeHints,
+        XamlInlayHintTypeDisplayStyle DisplayStyle);
 
     private readonly record struct DocumentCacheKey(string Uri, int Version);
 }

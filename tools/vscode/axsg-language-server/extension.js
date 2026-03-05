@@ -200,6 +200,7 @@ function resolveServerOptions(context) {
 
 function resolveClientOptions(context) {
   outputChannel = outputChannel ?? vscode.window.createOutputChannel('AXSG Language Server');
+  const configuration = vscode.workspace.getConfiguration('axsg');
   return {
     documentSelector: [
       { scheme: 'file', language: 'axaml' },
@@ -210,7 +211,11 @@ function resolveClientOptions(context) {
     },
     outputChannel,
     initializationOptions: {
-      extensionPath: context.extensionPath
+      extensionPath: context.extensionPath,
+      inlayHints: {
+        bindingTypeHintsEnabled: configuration.get('inlayHints.bindingTypeHints.enabled', true),
+        typeDisplayStyle: configuration.get('inlayHints.typeDisplayStyle', 'short')
+      }
     }
   };
 }

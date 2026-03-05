@@ -209,6 +209,7 @@
     ],
     "configurationDefaults": {
       "[xaml]": {
+        "editor.inlayHints.enabled": "onUnlessPressed",
         "editor.semanticHighlighting.enabled": true,
         "editor.semanticTokenColorCustomizations": {
           "rules": {
@@ -228,6 +229,7 @@
         }
       },
       "[axaml]": {
+        "editor.inlayHints.enabled": "onUnlessPressed",
         "editor.semanticHighlighting.enabled": true,
         "editor.semanticTokenColorCustomizations": {
           "rules": {
@@ -281,6 +283,20 @@
           ],
           "default": "off",
           "description": "Trace level for AXSG language-server protocol communication."
+        },
+        "axsg.inlayHints.bindingTypeHints.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show semantic type hints for compiled XAML bindings."
+        },
+        "axsg.inlayHints.typeDisplayStyle": {
+          "type": "string",
+          "enum": [
+            "short",
+            "qualified"
+          ],
+          "default": "short",
+          "description": "Controls whether AXSG XAML type hints use short type names or qualified CLR names."
         }
       }
     },

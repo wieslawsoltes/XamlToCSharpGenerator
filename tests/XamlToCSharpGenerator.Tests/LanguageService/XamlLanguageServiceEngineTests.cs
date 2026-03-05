@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Workspace;
 
@@ -157,6 +158,60 @@ public sealed class XamlLanguageServiceEngineTests
 
             return builder.ToString();
         }
+    }
+
+    [Fact]
+    public async Task InlayHints_ForCompiledBinding_ReturnResolvedTypeHint()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/InlayHintsView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:Button\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Content}\"/>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp");
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var hints = await engine.GetInlayHintsAsync(
+            uri,
+            new SourceRange(new SourcePosition(0, 0), new SourcePosition(2, 14)),
+            options,
+            new XamlInlayHintOptions(),
+            CancellationToken.None);
+
+        var hint = Assert.Single(hints);
+        Assert.Equal(": string", hint.Label);
+        Assert.Contains("Path: `Content`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Contains("Source type: `TestApp.Controls.Button`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Equal(1, hint.Position.Line);
+    }
+
+    [Fact]
+    public async Task InlayHints_ForExpressionBinding_DoNotEmitWhenResultTypeIsUnavailable()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ExpressionInlayHintsView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:Button\">\n" +
+                            "  <TextBlock Text=\"{= Content}\"/>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp");
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var hints = await engine.GetInlayHintsAsync(
+            uri,
+            new SourceRange(new SourcePosition(0, 0), new SourcePosition(2, 14)),
+            options,
+            new XamlInlayHintOptions(),
+            CancellationToken.None);
+
+        Assert.Empty(hints);
     }
 
     [Fact]

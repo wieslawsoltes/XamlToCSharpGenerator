@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageServer.Protocol;
@@ -20,6 +21,7 @@ internal sealed class AxsgLanguageServer : IDisposable
     private readonly XamlLanguageServiceEngine _engine;
     private readonly XamlLanguageServiceOptions _options;
     private readonly XamlLanguageServiceOptions _navigationOptions;
+    private XamlInlayHintOptions _inlayHintOptions = XamlInlayHintOptions.Default;
     private readonly ConcurrentDictionary<string, DocumentState> _openDocuments = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _diagnosticUpdateTokens = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _requestCancellationTokens = new(StringComparer.Ordinal);
@@ -104,6 +106,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         switch (method)
         {
             case "initialize":
+                _inlayHintOptions = ParseInlayHintOptions(parameters);
                 if (hasId)
                 {
                     await SendResponseAsync(id, BuildInitializeResult(), cancellationToken).ConfigureAwait(false);
@@ -206,6 +209,15 @@ internal sealed class AxsgLanguageServer : IDisposable
                     var requestId = id.Clone();
                     var requestParameters = parameters.Clone();
                     QueueRequest(requestId, cancellationToken, token => HandleSemanticTokensAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/inlayHint":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleInlayHintAsync(requestId, requestParameters, token));
                 }
                 break;
 
@@ -661,6 +673,47 @@ internal sealed class AxsgLanguageServer : IDisposable
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task HandleInlayHintAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentRange(parameters);
+        var hints = await _engine.GetInlayHintsAsync(
+            request.Uri,
+            request.Range,
+            _options,
+            _inlayHintOptions,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var hint in hints)
+        {
+            var hintObject = new JsonObject
+            {
+                ["position"] = new JsonObject
+                {
+                    ["line"] = hint.Position.Line,
+                    ["character"] = hint.Position.Character
+                },
+                ["label"] = hint.Label,
+                ["kind"] = (int)hint.Kind,
+                ["paddingLeft"] = hint.PaddingLeft,
+                ["paddingRight"] = hint.PaddingRight
+            };
+
+            if (!string.IsNullOrWhiteSpace(hint.Tooltip))
+            {
+                hintObject["tooltip"] = new JsonObject
+                {
+                    ["kind"] = "markdown",
+                    ["value"] = hint.Tooltip
+                };
+            }
+
+            payload.Add(hintObject);
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
     private Task PublishDiagnosticsAsync(
         string uri,
         ImmutableArray<LanguageServiceDiagnostic> diagnostics,
@@ -827,6 +880,55 @@ internal sealed class AxsgLanguageServer : IDisposable
                 position.GetProperty("character").GetInt32()));
     }
 
+    private static TextDocumentRangeRequest ParseTextDocumentRange(JsonElement parameters)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var range = parameters.GetProperty("range");
+        var start = range.GetProperty("start");
+        var end = range.GetProperty("end");
+
+        return new TextDocumentRangeRequest(
+            uri,
+            new SourceRange(
+                new SourcePosition(
+                    start.GetProperty("line").GetInt32(),
+                    start.GetProperty("character").GetInt32()),
+                new SourcePosition(
+                    end.GetProperty("line").GetInt32(),
+                    end.GetProperty("character").GetInt32())));
+    }
+
+    private static XamlInlayHintOptions ParseInlayHintOptions(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("initializationOptions", out var initializationOptions) ||
+            initializationOptions.ValueKind != JsonValueKind.Object ||
+            !initializationOptions.TryGetProperty("inlayHints", out var inlayHintsElement) ||
+            inlayHintsElement.ValueKind != JsonValueKind.Object)
+        {
+            return XamlInlayHintOptions.Default;
+        }
+
+        var enabled = true;
+        if (inlayHintsElement.TryGetProperty("bindingTypeHintsEnabled", out var enabledElement) &&
+            enabledElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            enabled = enabledElement.GetBoolean();
+        }
+
+        var displayStyle = XamlInlayHintTypeDisplayStyle.Short;
+        if (inlayHintsElement.TryGetProperty("typeDisplayStyle", out var displayStyleElement) &&
+            displayStyleElement.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = displayStyleElement.GetString();
+            if (string.Equals(rawValue, "qualified", StringComparison.OrdinalIgnoreCase))
+            {
+                displayStyle = XamlInlayHintTypeDisplayStyle.Qualified;
+            }
+        }
+
+        return new XamlInlayHintOptions(enabled, displayStyle);
+    }
+
     private static JsonObject BuildInitializeResult()
     {
         var tokenTypes = new JsonArray(XamlSemanticTokenService.TokenTypes.Select(static value => JsonValue.Create(value)).ToArray());
@@ -854,6 +956,7 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["declarationProvider"] = true,
                 ["referencesProvider"] = true,
                 ["documentSymbolProvider"] = true,
+                ["inlayHintProvider"] = true,
                 ["semanticTokensProvider"] = new JsonObject
                 {
                     ["legend"] = new JsonObject
@@ -1109,4 +1212,5 @@ internal sealed class AxsgLanguageServer : IDisposable
 
     private readonly record struct DocumentState(string Text, int Version);
     private sealed record TextDocumentPositionRequest(string Uri, SourcePosition Position);
+    private sealed record TextDocumentRangeRequest(string Uri, SourceRange Range);
 }

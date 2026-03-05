@@ -35,6 +35,7 @@ public sealed class LspServerIntegrationTests
         Assert.True(capabilities.GetProperty("declarationProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("referencesProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("documentSymbolProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("inlayHintProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("semanticTokensProvider").GetProperty("full").GetBoolean());
         Assert.Equal(2, capabilities.GetProperty("textDocumentSync").GetProperty("change").GetInt32());
     }
@@ -211,6 +212,61 @@ public sealed class LspServerIntegrationTests
         var contents = result.GetProperty("contents").GetProperty("value").GetString();
         Assert.Contains("Element", contents, StringComparison.Ordinal);
         Assert.Contains("Button", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InlayHint_Request_ReturnsCompiledBindingTypeHint()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/InlayHintView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:Button\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Content}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(21, "textDocument/inlayHint", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = 0,
+                    ["character"] = 0
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = 2,
+                    ["character"] = 14
+                }
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(21);
+        var hints = response.RootElement.GetProperty("result");
+        Assert.Equal(1, hints.GetArrayLength());
+
+        var hint = hints[0];
+        Assert.Equal(": string", hint.GetProperty("label").GetString());
+        Assert.Equal(1, hint.GetProperty("kind").GetInt32());
+        Assert.Contains("Compiled Binding", hint.GetProperty("tooltip").GetProperty("value").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
