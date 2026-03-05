@@ -184,6 +184,10 @@ public sealed class XamlLanguageServiceEngineTests
 
         var hint = Assert.Single(hints);
         Assert.Equal(": string", hint.Label);
+        Assert.Equal(2, hint.LabelParts.Length);
+        Assert.Equal(": ", hint.LabelParts[0].Value);
+        Assert.Equal("string", hint.LabelParts[1].Value);
+        Assert.NotNull(hint.LabelParts[1].DefinitionLocation);
         Assert.Contains("Path: `Content`", hint.Tooltip, StringComparison.Ordinal);
         Assert.Contains("Source type: `TestApp.Controls.Button`", hint.Tooltip, StringComparison.Ordinal);
         Assert.Equal(1, hint.Position.Line);
@@ -212,6 +216,66 @@ public sealed class XamlLanguageServiceEngineTests
             CancellationToken.None);
 
         Assert.Empty(hints);
+    }
+
+    [Fact]
+    public async Task InlayHints_ForElementNameBinding_ReturnResolvedTypeHint()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ElementNameInlayHintsView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <Button x:Name=\"SubmitButton\" Content=\"Save\"/>\n" +
+                            "  <TextBlock Text=\"{Binding ElementName=SubmitButton, Path=Content}\"/>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp");
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var hints = await engine.GetInlayHintsAsync(
+            uri,
+            new SourceRange(new SourcePosition(0, 0), new SourcePosition(3, 14)),
+            options,
+            new XamlInlayHintOptions(),
+            CancellationToken.None);
+
+        var hint = Assert.Single(hints);
+        Assert.Equal(": string", hint.Label);
+        Assert.Contains("Path: `Content`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Contains("Source type: `TestApp.Controls.Button`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Equal(2, hint.Position.Line);
+    }
+
+    [Fact]
+    public async Task InlayHints_ForAncestorTypeBinding_ReturnResolvedTypeHint()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/AncestorTypeInlayHintsView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:controls=\"using:TestApp.Controls\">\n" +
+                            "  <controls:Border>\n" +
+                            "    <TextBlock Text=\"{Binding RelativeSource={RelativeSource AncestorType=controls:Border}, Path=Child}\"/>\n" +
+                            "  </controls:Border>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp");
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var hints = await engine.GetInlayHintsAsync(
+            uri,
+            new SourceRange(new SourcePosition(0, 0), new SourcePosition(4, 14)),
+            options,
+            new XamlInlayHintOptions(),
+            CancellationToken.None);
+
+        var hint = Assert.Single(hints);
+        Assert.Equal(": object", hint.Label);
+        Assert.Contains("Path: `Child`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Contains("Source type: `TestApp.Controls.Border`", hint.Tooltip, StringComparison.Ordinal);
+        Assert.Equal(2, hint.Position.Line);
     }
 
     [Fact]
@@ -415,6 +479,102 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_ForBindingPathProperty_ResolvesPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingPathPropertyDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Name}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("{Binding Name}", StringComparison.Ordinal) + "{Binding ".Length + 1),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForBindingPathProperty_WithElementNameSource_ResolvesPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingPathElementNameDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <Button x:Name=\"SubmitButton\" Content=\"Save\"/>\n" +
+                            "  <TextBlock Text=\"{Binding ElementName=SubmitButton, Path=Content}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var contentOffset = xaml.IndexOf("Path=Content", StringComparison.Ordinal);
+        Assert.True(contentOffset >= 0, "Expected binding Path token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, contentOffset + "Path=".Length + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForNestedBindingPathProperty_ResolvesNestedPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/NestedBindingPathPropertyDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Customer.DisplayName}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var displayNameOffset = xaml.IndexOf("DisplayName", StringComparison.Ordinal);
+        Assert.True(displayNameOffset >= 0, "Expected nested binding property token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, displayNameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForBindingAncestorTypeToken_ResolvesTypeSource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingAncestorTypeDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:controls=\"using:TestApp.Controls\">\n" +
+                            "  <controls:Border>\n" +
+                            "    <TextBlock Text=\"{Binding RelativeSource={RelativeSource AncestorType=controls:Border}, Path=Child}\"/>\n" +
+                            "  </controls:Border>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var ancestorTokenOffset = xaml.IndexOf("controls:Border", xaml.IndexOf("AncestorType=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(ancestorTokenOffset >= 0, "Expected AncestorType token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, ancestorTokenOffset + "controls:".Length + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Definition_ForStaticResource_ResolvesResourceDeclaration()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -461,6 +621,31 @@ public sealed class XamlLanguageServiceEngineTests
 
         Assert.True(references.Length >= 2);
         Assert.Contains(references, item => item.IsDeclaration && item.Range.Start.Line == 1);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+    }
+
+    [Fact]
+    public async Task References_ForBindingPathProperty_ReturnDeclarationAndBindingUsages()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingPathReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Name}\"/>\n" +
+                            "  <TextBlock Text=\"{Binding Path=Name}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("{Binding Name}", StringComparison.Ordinal) + "{Binding ".Length + 1),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 3);
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 1);
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
     }
 

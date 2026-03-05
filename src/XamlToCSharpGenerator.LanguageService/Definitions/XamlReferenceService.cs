@@ -126,6 +126,31 @@ public sealed class XamlReferenceService
             return ImmutableArray<XamlReferenceLocation>.Empty;
         }
 
+        if (XamlBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var bindingTarget))
+        {
+            if (bindingTarget.Kind == XamlBindingNavigationTargetKind.Property &&
+                bindingTarget.OwnerTypeInfo is not null &&
+                bindingTarget.PropertyInfo is not null)
+            {
+                return CollectPropertyReferences(
+                    analysis,
+                    bindingTarget.OwnerTypeInfo,
+                    bindingTarget.PropertyInfo);
+            }
+
+            if (bindingTarget.Kind == XamlBindingNavigationTargetKind.Type &&
+                bindingTarget.TypeReference is { } bindingTypeReference)
+            {
+                if (analysis.TypeIndex.TryGetTypeByFullTypeName(bindingTypeReference.FullTypeName, out var bindingTypeInfo) &&
+                    bindingTypeInfo is not null)
+                {
+                    return CollectTypeReferences(analysis, bindingTypeInfo);
+                }
+
+                return CollectTypeAttributeValueReferences(analysis, bindingTypeReference);
+            }
+        }
+
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
         var prefixMap = analysis.PrefixMap;
         var token = string.IsNullOrWhiteSpace(context.Token) ? identifier : context.Token;
@@ -356,6 +381,24 @@ public sealed class XamlReferenceService
                             markupRange,
                             isDeclaration: false);
                     }
+
+                    if (attribute.Value.IndexOf('{') >= 0)
+                    {
+                        foreach (var bindingRange in XamlBindingNavigationService.FindTypeReferenceRanges(
+                                     analysis,
+                                     source.Text,
+                                     element,
+                                     attribute,
+                                     typeInfo.FullTypeName))
+                        {
+                            AddReference(
+                                builder,
+                                seen,
+                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                bindingRange,
+                                isDeclaration: false);
+                        }
+                    }
                 }
             }
         }
@@ -548,6 +591,25 @@ public sealed class XamlReferenceService
                             UriPathHelper.ToDocumentUri(source.FilePath),
                             setterValueRange,
                             isDeclaration: false);
+                    }
+
+                    if (attribute.Value.IndexOf('{') >= 0)
+                    {
+                        foreach (var bindingRange in XamlBindingNavigationService.FindPropertyReferenceRanges(
+                                     analysis,
+                                     source.Text,
+                                     element,
+                                     attribute,
+                                     ownerTypeInfo,
+                                     targetProperty))
+                        {
+                            AddReference(
+                                builder,
+                                seen,
+                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                bindingRange,
+                                isDeclaration: false);
+                        }
                     }
 
                     if (!IsPropertyReferenceMatch(

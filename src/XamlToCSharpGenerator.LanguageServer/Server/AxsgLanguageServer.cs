@@ -693,11 +693,48 @@ internal sealed class AxsgLanguageServer : IDisposable
                     ["line"] = hint.Position.Line,
                     ["character"] = hint.Position.Character
                 },
-                ["label"] = hint.Label,
                 ["kind"] = (int)hint.Kind,
                 ["paddingLeft"] = hint.PaddingLeft,
                 ["paddingRight"] = hint.PaddingRight
             };
+
+            if (hint.LabelParts.IsDefaultOrEmpty)
+            {
+                hintObject["label"] = hint.Label;
+            }
+            else
+            {
+                var labelParts = new JsonArray();
+                foreach (var part in hint.LabelParts)
+                {
+                    var partObject = new JsonObject
+                    {
+                        ["value"] = part.Value
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(part.Tooltip))
+                    {
+                        partObject["tooltip"] = new JsonObject
+                        {
+                            ["kind"] = "markdown",
+                            ["value"] = part.Tooltip
+                        };
+                    }
+
+                    if (part.DefinitionLocation is { } definitionLocation)
+                    {
+                        partObject["location"] = new JsonObject
+                        {
+                            ["uri"] = definitionLocation.Uri,
+                            ["range"] = SerializeRange(NormalizeTransportRange(definitionLocation.Range))
+                        };
+                    }
+
+                    labelParts.Add(partObject);
+                }
+
+                hintObject["label"] = labelParts;
+            }
 
             if (!string.IsNullOrWhiteSpace(hint.Tooltip))
             {

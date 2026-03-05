@@ -5,8 +5,11 @@ using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
 
 namespace XamlToCSharpGenerator.LanguageService.InlayHints;
@@ -21,7 +24,6 @@ public sealed class XamlInlayHintService
         options ??= XamlInlayHintOptions.Default;
 
         if (!options.EnableBindingTypeHints ||
-            analysis.ViewModel is null ||
             analysis.XmlDocument is null ||
             string.IsNullOrWhiteSpace(analysis.Document.Text))
         {
@@ -32,42 +34,70 @@ public sealed class XamlInlayHintService
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var xmlLocationIndex = XmlLocationIndex.Create(analysis.XmlDocument);
 
-        foreach (var compiledBinding in analysis.ViewModel.CompiledBindings)
+        if (analysis.ViewModel is not null)
         {
-            if (string.IsNullOrWhiteSpace(compiledBinding.ResultTypeName))
+            foreach (var compiledBinding in analysis.ViewModel.CompiledBindings)
             {
-                continue;
-            }
+                if (string.IsNullOrWhiteSpace(compiledBinding.ResultTypeName))
+                {
+                    continue;
+                }
 
-            if (!TryResolveBindingValueRange(
-                    analysis.Document.Text,
-                    xmlLocationIndex,
-                    compiledBinding,
-                    out var valueRange))
+                if (!TryResolveBindingValueRange(
+                        analysis.Document.Text,
+                        xmlLocationIndex,
+                        compiledBinding,
+                        out var valueRange))
+                {
+                    continue;
+                }
+
+                AddInlayHint(
+                    builder,
+                    seen,
+                    valueRange,
+                    options,
+                    compiledBinding.ResultTypeName!,
+                    BuildTooltip(
+                        heading: "**Compiled Binding**",
+                        targetTypeName: compiledBinding.TargetTypeName,
+                        targetPropertyName: compiledBinding.TargetPropertyName,
+                        path: compiledBinding.Path,
+                        sourceTypeName: compiledBinding.SourceTypeName,
+                        resultTypeName: compiledBinding.ResultTypeName!),
+                    TryResolveTypeLocation(analysis, compiledBinding.ResultTypeName!));
+            }
+        }
+
+        foreach (var element in analysis.XmlDocument.Root?.DescendantsAndSelf() ?? Enumerable.Empty<XElement>())
+        {
+            foreach (var attribute in element.Attributes())
             {
-                continue;
-            }
+                if (!XamlBindingNavigationService.TryResolveInlayHintTarget(
+                        analysis,
+                        analysis.Document.Text,
+                        element,
+                        attribute,
+                        out var bindingHint))
+                {
+                    continue;
+                }
 
-            var inlineTypeName = FormatInlineTypeName(compiledBinding, options.TypeDisplayStyle);
-            if (inlineTypeName.Length == 0)
-            {
-                continue;
+                AddInlayHint(
+                    builder,
+                    seen,
+                    bindingHint.HintAnchorRange,
+                    options,
+                    bindingHint.ResultTypeName,
+                    BuildTooltip(
+                        heading: "**Binding Type**",
+                        targetTypeName: null,
+                        targetPropertyName: null,
+                        path: bindingHint.Path,
+                        sourceTypeName: bindingHint.SourceTypeName,
+                        resultTypeName: bindingHint.ResultTypeName),
+                    bindingHint.ResultTypeLocation);
             }
-
-            var label = ": " + inlineTypeName;
-            var identity = valueRange.End.Line + ":" + valueRange.End.Character + ":" + label;
-            if (!seen.Add(identity))
-            {
-                continue;
-            }
-
-            builder.Add(new XamlInlayHint(
-                Position: valueRange.End,
-                Label: label,
-                Kind: XamlInlayHintKind.Type,
-                Tooltip: BuildTooltip(compiledBinding),
-                PaddingLeft: true,
-                PaddingRight: false));
         }
 
         return builder
@@ -103,31 +133,127 @@ public sealed class XamlInlayHintService
                XamlXmlSourceRangeService.TryCreateAttributeValueRange(text, attribute, out range);
     }
 
+    private static void AddInlayHint(
+        ImmutableArray<XamlInlayHint>.Builder builder,
+        HashSet<string> seen,
+        SourceRange valueRange,
+        XamlInlayHintOptions options,
+        string resultTypeName,
+        string tooltip,
+        AvaloniaSymbolSourceLocation? typeLocation)
+    {
+        var inlineTypeName = FormatInlineTypeName(resultTypeName, options.TypeDisplayStyle);
+        if (inlineTypeName.Length == 0)
+        {
+            return;
+        }
+
+        var label = ": " + inlineTypeName;
+        var identity = valueRange.End.Line + ":" + valueRange.End.Character + ":" + label;
+        if (!seen.Add(identity))
+        {
+            return;
+        }
+
+        builder.Add(new XamlInlayHint(
+            Position: valueRange.End,
+            Label: label,
+            Kind: XamlInlayHintKind.Type,
+            Tooltip: tooltip,
+            PaddingLeft: true,
+            PaddingRight: false,
+            LabelParts:
+            [
+                new XamlInlayHintLabelPart(": "),
+                new XamlInlayHintLabelPart(inlineTypeName, tooltip, typeLocation)
+            ]));
+    }
+
     private static string FormatInlineTypeName(
-        ResolvedCompiledBindingDefinition compiledBinding,
+        string typeName,
         XamlInlayHintTypeDisplayStyle displayStyle)
     {
-        var typeName = compiledBinding.ResultTypeName!;
         return displayStyle == XamlInlayHintTypeDisplayStyle.Qualified
             ? NormalizeQualifiedTypeName(typeName)
             : ShortenTypeName(typeName);
     }
 
-    private static string BuildTooltip(ResolvedCompiledBindingDefinition compiledBinding)
+    private static string BuildTooltip(
+        string heading,
+        string? targetTypeName,
+        string? targetPropertyName,
+        string path,
+        string sourceTypeName,
+        string resultTypeName)
     {
-        var sourceTypeName = NormalizeQualifiedTypeName(compiledBinding.SourceTypeName);
-        var resultTypeName = string.IsNullOrWhiteSpace(compiledBinding.ResultTypeName)
-            ? "<unavailable>"
-            : NormalizeQualifiedTypeName(compiledBinding.ResultTypeName!);
+        var lines = new List<string>
+        {
+            heading,
+            string.Empty
+        };
 
-        return string.Join(
-            "\n",
-            "**Compiled Binding**",
-            string.Empty,
-            "- Target: `" + NormalizeQualifiedTypeName(compiledBinding.TargetTypeName) + "." + compiledBinding.TargetPropertyName + "`",
-            "- Path: `" + compiledBinding.Path + "`",
-            "- Source type: `" + sourceTypeName + "`",
-            "- Result type: `" + resultTypeName + "`");
+        if (!string.IsNullOrWhiteSpace(targetTypeName) &&
+            !string.IsNullOrWhiteSpace(targetPropertyName))
+        {
+            lines.Add("- Target: `" + NormalizeQualifiedTypeName(targetTypeName) + "." + targetPropertyName + "`");
+        }
+
+        lines.Add("- Path: `" + path + "`");
+        lines.Add("- Source type: `" + NormalizeQualifiedTypeName(sourceTypeName) + "`");
+        lines.Add("- Result type: `" + NormalizeQualifiedTypeName(resultTypeName) + "`");
+        return string.Join("\n", lines);
+    }
+
+    private static AvaloniaSymbolSourceLocation? TryResolveTypeLocation(
+        XamlAnalysisResult analysis,
+        string resultTypeName)
+    {
+        var normalizedTypeName = NormalizeQualifiedTypeName(resultTypeName);
+        if (analysis.TypeIndex?.TryGetTypeByFullTypeName(normalizedTypeName, out var typeInfo) == true &&
+            typeInfo is not null)
+        {
+            return XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeInfo);
+        }
+
+        if (TryResolveClrTypeSymbol(analysis.Compilation, normalizedTypeName) is { } typeSymbol)
+        {
+            return XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeSymbol);
+        }
+
+        return string.IsNullOrWhiteSpace(normalizedTypeName)
+            ? null
+            : new AvaloniaSymbolSourceLocation(
+                XamlMetadataSymbolUri.CreateTypeUri(normalizedTypeName),
+                XamlClrNavigationLocationResolver.MetadataNavigationRange);
+    }
+
+    private static ITypeSymbol? TryResolveClrTypeSymbol(Compilation? compilation, string typeName)
+    {
+        if (compilation is null || string.IsNullOrWhiteSpace(typeName))
+        {
+            return null;
+        }
+
+        return typeName switch
+        {
+            "bool" or "System.Boolean" => compilation.GetSpecialType(SpecialType.System_Boolean),
+            "byte" or "System.Byte" => compilation.GetSpecialType(SpecialType.System_Byte),
+            "char" or "System.Char" => compilation.GetSpecialType(SpecialType.System_Char),
+            "decimal" or "System.Decimal" => compilation.GetSpecialType(SpecialType.System_Decimal),
+            "double" or "System.Double" => compilation.GetSpecialType(SpecialType.System_Double),
+            "short" or "System.Int16" => compilation.GetSpecialType(SpecialType.System_Int16),
+            "int" or "System.Int32" => compilation.GetSpecialType(SpecialType.System_Int32),
+            "long" or "System.Int64" => compilation.GetSpecialType(SpecialType.System_Int64),
+            "object" or "System.Object" => compilation.GetSpecialType(SpecialType.System_Object),
+            "sbyte" or "System.SByte" => compilation.GetSpecialType(SpecialType.System_SByte),
+            "float" or "System.Single" => compilation.GetSpecialType(SpecialType.System_Single),
+            "string" or "System.String" => compilation.GetSpecialType(SpecialType.System_String),
+            "ushort" or "System.UInt16" => compilation.GetSpecialType(SpecialType.System_UInt16),
+            "uint" or "System.UInt32" => compilation.GetSpecialType(SpecialType.System_UInt32),
+            "ulong" or "System.UInt64" => compilation.GetSpecialType(SpecialType.System_UInt64),
+            "void" or "System.Void" => compilation.GetSpecialType(SpecialType.System_Void),
+            _ => compilation.GetTypeByMetadataName(typeName)
+        };
     }
 
     private static string NormalizeQualifiedTypeName(string typeName)

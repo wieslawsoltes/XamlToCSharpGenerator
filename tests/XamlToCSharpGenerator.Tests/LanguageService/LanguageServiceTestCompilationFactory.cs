@@ -33,6 +33,10 @@ internal static class LanguageServiceTestCompilationFactory
                               {
                                   public class UserControl { }
                                   public class StackPanel { }
+                                  public class Border
+                                  {
+                                      public object Child { get; set; } = new object();
+                                  }
 
                                   public class Visual
                                   {
@@ -57,6 +61,17 @@ internal static class LanguageServiceTestCompilationFactory
                                   public class TextBlock
                                   {
                                       public string Text { get; set; } = string.Empty;
+                                  }
+
+                                  public class CustomerViewModel
+                                  {
+                                      public string DisplayName { get; set; } = string.Empty;
+                                  }
+
+                                  public class MainWindowViewModel
+                                  {
+                                      public string Name { get; set; } = string.Empty;
+                                      public CustomerViewModel Customer { get; set; } = new CustomerViewModel();
                                   }
 
                                   public class MyExtension

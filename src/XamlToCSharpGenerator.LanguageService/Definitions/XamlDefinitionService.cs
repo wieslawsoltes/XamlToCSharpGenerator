@@ -8,10 +8,6 @@ namespace XamlToCSharpGenerator.LanguageService.Definitions;
 
 public sealed class XamlDefinitionService
 {
-    private static readonly SourceRange MetadataDefinitionRange = new(
-        new SourcePosition(0, 0),
-        new SourcePosition(0, 1));
-
     public ImmutableArray<XamlDefinitionLocation> GetDefinitions(XamlAnalysisResult analysis, SourcePosition position)
     {
         var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
@@ -181,6 +177,27 @@ public sealed class XamlDefinitionService
             return ImmutableArray<XamlDefinitionLocation>.Empty;
         }
 
+        if (XamlBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var bindingTarget))
+        {
+            if (bindingTarget.Kind == XamlBindingNavigationTargetKind.Property &&
+                bindingTarget.OwnerTypeInfo is not null &&
+                bindingTarget.PropertyInfo is not null &&
+                TryResolvePropertyDefinition(
+                    analysis,
+                    bindingTarget.OwnerTypeInfo,
+                    bindingTarget.PropertyInfo,
+                    out var bindingPropertyDefinition))
+            {
+                return [bindingPropertyDefinition];
+            }
+
+            if (bindingTarget.Kind == XamlBindingNavigationTargetKind.Type &&
+                bindingTarget.TypeReference is { } bindingTypeReference)
+            {
+                return [CreateTypeDefinitionLocation(analysis, bindingTypeReference)];
+            }
+        }
+
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
         var prefixMap = analysis.PrefixMap;
         var token = string.IsNullOrWhiteSpace(context.Token) ? identifier : context.Token;
@@ -306,17 +323,46 @@ public sealed class XamlDefinitionService
             return false;
         }
 
+        return TryResolvePropertyDefinition(analysis, ownerTypeInfo: null, propertyInfo, out definitionLocation, resolvedOwnerTypeToken: propertyToken.Contains('.', StringComparison.Ordinal)
+            ? propertyToken[..propertyToken.IndexOf('.', StringComparison.Ordinal)]
+            : ownerTypeToken ?? string.Empty, prefixMap);
+    }
+
+    private static bool TryResolvePropertyDefinition(
+        XamlAnalysisResult analysis,
+        XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaTypeInfo ownerTypeInfo,
+        XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaPropertyInfo propertyInfo,
+        out XamlDefinitionLocation definitionLocation)
+    {
+        return TryResolvePropertyDefinition(
+            analysis,
+            ownerTypeInfo,
+            propertyInfo,
+            out definitionLocation,
+            resolvedOwnerTypeToken: ownerTypeInfo.FullTypeName,
+            prefixMap: analysis.PrefixMap);
+    }
+
+    private static bool TryResolvePropertyDefinition(
+        XamlAnalysisResult analysis,
+        XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaTypeInfo? ownerTypeInfo,
+        XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaPropertyInfo propertyInfo,
+        out XamlDefinitionLocation definitionLocation,
+        string resolvedOwnerTypeToken,
+        ImmutableDictionary<string, string> prefixMap)
+    {
+        definitionLocation = default!;
+
         if (propertyInfo.SourceLocation is { } propertyLocation)
         {
             definitionLocation = new XamlDefinitionLocation(propertyLocation.Uri, propertyLocation.Range);
             return true;
         }
 
-        var resolvedOwnerTypeToken = propertyToken.Contains('.', StringComparison.Ordinal)
-            ? propertyToken[..propertyToken.IndexOf('.', StringComparison.Ordinal)]
-            : ownerTypeToken ?? string.Empty;
-        if (!XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex!, prefixMap, resolvedOwnerTypeToken, out var ownerType) ||
-            ownerType is null)
+        var ownerType = ownerTypeInfo;
+        if (ownerType is null &&
+            (!XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex!, prefixMap, resolvedOwnerTypeToken, out ownerType) ||
+             ownerType is null))
         {
             return false;
         }
@@ -338,7 +384,7 @@ public sealed class XamlDefinitionService
             propertyInfo.TypeName,
             propertyInfo.IsAttached,
             propertyInfo.IsSettable);
-        definitionLocation = new XamlDefinitionLocation(metadataUri, MetadataDefinitionRange);
+        definitionLocation = new XamlDefinitionLocation(metadataUri, XamlClrNavigationLocationResolver.MetadataNavigationRange);
         return true;
     }
 
@@ -346,44 +392,16 @@ public sealed class XamlDefinitionService
         XamlAnalysisResult analysis,
         XamlResolvedTypeReference typeReference)
     {
-        if (typeReference.SourceLocation is { } sourceLocation)
-        {
-            return new XamlDefinitionLocation(sourceLocation.Uri, sourceLocation.Range);
-        }
-
-        if (XamlSourceLinkResolver.TryResolveTypeLocation(
-                analysis,
-                typeReference.FullTypeName,
-                typeReference.AssemblyName,
-                out var sourceLinkLocation))
-        {
-            return new XamlDefinitionLocation(sourceLinkLocation.Uri, sourceLinkLocation.Range);
-        }
-
-        var metadataUri = XamlMetadataSymbolUri.CreateTypeUri(typeReference.FullTypeName);
-        return new XamlDefinitionLocation(metadataUri, MetadataDefinitionRange);
+        var location = XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeReference);
+        return new XamlDefinitionLocation(location.Uri, location.Range);
     }
 
     private static XamlDefinitionLocation CreateTypeDefinitionLocation(
         XamlAnalysisResult analysis,
         XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaTypeInfo typeInfo)
     {
-        if (typeInfo.SourceLocation is { } sourceLocation)
-        {
-            return new XamlDefinitionLocation(sourceLocation.Uri, sourceLocation.Range);
-        }
-
-        if (XamlSourceLinkResolver.TryResolveTypeLocation(
-                analysis,
-                typeInfo.FullTypeName,
-                typeInfo.AssemblyName,
-                out var sourceLinkLocation))
-        {
-            return new XamlDefinitionLocation(sourceLinkLocation.Uri, sourceLinkLocation.Range);
-        }
-
-        var metadataUri = XamlMetadataSymbolUri.CreateTypeUri(typeInfo.FullTypeName);
-        return new XamlDefinitionLocation(metadataUri, MetadataDefinitionRange);
+        var location = XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeInfo);
+        return new XamlDefinitionLocation(location.Uri, location.Range);
     }
 
     private static string GetLocalName(string? qualifiedName)
