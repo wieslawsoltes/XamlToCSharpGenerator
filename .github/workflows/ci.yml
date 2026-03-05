@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-test:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,17 +20,47 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore required workloads (android, ios)
-        run: dotnet workload restore XamlToCSharpGenerator.sln --nologo --skip-manifest-update
-
       - name: Restore
-        run: dotnet restore XamlToCSharpGenerator.sln --nologo
+        run: dotnet restore XamlToCSharpGenerator.CI.slnf --nologo
 
       - name: Build
-        run: dotnet build XamlToCSharpGenerator.sln --nologo -m:1 /nodeReuse:false --disable-build-servers
+        run: dotnet build XamlToCSharpGenerator.CI.slnf --nologo -m:1 /nodeReuse:false --disable-build-servers
 
       - name: Test
         run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers --no-build
+
+  mobile-build:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Xcode 26.2
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.2"
+
+      - name: Verify Xcode
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Restore iOS workload
+        run: dotnet workload restore samples/ControlCatalog.iOS/ControlCatalog.iOS.csproj --nologo --skip-manifest-update
+
+      - name: Restore Android workload
+        run: dotnet workload restore samples/ControlCatalog.Android/ControlCatalog.Android.csproj --nologo --skip-manifest-update
+
+      - name: Build iOS sample
+        run: dotnet build samples/ControlCatalog.iOS/ControlCatalog.iOS.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers
+
+      - name: Build Android sample
+        run: dotnet build samples/ControlCatalog.Android/ControlCatalog.Android.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers
 
   perf-sourcegen:
     runs-on: ubuntu-latest
