@@ -228,10 +228,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string rawPath,
         out string accessorExpression,
         out string normalizedPath,
+        out string? resultTypeName,
         out string errorMessage)
     {
         accessorExpression = "source";
         normalizedPath = string.IsNullOrWhiteSpace(rawPath) ? "." : rawPath.Trim();
+        resultTypeName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         errorMessage = string.Empty;
 
         if (normalizedPath == ".")
@@ -481,6 +483,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         accessorExpression = expressionBuilder;
+        resultTypeName = currentType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? resultTypeName;
         if (normalizedSegments.Count > 0)
         {
             normalizedPath = string.Join(string.Empty, normalizedSegments);
@@ -3279,6 +3282,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     TargetPropertyName: propertyName,
                     Path: "{= " + normalizedExpression + " }",
                     SourceTypeName: nodeDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ResultTypeName: null,
                     AccessorExpression: expressionAccessorExpression,
                     IsSetterBinding: false,
                     Line: assignment.Line,
@@ -3355,6 +3359,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         bindingMarkup.Path,
                         out var accessorExpression,
                         out var normalizedPath,
+                        out var resultTypeName,
                         out var errorMessage))
                 {
                     diagnostics.Add(new DiagnosticInfo(
@@ -3374,6 +3379,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         TargetPropertyName: propertyName,
                         Path: normalizedPath,
                         SourceTypeName: nodeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ResultTypeName: resultTypeName,
                         AccessorExpression: accessorExpression,
                         IsSetterBinding: false,
                         Line: assignment.Line,

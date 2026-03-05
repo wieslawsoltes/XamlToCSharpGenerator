@@ -5,6 +5,7 @@ public sealed record ResolvedCompiledBindingDefinition(
     string TargetPropertyName,
     string Path,
     string SourceTypeName,
+    string? ResultTypeName,
     string AccessorExpression,
     bool IsSetterBinding,
     int Line,

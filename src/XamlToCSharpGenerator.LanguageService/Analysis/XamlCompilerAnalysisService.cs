@@ -53,6 +53,8 @@ public sealed class XamlCompilerAnalysisService
             diagnostics.AddRange(snapshot.Diagnostics);
         }
 
+        ResolvedViewModel? resolvedViewModel = null;
+
         var generatorOptions = GeneratorOptionsDefaults.Create(snapshot.Compilation, Path.GetDirectoryName(document.FilePath));
         var parser = CreateParser(snapshot.Compilation, generatorOptions);
 
@@ -64,16 +66,20 @@ public sealed class XamlCompilerAnalysisService
 
         diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(parseDiagnostics));
 
-        if (options.IncludeSemanticDiagnostics && parsedDocument is not null && snapshot.Compilation is not null)
+        if (parsedDocument is not null && snapshot.Compilation is not null)
         {
             var binder = _frameworkProfile.CreateSemanticBinder();
-            var (_, semanticDiagnostics) = binder.Bind(
+            var (viewModel, semanticDiagnostics) = binder.Bind(
                 parsedDocument,
                 snapshot.Compilation,
                 generatorOptions,
                 XamlTransformConfiguration.Empty);
+            resolvedViewModel = viewModel;
 
-            diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(semanticDiagnostics));
+            if (options.IncludeSemanticDiagnostics)
+            {
+                diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(semanticDiagnostics));
+            }
         }
 
         XDocument? xmlDocument;
@@ -98,6 +104,7 @@ public sealed class XamlCompilerAnalysisService
             ProjectPath: snapshot.ProjectPath,
             Compilation: snapshot.Compilation,
             ParsedDocument: parsedDocument,
+            ViewModel: resolvedViewModel,
             XmlDocument: xmlDocument,
             PrefixMap: prefixMap,
             TypeIndex: typeIndex,

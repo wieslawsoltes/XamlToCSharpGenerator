@@ -256,6 +256,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                 bindingMarkup.Path,
                                 out var accessorExpression,
                                 out var normalizedPath,
+                                out var resultTypeName,
                                 out var errorMessage))
                         {
                             diagnostics.Add(new DiagnosticInfo(
@@ -273,6 +274,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             TargetPropertyName: property.Name,
                             Path: normalizedPath,
                             SourceTypeName: nodeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            ResultTypeName: resultTypeName,
                             AccessorExpression: accessorExpression,
                             IsSetterBinding: false,
                             Line: assignment.Line,

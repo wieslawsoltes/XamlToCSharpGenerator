@@ -11,6 +11,7 @@ public sealed record XamlAnalysisResult(
     string? ProjectPath,
     Compilation? Compilation,
     XamlDocumentModel? ParsedDocument,
+    ResolvedViewModel? ViewModel,
     XDocument? XmlDocument,
     ImmutableDictionary<string, string> PrefixMap,
     AvaloniaTypeIndex? TypeIndex,
