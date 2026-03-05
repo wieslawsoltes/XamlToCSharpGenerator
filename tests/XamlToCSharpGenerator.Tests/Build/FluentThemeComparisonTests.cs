@@ -119,6 +119,83 @@ public class FluentThemeComparisonTests
     }
 
     [Fact]
+    public void FluentTheme_SourceGen_Preserves_TemplateBinding_Mode_And_Converters_For_Interactive_Controls()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            "samples",
+            "Avalonia.Themes.Fluent",
+            "Avalonia.Themes.Fluent.csproj");
+
+        var sourceGenResult = RunProcess(
+            repositoryRoot,
+            "dotnet",
+            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend=SourceGen");
+
+        Assert.True(sourceGenResult.ExitCode == 0, sourceGenResult.Output);
+
+        var generatedRoot = Path.Combine(
+            repositoryRoot,
+            "samples",
+            "Avalonia.Themes.Fluent",
+            "obj",
+            "GeneratedFiles");
+
+        var comboBoxSources = Directory.GetFiles(
+                generatedRoot,
+                "*GeneratedXaml_ComboBox_*.XamlSourceGen.g.cs",
+                SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.NotEmpty(comboBoxSources);
+        Assert.Contains(
+            comboBoxSources,
+            source => source.Contains(
+                "TemplateBinding(global::Avalonia.Controls.ComboBox.IsEditableProperty) { Converter = global::Avalonia.Data.Converters.BoolConverters.Not }",
+                StringComparison.Ordinal));
+
+        var expanderSources = Directory.GetFiles(
+                generatedRoot,
+                "*GeneratedXaml_Expander_*.XamlSourceGen.g.cs",
+                SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.NotEmpty(expanderSources);
+        Assert.Contains(
+            expanderSources,
+            source => source.Contains(
+                "TemplateBinding(global::Avalonia.Controls.Expander.IsExpandedProperty) { Mode = global::Avalonia.Data.BindingMode.TwoWay }",
+                StringComparison.Ordinal));
+
+        var treeViewSources = Directory.GetFiles(
+                generatedRoot,
+                "*GeneratedXaml_TreeViewItem_*.XamlSourceGen.g.cs",
+                SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.NotEmpty(treeViewSources);
+        Assert.Contains(
+            treeViewSources,
+            source => source.Contains(
+                "TemplateBinding(global::Avalonia.Controls.TreeViewItem.IsExpandedProperty) { Mode = global::Avalonia.Data.BindingMode.TwoWay }",
+                StringComparison.Ordinal));
+
+        var sliderSources = Directory.GetFiles(
+                generatedRoot,
+                "*GeneratedXaml_Slider_*.XamlSourceGen.g.cs",
+                SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.NotEmpty(sliderSources);
+        Assert.Contains(
+            sliderSources,
+            source => source.Contains(
+                "TemplateBinding(global::Avalonia.Controls.Primitives.RangeBase.ValueProperty) { Mode = global::Avalonia.Data.BindingMode.TwoWay }",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void FluentTheme_Runtime_Probe_Matches_Selected_SourceGen_And_XamlIl_Behavior()
     {
         var repositoryRoot = GetRepositoryRoot();
