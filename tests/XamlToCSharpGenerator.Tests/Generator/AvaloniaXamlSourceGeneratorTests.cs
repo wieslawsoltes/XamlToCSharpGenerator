@@ -10204,6 +10204,158 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Resolves_TemplateBinding_Named_Arguments_Mode_And_Converter()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value, global::Avalonia.Data.BindingPriority priority) { }
+                    public object? this[global::Avalonia.Data.IndexerDescriptor descriptor] { set { } }
+                }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?>
+                {
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public enum BindingPriority
+                {
+                    LocalValue,
+                    Template
+                }
+
+                public enum BindingMode
+                {
+                    Default,
+                    OneWay,
+                    TwoWay
+                }
+
+                public class IndexerDescriptor
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                }
+
+                public class TemplateBinding
+                {
+                    public TemplateBinding(global::Avalonia.AvaloniaProperty property) { }
+                    public BindingMode Mode { get; set; }
+                    public object? Converter { get; set; }
+                    public object? ConverterParameter { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope
+                {
+                    bool IsCompleted { get; }
+                    void Complete();
+                }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                    public bool IsCompleted => false;
+                    public void Complete() { }
+                }
+
+                public class StyledElement : global::Avalonia.AvaloniaObject { }
+
+                public class Control : StyledElement { }
+
+                public class ContentControl : Control
+                {
+                    public static readonly global::Avalonia.StyledProperty<object?> ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class UserControl : ContentControl
+                {
+                    public global::Avalonia.ResourceDictionary Resources { get; } = new();
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.StyledProperty<string?> TextProperty = new();
+                    public string? Text { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class ControlTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? TargetType { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public static class TemplateConverters
+                {
+                    public static object Identity => new object();
+                }
+
+                public class TemplatedInfoControl : global::Avalonia.Controls.ContentControl
+                {
+                    public static readonly global::Avalonia.StyledProperty<string?> TitleProperty = new();
+                    public string? Title { get; set; }
+                }
+
+                public partial class TemplatesView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.TemplatesView">
+                <UserControl.Resources>
+                    <ControlTemplate x:Key="InfoTemplate" TargetType="{x:Type local:TemplatedInfoControl}">
+                        <StackPanel>
+                            <TextBlock Text="{TemplateBinding Title, Mode=TwoWay, Converter={x:Static local:TemplateConverters.Identity}, ConverterParameter='marker'}" />
+                        </StackPanel>
+                    </ControlTemplate>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains(
+            "new global::Avalonia.Data.TemplateBinding(global::Demo.TemplatedInfoControl.TitleProperty) { Mode = global::Avalonia.Data.BindingMode.TwoWay, Converter = global::Demo.TemplateConverters.Identity, ConverterParameter = \"marker\" }",
+            generated);
+    }
+
+    [Fact]
     public void Resolves_TemplateBinding_Inside_Derived_ControlTemplate_Type()
     {
         const string code = """
