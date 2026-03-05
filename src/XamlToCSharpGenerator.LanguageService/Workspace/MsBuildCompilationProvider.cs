@@ -56,10 +56,10 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         var lazyTask = _projectCompilationCache.GetOrAdd(
             projectPath,
             path => new Lazy<Task<CompilationSnapshot>>(
-                () => LoadCompilationAsync(path, cancellationToken),
+                () => LoadCompilationAsync(path),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return lazyTask.Value;
+        return AwaitCompilationSnapshotAsync(projectPath, lazyTask, cancellationToken);
     }
 
     public void Invalidate(string filePath)
@@ -89,18 +89,41 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         _workspace.Dispose();
     }
 
-    private async Task<CompilationSnapshot> LoadCompilationAsync(string projectPath, CancellationToken cancellationToken)
+    private async Task<CompilationSnapshot> AwaitCompilationSnapshotAsync(
+        string projectPath,
+        Lazy<Task<CompilationSnapshot>> lazyTask,
+        CancellationToken cancellationToken)
+    {
+        CompilationSnapshot snapshot;
+        if (cancellationToken.CanBeCanceled)
+        {
+            snapshot = await lazyTask.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            snapshot = await lazyTask.Value.ConfigureAwait(false);
+        }
+
+        if (ShouldEvictCompilationSnapshot(snapshot))
+        {
+            _projectCompilationCache.TryRemove(projectPath, out _);
+        }
+
+        return snapshot;
+    }
+
+    private async Task<CompilationSnapshot> LoadCompilationAsync(string projectPath)
     {
         try
         {
-            await _workspaceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _workspaceGate.WaitAsync().ConfigureAwait(false);
             Project? project;
             try
             {
                 project = TryGetLoadedProject(projectPath);
                 if (project is null)
                 {
-                    project = await _workspace.OpenProjectAsync(projectPath, cancellationToken: cancellationToken)
+                    project = await _workspace.OpenProjectAsync(projectPath, cancellationToken: CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
@@ -109,7 +132,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                 _workspaceGate.Release();
             }
 
-            var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+            var compilation = await project.GetCompilationAsync(CancellationToken.None).ConfigureAwait(false);
             if (compilation is null)
             {
                 return new CompilationSnapshot(
@@ -144,6 +167,13 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
             return new CompilationSnapshot(projectPath, compilation, diagnosticsBuilder.ToImmutable());
         }
+        catch (OperationCanceledException)
+        {
+            return new CompilationSnapshot(
+                projectPath,
+                null,
+                ImmutableArray<LanguageServiceDiagnostic>.Empty);
+        }
         catch (Exception ex)
         {
             return new CompilationSnapshot(
@@ -156,6 +186,29 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                     LanguageServiceDiagnosticSeverity.Error,
                     Source: "MSBuildWorkspace")));
         }
+    }
+
+    private static bool ShouldEvictCompilationSnapshot(CompilationSnapshot snapshot)
+    {
+        if (snapshot.Compilation is not null)
+        {
+            return false;
+        }
+
+        if (snapshot.Diagnostics.IsDefaultOrEmpty)
+        {
+            return true;
+        }
+
+        foreach (var diagnostic in snapshot.Diagnostics)
+        {
+            if (string.Equals(diagnostic.Code, "AXSGLS0003", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Project? TryGetLoadedProject(string projectPath)

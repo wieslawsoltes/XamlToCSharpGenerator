@@ -116,4 +116,53 @@ public sealed class MsBuildCompilationProviderTests
             }
         }
     }
+
+    [Fact]
+    public async Task Canceled_Request_Does_Not_Poison_Cached_Project_Load()
+    {
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "axsg-msbuild-provider-cancel-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var projectPath = Path.Combine(tempRoot, "SampleProject.csproj");
+            File.WriteAllText(projectPath, """
+                                       <Project Sdk="Microsoft.NET.Sdk">
+                                         <PropertyGroup>
+                                           <TargetFramework>net10.0</TargetFramework>
+                                           <ImplicitUsings>enable</ImplicitUsings>
+                                           <Nullable>enable</Nullable>
+                                         </PropertyGroup>
+                                       </Project>
+                                       """);
+
+            File.WriteAllText(Path.Combine(tempRoot, "SampleClass.cs"), "public sealed class SampleClass { }");
+            var xamlPath = Path.Combine(tempRoot, "SampleView.axaml");
+            File.WriteAllText(xamlPath, "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+
+            using var provider = new MsBuildCompilationProvider();
+            using var cancellationSource = new CancellationTokenSource();
+            cancellationSource.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                provider.GetCompilationAsync(xamlPath, tempRoot, cancellationSource.Token));
+
+            var snapshot = await provider.GetCompilationAsync(xamlPath, tempRoot, CancellationToken.None);
+
+            Assert.DoesNotContain(snapshot.Diagnostics, static d => d.Code == "AXSGLS0003");
+            Assert.NotNull(snapshot.Compilation);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
 }
