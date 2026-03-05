@@ -29,13 +29,32 @@ internal static class LanguageServiceTestCompilationFactory
                                   }
                               }
 
+                              namespace Avalonia.Controls.Metadata
+                              {
+                                  [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+                                  public sealed class PseudoClassesAttribute : Attribute
+                                  {
+                                      public PseudoClassesAttribute(params string[] pseudoClasses) { }
+                                  }
+                              }
+
                               namespace TestApp.Controls
                               {
+                                  public static class TestPseudoClasses
+                                  {
+                                      public const string ButtonPressed = ":pressed";
+                                      public const string ExpanderExpanded = ":expanded";
+                                  }
+
                                   public class UserControl { }
                                   public class StackPanel { }
                                   public class Border
                                   {
                                       public object Child { get; set; } = new object();
+                                  }
+
+                                  public class Control
+                                  {
                                   }
 
                                   public class Visual
@@ -53,7 +72,8 @@ internal static class LanguageServiceTestCompilationFactory
                                       public string Data { get; set; } = string.Empty;
                                   }
 
-                                  public class Button
+                                  [Avalonia.Controls.Metadata.PseudoClassesAttribute(TestPseudoClasses.ButtonPressed, ":pointerover")]
+                                  public class Button : Control
                                   {
                                       public string Content { get; set; } = string.Empty;
                                   }
@@ -61,6 +81,11 @@ internal static class LanguageServiceTestCompilationFactory
                                   public class TextBlock
                                   {
                                       public string Text { get; set; } = string.Empty;
+                                  }
+
+                                  [Avalonia.Controls.Metadata.PseudoClassesAttribute(TestPseudoClasses.ExpanderExpanded)]
+                                  public class Expander : Control
+                                  {
                                   }
 
                                   public class CustomerViewModel
@@ -111,6 +136,7 @@ internal sealed class InMemoryCompilationProvider : ICompilationProvider
     {
         return Task.FromResult(new CompilationSnapshot(
             ProjectPath: workspaceRoot,
+            Project: null,
             Compilation: _compilation,
             Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
     }

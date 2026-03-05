@@ -8,9 +8,13 @@ let outputChannel;
 let statusBarItem;
 const AXSG_METADATA_SCHEME = 'axsg-metadata';
 const AXSG_SOURCELINK_SCHEME = 'axsg-sourcelink';
+const metadataDocumentCache = new Map();
+const metadataUriSubscriptions = new Map();
+let metadataChangeEmitter;
 const sourceLinkDocumentCache = new Map();
 const sourceLinkUriSubscriptions = new Map();
 let sourceLinkChangeEmitter;
+const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
 
 function decodeQueryValue(value) {
   try {
@@ -22,6 +26,30 @@ function decodeQueryValue(value) {
 
 function renderMetadataDocument(uri) {
   const query = new URLSearchParams(uri.query || '');
+  const documentId = query.get('id');
+  if (documentId) {
+    const decodedDocumentId = decodeQueryValue(documentId);
+    trackMetadataUri(decodedDocumentId, uri);
+
+    const cached = metadataDocumentCache.get(decodedDocumentId);
+    if (cached && cached.state !== 'loading') {
+      return cached.text;
+    }
+
+    if (!cached) {
+      const loadingText = createMetadataLoadingDocument(query);
+      metadataDocumentCache.set(decodedDocumentId, { state: 'loading', text: loadingText });
+      void fetchAndCacheMetadataDocument(decodedDocumentId, uri);
+      return loadingText;
+    }
+
+    return cached.text;
+  }
+
+  return renderMetadataProjectionFallback(query);
+}
+
+function renderMetadataProjectionFallback(query) {
   const kind = query.get('kind');
 
   if (kind === 'type') {
@@ -52,6 +80,64 @@ function renderMetadataDocument(uri) {
   }
 
   return '// AXSG metadata projection\n// No symbol details available.\n';
+}
+
+function createMetadataLoadingDocument(query) {
+  const fullTypeName = decodeQueryValue(query.get('type') || 'symbol');
+  const memberName = decodeQueryValue(query.get('member') || '');
+  const targetName = memberName ? `${fullTypeName}.${memberName}` : fullTypeName;
+  return `// AXSG metadata as source\n// Loading metadata view for ${targetName}...\n`;
+}
+
+function updateMetadataCacheAndNotify(documentId, state, text) {
+  metadataDocumentCache.set(documentId, { state, text });
+
+  const subscribers = metadataUriSubscriptions.get(documentId);
+  if (!subscribers || !metadataChangeEmitter) {
+    return;
+  }
+
+  for (const uriString of subscribers) {
+    try {
+      metadataChangeEmitter.fire(vscode.Uri.parse(uriString));
+    } catch {
+      // Ignore malformed URI entries.
+    }
+  }
+}
+
+function trackMetadataUri(documentId, uri) {
+  let subscribers = metadataUriSubscriptions.get(documentId);
+  if (!subscribers) {
+    subscribers = new Set();
+    metadataUriSubscriptions.set(documentId, subscribers);
+  }
+
+  subscribers.add(uri.toString());
+}
+
+async function fetchAndCacheMetadataDocument(documentId, uri) {
+  const cached = metadataDocumentCache.get(documentId);
+  if (cached && cached.state !== 'loading') {
+    return;
+  }
+
+  if (!client) {
+    updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
+    return;
+  }
+
+  try {
+    const response = await client.sendRequest('axsg/metadataDocument', { id: documentId });
+    if (!response || typeof response.text !== 'string' || response.text.length === 0) {
+      updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
+      return;
+    }
+
+    updateMetadataCacheAndNotify(documentId, 'ready', response.text);
+  } catch {
+    updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
+  }
 }
 
 function createSourceLinkLoadingDocument(sourceUrl) {
@@ -220,6 +306,133 @@ function resolveClientOptions(context) {
   };
 }
 
+function toProtocolPosition(position) {
+  return {
+    line: position.line,
+    character: position.character
+  };
+}
+
+function toVsCodeRange(range) {
+  return new vscode.Range(
+    range.start.line,
+    range.start.character,
+    range.end.line,
+    range.end.character
+  );
+}
+
+async function applyProtocolWorkspaceEdit(edit) {
+  if (!edit || !edit.changes || typeof edit.changes !== 'object') {
+    return false;
+  }
+
+  const workspaceEdit = new vscode.WorkspaceEdit();
+  for (const [uri, edits] of Object.entries(edit.changes)) {
+    if (!Array.isArray(edits)) {
+      continue;
+    }
+
+    const documentUri = vscode.Uri.parse(uri);
+    for (const editItem of edits) {
+      if (!editItem || !editItem.range) {
+        continue;
+      }
+
+      workspaceEdit.replace(
+        documentUri,
+        toVsCodeRange(editItem.range),
+        typeof editItem.newText === 'string' ? editItem.newText : ''
+      );
+    }
+  }
+
+  return vscode.workspace.applyEdit(workspaceEdit);
+}
+
+function tryParseCommandPositionArgument(value) {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const candidate = value.position;
+  if (!candidate || typeof candidate !== 'object') {
+    return undefined;
+  }
+
+  if (!Number.isInteger(candidate.line) || !Number.isInteger(candidate.character)) {
+    return undefined;
+  }
+
+  return new vscode.Position(candidate.line, candidate.character);
+}
+
+async function resolveEditorForRenameArgument(argument) {
+  if (!argument || typeof argument !== 'object' || typeof argument.uri !== 'string' || argument.uri.length === 0) {
+    return vscode.window.activeTextEditor;
+  }
+
+  const targetUri = vscode.Uri.parse(argument.uri);
+  const activeEditor = vscode.window.activeTextEditor;
+  if (activeEditor && activeEditor.document.uri.toString() === targetUri.toString()) {
+    return activeEditor;
+  }
+
+  const visibleEditor = vscode.window.visibleTextEditors.find(editor =>
+    editor.document.uri.toString() === targetUri.toString());
+  if (visibleEditor) {
+    return visibleEditor;
+  }
+
+  const document = await vscode.workspace.openTextDocument(targetUri);
+  return vscode.window.showTextDocument(document, { preview: false, preserveFocus: false });
+}
+
+async function executeCrossLanguageRenameCommand(argument) {
+  if (!client) {
+    return;
+  }
+
+  const editor = await resolveEditorForRenameArgument(argument);
+  if (!editor) {
+    return;
+  }
+
+  const position = tryParseCommandPositionArgument(argument) ?? argument ?? editor.selection.active;
+  const document = editor.document;
+  const params = {
+    textDocument: {
+      uri: document.uri.toString()
+    },
+    position: toProtocolPosition(position),
+    documentText: document.getText()
+  };
+
+  const prepareResult = await client.sendRequest('axsg/refactor/prepareRename', params);
+  if (!prepareResult || !prepareResult.range) {
+    void vscode.window.showInformationMessage('AXSG rename is not available at the current position.');
+    return;
+  }
+
+  const newName = await vscode.window.showInputBox({
+    title: 'AXSG Rename Symbol Across C# and XAML',
+    value: prepareResult.placeholder || '',
+    prompt: 'Enter the new symbol name.'
+  });
+  if (typeof newName !== 'string' || newName.length === 0 || newName === prepareResult.placeholder) {
+    return;
+  }
+
+  const renameResult = await client.sendRequest('axsg/refactor/rename', {
+    ...params,
+    newName
+  });
+  const applied = await applyProtocolWorkspaceEdit(renameResult);
+  if (!applied) {
+    void vscode.window.showWarningMessage('AXSG could not apply the computed rename edits.');
+  }
+}
+
 function setStatusBarState(state, details, errorMessage) {
   if (!statusBarItem) {
     return;
@@ -245,11 +458,8 @@ function setStatusBarState(state, details, errorMessage) {
 async function activate(context) {
   const { serverOptions, details } = resolveServerOptions(context);
   const clientOptions = resolveClientOptions(context);
-  const metadataProvider = {
-    provideTextDocumentContent(uri) {
-      return renderMetadataDocument(uri);
-    }
-  };
+  metadataChangeEmitter = new vscode.EventEmitter();
+  context.subscriptions.push(metadataChangeEmitter);
   sourceLinkChangeEmitter = new vscode.EventEmitter();
   context.subscriptions.push(sourceLinkChangeEmitter);
   const sourceLinkProvider = {
@@ -258,12 +468,46 @@ async function activate(context) {
       return renderSourceLinkDocument(uri);
     }
   };
+  const metadataProviderWithUpdates = {
+    onDidChange: metadataChangeEmitter.event,
+    provideTextDocumentContent(uri) {
+      return renderMetadataDocument(uri);
+    }
+  };
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(
     AXSG_METADATA_SCHEME,
-    metadataProvider));
+    metadataProviderWithUpdates));
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(
     AXSG_SOURCELINK_SCHEME,
     sourceLinkProvider));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    'axsg.refactor.renameSymbol',
+    async argument => {
+      await executeCrossLanguageRenameCommand(argument);
+    }));
+  context.subscriptions.push(vscode.languages.registerCodeActionsProvider(
+    [
+      { scheme: 'file', language: 'csharp' }
+    ],
+    {
+      provideCodeActions(document, range) {
+        const position = range.start;
+        const action = new vscode.CodeAction(
+          'AXSG: Rename Symbol Across C# and XAML',
+          AXSG_REFACTOR_RENAME_KIND
+        );
+        action.isPreferred = true;
+        action.command = {
+          command: 'axsg.refactor.renameSymbol',
+          title: 'AXSG: Rename Symbol Across C# and XAML',
+          arguments: [position]
+        };
+        return [action];
+      }
+    },
+    {
+      providedCodeActionKinds: [AXSG_REFACTOR_RENAME_KIND]
+    }));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async document => {
     if (document.uri.scheme !== AXSG_METADATA_SCHEME &&
         document.uri.scheme !== AXSG_SOURCELINK_SCHEME) {
@@ -349,6 +593,11 @@ async function deactivate() {
   if (sourceLinkChangeEmitter) {
     sourceLinkChangeEmitter.dispose();
     sourceLinkChangeEmitter = undefined;
+  }
+
+  if (metadataChangeEmitter) {
+    metadataChangeEmitter.dispose();
+    metadataChangeEmitter = undefined;
   }
 }
 

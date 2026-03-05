@@ -6,5 +6,6 @@ namespace XamlToCSharpGenerator.LanguageService.Workspace;
 
 public sealed record CompilationSnapshot(
     string? ProjectPath,
+    Project? Project,
     Compilation? Compilation,
     ImmutableArray<LanguageServiceDiagnostic> Diagnostics);

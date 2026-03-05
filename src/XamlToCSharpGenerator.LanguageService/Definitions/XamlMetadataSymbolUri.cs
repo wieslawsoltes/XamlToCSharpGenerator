@@ -13,6 +13,18 @@ internal static class XamlMetadataSymbolUri
         return $"{Scheme}:///symbol.cs?kind=type&type={encodedTypeName}";
     }
 
+    public static string CreateMetadataDocumentUri(string fullTypeName, string documentId, string? memberName = null)
+    {
+        var typeName = GetLeafTypeName(fullTypeName);
+        var fileName = string.IsNullOrWhiteSpace(memberName)
+            ? typeName + ".cs"
+            : typeName + "." + memberName + ".cs";
+        var encodedDocumentId = Uri.EscapeDataString(documentId);
+        var encodedTypeName = Uri.EscapeDataString(fullTypeName);
+        var encodedMemberName = Uri.EscapeDataString(memberName ?? string.Empty);
+        return $"{Scheme}:///{fileName}?id={encodedDocumentId}&type={encodedTypeName}&member={encodedMemberName}";
+    }
+
     public static string CreatePropertyUri(
         string ownerTypeName,
         string propertyName,
@@ -30,5 +42,18 @@ internal static class XamlMetadataSymbolUri
     {
         var encodedSourceUrl = Uri.EscapeDataString(sourceUrl);
         return $"{SourceLinkScheme}:///source.cs?url={encodedSourceUrl}";
+    }
+
+    private static string GetLeafTypeName(string fullTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(fullTypeName))
+        {
+            return "symbol";
+        }
+
+        var separatorIndex = fullTypeName.LastIndexOf('.');
+        return separatorIndex >= 0 && separatorIndex + 1 < fullTypeName.Length
+            ? fullTypeName.Substring(separatorIndex + 1)
+            : fullTypeName;
     }
 }

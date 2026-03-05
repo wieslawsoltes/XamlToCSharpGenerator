@@ -22,9 +22,6 @@ internal static partial class XamlNavigationTextSemantics
     [GeneratedRegex(@"x:Reference(?:\s+|=)(?<id>[A-Za-z_][A-Za-z0-9_:\.-]*)", RegexOptions.CultureInvariant)]
     private static partial Regex XReferenceRegex();
 
-    [GeneratedRegex(@"\{(?:StaticResource|DynamicResource)\s+(?<id>[^,\}\s]+)", RegexOptions.CultureInvariant)]
-    private static partial Regex ResourceReferenceRegex();
-
     [GeneratedRegex(@"\bx:Name\s*=\s*""(?<id>[^""]+)""", RegexOptions.CultureInvariant)]
     private static partial Regex XNameDeclarationRegex();
 
@@ -78,7 +75,7 @@ internal static partial class XamlNavigationTextSemantics
 
     public static ImmutableArray<SourceRange> FindResourceReferenceRanges(string text, string identifier)
     {
-        return FindRangesByIdentifier(text, identifier, ResourceReferenceRegex());
+        return XamlResourceReferenceNavigationSemantics.FindResourceReferenceRanges(text, identifier);
     }
 
     public static NavigationSymbolKind DetectSymbolKindAtOffset(
@@ -95,7 +92,7 @@ internal static partial class XamlNavigationTextSemantics
             return NavigationSymbolKind.NamedElement;
         }
 
-        if (IsOffsetInsideIdentifierGroup(ResourceReferenceRegex(), text, offset, identifier) ||
+        if (XamlResourceReferenceNavigationSemantics.IsResourceReferenceContext(text, offset, identifier) ||
             IsOffsetInsideIdentifierGroup(XKeyDeclarationRegex(), text, offset, identifier))
         {
             return NavigationSymbolKind.ResourceKey;

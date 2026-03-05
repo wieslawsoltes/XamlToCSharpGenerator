@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Refactorings;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageServer.Protocol;
 
@@ -167,12 +168,39 @@ internal sealed class AxsgLanguageServer : IDisposable
                 }
                 break;
 
+            case "textDocument/codeAction":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleCodeActionAsync(requestId, requestParameters, token));
+                }
+                break;
+
             case "textDocument/definition":
                 if (hasId)
                 {
                     var requestId = id.Clone();
                     var requestParameters = parameters.Clone();
                     QueueRequest(requestId, cancellationToken, token => HandleDefinitionAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/prepareRename":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandlePrepareRenameAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/rename":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleRenameAsync(requestId, requestParameters, token));
                 }
                 break;
 
@@ -218,6 +246,33 @@ internal sealed class AxsgLanguageServer : IDisposable
                     var requestId = id.Clone();
                     var requestParameters = parameters.Clone();
                     QueueRequest(requestId, cancellationToken, token => HandleInlayHintAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "axsg/metadataDocument":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleMetadataDocumentAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "axsg/refactor/prepareRename":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleAxsgPrepareRenameAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "axsg/refactor/rename":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleAxsgRenameAsync(requestId, requestParameters, token));
                 }
                 break;
 
@@ -604,10 +659,68 @@ internal sealed class AxsgLanguageServer : IDisposable
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task HandleCodeActionAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentRange(parameters);
+        var documentTextOverride = _openDocuments.TryGetValue(request.Uri, out var documentState)
+            ? documentState.Text
+            : null;
+        var actions = await _engine.GetCodeActionsAsync(
+            request.Uri,
+            request.Range.Start,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        await SendResponseAsync(id, SerializeCodeActions(actions), cancellationToken).ConfigureAwait(false);
+    }
+
     private Task HandleDeclarationAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
     {
         // Declaration semantics are aligned with definition for XAML symbols.
         return HandleDefinitionAsync(id, parameters, cancellationToken);
+    }
+
+    private async Task HandlePrepareRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var result = await _engine.PrepareRenameAsync(
+            request.Uri,
+            request.Position,
+            _navigationOptions,
+            documentTextOverride: null,
+            cancellationToken).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var payload = new JsonObject
+        {
+            ["range"] = SerializeRange(result.Range),
+            ["placeholder"] = result.Placeholder
+        };
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var newName = parameters.TryGetProperty("newName", out var newNameElement) &&
+                      newNameElement.ValueKind == JsonValueKind.String
+            ? newNameElement.GetString() ?? string.Empty
+            : string.Empty;
+        var edit = await _engine.RenameAsync(
+            request.Uri,
+            request.Position,
+            newName,
+            _navigationOptions,
+            documentTextOverride: null,
+            cancellationToken).ConfigureAwait(false);
+
+        await SendResponseAsync(id, SerializeWorkspaceEdit(edit), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleReferencesAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
@@ -749,6 +862,81 @@ internal sealed class AxsgLanguageServer : IDisposable
         }
 
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleMetadataDocumentAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var documentId = parameters.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
+            ? idElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var documentText = _engine.GetMetadataDocumentText(documentId);
+        if (documentText is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var payload = new JsonObject
+        {
+            ["text"] = documentText
+        };
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleAxsgPrepareRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+        var result = await _engine.PrepareRenameAsync(
+            request.Uri,
+            request.Position,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var payload = new JsonObject
+        {
+            ["range"] = SerializeRange(result.Range),
+            ["placeholder"] = result.Placeholder
+        };
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleAxsgRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+        var newName = parameters.TryGetProperty("newName", out var newNameElement) &&
+                      newNameElement.ValueKind == JsonValueKind.String
+            ? newNameElement.GetString() ?? string.Empty
+            : string.Empty;
+        var edit = await _engine.RenameAsync(
+            request.Uri,
+            request.Position,
+            newName,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        await SendResponseAsync(id, SerializeWorkspaceEdit(edit), cancellationToken).ConfigureAwait(false);
     }
 
     private Task PublishDiagnosticsAsync(
@@ -992,6 +1180,14 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["definitionProvider"] = true,
                 ["declarationProvider"] = true,
                 ["referencesProvider"] = true,
+                ["codeActionProvider"] = new JsonObject
+                {
+                    ["codeActionKinds"] = new JsonArray("refactor", "refactor.rename")
+                },
+                ["renameProvider"] = new JsonObject
+                {
+                    ["prepareProvider"] = true
+                },
                 ["documentSymbolProvider"] = true,
                 ["inlayHintProvider"] = true,
                 ["semanticTokensProvider"] = new JsonObject
@@ -1066,6 +1262,71 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["line"] = range.End.Line,
                 ["character"] = range.End.Character
             }
+        };
+    }
+
+    private static JsonObject SerializePosition(SourcePosition position)
+    {
+        return new JsonObject
+        {
+            ["line"] = position.Line,
+            ["character"] = position.Character
+        };
+    }
+
+    private static JsonArray SerializeCodeActions(ImmutableArray<XamlRefactoringAction> actions)
+    {
+        var payload = new JsonArray();
+        foreach (var action in actions)
+        {
+            var commandArguments = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["uri"] = action.Command.Uri,
+                    ["position"] = SerializePosition(action.Command.Position),
+                    ["refactoringId"] = action.Command.RefactoringId
+                }
+            };
+
+            payload.Add(new JsonObject
+            {
+                ["title"] = action.Title,
+                ["kind"] = action.Kind,
+                ["isPreferred"] = action.IsPreferred,
+                ["command"] = new JsonObject
+                {
+                    ["title"] = action.Title,
+                    ["command"] = action.Command.Name,
+                    ["arguments"] = commandArguments
+                }
+            });
+        }
+
+        return payload;
+    }
+
+    private static JsonObject SerializeWorkspaceEdit(XamlWorkspaceEdit edit)
+    {
+        var changes = new JsonObject();
+        foreach (var pair in edit.Changes)
+        {
+            var edits = new JsonArray();
+            foreach (var documentEdit in pair.Value)
+            {
+                edits.Add(new JsonObject
+                {
+                    ["range"] = SerializeRange(documentEdit.Range),
+                    ["newText"] = documentEdit.NewText
+                });
+            }
+
+            changes[pair.Key] = edits;
+        }
+
+        return new JsonObject
+        {
+            ["changes"] = changes
         };
     }
 

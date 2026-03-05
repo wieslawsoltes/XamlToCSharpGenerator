@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -13,6 +14,7 @@ public sealed class AvaloniaTypeIndex
 {
     private const string AvaloniaXmlnsDefinitionAttributeMetadataName = "Avalonia.Metadata.XmlnsDefinitionAttribute";
     private const string SourceGenXmlnsDefinitionAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXmlnsDefinitionAttribute";
+    private const string AvaloniaPseudoClassesAttributeMetadataName = "Avalonia.Controls.Metadata.PseudoClassesAttribute";
     private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
 
     private static readonly ConditionalWeakTable<Compilation, AvaloniaTypeIndex> Cache = new();
@@ -134,7 +136,7 @@ public sealed class AvaloniaTypeIndex
                     }
 
                     var xmlTypeName = GetXamlTypeName(type);
-                    var typeInfo = BuildTypeInfo(pair.Key, type);
+                    var typeInfo = BuildTypeInfo(compilation, pair.Key, type);
                     AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
 
                     if (byTypeName.ContainsKey(xmlTypeName))
@@ -201,7 +203,7 @@ public sealed class AvaloniaTypeIndex
                     continue;
                 }
 
-                var typeInfo = BuildTypeInfo(AvaloniaDefaultXmlNamespace, type);
+                var typeInfo = BuildTypeInfo(compilation, AvaloniaDefaultXmlNamespace, type);
                 AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
             }
         }
@@ -213,7 +215,7 @@ public sealed class AvaloniaTypeIndex
         return tickIndex > 0 ? type.Name.Substring(0, tickIndex) : type.Name;
     }
 
-    private static AvaloniaTypeInfo BuildTypeInfo(string xmlNamespace, INamedTypeSymbol type)
+    private static AvaloniaTypeInfo BuildTypeInfo(Compilation compilation, string xmlNamespace, INamedTypeSymbol type)
     {
         var properties = ImmutableArray.CreateBuilder<AvaloniaPropertyInfo>();
         var seenPropertyNames = new HashSet<string>(StringComparer.Ordinal);
@@ -269,6 +271,7 @@ public sealed class AvaloniaTypeIndex
 
         var fullTypeName = type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
         var summary = "`" + fullTypeName + "`";
+        var pseudoClasses = BuildPseudoClasses(compilation, type);
 
         return new AvaloniaTypeInfo(
             XmlTypeName: GetXamlTypeName(type),
@@ -278,7 +281,173 @@ public sealed class AvaloniaTypeIndex
             AssemblyName: type.ContainingAssembly.Identity.Name,
             Properties: properties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToImmutableArray(),
             Summary: summary,
-            SourceLocation: TryCreateSourceLocation(type));
+            SourceLocation: TryCreateSourceLocation(type),
+            PseudoClasses: pseudoClasses);
+    }
+
+    private static ImmutableArray<AvaloniaPseudoClassInfo> BuildPseudoClasses(Compilation compilation, INamedTypeSymbol type)
+    {
+        var builder = ImmutableArray.CreateBuilder<AvaloniaPseudoClassInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var currentType in EnumerateTypeHierarchy(type))
+        {
+            foreach (var attribute in currentType.GetAttributes())
+            {
+                if (!IsPseudoClassesAttribute(attribute))
+                {
+                    continue;
+                }
+
+                foreach (var pseudoClass in EnumeratePseudoClassInfos(compilation, currentType, attribute))
+                {
+                    if (!seen.Add(pseudoClass.Name))
+                    {
+                        continue;
+                    }
+
+                    builder.Add(pseudoClass);
+                }
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool IsPseudoClassesAttribute(AttributeData attribute)
+    {
+        return string.Equals(
+            attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            AvaloniaPseudoClassesAttributeMetadataName,
+            StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<AvaloniaPseudoClassInfo> EnumeratePseudoClassInfos(
+        Compilation compilation,
+        INamedTypeSymbol declaringType,
+        AttributeData attribute)
+    {
+        foreach (var pseudoClassName in EnumeratePseudoClassNames(attribute))
+        {
+            if (string.IsNullOrWhiteSpace(pseudoClassName))
+            {
+                continue;
+            }
+
+            yield return new AvaloniaPseudoClassInfo(
+                Name: NormalizePseudoClassName(pseudoClassName),
+                DeclaringTypeFullName: declaringType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                DeclaringAssemblyName: declaringType.ContainingAssembly.Identity.Name,
+                SourceLocation: TryCreatePseudoClassSourceLocation(compilation, attribute, pseudoClassName));
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePseudoClassNames(AttributeData attribute)
+    {
+        if (attribute.ConstructorArguments.Length == 1 &&
+            attribute.ConstructorArguments[0].Kind == TypedConstantKind.Array)
+        {
+            foreach (var value in attribute.ConstructorArguments[0].Values)
+            {
+                if (value.Value is string text)
+                {
+                    yield return text;
+                }
+            }
+
+            yield break;
+        }
+
+        foreach (var argument in attribute.ConstructorArguments)
+        {
+            if (argument.Value is string text)
+            {
+                yield return text;
+            }
+        }
+    }
+
+    private static AvaloniaSymbolSourceLocation? TryCreatePseudoClassSourceLocation(
+        Compilation compilation,
+        AttributeData attribute,
+        string pseudoClassName)
+    {
+        if (attribute.ApplicationSyntaxReference?.GetSyntax() is not AttributeSyntax attributeSyntax ||
+            attributeSyntax.ArgumentList is null)
+        {
+            return null;
+        }
+
+        var normalizedPseudoClassName = NormalizePseudoClassName(pseudoClassName);
+        var semanticModel = compilation.GetSemanticModel(attributeSyntax.SyntaxTree);
+        foreach (var argument in attributeSyntax.ArgumentList.Arguments)
+        {
+            if (!TryCreatePseudoClassArgumentSourceLocation(
+                    semanticModel,
+                    argument.Expression,
+                    normalizedPseudoClassName,
+                    out var sourceLocation))
+            {
+                continue;
+            }
+
+            return sourceLocation;
+        }
+
+        return null;
+    }
+
+    private static bool TryCreatePseudoClassArgumentSourceLocation(
+        SemanticModel semanticModel,
+        ExpressionSyntax expression,
+        string normalizedPseudoClassName,
+        out AvaloniaSymbolSourceLocation sourceLocation)
+    {
+        sourceLocation = default!;
+        if (!semanticModel.GetConstantValue(expression).HasValue ||
+            semanticModel.GetConstantValue(expression).Value is not string value ||
+            !string.Equals(NormalizePseudoClassName(value), normalizedPseudoClassName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var referencedSymbol = semanticModel.GetSymbolInfo(expression).Symbol;
+        if (referencedSymbol is not null &&
+            TryCreateSourceLocation(referencedSymbol) is { } symbolSourceLocation)
+        {
+            sourceLocation = symbolSourceLocation;
+            return true;
+        }
+
+        var lineSpan = expression.GetLocation().GetLineSpan();
+        if (expression.SyntaxTree.FilePath is null)
+        {
+            return false;
+        }
+
+        sourceLocation = new AvaloniaSymbolSourceLocation(
+            UriPathHelper.ToDocumentUri(expression.SyntaxTree.FilePath),
+            new SourceRange(
+                new SourcePosition(
+                    lineSpan.StartLinePosition.Line,
+                    lineSpan.StartLinePosition.Character),
+                new SourcePosition(
+                    lineSpan.EndLinePosition.Line,
+                    lineSpan.EndLinePosition.Character)));
+        return true;
+    }
+
+    private static string NormalizePseudoClassName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.StartsWith(":", StringComparison.Ordinal)
+            ? trimmed
+            : ":" + trimmed;
     }
 
     private static IEnumerable<INamedTypeSymbol> EnumerateTypeHierarchy(INamedTypeSymbol type)

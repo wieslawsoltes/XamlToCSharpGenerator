@@ -47,6 +47,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         {
             return Task.FromResult(new CompilationSnapshot(
                 ProjectPath: null,
+                Project: null,
                 Compilation: null,
                 Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
         }
@@ -137,6 +138,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
             {
                 return new CompilationSnapshot(
                     projectPath,
+                    project,
                     null,
                     ImmutableArray.Create(new LanguageServiceDiagnostic(
                         "AXSGLS0001",
@@ -165,12 +167,13 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
                     Source: "MSBuildWorkspace"));
             }
 
-            return new CompilationSnapshot(projectPath, compilation, diagnosticsBuilder.ToImmutable());
+            return new CompilationSnapshot(projectPath, project, compilation, diagnosticsBuilder.ToImmutable());
         }
         catch (OperationCanceledException)
         {
             return new CompilationSnapshot(
                 projectPath,
+                null,
                 null,
                 ImmutableArray<LanguageServiceDiagnostic>.Empty);
         }
@@ -178,6 +181,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         {
             return new CompilationSnapshot(
                 projectPath,
+                null,
                 null,
                 ImmutableArray.Create(new LanguageServiceDiagnostic(
                     "AXSGLS0003",

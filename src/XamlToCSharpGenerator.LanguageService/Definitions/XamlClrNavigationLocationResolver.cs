@@ -29,6 +29,11 @@ internal static class XamlClrNavigationLocationResolver
             return sourceLinkLocation;
         }
 
+        if (XamlMetadataAsSourceService.TryCreateTypeLocation(analysis, typeReference, out var metadataDocumentLocation))
+        {
+            return metadataDocumentLocation;
+        }
+
         return new AvaloniaSymbolSourceLocation(
             XamlMetadataSymbolUri.CreateTypeUri(typeReference.FullTypeName),
             MetadataNavigationRange);
@@ -52,8 +57,42 @@ internal static class XamlClrNavigationLocationResolver
             return sourceLinkLocation;
         }
 
+        if (XamlMetadataAsSourceService.TryCreateTypeLocation(analysis, typeInfo, out var metadataDocumentLocation))
+        {
+            return metadataDocumentLocation;
+        }
+
         return new AvaloniaSymbolSourceLocation(
             XamlMetadataSymbolUri.CreateTypeUri(typeInfo.FullTypeName),
+            MetadataNavigationRange);
+    }
+
+    public static AvaloniaSymbolSourceLocation ResolvePseudoClassLocation(
+        XamlAnalysisResult analysis,
+        AvaloniaPseudoClassInfo pseudoClassInfo)
+    {
+        if (pseudoClassInfo.SourceLocation is { } sourceLocation)
+        {
+            return sourceLocation;
+        }
+
+        if (analysis.TypeIndex?.TryGetTypeByFullTypeName(pseudoClassInfo.DeclaringTypeFullName, out var typeInfo) == true &&
+            typeInfo is not null)
+        {
+            return ResolveTypeLocation(analysis, typeInfo);
+        }
+
+        if (XamlMetadataAsSourceService.TryCreateTypeLocation(
+                analysis.Compilation,
+                pseudoClassInfo.DeclaringTypeFullName,
+                pseudoClassInfo.DeclaringAssemblyName,
+                out var metadataDocumentLocation))
+        {
+            return metadataDocumentLocation;
+        }
+
+        return new AvaloniaSymbolSourceLocation(
+            XamlMetadataSymbolUri.CreateTypeUri(pseudoClassInfo.DeclaringTypeFullName),
             MetadataNavigationRange);
     }
 
@@ -74,6 +113,15 @@ internal static class XamlClrNavigationLocationResolver
                 out var sourceLinkLocation))
         {
             return sourceLinkLocation;
+        }
+
+        if (XamlMetadataAsSourceService.TryCreateTypeLocation(
+                analysis.Compilation,
+                fullTypeName,
+                typeSymbol.ContainingAssembly?.Identity.Name,
+                out var metadataDocumentLocation))
+        {
+            return metadataDocumentLocation;
         }
 
         return new AvaloniaSymbolSourceLocation(

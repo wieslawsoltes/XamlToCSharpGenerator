@@ -10,4 +10,5 @@ public sealed record AvaloniaTypeInfo(
     string AssemblyName,
     ImmutableArray<AvaloniaPropertyInfo> Properties,
     string Summary,
-    AvaloniaSymbolSourceLocation? SourceLocation = null);
+    AvaloniaSymbolSourceLocation? SourceLocation = null,
+    ImmutableArray<AvaloniaPseudoClassInfo> PseudoClasses = default);

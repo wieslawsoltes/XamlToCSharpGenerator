@@ -18,7 +18,9 @@
   ],
   "activationEvents": [
     "onLanguage:axaml",
-    "onLanguage:xaml"
+    "onLanguage:xaml",
+    "onLanguage:csharp",
+    "onCommand:axsg.refactor.renameSymbol"
   ],
   "main": "./extension.js",
   "files": [
@@ -305,12 +307,20 @@
         "command": "axsg.languageServer.showInfo",
         "title": "AXSG: Show Language Server Info",
         "category": "AXSG"
+      },
+      {
+        "command": "axsg.refactor.renameSymbol",
+        "title": "AXSG: Rename Symbol Across C# and XAML",
+        "category": "AXSG"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "axsg.languageServer.showInfo"
+        },
+        {
+          "command": "axsg.refactor.renameSymbol"
         }
       ]
     }

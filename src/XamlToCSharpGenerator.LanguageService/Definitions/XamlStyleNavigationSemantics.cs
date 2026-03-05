@@ -30,31 +30,20 @@ internal static class XamlStyleNavigationSemantics
             return false;
         }
 
-        if (!SelectorBranchTokenizer.TryTokenize(selectorToken, out var segments))
+        foreach (var reference in SelectorReferenceSemantics.EnumerateReferences(selectorToken))
         {
-            return false;
-        }
-
-        foreach (var segment in segments)
-        {
-            var index = 0;
-            while (index < segment.Text.Length && segment.Text[index] == '^')
-            {
-                index++;
-            }
-
-            if (!SelectorBranchTokenizer.TryReadTypeToken(segment.Text, ref index, out var parsedTypeToken) ||
-                string.IsNullOrWhiteSpace(parsedTypeToken))
+            if (reference.Kind != SelectorReferenceKind.Type ||
+                string.IsNullOrWhiteSpace(reference.Name))
             {
                 continue;
             }
 
-            if (!IdentifierMatchesTypeToken(parsedTypeToken, identifier))
+            if (!IdentifierMatchesTypeToken(reference.Name, identifier))
             {
                 continue;
             }
 
-            typeToken = parsedTypeToken;
+            typeToken = reference.Name;
             return true;
         }
 

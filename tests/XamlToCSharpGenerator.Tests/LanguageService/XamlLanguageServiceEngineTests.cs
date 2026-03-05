@@ -389,6 +389,88 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_ForStyleClassValue_ResolvesSelectorDeclaration()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/StyleClassDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"TextBlock.warning\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "  <TextBlock Classes=\"warning\" Text=\"Inline\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var classOffset = xaml.IndexOf("warning", xaml.IndexOf("Classes=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(classOffset >= 0, "Expected style class token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, classOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Equal(uri, definitions[0].Uri);
+        Assert.Equal(2, definitions[0].Range.Start.Line);
+    }
+
+    [Fact]
+    public async Task Definition_ForSelectorPseudoClass_ResolvesPseudoClassDeclaration()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectorPseudoClassDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button:pressed\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var pseudoOffset = xaml.IndexOf("pressed", StringComparison.Ordinal);
+        Assert.True(pseudoOffset >= 0, "Expected pseudoclass token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, pseudoOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForNestedSelectorPseudoClass_UsesAncestorStyleTargetType()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/NestedSelectorPseudoClassDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Expander\">\n" +
+                            "      <Style Selector=\"^:expanded\"/>\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var pseudoOffset = xaml.IndexOf("expanded", StringComparison.Ordinal);
+        Assert.True(pseudoOffset >= 0, "Expected nested pseudoclass token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, pseudoOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Definition_ForStyleSetterPropertyValue_ResolvesPropertySource()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -601,6 +683,38 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_ForDynamicResourceInSetterValue_ResolvesResourceDeclaration()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/DynamicResourceDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <UserControl.Resources>\n" +
+                            "    <SolidColorBrush x:Key=\"AccentButtonBackgroundDisabled\" Color=\"Red\"/>\n" +
+                            "  </UserControl.Resources>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button\">\n" +
+                            "      <Setter Property=\"Background\" Value=\"{DynamicResource AccentButtonBackgroundDisabled}\"/>\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var dynamicResourceOffset = xaml.IndexOf("AccentButtonBackgroundDisabled", xaml.IndexOf("DynamicResource", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(dynamicResourceOffset >= 0, "Expected DynamicResource key token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, dynamicResourceOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Equal(uri, definitions[0].Uri);
+        Assert.Equal(2, definitions[0].Range.Start.Line);
+    }
+
+    [Fact]
     public async Task References_ForElementName_ReturnsDeclarationAndUsage()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -647,6 +761,35 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 1);
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+    }
+
+    [Fact]
+    public async Task References_ForDynamicResourceInSetterValue_ReturnDeclarationAndDynamicUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/DynamicResourceReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <UserControl.Resources>\n" +
+                            "    <SolidColorBrush x:Key=\"AccentButtonBackgroundDisabled\" Color=\"Red\"/>\n" +
+                            "  </UserControl.Resources>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button\">\n" +
+                            "      <Setter Property=\"Background\" Value=\"{DynamicResource AccentButtonBackgroundDisabled}\"/>\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            new SourcePosition(2, 35),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(references, item => item.IsDeclaration && item.Range.Start.Line == 2);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 6);
     }
 
     [Fact]
@@ -715,6 +858,63 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Contains(references, item => item.IsDeclaration);
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 4);
+    }
+
+    [Fact]
+    public async Task References_ForStyleClass_IncludeSelectorDeclarations_And_ClassUsages()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/StyleClassReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"TextBlock.warning\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "  <TextBlock Classes=\"warning\"/>\n" +
+                            "  <TextBlock Classes.warning=\"True\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var classOffset = xaml.IndexOf("warning", xaml.IndexOf("Selector=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(classOffset >= 0, "Expected selector class token not found.");
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, classOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(references, item => item.IsDeclaration && item.Range.Start.Line == 2);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 4);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 5);
+    }
+
+    [Fact]
+    public async Task References_ForSelectorPseudoClass_IncludeDeclarationAndSelectorUsages()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectorPseudoClassReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button:pressed\"/>\n" +
+                            "    <Style Selector=\":is(Button):pressed\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var pseudoOffset = xaml.IndexOf("pressed", StringComparison.Ordinal);
+        Assert.True(pseudoOffset >= 0, "Expected pseudoclass token not found.");
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, pseudoOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 3);
     }
 
     [Fact]
@@ -1310,6 +1510,82 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_And_References_ForAvaloniaPackageType_UseRichMetadataFallback_WhenSourceLinkUnavailable()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
+        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var tokenOffset = xamlText.IndexOf("<Grid", StringComparison.Ordinal);
+        Assert.True(tokenOffset >= 0, "Expected Grid element not found in sample XAML.");
+
+        var uri = new Uri(xamlPath).AbsoluteUri;
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
+
+        var position = GetPosition(xamlText, tokenOffset + 1);
+        var definitions = await engine.GetDefinitionsAsync(uri, position, options, CancellationToken.None);
+        var references = await engine.GetReferencesAsync(uri, position, options, CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.StartsWith("axsg-metadata:///", definitions[0].Uri, StringComparison.Ordinal);
+        var typeMetadataDocumentId = GetQueryParameter(definitions[0].Uri, "id");
+        Assert.False(string.IsNullOrWhiteSpace(typeMetadataDocumentId));
+        var typeMetadataDocument = engine.GetMetadataDocumentText(typeMetadataDocumentId!);
+        Assert.NotNull(typeMetadataDocument);
+        Assert.True(definitions[0].Range.Start.Line > 3);
+        Assert.Contains("namespace Avalonia.Controls", typeMetadataDocument, StringComparison.Ordinal);
+        Assert.Contains("public class Grid", typeMetadataDocument, StringComparison.Ordinal);
+        Assert.True(typeMetadataDocument!.Split('\n').Length > 15);
+
+        Assert.NotEmpty(references);
+        var declarationReference = Assert.Single(references, item => item.IsDeclaration);
+        Assert.StartsWith("axsg-metadata:///", declarationReference.Uri, StringComparison.Ordinal);
+        var declarationDocumentId = GetQueryParameter(declarationReference.Uri, "id");
+        Assert.False(string.IsNullOrWhiteSpace(declarationDocumentId));
+        Assert.Equal(typeMetadataDocumentId, declarationDocumentId);
+    }
+
+    [Fact]
+    public async Task Definition_And_References_ForAvaloniaPackageProperty_UseRichMetadataFallback_WhenSourceLinkUnavailable()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
+        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        const string token = "TextWrapping";
+        var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
+        Assert.True(tokenOffset >= 0, "Expected TextWrapping property token not found in sample XAML.");
+
+        var uri = new Uri(xamlPath).AbsoluteUri;
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
+
+        var position = GetPosition(xamlText, tokenOffset);
+        var definitions = await engine.GetDefinitionsAsync(uri, position, options, CancellationToken.None);
+        var references = await engine.GetReferencesAsync(uri, position, options, CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.StartsWith("axsg-metadata:///", definitions[0].Uri, StringComparison.Ordinal);
+        var propertyMetadataDocumentId = GetQueryParameter(definitions[0].Uri, "id");
+        Assert.False(string.IsNullOrWhiteSpace(propertyMetadataDocumentId));
+        var propertyMetadataDocument = engine.GetMetadataDocumentText(propertyMetadataDocumentId!);
+        Assert.NotNull(propertyMetadataDocument);
+        Assert.True(definitions[0].Range.Start.Line > 3);
+        Assert.Contains("namespace Avalonia.Controls", propertyMetadataDocument, StringComparison.Ordinal);
+        Assert.Contains("public class TextBlock", propertyMetadataDocument, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping", propertyMetadataDocument, StringComparison.Ordinal);
+        Assert.True(propertyMetadataDocument!.Split('\n').Length > 15);
+
+        Assert.NotEmpty(references);
+        var declarationReference = Assert.Single(references, item => item.IsDeclaration);
+        Assert.StartsWith("axsg-metadata:///", declarationReference.Uri, StringComparison.Ordinal);
+        var declarationDocumentId = GetQueryParameter(declarationReference.Uri, "id");
+        Assert.False(string.IsNullOrWhiteSpace(declarationDocumentId));
+        Assert.Equal(propertyMetadataDocumentId, declarationDocumentId);
+    }
+
+    [Fact]
     public async Task Definition_ForExternalAssemblyType_FallsBackToMetadataDocument()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -1632,6 +1908,34 @@ public sealed class XamlLanguageServiceEngineTests
         }
 
         return new SourcePosition(line, character);
+    }
+
+    private static string? GetQueryParameter(string uri, string key)
+    {
+        var query = new Uri(uri).Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var segment in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var name = Uri.UnescapeDataString(segment.Substring(0, separatorIndex));
+            if (!string.Equals(name, key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return Uri.UnescapeDataString(segment.Substring(separatorIndex + 1));
+        }
+
+        return null;
     }
 
     private static Compilation CreateCompilationWithExternalControls()

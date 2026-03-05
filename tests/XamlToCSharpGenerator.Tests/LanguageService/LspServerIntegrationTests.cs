@@ -6,9 +6,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageServer.Protocol;
 using XamlToCSharpGenerator.LanguageServer.Server;
+using XamlToCSharpGenerator.LanguageService.Workspace;
 
 namespace XamlToCSharpGenerator.Tests.LanguageService;
 
@@ -34,6 +38,7 @@ public sealed class LspServerIntegrationTests
         Assert.True(capabilities.GetProperty("definitionProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("declarationProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("referencesProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("codeActionProvider").GetProperty("codeActionKinds").GetArrayLength() > 0);
         Assert.True(capabilities.GetProperty("documentSymbolProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("inlayHintProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("semanticTokensProvider").GetProperty("full").GetBoolean());
@@ -212,6 +217,185 @@ public sealed class LspServerIntegrationTests
         var contents = result.GetProperty("contents").GetProperty("value").GetString();
         Assert.Contains("Element", contents, StringComparison.Ordinal);
         Assert.Contains("Button", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rename_Request_ForXamlBindingProperty_ReturnsWorkspaceEdit()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = project.XamlText
+                }
+            });
+
+            await harness.SendRequestAsync(211, "textDocument/rename", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.XamlNamePosition.Line,
+                    ["character"] = project.XamlNamePosition.Character
+                },
+                ["newName"] = "DisplayName"
+            });
+
+            using var response = await harness.ReadResponseAsync(211);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            Assert.True(changes.TryGetProperty(project.XamlUri, out var xamlEdits));
+            Assert.True(changes.TryGetProperty(project.CodeUri, out var codeEdits));
+            Assert.True(xamlEdits.GetArrayLength() > 0);
+            Assert.True(codeEdits.GetArrayLength() > 0);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForXamlBindingProperty_ReturnsRenameAction()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = project.XamlText
+                }
+            });
+
+            await harness.SendRequestAsync(213, "textDocument/codeAction", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject
+                    {
+                        ["line"] = project.XamlNamePosition.Line,
+                        ["character"] = project.XamlNamePosition.Character
+                    },
+                    ["end"] = new JsonObject
+                    {
+                        ["line"] = project.XamlNamePosition.Line,
+                        ["character"] = project.XamlNamePosition.Character
+                    }
+                },
+                ["context"] = new JsonObject
+                {
+                    ["diagnostics"] = new JsonArray()
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(213);
+            var actions = response.RootElement.GetProperty("result");
+            Assert.True(actions.GetArrayLength() > 0);
+
+            var command = actions[0].GetProperty("command");
+            Assert.Equal("axsg.refactor.renameSymbol", command.GetProperty("command").GetString());
+            Assert.Equal("refactor.rename", actions[0].GetProperty("kind").GetString());
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AxsgRename_Request_ForCSharpProperty_ReturnsWorkspaceEdit()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(212, "axsg/refactor/rename", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.CodeUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.CodeNamePosition.Line,
+                    ["character"] = project.CodeNamePosition.Character
+                },
+                ["documentText"] = project.CodeText,
+                ["newName"] = "DisplayName"
+            });
+
+            using var response = await harness.ReadResponseAsync(212);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            Assert.True(changes.TryGetProperty(project.XamlUri, out _));
+            Assert.True(changes.TryGetProperty(project.CodeUri, out _));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AxsgRename_Request_ForXamlBindingProperty_ReturnsWorkspaceEdit()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(214, "axsg/refactor/rename", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.XamlNamePosition.Line,
+                    ["character"] = project.XamlNamePosition.Character
+                },
+                ["documentText"] = project.XamlText,
+                ["newName"] = "DisplayName"
+            });
+
+            using var response = await harness.ReadResponseAsync(214);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            Assert.True(changes.TryGetProperty(project.XamlUri, out _));
+            Assert.True(changes.TryGetProperty(project.CodeUri, out _));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
     }
 
     [Fact]
@@ -489,6 +673,154 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Definition_Request_ForDynamicResourceValue_ReturnsResourceDeclaration()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionDynamicResourceView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <UserControl.Resources>\n" +
+                            "    <SolidColorBrush x:Key=\"AccentButtonBackgroundDisabled\" Color=\"Red\"/>\n" +
+                            "  </UserControl.Resources>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button\">\n" +
+                            "      <Setter Property=\"Background\" Value=\"{DynamicResource AccentButtonBackgroundDisabled}\"/>\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var dynamicResourceOffset = xaml.IndexOf("AccentButtonBackgroundDisabled", xaml.IndexOf("DynamicResource", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(dynamicResourceOffset >= 0, "Expected DynamicResource key token not found.");
+        var lineOffset = dynamicResourceOffset - xaml.LastIndexOf('\n', dynamicResourceOffset);
+
+        await harness.SendRequestAsync(321, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 6,
+                ["character"] = lineOffset + 1
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(321);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+        Assert.Equal(uri, definitions[0].GetProperty("uri").GetString());
+        Assert.Equal(2, definitions[0].GetProperty("range").GetProperty("start").GetProperty("line").GetInt32());
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForStyleClassValue_ReturnsSelectorDeclaration()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionStyleClassView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"TextBlock.warning\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "  <TextBlock Classes=\"warning\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var classOffset = xaml.IndexOf("warning", xaml.IndexOf("Classes=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(classOffset >= 0, "Expected style class token not found.");
+        var lineOffset = classOffset - xaml.LastIndexOf('\n', classOffset);
+
+        await harness.SendRequestAsync(322, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 4,
+                ["character"] = lineOffset + 1
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(322);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+        Assert.Equal(uri, definitions[0].GetProperty("uri").GetString());
+        Assert.Equal(2, definitions[0].GetProperty("range").GetProperty("start").GetProperty("line").GetInt32());
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForSelectorPseudoClass_ReturnsPseudoClassDeclaration()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionSelectorPseudoClassView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"Button:pressed\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var pseudoOffset = xaml.IndexOf("pressed", StringComparison.Ordinal);
+        Assert.True(pseudoOffset >= 0, "Expected pseudoclass token not found.");
+        var lineOffset = pseudoOffset - xaml.LastIndexOf('\n', pseudoOffset);
+
+        await harness.SendRequestAsync(323, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 2,
+                ["character"] = lineOffset + 1
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(323);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
     public async Task Declaration_Request_ForXClassAttributeValue_ReturnsTypeLocation()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -524,6 +856,62 @@ public sealed class LspServerIntegrationTests
         using var response = await harness.ReadResponseAsync(35);
         var definitions = response.RootElement.GetProperty("result");
         Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task MetadataDocument_Request_ReturnsFullMetadataFallbackDocument()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(CreateCompilationWithExternalControls()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/MetadataFallbackView.axaml";
+        const string xaml = "<ext:ExternalButton xmlns:ext=\"using:ExtLib.Controls\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(360, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 0,
+                ["character"] = xaml.IndexOf("ExternalButton", StringComparison.Ordinal) + 2
+            }
+        });
+
+        using var definitionResponse = await harness.ReadResponseAsync(360);
+        var definitions = definitionResponse.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+
+        var metadataUri = definitions[0].GetProperty("uri").GetString();
+        Assert.StartsWith("axsg-metadata:///", metadataUri, StringComparison.Ordinal);
+        var metadataDocumentId = GetQueryParameter(metadataUri!, "id");
+        Assert.False(string.IsNullOrWhiteSpace(metadataDocumentId));
+
+        await harness.SendRequestAsync("metadata-1", "axsg/metadataDocument", new JsonObject
+        {
+            ["id"] = metadataDocumentId
+        });
+
+        using var metadataResponse = await harness.ReadResponseAsync("metadata-1");
+        var documentText = metadataResponse.RootElement.GetProperty("result").GetProperty("text").GetString();
+        Assert.NotNull(documentText);
+        Assert.Contains("public class ExternalButton", documentText, StringComparison.Ordinal);
+        Assert.Contains("public string Content", documentText, StringComparison.Ordinal);
+        Assert.True(documentText!.Split('\n').Length > 8);
     }
 
     [Fact]
@@ -998,7 +1386,7 @@ public sealed class LspServerIntegrationTests
         private readonly Task<int> _runTask;
         private bool _stopped;
 
-        private LspServerHarness()
+        private LspServerHarness(ICompilationProvider? compilationProvider = null)
         {
             _clientWriteStream = _clientToServer.Writer.AsStream();
             _serverReadStream = _clientToServer.Reader.AsStream();
@@ -1007,7 +1395,7 @@ public sealed class LspServerIntegrationTests
             _clientReader = new LspMessageReader(_clientReadStream);
 
             var engine = new XamlLanguageServiceEngine(
-                new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+                compilationProvider ?? new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
             _server = new AxsgLanguageServer(
                 new LspMessageReader(_serverReadStream),
                 new LspMessageWriter(_serverWriteStream),
@@ -1016,9 +1404,9 @@ public sealed class LspServerIntegrationTests
             _runTask = _server.RunAsync(_cts.Token);
         }
 
-        public static Task<LspServerHarness> StartAsync()
+        public static Task<LspServerHarness> StartAsync(ICompilationProvider? compilationProvider = null)
         {
-            return Task.FromResult(new LspServerHarness());
+            return Task.FromResult(new LspServerHarness(compilationProvider));
         }
 
         public async Task InitializeAsync()
@@ -1196,4 +1584,199 @@ public sealed class LspServerIntegrationTests
             }
         }
     }
+
+    private static string? GetQueryParameter(string uri, string key)
+    {
+        var query = new Uri(uri).Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var segment in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var name = Uri.UnescapeDataString(segment.Substring(0, separatorIndex));
+            if (!string.Equals(name, key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return Uri.UnescapeDataString(segment.Substring(separatorIndex + 1));
+        }
+
+        return null;
+    }
+
+    private static Compilation CreateCompilationWithExternalControls()
+    {
+        const string metadataSource = """
+                                      namespace ExtLib.Controls
+                                      {
+                                          public class ExternalButton
+                                          {
+                                              public string Content { get; set; } = string.Empty;
+                                          }
+                                      }
+                                      """;
+
+        var metadataSyntaxTree = CSharpSyntaxTree.ParseText(metadataSource, path: "/tmp/ExtLib.Controls.cs");
+        var coreReferences = new[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
+        };
+        var metadataCompilation = CSharpCompilation.Create(
+            assemblyName: "ExtLib.Controls",
+            syntaxTrees: [metadataSyntaxTree],
+            references: coreReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var metadataStream = new MemoryStream();
+        var emitResult = metadataCompilation.Emit(metadataStream);
+        if (!emitResult.Success)
+        {
+            throw new InvalidOperationException("Failed to emit metadata compilation for external-controls integration test.");
+        }
+
+        metadataStream.Position = 0;
+        var metadataReference = MetadataReference.CreateFromImage(metadataStream.ToArray());
+
+        const string hostSource = """
+                                  using System;
+
+                                  namespace Avalonia.Metadata
+                                  {
+                                      [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                      public sealed class XmlnsDefinitionAttribute : Attribute
+                                      {
+                                          public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                      }
+                                  }
+
+                                  [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "Host.Controls")]
+
+                                  namespace Host.Controls
+                                  {
+                                      public class UserControl { }
+                                  }
+                                  """;
+
+        var hostSyntaxTree = CSharpSyntaxTree.ParseText(hostSource, path: "/tmp/Host.Controls.cs");
+        return CSharpCompilation.Create(
+            assemblyName: "Host.Controls",
+            syntaxTrees: [hostSyntaxTree],
+            references: [.. coreReferences, metadataReference],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static async Task<RenameProjectFixture> CreateRenameProjectFixtureAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-rename-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "TestApp.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        const string codeText = """
+                                using System;
+
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:TestApp", "TestApp")]
+
+                                namespace Avalonia.Metadata
+                                {
+                                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                    public sealed class XmlnsDefinitionAttribute : Attribute
+                                    {
+                                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                    }
+                                }
+
+                                namespace TestApp.Controls
+                                {
+                                    public class UserControl { }
+
+                                    public class TextBlock
+                                    {
+                                        public string Text { get; set; } = string.Empty;
+                                    }
+                                }
+
+                                namespace TestApp
+                                {
+                                    public class MainViewModel
+                                    {
+                                        public string Name { get; set; } = string.Empty;
+
+                                        public string GetName() => Name;
+                                    }
+                                }
+                                """;
+
+        const string xamlText = """
+                                <UserControl xmlns="https://github.com/avaloniaui"
+                                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                             xmlns:vm="using:TestApp"
+                                             x:DataType="vm:MainViewModel">
+                                  <TextBlock Text="{Binding Name}" />
+                                </UserControl>
+                                """;
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new RenameProjectFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            codeText,
+            GetPosition(codeText, codeText.IndexOf("Name { get;", StringComparison.Ordinal) + 2),
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("Name", StringComparison.Ordinal) + 2));
+    }
+
+    private static SourcePosition GetPosition(string text, int offset)
+    {
+        var line = 0;
+        var character = 0;
+        for (var index = 0; index < offset && index < text.Length; index++)
+        {
+            if (text[index] == '\n')
+            {
+                line++;
+                character = 0;
+            }
+            else
+            {
+                character++;
+            }
+        }
+
+        return new SourcePosition(line, character);
+    }
+
+    private sealed record RenameProjectFixture(
+        string RootPath,
+        string CodeUri,
+        string CodeText,
+        SourcePosition CodeNamePosition,
+        string XamlUri,
+        string XamlText,
+        SourcePosition XamlNamePosition);
 }

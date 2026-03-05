@@ -10,6 +10,7 @@ using XamlToCSharpGenerator.LanguageService.Documents;
 using XamlToCSharpGenerator.LanguageService.Hover;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Refactorings;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Workspace;
@@ -28,6 +29,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlReferenceService _referenceService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
+    private readonly XamlRefactoringService _refactoringService;
     private readonly ConcurrentDictionary<AnalysisCacheKey, (int Version, XamlAnalysisResult Result)> _analysisCache =
         new();
     private readonly ConcurrentDictionary<DocumentCacheKey, ImmutableArray<XamlSemanticToken>> _semanticTokenCache =
@@ -56,6 +58,11 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _referenceService = new XamlReferenceService();
         _documentSymbolService = new XamlDocumentSymbolService();
         _semanticTokenService = new XamlSemanticTokenService();
+        var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService);
+        var renameRefactoringProvider = new XamlRenameRefactoringProvider(renameService);
+        _refactoringService = new XamlRefactoringService(
+            ImmutableArray.Create<IXamlRefactoringProvider>(renameRefactoringProvider),
+            renameRefactoringProvider);
     }
 
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> OpenDocumentAsync(
@@ -247,6 +254,49 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         var tokens = _semanticTokenService.GetTokens(analysis.Document.Text);
         _semanticTokenCache[cacheKey] = tokens;
         return tokens;
+    }
+
+    public string? GetMetadataDocumentText(string documentId)
+    {
+        return XamlMetadataAsSourceService.TryGetDocumentText(documentId, out var text)
+            ? text
+            : null;
+    }
+
+    public Task<XamlPrepareRenameResult?> PrepareRenameAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _refactoringService.PrepareRenameAsync(uri, position, options, documentTextOverride, cancellationToken);
+    }
+
+    public Task<XamlWorkspaceEdit> RenameAsync(
+        string uri,
+        SourcePosition position,
+        string newName,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _refactoringService.RenameAsync(uri, position, newName, options, documentTextOverride, cancellationToken);
+    }
+
+    public Task<ImmutableArray<XamlRefactoringAction>> GetCodeActionsAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _refactoringService.GetCodeActionsAsync(
+            uri,
+            position,
+            options,
+            documentTextOverride,
+            cancellationToken);
     }
 
     public void Dispose()

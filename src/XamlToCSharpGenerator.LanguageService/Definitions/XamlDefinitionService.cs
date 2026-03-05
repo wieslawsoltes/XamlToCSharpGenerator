@@ -8,10 +8,17 @@ namespace XamlToCSharpGenerator.LanguageService.Definitions;
 
 public sealed class XamlDefinitionService
 {
+    private static readonly XamlReferenceService ReferenceService = new();
+
     public ImmutableArray<XamlDefinitionLocation> GetDefinitions(XamlAnalysisResult analysis, SourcePosition position)
     {
         var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
-        var identifier = XamlNavigationTextSemantics.ExtractIdentifierAtOffset(analysis.Document.Text, offset);
+        var identifier = XamlResourceReferenceNavigationSemantics.TryResolveResourceIdentifierAtOffset(
+            analysis.Document.Text,
+            offset,
+            out var resourceIdentifier)
+            ? resourceIdentifier
+            : XamlNavigationTextSemantics.ExtractIdentifierAtOffset(analysis.Document.Text, offset);
         if (!string.IsNullOrWhiteSpace(identifier) && analysis.ParsedDocument is not null)
         {
             var hasNamedDeclaration = HasNamedElementDeclaration(analysis, identifier);
@@ -177,6 +184,28 @@ public sealed class XamlDefinitionService
             return ImmutableArray<XamlDefinitionLocation>.Empty;
         }
 
+        if (XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out var selectorTarget))
+        {
+            switch (selectorTarget.Kind)
+            {
+                case XamlSelectorNavigationTargetKind.Type:
+                    if (XamlClrSymbolResolver.TryResolveTypeInfo(
+                            analysis.TypeIndex,
+                            analysis.PrefixMap,
+                            selectorTarget.Name,
+                            out var selectorNavigationTypeInfo) &&
+                        selectorNavigationTypeInfo is not null)
+                    {
+                        return [CreateTypeDefinitionLocation(analysis, selectorNavigationTypeInfo)];
+                    }
+
+                    break;
+                case XamlSelectorNavigationTargetKind.StyleClass:
+                case XamlSelectorNavigationTargetKind.PseudoClass:
+                    return CollectDefinitionsFromReferences(ReferenceService.GetReferences(analysis, position));
+            }
+        }
+
         if (XamlBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var bindingTarget))
         {
             if (bindingTarget.Kind == XamlBindingNavigationTargetKind.Property &&
@@ -303,6 +332,28 @@ public sealed class XamlDefinitionService
         return ImmutableArray<XamlDefinitionLocation>.Empty;
     }
 
+    private static ImmutableArray<XamlDefinitionLocation> CollectDefinitionsFromReferences(
+        ImmutableArray<XamlReferenceLocation> references)
+    {
+        if (references.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlDefinitionLocation>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlDefinitionLocation>();
+        foreach (var reference in references)
+        {
+            if (!reference.IsDeclaration)
+            {
+                continue;
+            }
+
+            builder.Add(new XamlDefinitionLocation(reference.Uri, reference.Range));
+        }
+
+        return builder.ToImmutable();
+    }
+
     private static bool TryResolvePropertyDefinition(
         XamlAnalysisResult analysis,
         ImmutableDictionary<string, string> prefixMap,
@@ -375,6 +426,17 @@ public sealed class XamlDefinitionService
                 out var propertySourceLink))
         {
             definitionLocation = new XamlDefinitionLocation(propertySourceLink.Uri, propertySourceLink.Range);
+            return true;
+        }
+
+        if (XamlMetadataAsSourceService.TryCreatePropertyLocation(
+                analysis,
+                ownerType.FullTypeName,
+                propertyInfo.Name,
+                ownerType.AssemblyName,
+                out var metadataDocumentLocation))
+        {
+            definitionLocation = new XamlDefinitionLocation(metadataDocumentLocation.Uri, metadataDocumentLocation.Range);
             return true;
         }
 
