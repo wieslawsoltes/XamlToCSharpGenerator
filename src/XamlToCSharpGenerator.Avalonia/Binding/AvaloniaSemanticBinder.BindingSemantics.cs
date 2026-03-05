@@ -7491,6 +7491,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return true;
                 }
 
+                if (ResolveContractType(compilation, TypeContractId.AvaloniaTemplateBinding) is not INamedTypeSymbol templateBindingType)
+                {
+                    return false;
+                }
+
                 if (setterTargetType is null)
                 {
                     return false;
@@ -7506,13 +7511,48 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                if (ResolveContractType(compilation, TypeContractId.AvaloniaTemplateBinding) is null)
+                var initializerParts = new List<string>();
+                var modeToken = TryGetNamedMarkupArgument(markup, "Mode");
+                if (!string.IsNullOrWhiteSpace(modeToken) &&
+                    TryMapBindingMode(modeToken!, out var bindingModeExpression) &&
+                    TryGetWritableProperty(templateBindingType, "Mode", out _))
                 {
-                    return false;
+                    initializerParts.Add("Mode = " + bindingModeExpression);
+                }
+
+                AddBindingInitializerPart(
+                    templateBindingType,
+                    propertyName: "Converter",
+                    rawValue: TryGetNamedMarkupArgument(markup, "Converter"),
+                    compilation,
+                    document,
+                    setterTargetType,
+                    initializerParts);
+                AddBindingInitializerPart(
+                    templateBindingType,
+                    propertyName: "ConverterCulture",
+                    rawValue: TryGetNamedMarkupArgument(markup, "ConverterCulture"),
+                    compilation,
+                    document,
+                    setterTargetType,
+                    initializerParts);
+                AddBindingInitializerPart(
+                    templateBindingType,
+                    propertyName: "ConverterParameter",
+                    rawValue: TryGetNamedMarkupArgument(markup, "ConverterParameter"),
+                    compilation,
+                    document,
+                    setterTargetType,
+                    initializerParts);
+
+                var templateBindingExpression = "new global::Avalonia.Data.TemplateBinding(" + propertyExpression + ")";
+                if (initializerParts.Count > 0)
+                {
+                    templateBindingExpression += " { " + string.Join(", ", initializerParts) + " }";
                 }
 
                 conversion = CreateTemplateBindingConversion(
-                    "new global::Avalonia.Data.TemplateBinding(" + propertyExpression + ")");
+                    templateBindingExpression);
                 return true;
             }
             default:
