@@ -151,6 +151,181 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Hover_ForXDataTypeValue_ReturnsResolvedTypeDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverDataType.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\" />";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("MainWindowViewModel", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Data Type", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("TestApp.Controls.MainWindowViewModel", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForMarkupExtensionToken_ReturnsMarkupExtensionDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverMarkupExtension.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"><TextBlock Text=\"{Binding Name}\" /></UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Binding", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Markup Extension", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("Binding", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForBindingArgumentName_ReturnsArgumentDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverBindingArgument.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Path=Name}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Path=", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Binding Argument", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("Path", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForBindingPathProperty_ReturnsPropertyDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverBindingProperty.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Customer.DisplayName}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("DisplayName", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("CustomerViewModel.DisplayName", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForBindingPathMethod_ReturnsMethodDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverBindingMethod.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding GetCustomer().DisplayName}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("GetCustomer", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Method", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("GetCustomer()", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForExpressionMethod_ReturnsMethodDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverExpressionMethod.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{= FormatSummary(FirstName, LastName, Count)}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("FormatSummary", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Method", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("FormatSummary", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForSelectorPseudoClass_ReturnsPseudoClassDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverPseudoClass.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:controls=\"using:TestApp.Controls\">\n" +
+                            "  <Style Selector=\"controls|Button:pressed\" />\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf(":pressed", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Pseudoclass", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("TestApp.Controls.Button", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForDynamicResourceKey_ReturnsResourceDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverResource.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <UserControl.Resources>\n" +
+                            "    <TextBlock x:Key=\"AccentBrush\" Text=\"Hello\" />\n" +
+                            "  </UserControl.Resources>\n" +
+                            "  <Border Tag=\"{DynamicResource AccentBrush}\" />\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.LastIndexOf("AccentBrush", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Resource Key", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("AccentBrush", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Diagnostics_AfterLightweightRequest_ReuseSharedAnalysisProfile()
     {
         var countingProvider = new CountingCompilationProvider(

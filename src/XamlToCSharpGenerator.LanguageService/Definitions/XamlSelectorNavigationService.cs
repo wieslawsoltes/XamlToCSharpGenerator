@@ -203,7 +203,7 @@ internal static class XamlSelectorNavigationService
             return null;
         }
 
-        for (var current = selectorElement.Parent; current is not null; current = current.Parent)
+        for (var current = selectorElement; current is not null; current = current.Parent)
         {
             if (string.Equals(current.Name.LocalName, "Style", StringComparison.Ordinal))
             {

@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Parsing;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
@@ -21,12 +22,33 @@ internal enum XamlBindingNavigationTargetKind
     Type
 }
 
+internal enum XamlBindingHoverTargetKind
+{
+    None = 0,
+    Extension,
+    Argument,
+    Property,
+    Method,
+    Type
+}
+
 internal readonly record struct XamlBindingNavigationTarget(
     XamlBindingNavigationTargetKind Kind,
     SourceRange UsageRange,
     AvaloniaTypeInfo? OwnerTypeInfo,
     AvaloniaPropertyInfo? PropertyInfo,
     XamlResolvedTypeReference? TypeReference);
+
+internal readonly record struct XamlBindingHoverTarget(
+    XamlBindingHoverTargetKind Kind,
+    SourceRange UsageRange,
+    string? ExtensionName,
+    string? ArgumentName,
+    bool IsCompiledBinding,
+    AvaloniaTypeInfo? OwnerTypeInfo,
+    AvaloniaPropertyInfo? PropertyInfo,
+    XamlResolvedTypeReference? TypeReference,
+    ISymbol? Symbol);
 
 internal readonly record struct XamlBindingInlayHintTarget(
     SourceRange HintAnchorRange,
@@ -55,6 +77,88 @@ internal static class XamlBindingNavigationService
 
         context = context with { DocumentOffset = documentOffset };
         return TryResolveNavigationTarget(context, out target);
+    }
+
+    public static bool TryResolveHoverTarget(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        out XamlBindingHoverTarget target)
+    {
+        target = default;
+        var documentOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
+        if (!TryFindBindingAttributeAtPosition(analysis, position, out var element, out var attribute, out var attributeValueRange) ||
+            !TryCreateBindingContext(analysis, analysis.Document.Text, element, attribute, attributeValueRange, out var context))
+        {
+            return false;
+        }
+
+        context = context with { DocumentOffset = documentOffset };
+
+        if (ContainsOffset(
+                CreateRange(context.SourceText, context.MarkupSpanInfo.ExtensionNameStart, context.MarkupSpanInfo.ExtensionNameLength),
+                context.DocumentOffset,
+                context.SourceText))
+        {
+            target = new XamlBindingHoverTarget(
+                XamlBindingHoverTargetKind.Extension,
+                CreateRange(context.SourceText, context.MarkupSpanInfo.ExtensionNameStart, context.MarkupSpanInfo.ExtensionNameLength),
+                context.MarkupSpanInfo.ExtensionName,
+                ArgumentName: null,
+                IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                OwnerTypeInfo: null,
+                PropertyInfo: null,
+                TypeReference: null,
+                Symbol: null);
+            return true;
+        }
+
+        foreach (var argument in context.MarkupSpanInfo.Arguments)
+        {
+            if (argument.Name is null || argument.NameLength <= 0)
+            {
+                continue;
+            }
+
+            if (!ContainsOffset(
+                    CreateRange(context.SourceText, argument.NameStart, argument.NameLength),
+                    context.DocumentOffset,
+                    context.SourceText))
+            {
+                continue;
+            }
+
+            target = new XamlBindingHoverTarget(
+                XamlBindingHoverTargetKind.Argument,
+                CreateRange(context.SourceText, argument.NameStart, argument.NameLength),
+                ExtensionName: context.MarkupSpanInfo.ExtensionName,
+                ArgumentName: argument.Name,
+                IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                OwnerTypeInfo: null,
+                PropertyInfo: null,
+                TypeReference: null,
+                Symbol: null);
+            return true;
+        }
+
+        foreach (var candidate in EnumerateBindingTypeTargets(context))
+        {
+            if (ContainsOffset(candidate.UsageRange, context.DocumentOffset, context.SourceText))
+            {
+                target = new XamlBindingHoverTarget(
+                    XamlBindingHoverTargetKind.Type,
+                    candidate.UsageRange,
+                    ExtensionName: context.MarkupSpanInfo.ExtensionName,
+                    ArgumentName: null,
+                    IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                    OwnerTypeInfo: null,
+                    PropertyInfo: null,
+                    TypeReference: candidate.TypeReference,
+                    Symbol: null);
+                return true;
+            }
+        }
+
+        return TryResolveBindingPathHoverTarget(context, out target);
     }
 
     public static ImmutableArray<SourceRange> FindPropertyReferenceRanges(
@@ -191,6 +295,158 @@ internal static class XamlBindingNavigationService
                 ? null
                 : XamlClrNavigationLocationResolver.ResolveTypeLocation(context.Analysis, resultTypeSymbol));
         return true;
+    }
+
+    private static bool TryResolveBindingPathHoverTarget(
+        BindingContext context,
+        out XamlBindingHoverTarget target)
+    {
+        target = default;
+        if (!TryResolveBindingPathSourceType(context, out var sourceTypeSymbol, out var currentPrefixMap) ||
+            !TryGetNormalizedPathValueSpan(context.SourceText, context.MarkupSpanInfo, out var normalizedPathStart, out _, out var normalizedPath) ||
+            normalizedPath.Length == 0 ||
+            !TryTokenizeBindingPath(normalizedPath, out var segmentTokens))
+        {
+            return false;
+        }
+
+        ITypeSymbol currentType = sourceTypeSymbol;
+        for (var index = 0; index < segmentTokens.Length; index++)
+        {
+            var segment = segmentTokens[index];
+
+            if (segment.CastTypeToken is { Length: > 0 })
+            {
+                var castType = ResolveTypeSymbol(context.Analysis, currentPrefixMap, segment.CastTypeToken);
+                if (castType is null)
+                {
+                    return false;
+                }
+
+                currentType = castType;
+            }
+
+            if (segment.IsAttachedProperty)
+            {
+                if (string.IsNullOrWhiteSpace(segment.AttachedOwnerTypeToken))
+                {
+                    return false;
+                }
+
+                var attachedOwnerTypeInfo = ResolveTypeInfo(context.Analysis, currentPrefixMap, segment.AttachedOwnerTypeToken);
+                if (attachedOwnerTypeInfo is null)
+                {
+                    return false;
+                }
+
+                var attachedPropertyInfo = attachedOwnerTypeInfo.Properties.FirstOrDefault(property =>
+                    string.Equals(property.Name, segment.MemberName, StringComparison.Ordinal) &&
+                    property.IsAttached);
+                if (attachedPropertyInfo is null ||
+                    !TryResolvePropertyTypeSymbol(context, currentPrefixMap, attachedOwnerTypeInfo, attachedPropertyInfo, out var attachedPropertyType, out _) ||
+                    attachedPropertyType is null)
+                {
+                    return false;
+                }
+
+                var usageRange = CreateRange(
+                    context.SourceText,
+                    normalizedPathStart + segment.MemberNameStart,
+                    segment.MemberNameLength);
+                if (ContainsOffset(usageRange, context.DocumentOffset, context.SourceText))
+                {
+                    target = new XamlBindingHoverTarget(
+                        XamlBindingHoverTargetKind.Property,
+                        usageRange,
+                        ExtensionName: context.MarkupSpanInfo.ExtensionName,
+                        ArgumentName: "Path",
+                        IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                        OwnerTypeInfo: attachedOwnerTypeInfo,
+                        PropertyInfo: attachedPropertyInfo,
+                        TypeReference: null,
+                        Symbol: null);
+                    return true;
+                }
+
+                currentType = attachedPropertyType;
+                continue;
+            }
+
+            if (currentType is not INamedTypeSymbol currentNamedType)
+            {
+                return false;
+            }
+
+            var memberRange = CreateRange(
+                context.SourceText,
+                normalizedPathStart + segment.MemberNameStart,
+                segment.MemberNameLength);
+
+            if (segment.IsMethodCall)
+            {
+                var method = XamlClrMemberSymbolResolver.ResolveParameterlessMethod(currentNamedType, segment.MemberName);
+                if (method is null)
+                {
+                    return false;
+                }
+
+                if (ContainsOffset(memberRange, context.DocumentOffset, context.SourceText))
+                {
+                    target = new XamlBindingHoverTarget(
+                        XamlBindingHoverTargetKind.Method,
+                        memberRange,
+                        ExtensionName: context.MarkupSpanInfo.ExtensionName,
+                        ArgumentName: "Path",
+                        IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                        OwnerTypeInfo: null,
+                        PropertyInfo: null,
+                        TypeReference: null,
+                        Symbol: method);
+                    return true;
+                }
+
+                currentType = segment.HasIndexers
+                    ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(method.ReturnType) ?? method.ReturnType
+                    : method.ReturnType;
+                continue;
+            }
+
+            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentNamedType, segment.MemberName);
+            if (resolvedProperty is null)
+            {
+                return false;
+            }
+
+            AvaloniaTypeInfo? ownerTypeInfo = null;
+            AvaloniaPropertyInfo? propertyInfo = null;
+            if (TryResolveTypeInfo(context.Analysis, currentNamedType, out ownerTypeInfo))
+            {
+                propertyInfo = ownerTypeInfo?.Properties.FirstOrDefault(property =>
+                    string.Equals(property.Name, resolvedProperty.Name, StringComparison.Ordinal) &&
+                    !property.IsAttached);
+            }
+
+            if (ContainsOffset(memberRange, context.DocumentOffset, context.SourceText))
+            {
+                target = new XamlBindingHoverTarget(
+                    XamlBindingHoverTargetKind.Property,
+                    memberRange,
+                    ExtensionName: context.MarkupSpanInfo.ExtensionName,
+                    ArgumentName: "Path",
+                    IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                    OwnerTypeInfo: ownerTypeInfo,
+                    PropertyInfo: propertyInfo,
+                    TypeReference: null,
+                    Symbol: resolvedProperty);
+                return true;
+            }
+
+            currentType = segment.HasIndexers
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(resolvedProperty.Type) ?? resolvedProperty.Type
+                : resolvedProperty.Type;
+        }
+
+        return false;
     }
 
     private static IEnumerable<XamlBindingNavigationTarget> EnumerateBindingTypeTargets(BindingContext context)
@@ -339,7 +595,7 @@ internal static class XamlBindingNavigationService
                 continue;
             }
 
-            var resolvedProperty = ResolveInstanceProperty(currentType, segment.MemberName);
+            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
             if (resolvedProperty is null)
             {
                 yield break;
@@ -480,7 +736,7 @@ internal static class XamlBindingNavigationService
                 continue;
             }
 
-            var resolvedProperty = ResolveInstanceProperty(currentType, segment.MemberName);
+            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
             if (resolvedProperty is null)
             {
                 return false;
@@ -913,37 +1169,6 @@ internal static class XamlBindingNavigationService
         return null;
     }
 
-    private static IPropertySymbol? ResolveInstanceProperty(INamedTypeSymbol? typeSymbol, string propertyName)
-    {
-        if (typeSymbol is null || string.IsNullOrWhiteSpace(propertyName))
-        {
-            return null;
-        }
-
-        for (var current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            var exact = current.GetMembers(propertyName)
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(static property => !property.IsStatic);
-            if (exact is not null)
-            {
-                return exact;
-            }
-
-            var fallback = current.GetMembers()
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(property =>
-                    !property.IsStatic &&
-                    string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
-            if (fallback is not null)
-            {
-                return fallback;
-            }
-        }
-
-        return null;
-    }
-
     private static bool TryFindBindingAttributeAtPosition(
         XamlAnalysisResult analysis,
         SourcePosition position,
@@ -1051,152 +1276,7 @@ internal static class XamlBindingNavigationService
         int valueStartOffset,
         out MarkupSpanInfo markupSpanInfo)
     {
-        markupSpanInfo = default;
-        if (!MarkupExpressionEnvelopeSemantics.IsMarkupExpression(attributeValue))
-        {
-            return false;
-        }
-
-        var trimmedStart = 0;
-        while (trimmedStart < attributeValue.Length && char.IsWhiteSpace(attributeValue[trimmedStart]))
-        {
-            trimmedStart++;
-        }
-
-        var trimmedEnd = attributeValue.Length;
-        while (trimmedEnd > trimmedStart && char.IsWhiteSpace(attributeValue[trimmedEnd - 1]))
-        {
-            trimmedEnd--;
-        }
-
-        if (trimmedEnd - trimmedStart < 2 ||
-            attributeValue[trimmedStart] != '{' ||
-            attributeValue[trimmedEnd - 1] != '}')
-        {
-            return false;
-        }
-
-        var innerStart = trimmedStart + 1;
-        var innerEnd = trimmedEnd - 1;
-        while (innerStart < innerEnd && char.IsWhiteSpace(attributeValue[innerStart]))
-        {
-            innerStart++;
-        }
-
-        while (innerEnd > innerStart && char.IsWhiteSpace(attributeValue[innerEnd - 1]))
-        {
-            innerEnd--;
-        }
-
-        if (innerEnd <= innerStart)
-        {
-            return false;
-        }
-
-        var innerText = attributeValue.Substring(innerStart, innerEnd - innerStart);
-        var headLength = 0;
-        while (headLength < innerText.Length &&
-               !char.IsWhiteSpace(innerText[headLength]) &&
-               innerText[headLength] != ',')
-        {
-            headLength++;
-        }
-
-        if (headLength == 0)
-        {
-            return false;
-        }
-
-        var extensionName = innerText.Substring(0, headLength).Trim();
-        if (extensionName.Length == 0)
-        {
-            return false;
-        }
-
-        var argumentsStartInInner = headLength;
-        while (argumentsStartInInner < innerText.Length && char.IsWhiteSpace(innerText[argumentsStartInInner]))
-        {
-            argumentsStartInInner++;
-        }
-
-        if (argumentsStartInInner < innerText.Length && innerText[argumentsStartInInner] == ',')
-        {
-            argumentsStartInInner++;
-            while (argumentsStartInInner < innerText.Length && char.IsWhiteSpace(innerText[argumentsStartInInner]))
-            {
-                argumentsStartInInner++;
-            }
-        }
-
-        var arguments = ImmutableArray<MarkupArgumentSpan>.Empty;
-        var absoluteArgumentsStart = valueStartOffset + innerStart + argumentsStartInInner;
-        if (argumentsStartInInner < innerText.Length)
-        {
-            var argumentsText = innerText.Substring(argumentsStartInInner);
-            var segments = TopLevelTextParser.SplitTopLevelSegments(
-                argumentsText,
-                ',',
-                trimTokens: true,
-                removeEmpty: true);
-            if (segments.Length > 0)
-            {
-                var builder = ImmutableArray.CreateBuilder<MarkupArgumentSpan>(segments.Length);
-                for (var index = 0; index < segments.Length; index++)
-                {
-                    var segment = segments[index];
-                    var absoluteSegmentStart = absoluteArgumentsStart + segment.Start;
-                    var absoluteSegmentLength = segment.Length;
-                    var valueText = segment.Text;
-                    string? name = null;
-                    var valueStart = absoluteSegmentStart;
-                    var valueLength = absoluteSegmentLength;
-
-                    var parseStatus = XamlMarkupArgumentSemantics.TryParseNamedArgument(
-                        segment.Text,
-                        out var parsedName,
-                        out var parsedValue);
-                    if (parseStatus == XamlMarkupNamedArgumentParseStatus.Parsed)
-                    {
-                        name = parsedName;
-                        valueText = parsedValue;
-
-                        var equalsIndex = TopLevelTextParser.IndexOfTopLevel(segment.Text, '=');
-                        var valueStartInSegment = equalsIndex + 1;
-                        while (valueStartInSegment < segment.Text.Length && char.IsWhiteSpace(segment.Text[valueStartInSegment]))
-                        {
-                            valueStartInSegment++;
-                        }
-
-                        valueStart = absoluteSegmentStart + valueStartInSegment;
-                        valueLength = segment.Text.Length - valueStartInSegment;
-                    }
-
-                    NormalizeQuotedToken(sourceText: attributeValue, valueStart - valueStartOffset, valueLength, out var normalizedStart, out var normalizedLength);
-                    valueStart = valueStartOffset + normalizedStart;
-                    valueLength = normalizedLength;
-
-                    builder.Add(new MarkupArgumentSpan(
-                        Name: name,
-                        Start: absoluteSegmentStart,
-                        Length: absoluteSegmentLength,
-                        ValueStart: valueStart,
-                        ValueLength: valueLength,
-                        ValueText: valueLength > 0
-                            ? attributeValue.Substring(normalizedStart, normalizedLength)
-                            : string.Empty,
-                        Ordinal: index));
-                }
-
-                arguments = builder.ToImmutable();
-            }
-        }
-
-        markupSpanInfo = new MarkupSpanInfo(
-            ExtensionName: extensionName,
-            Start: valueStartOffset + trimmedStart,
-            Length: trimmedEnd - trimmedStart,
-            Arguments: arguments);
-        return true;
+        return XamlMarkupExtensionSpanParser.TryParse(attributeValue, valueStartOffset, out markupSpanInfo);
     }
 
     private static bool TryResolveArgumentSpan(
@@ -1670,21 +1750,6 @@ internal static class XamlBindingNavigationService
         SourceRange AttributeValueRange,
         MarkupSpanInfo MarkupSpanInfo,
         int DocumentOffset);
-
-    private readonly record struct MarkupSpanInfo(
-        string ExtensionName,
-        int Start,
-        int Length,
-        ImmutableArray<MarkupArgumentSpan> Arguments);
-
-    private readonly record struct MarkupArgumentSpan(
-        string? Name,
-        int Start,
-        int Length,
-        int ValueStart,
-        int ValueLength,
-        string ValueText,
-        int Ordinal);
 
     private readonly record struct BindingPathSegmentToken(
         int Start,

@@ -365,6 +365,136 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Hover_Request_ForBindingProperty_ReturnsPropertyDetails()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/HoverBindingProperty.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Customer.DisplayName}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var propertyOffset = xaml.IndexOf("DisplayName", StringComparison.Ordinal);
+        var propertyCaret = SourceText.From(xaml).Lines.GetLinePosition(propertyOffset + 2);
+
+        await harness.SendRequestAsync(21, "textDocument/hover", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = propertyCaret.Line,
+                ["character"] = propertyCaret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(21);
+        var contents = response.RootElement.GetProperty("result").GetProperty("contents").GetProperty("value").GetString();
+        Assert.Contains("Property", contents, StringComparison.Ordinal);
+        Assert.Contains("CustomerViewModel.DisplayName", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_Request_ForExpressionMethod_ReturnsMethodDetails()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/HoverExpressionMethod.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{= FormatSummary(FirstName, LastName, Count)}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var methodOffset = xaml.IndexOf("FormatSummary", StringComparison.Ordinal);
+        var methodCaret = SourceText.From(xaml).Lines.GetLinePosition(methodOffset + 2);
+
+        await harness.SendRequestAsync(22, "textDocument/hover", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = methodCaret.Line,
+                ["character"] = methodCaret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(22);
+        var contents = response.RootElement.GetProperty("result").GetProperty("contents").GetProperty("value").GetString();
+        Assert.Contains("Method", contents, StringComparison.Ordinal);
+        Assert.Contains("FormatSummary", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_Request_ForXDataTypeValue_ReturnsTypeDetails()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/HoverXDataType.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var typeOffset = xaml.IndexOf("MainWindowViewModel", StringComparison.Ordinal);
+        var typeCaret = SourceText.From(xaml).Lines.GetLinePosition(typeOffset + 2);
+
+        await harness.SendRequestAsync(23, "textDocument/hover", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = typeCaret.Line,
+                ["character"] = typeCaret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(23);
+        var contents = response.RootElement.GetProperty("result").GetProperty("contents").GetProperty("value").GetString();
+        Assert.Contains("Data Type", contents, StringComparison.Ordinal);
+        Assert.Contains("TestApp.Controls.MainWindowViewModel", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rename_Request_ForXamlBindingProperty_ReturnsWorkspaceEdit()
     {
         var project = await CreateRenameProjectFixtureAsync();
