@@ -27,6 +27,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlInlayHintService _inlayHintService;
     private readonly XamlDefinitionService _definitionService;
     private readonly XamlReferenceService _referenceService;
+    private readonly CSharpToXamlNavigationService _csharpToXamlNavigationService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
     private readonly XamlRefactoringService _refactoringService;
@@ -58,6 +59,10 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _inlayHintService = new XamlInlayHintService();
         _definitionService = new XamlDefinitionService();
         _referenceService = new XamlReferenceService();
+        _csharpToXamlNavigationService = new CSharpToXamlNavigationService(
+            _documentStore,
+            _analysisService,
+            new CSharpSymbolResolutionService(_compilationProvider));
         _documentSymbolService = new XamlDocumentSymbolService();
         _semanticTokenService = new XamlSemanticTokenService();
         var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService);
@@ -193,6 +198,36 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         var references = _referenceService.GetReferences(analysis, position);
         _referenceCache[cacheKey] = references;
         return references;
+    }
+
+    public Task<ImmutableArray<XamlReferenceLocation>> GetXamlReferencesForCSharpSymbolAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _csharpToXamlNavigationService.GetReferencesAsync(
+            uri,
+            position,
+            documentTextOverride,
+            options,
+            cancellationToken);
+    }
+
+    public Task<ImmutableArray<XamlDefinitionLocation>> GetXamlDeclarationsForCSharpSymbolAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _csharpToXamlNavigationService.GetDeclarationsAsync(
+            uri,
+            position,
+            documentTextOverride,
+            options,
+            cancellationToken);
     }
 
     public async Task<ImmutableArray<XamlInlayHint>> GetInlayHintsAsync(

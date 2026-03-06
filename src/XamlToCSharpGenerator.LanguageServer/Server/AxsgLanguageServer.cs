@@ -258,6 +258,24 @@ internal sealed class AxsgLanguageServer : IDisposable
                 }
                 break;
 
+            case "axsg/csharp/references":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleCSharpReferencesAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "axsg/csharp/declarations":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleCSharpDeclarationsAsync(requestId, requestParameters, token));
+                }
+                break;
+
             case "axsg/refactor/prepareRename":
                 if (hasId)
                 {
@@ -886,6 +904,60 @@ internal sealed class AxsgLanguageServer : IDisposable
         {
             ["text"] = documentText
         };
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleCSharpReferencesAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+        var references = await _engine.GetXamlReferencesForCSharpSymbolAsync(
+            request.Uri,
+            request.Position,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var reference in references)
+        {
+            payload.Add(new JsonObject
+            {
+                ["uri"] = reference.Uri,
+                ["range"] = SerializeRange(NormalizeTransportRange(reference.Range))
+            });
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleCSharpDeclarationsAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+        var declarations = await _engine.GetXamlDeclarationsForCSharpSymbolAsync(
+            request.Uri,
+            request.Position,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var declaration in declarations)
+        {
+            payload.Add(new JsonObject
+            {
+                ["uri"] = declaration.Uri,
+                ["range"] = SerializeRange(NormalizeTransportRange(declaration.Range))
+            });
+        }
+
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
     }
 

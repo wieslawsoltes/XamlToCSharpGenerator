@@ -194,9 +194,22 @@ async function fetchAndCacheSourceLinkDocument(sourceUrl) {
     updateSourceLinkCacheAndNotify(sourceUrl, 'ready', text);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const failure = `// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// ${message}\n`;
+    const failure = padVirtualLoadingDocument(`// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// ${message}\n`);
     updateSourceLinkCacheAndNotify(sourceUrl, 'error', failure);
   }
+}
+
+function padVirtualLoadingDocument(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const paddedLines = lines.map((line) => line.length >= VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS
+    ? line
+    : line + ' '.repeat(VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS - line.length));
+
+  while (paddedLines.length < VIRTUAL_LOADING_DOCUMENT_MIN_LINES) {
+    paddedLines.push(' '.repeat(VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS));
+  }
+
+  return `${paddedLines.join('\n')}\n`;
 }
 
 function renderSourceLinkDocument(uri) {
@@ -320,6 +333,36 @@ function toVsCodeRange(range) {
     range.end.line,
     range.end.character
   );
+}
+
+function toVsCodeLocation(location) {
+  if (!location || typeof location.uri !== 'string' || !location.range) {
+    return undefined;
+  }
+
+  return new vscode.Location(vscode.Uri.parse(location.uri), toVsCodeRange(location.range));
+}
+
+async function requestCrossLanguageLocations(method, document, position, token) {
+  if (!client) {
+    return [];
+  }
+
+  const response = await client.sendRequest(method, {
+    textDocument: {
+      uri: document.uri.toString()
+    },
+    position: toProtocolPosition(position),
+    documentText: document.getText()
+  }, token);
+
+  if (!Array.isArray(response)) {
+    return [];
+  }
+
+  return response
+    .map(toVsCodeLocation)
+    .filter((location) => location instanceof vscode.Location);
 }
 
 async function applyProtocolWorkspaceEdit(edit) {
@@ -507,6 +550,33 @@ async function activate(context) {
     },
     {
       providedCodeActionKinds: [AXSG_REFACTOR_RENAME_KIND]
+    }));
+  context.subscriptions.push(vscode.languages.registerReferenceProvider(
+    [
+      { scheme: 'file', language: 'csharp' }
+    ],
+    {
+      async provideReferences(document, position, context, token) {
+        return requestCrossLanguageLocations('axsg/csharp/references', document, position, token);
+      }
+    }));
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [
+      { scheme: 'file', language: 'csharp' }
+    ],
+    {
+      async provideDefinition(document, position, token) {
+        return requestCrossLanguageLocations('axsg/csharp/declarations', document, position, token);
+      }
+    }));
+  context.subscriptions.push(vscode.languages.registerDeclarationProvider(
+    [
+      { scheme: 'file', language: 'csharp' }
+    ],
+    {
+      async provideDeclaration(document, position, token) {
+        return requestCrossLanguageLocations('axsg/csharp/declarations', document, position, token);
+      }
     }));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async document => {
     if (document.uri.scheme !== AXSG_METADATA_SCHEME &&

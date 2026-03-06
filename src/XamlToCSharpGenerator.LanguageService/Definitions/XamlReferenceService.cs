@@ -67,6 +67,92 @@ public sealed class XamlReferenceService
         return CollectClrReferences(analysis, position, identifier);
     }
 
+    public ImmutableArray<XamlReferenceLocation> GetReferencesForClrSymbol(
+        XamlAnalysisResult analysis,
+        ISymbol symbol)
+    {
+        ArgumentNullException.ThrowIfNull(analysis);
+        ArgumentNullException.ThrowIfNull(symbol);
+
+        symbol = symbol switch
+        {
+            IAliasSymbol aliasSymbol => aliasSymbol.Target,
+            _ => symbol
+        };
+
+        if (analysis.TypeIndex is null)
+        {
+            return ImmutableArray<XamlReferenceLocation>.Empty;
+        }
+
+        if (TryResolveTypeInfoFromSymbol(analysis, symbol, out var typeInfo) &&
+            typeInfo is not null)
+        {
+            var typeReference = new XamlResolvedTypeReference(
+                typeInfo.FullTypeName,
+                typeInfo.AssemblyName,
+                typeInfo.SourceLocation);
+            return MergeReferences(
+                CollectTypeReferences(analysis, typeInfo),
+                CollectTypeAttributeValueReferences(analysis, typeReference));
+        }
+
+        if (symbol is ITypeSymbol typeSymbol)
+        {
+            var fullTypeName = typeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+            var typeReference = new XamlResolvedTypeReference(
+                FullTypeName: fullTypeName,
+                AssemblyName: typeSymbol.ContainingAssembly?.Identity.Name ?? string.Empty,
+                SourceLocation: XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeSymbol));
+            return MergeReferences(
+                CollectTypeAttributeValueReferences(analysis, typeReference),
+                CollectExpressionSymbolReferences(analysis, typeSymbol));
+        }
+
+        if (TryResolvePropertyInfoFromSymbol(analysis, symbol, out var ownerTypeInfo, out var propertyInfo) &&
+            ownerTypeInfo is not null &&
+            propertyInfo is not null)
+        {
+            return CollectPropertyReferences(analysis, ownerTypeInfo, propertyInfo);
+        }
+
+        return CollectExpressionSymbolReferences(analysis, symbol);
+    }
+
+    private static ImmutableArray<XamlReferenceLocation> MergeReferences(
+        ImmutableArray<XamlReferenceLocation> primary,
+        ImmutableArray<XamlReferenceLocation> secondary)
+    {
+        if (primary.IsDefaultOrEmpty)
+        {
+            return secondary;
+        }
+
+        if (secondary.IsDefaultOrEmpty)
+        {
+            return primary;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlReferenceLocation>(primary.Length + secondary.Length);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var reference in primary)
+        {
+            AddReference(builder, seen, reference.Uri, reference.Range, reference.IsDeclaration);
+        }
+
+        foreach (var reference in secondary)
+        {
+            AddReference(builder, seen, reference.Uri, reference.Range, reference.IsDeclaration);
+        }
+
+        return builder
+            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
+            .ThenBy(static item => item.Range.Start.Line)
+            .ThenBy(static item => item.Range.Start.Character)
+            .ToImmutableArray();
+    }
+
     private static ImmutableArray<XamlReferenceLocation> CollectNamedOrResourceReferences(
         XamlAnalysisResult analysis,
         string identifier,

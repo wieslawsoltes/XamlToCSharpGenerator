@@ -1966,6 +1966,90 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task CSharpReferences_ForExpressionBindingProperty_IncludeXamlUsages()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
+
+        var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
+            fixture.CodeUri,
+            fixture.NamePropertyPosition,
+            options,
+            fixture.CodeText,
+            CancellationToken.None);
+
+        Assert.NotEmpty(references);
+        Assert.All(references, reference => Assert.EndsWith(".axaml", new Uri(reference.Uri).LocalPath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => string.Equals(item.Uri, fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpReferences_ForExpressionBindingMethod_IncludeXamlUsages()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
+
+        var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
+            fixture.CodeUri,
+            fixture.GetNameMethodPosition,
+            options,
+            fixture.CodeText,
+            CancellationToken.None);
+
+        Assert.NotEmpty(references);
+        Assert.All(references, reference => Assert.EndsWith(".axaml", new Uri(reference.Uri).LocalPath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => string.Equals(item.Uri, fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpReferences_ForType_IncludeXamlTypeUsages()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
+
+        var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
+            fixture.CodeUri,
+            fixture.ViewModelTypePosition,
+            options,
+            fixture.CodeText,
+            CancellationToken.None);
+
+        Assert.NotEmpty(references);
+        Assert.All(references, reference => Assert.True(
+            reference.Uri.EndsWith(".xaml", StringComparison.Ordinal) || reference.Uri.EndsWith(".axaml", StringComparison.Ordinal),
+            "Expected XAML-only location but got: " + reference.Uri));
+        Assert.Contains(references, item => string.Equals(item.Uri, fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpDeclarations_ForRootViewType_ReturnXamlXClassLocation()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
+
+        var declarations = await engine.GetXamlDeclarationsForCSharpSymbolAsync(
+            fixture.CodeUri,
+            fixture.MainViewTypePosition,
+            options,
+            fixture.CodeText,
+            CancellationToken.None);
+
+        Assert.NotEmpty(declarations);
+        Assert.All(declarations, declaration => Assert.True(
+            declaration.Uri.EndsWith(".xaml", StringComparison.Ordinal) || declaration.Uri.EndsWith(".axaml", StringComparison.Ordinal),
+            "Expected XAML-only location but got: " + declaration.Uri));
+        Assert.Contains(declarations, item => string.Equals(item.Uri, fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Definitions_And_References_Work_For_ControlCatalog_XDataType_AllTokenPositions()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -2378,6 +2462,87 @@ public sealed class XamlLanguageServiceEngineTests
         }
     }
 
+    private static async Task<CrossLanguageNavigationFixture> CreateCrossLanguageNavigationFixtureAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-cross-nav-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        const string codeText = """
+                                using System;
+
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:TestApp", "TestApp")]
+
+                                namespace Avalonia.Metadata
+                                {
+                                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                    public sealed class XmlnsDefinitionAttribute : Attribute
+                                    {
+                                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                    }
+                                }
+
+                                namespace TestApp.Controls
+                                {
+                                    public class UserControl { }
+
+                                    public class TextBlock
+                                    {
+                                        public string Text { get; set; } = string.Empty;
+                                    }
+                                }
+
+                                namespace TestApp
+                                {
+                                    public partial class MainView : TestApp.Controls.UserControl { }
+
+                                    public sealed class MainViewModel
+                                    {
+                                        public string Name { get; set; } = string.Empty;
+
+                                        public string GetName() => Name;
+                                    }
+                                }
+                                """;
+
+        const string xamlText = """
+                                <UserControl xmlns="https://github.com/avaloniaui"
+                                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                             xmlns:vm="using:TestApp"
+                                             x:Class="TestApp.MainView"
+                                             x:DataType="vm:MainViewModel">
+                                  <TextBlock Text="{Binding Name}" />
+                                  <TextBlock Text="{= GetName()}" />
+                                </UserControl>
+                                """;
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new CrossLanguageNavigationFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            codeText,
+            GetPosition(codeText, codeText.IndexOf("Name { get;", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("GetName()", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainViewModel", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainView", StringComparison.Ordinal) + 2),
+            new Uri(xamlPath).AbsoluteUri);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = AppContext.BaseDirectory;
@@ -2442,6 +2607,27 @@ public sealed class XamlLanguageServiceEngineTests
         }
 
         return null;
+    }
+
+    private sealed record CrossLanguageNavigationFixture(
+        string RootPath,
+        string CodeUri,
+        string CodeText,
+        SourcePosition NamePropertyPosition,
+        SourcePosition GetNameMethodPosition,
+        SourcePosition ViewModelTypePosition,
+        SourcePosition MainViewTypePosition,
+        string XamlUri) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(RootPath))
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static Compilation CreateCompilationWithExternalControls()

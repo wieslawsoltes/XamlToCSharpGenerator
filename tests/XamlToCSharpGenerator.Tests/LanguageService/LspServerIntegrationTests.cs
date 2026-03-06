@@ -1817,6 +1817,133 @@ public sealed class LspServerIntegrationTests
         Assert.True(references.GetArrayLength() >= 2);
     }
 
+    [Fact]
+    public async Task CSharpReferences_Request_ForExpressionProperty_ReturnsXamlLocations()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(9201, "axsg/csharp/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = fixture.CodeUri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = fixture.NamePropertyPosition.Line,
+                ["character"] = fixture.NamePropertyPosition.Character
+            },
+            ["documentText"] = fixture.CodeText
+        });
+
+        using var response = await harness.ReadResponseAsync(9201);
+        var references = response.RootElement.GetProperty("result");
+
+        Assert.True(references.GetArrayLength() > 0);
+        foreach (var reference in references.EnumerateArray())
+        {
+            var uri = reference.GetProperty("uri").GetString();
+            Assert.NotNull(uri);
+            Assert.True(uri!.EndsWith(".axaml", StringComparison.Ordinal) || uri.EndsWith(".xaml", StringComparison.Ordinal));
+        }
+
+        Assert.Contains(references.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("uri").GetString(), fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpReferences_Request_ForExpressionMethod_ReturnsXamlLocations()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(9202, "axsg/csharp/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = fixture.CodeUri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = fixture.GetNameMethodPosition.Line,
+                ["character"] = fixture.GetNameMethodPosition.Character
+            },
+            ["documentText"] = fixture.CodeText
+        });
+
+        using var response = await harness.ReadResponseAsync(9202);
+        var references = response.RootElement.GetProperty("result");
+
+        Assert.True(references.GetArrayLength() > 0);
+        Assert.Contains(references.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("uri").GetString(), fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpReferences_Request_ForType_ReturnsXamlLocations()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(9203, "axsg/csharp/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = fixture.CodeUri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = fixture.ViewModelTypePosition.Line,
+                ["character"] = fixture.ViewModelTypePosition.Character
+            },
+            ["documentText"] = fixture.CodeText
+        });
+
+        using var response = await harness.ReadResponseAsync(9203);
+        var references = response.RootElement.GetProperty("result");
+
+        Assert.True(references.GetArrayLength() > 0);
+        Assert.Contains(references.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("uri").GetString(), fixture.XamlUri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CSharpDeclarations_Request_ForRootViewType_ReturnsXamlXClassLocation()
+    {
+        await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
+
+        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(9204, "axsg/csharp/declarations", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = fixture.CodeUri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = fixture.MainViewTypePosition.Line,
+                ["character"] = fixture.MainViewTypePosition.Character
+            },
+            ["documentText"] = fixture.CodeText
+        });
+
+        using var response = await harness.ReadResponseAsync(9204);
+        var declarations = response.RootElement.GetProperty("result");
+
+        Assert.True(declarations.GetArrayLength() > 0);
+        Assert.Contains(declarations.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("uri").GetString(), fixture.XamlUri, StringComparison.Ordinal));
+    }
+
     private static int CountErrorDiagnostics(JsonElement diagnostics)
     {
         var count = 0;
@@ -2157,6 +2284,87 @@ public sealed class LspServerIntegrationTests
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
+    private static async Task<CrossLanguageNavigationFixture> CreateCrossLanguageNavigationFixtureAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-cross-nav-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        const string codeText = """
+                                using System;
+
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+                                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:TestApp", "TestApp")]
+
+                                namespace Avalonia.Metadata
+                                {
+                                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                    public sealed class XmlnsDefinitionAttribute : Attribute
+                                    {
+                                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                    }
+                                }
+
+                                namespace TestApp.Controls
+                                {
+                                    public class UserControl { }
+
+                                    public class TextBlock
+                                    {
+                                        public string Text { get; set; } = string.Empty;
+                                    }
+                                }
+
+                                namespace TestApp
+                                {
+                                    public partial class MainView : TestApp.Controls.UserControl { }
+
+                                    public sealed class MainViewModel
+                                    {
+                                        public string Name { get; set; } = string.Empty;
+
+                                        public string GetName() => Name;
+                                    }
+                                }
+                                """;
+
+        const string xamlText = """
+                                <UserControl xmlns="https://github.com/avaloniaui"
+                                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                             xmlns:vm="using:TestApp"
+                                             x:Class="TestApp.MainView"
+                                             x:DataType="vm:MainViewModel">
+                                  <TextBlock Text="{Binding Name}" />
+                                  <TextBlock Text="{= GetName()}" />
+                                </UserControl>
+                                """;
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new CrossLanguageNavigationFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            codeText,
+            GetPosition(codeText, codeText.IndexOf("Name { get;", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("GetName()", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainViewModel", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainView", StringComparison.Ordinal) + 2),
+            new Uri(xamlPath).AbsoluteUri);
+    }
+
     private static async Task<RenameProjectFixture> CreateRenameProjectFixtureAsync()
     {
         var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-rename-" + Guid.NewGuid().ToString("N"));
@@ -2261,4 +2469,25 @@ public sealed class LspServerIntegrationTests
         string XamlUri,
         string XamlText,
         SourcePosition XamlNamePosition);
+
+    private sealed record CrossLanguageNavigationFixture(
+        string RootPath,
+        string CodeUri,
+        string CodeText,
+        SourcePosition NamePropertyPosition,
+        SourcePosition GetNameMethodPosition,
+        SourcePosition ViewModelTypePosition,
+        SourcePosition MainViewTypePosition,
+        string XamlUri) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(RootPath))
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+
+            return ValueTask.CompletedTask;
+        }
+    }
 }
