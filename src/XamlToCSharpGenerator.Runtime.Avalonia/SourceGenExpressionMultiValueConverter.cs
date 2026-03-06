@@ -25,7 +25,7 @@ internal sealed class SourceGenExpressionMultiValueConverter<TSource> : IMultiVa
         {
             if (values[0] is TSource typedSource)
             {
-                return _evaluator(typedSource);
+                return CoerceEvaluatedValue(_evaluator(typedSource), targetType, culture);
             }
         }
         catch
@@ -34,5 +34,51 @@ internal sealed class SourceGenExpressionMultiValueConverter<TSource> : IMultiVa
         }
 
         return null;
+    }
+
+    private static object? CoerceEvaluatedValue(object? value, Type targetType, CultureInfo culture)
+    {
+        if (value is null ||
+            targetType == typeof(object))
+        {
+            return value;
+        }
+
+        var effectiveTargetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        if (effectiveTargetType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if (effectiveTargetType == typeof(string))
+        {
+            return System.Convert.ToString(value, culture);
+        }
+
+        if (effectiveTargetType.IsEnum && value is string enumText)
+        {
+            try
+            {
+                return Enum.Parse(effectiveTargetType, enumText, ignoreCase: true);
+            }
+            catch
+            {
+                return value;
+            }
+        }
+
+        if (value is IConvertible && typeof(IConvertible).IsAssignableFrom(effectiveTargetType))
+        {
+            try
+            {
+                return System.Convert.ChangeType(value, effectiveTargetType, culture);
+            }
+            catch
+            {
+                return value;
+            }
+        }
+
+        return value;
     }
 }

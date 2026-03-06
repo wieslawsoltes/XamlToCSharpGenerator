@@ -220,6 +220,88 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (property is not null && property.SetMethod is not null)
             {
+                if (TryConvertCSharpExpressionMarkupToBindingExpression(
+                        assignment.Value,
+                        compilation,
+                        document,
+                        options,
+                        nodeDataType,
+                        out var isExpressionMarkup,
+                        out var expressionBindingValueExpression,
+                        out var expressionAccessorExpression,
+                        out var normalizedExpression,
+                        out var expressionResultTypeName,
+                        out var expressionErrorCode,
+                        out var expressionErrorMessage))
+                {
+                    if (TryBindAvaloniaPropertyAssignment(
+                            symbol,
+                            typeName,
+                            normalizedPropertyName,
+                            assignment,
+                            compilation,
+                            document,
+                            options,
+                            diagnostics,
+                            compiledBindings,
+                            compileBindingsEnabled,
+                            nodeDataType,
+                            property.Type,
+                            currentBindingPriorityScope,
+                            currentSetterTargetType,
+                            rootTypeSymbol,
+                            out var avaloniaExpressionBindingAssignment,
+                            allowCompiledBindingRegistration: false))
+                    {
+                        if (avaloniaExpressionBindingAssignment is not null)
+                        {
+                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                                TargetTypeName: typeName,
+                                TargetPropertyName: property.Name,
+                                Path: "{= " + normalizedExpression + " }",
+                                SourceTypeName: nodeDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                                ResultTypeName: expressionResultTypeName,
+                                AccessorExpression: expressionAccessorExpression,
+                                IsSetterBinding: false,
+                                Line: assignment.Line,
+                                Column: assignment.Column));
+                            assignments.Add(avaloniaExpressionBindingAssignment);
+                        }
+
+                        continue;
+                    }
+
+                    assignments.Add(new ResolvedPropertyAssignment(
+                        PropertyName: property.Name,
+                        ValueExpression: expressionBindingValueExpression,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        Line: assignment.Line,
+                        Column: assignment.Column,
+                        Condition: assignment.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
+                if (isExpressionMarkup)
+                {
+                    var message = expressionErrorCode == "AXSG0110"
+                        ? $"Expression binding for '{property.Name}' requires x:DataType in scope."
+                        : $"Expression binding for '{property.Name}' is invalid: {expressionErrorMessage}";
+                    diagnostics.Add(new DiagnosticInfo(
+                        expressionErrorCode,
+                        message,
+                        document.FilePath,
+                        assignment.Line,
+                        assignment.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
                 if (TryParseBindingMarkup(assignment.Value, out var bindingMarkup))
                 {
                     if (TryReportBindingSourceConflict(

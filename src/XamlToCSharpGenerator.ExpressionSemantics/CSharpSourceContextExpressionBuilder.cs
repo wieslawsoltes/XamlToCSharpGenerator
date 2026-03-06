@@ -24,8 +24,25 @@ public readonly struct SourceContextExpressionBuildResult
     public ImmutableArray<string> DependencyNames { get; }
 }
 
+internal readonly struct SourceContextExpressionRewriteResult
+{
+    public SourceContextExpressionRewriteResult(
+        ExpressionSyntax rewrittenExpressionSyntax,
+        ImmutableArray<string> dependencyNames)
+    {
+        RewrittenExpressionSyntax = rewrittenExpressionSyntax;
+        DependencyNames = dependencyNames.IsDefault ? ImmutableArray<string>.Empty : dependencyNames;
+    }
+
+    public ExpressionSyntax RewrittenExpressionSyntax { get; }
+
+    public ImmutableArray<string> DependencyNames { get; }
+}
+
 public static class CSharpSourceContextExpressionBuilder
 {
+    internal const string RawSpanAnnotationKind = "AXSGExpressionRawSpan";
+
     public static bool TryBuildAccessorExpression(
         Compilation compilation,
         INamedTypeSymbol sourceType,
@@ -59,6 +76,55 @@ public static class CSharpSourceContextExpressionBuilder
             return false;
         }
 
+        if (!TryRewriteAccessorExpression(
+                sourceType,
+                rawExpression,
+                sourceParameterName,
+                out var rewriteResult,
+                out errorMessage))
+        {
+            return false;
+        }
+
+        var rewrittenExpression = rewriteResult.RewrittenExpressionSyntax.ToFullString().Trim();
+        if (!TryValidateGeneratedExpression(compilation, sourceType, sourceParameterName, rewrittenExpression, out errorMessage))
+        {
+            return false;
+        }
+
+        result = new SourceContextExpressionBuildResult(
+            rewrittenExpression,
+            rewriteResult.DependencyNames);
+        return true;
+    }
+
+    internal static bool TryRewriteAccessorExpression(
+        INamedTypeSymbol sourceType,
+        string rawExpression,
+        string sourceParameterName,
+        out SourceContextExpressionRewriteResult result,
+        out string errorMessage)
+    {
+        if (sourceType is null)
+        {
+            throw new ArgumentNullException(nameof(sourceType));
+        }
+
+        result = default;
+        errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(sourceParameterName))
+        {
+            errorMessage = "source parameter name is empty";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawExpression))
+        {
+            errorMessage = "expression text is empty";
+            return false;
+        }
+
         var normalizedExpression = rawExpression.Trim();
         var parsedExpression = SyntaxFactory.ParseExpression(normalizedExpression);
         var parseDiagnostic = parsedExpression
@@ -70,13 +136,14 @@ public static class CSharpSourceContextExpressionBuilder
             return false;
         }
 
+        var annotatedExpression = AnnotateSimpleNames(parsedExpression);
         var sourceMemberNames = GetExpressionSourceMemberNames(sourceType);
-        var expressionLocalNames = GetExpressionLocalNames(parsedExpression);
+        var expressionLocalNames = GetExpressionLocalNames(annotatedExpression);
         var rewriter = new SourceContextExpressionRewriter(
             sourceMemberNames,
             expressionLocalNames,
             sourceParameterName);
-        if (rewriter.Visit(parsedExpression) is not ExpressionSyntax rewrittenExpressionSyntax)
+        if (rewriter.Visit(annotatedExpression) is not ExpressionSyntax rewrittenExpressionSyntax)
         {
             errorMessage = "expression rewrite failed";
             return false;
@@ -89,13 +156,8 @@ public static class CSharpSourceContextExpressionBuilder
             return false;
         }
 
-        if (!TryValidateGeneratedExpression(compilation, sourceType, sourceParameterName, rewrittenExpression, out errorMessage))
-        {
-            return false;
-        }
-
-        result = new SourceContextExpressionBuildResult(
-            rewrittenExpression,
+        result = new SourceContextExpressionRewriteResult(
+            rewrittenExpressionSyntax,
             rewriter.Dependencies
                 .OrderBy(static name => name, StringComparer.Ordinal)
                 .ToImmutableArray());
@@ -107,6 +169,45 @@ public static class CSharpSourceContextExpressionBuilder
         var collector = new ExpressionLocalNameCollector();
         collector.Visit(expression);
         return collector.Names.ToImmutableHashSet(StringComparer.Ordinal);
+    }
+
+    internal static SyntaxAnnotation CreateRawSpanAnnotation(int start, int length)
+    {
+        return new SyntaxAnnotation(
+            RawSpanAnnotationKind,
+            start.ToString(CultureInfo.InvariantCulture) + ":" + length.ToString(CultureInfo.InvariantCulture));
+    }
+
+    internal static bool TryParseRawSpanAnnotation(
+        SyntaxAnnotation annotation,
+        out int start,
+        out int length)
+    {
+        start = 0;
+        length = 0;
+        if (!string.Equals(annotation.Kind, RawSpanAnnotationKind, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(annotation.Data))
+        {
+            return false;
+        }
+
+        var annotationData = annotation.Data!;
+        var separatorIndex = annotationData.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= annotationData.Length - 1)
+        {
+            return false;
+        }
+
+        return int.TryParse(annotationData.Substring(0, separatorIndex), NumberStyles.Integer, CultureInfo.InvariantCulture, out start) &&
+               int.TryParse(annotationData.Substring(separatorIndex + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out length);
+    }
+
+    private static ExpressionSyntax AnnotateSimpleNames(ExpressionSyntax expression)
+    {
+        return expression.ReplaceNodes(
+            expression.DescendantNodesAndSelf().OfType<SimpleNameSyntax>(),
+            static (originalNode, _) => originalNode.WithAdditionalAnnotations(
+                CreateRawSpanAnnotation(originalNode.SpanStart, originalNode.Span.Length)));
     }
 
     private static ImmutableHashSet<string> GetExpressionSourceMemberNames(INamedTypeSymbol sourceType)
@@ -371,10 +472,13 @@ public static class CSharpSourceContextExpressionBuilder
             }
 
             Dependencies.Add(name);
+            var rewrittenName = SyntaxFactory.IdentifierName(name)
+                .WithTriviaFrom(node)
+                .WithAdditionalAnnotations(node.GetAnnotations(RawSpanAnnotationKind));
             return SyntaxFactory.MemberAccessExpression(
                     SyntaxKind.SimpleMemberAccessExpression,
                     SyntaxFactory.IdentifierName(_sourceParameterName),
-                    SyntaxFactory.IdentifierName(name))
+                    rewrittenName)
                 .WithTriviaFrom(node);
         }
 

@@ -4302,6 +4302,87 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_Expression_Bindings_For_Sealed_XDataType_ViewModel()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                    public static readonly global::Avalonia.AvaloniaProperty IsVisibleProperty = new();
+                    public bool IsVisible { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MarkupExtensionsPageViewModel
+                {
+                    public string FirstName { get; } = "Ava";
+                    public string LastName { get; } = "SourceGen";
+                    public int Count { get; } = 3;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MarkupExtensionsPageViewModel"
+                         x:CompileBindings="True">
+                <TextBlock Text="{= FirstName + ' - ' + LastName}" />
+                <TextBlock Text="{= FirstName + '!'}" />
+                <TextBlock Text="{= Count + 7}" />
+                <TextBlock IsVisible="{= Count > 0}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("source.FirstName", generated);
+        Assert.Contains("source.LastName", generated);
+        Assert.Contains("source.Count", generated);
+        Assert.Contains("ApplyBinding(", generated);
+        Assert.DoesNotContain(".Text = (string)(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding", generated);
+        Assert.DoesNotContain(".IsVisible = (bool)(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding", generated);
+    }
+
+    [Fact]
     public void Generates_Expression_Bindings_For_Style_And_ControlTheme_Setters()
     {
         const string code = """

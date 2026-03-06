@@ -3272,6 +3272,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 out var expressionBindingValueExpression,
                 out var expressionAccessorExpression,
                 out var normalizedExpression,
+                out var expressionResultTypeName,
                 out var expressionErrorCode,
                 out var expressionErrorMessage))
         {
@@ -3282,7 +3283,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     TargetPropertyName: propertyName,
                     Path: "{= " + normalizedExpression + " }",
                     SourceTypeName: nodeDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    ResultTypeName: null,
+                    ResultTypeName: expressionResultTypeName,
                     AccessorExpression: expressionAccessorExpression,
                     IsSetterBinding: false,
                     Line: assignment.Line,

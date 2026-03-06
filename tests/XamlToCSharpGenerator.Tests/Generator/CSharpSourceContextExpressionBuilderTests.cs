@@ -122,6 +122,39 @@ public class CSharpSourceContextExpressionBuilderTests
         Assert.Contains("does not exist", errorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void TryAnalyze_Rewrites_And_Binds_Sealed_Source_Type_Expression()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo
+            {
+                public sealed class PersonVm
+                {
+                    public string FirstName { get; } = "Ava";
+                    public string LastName { get; } = "SourceGen";
+                    public int Count { get; } = 3;
+                }
+            }
+            """);
+        var sourceType = compilation.GetTypeByMetadataName("Demo.PersonVm");
+        Assert.NotNull(sourceType);
+
+        var success = CSharpSourceContextExpressionAnalysisService.TryAnalyze(
+            compilation,
+            sourceType!,
+            "FirstName + \" - \" + LastName + Count.ToString()",
+            "source",
+            out var result,
+            out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Equal("string", result.ResultTypeSymbol?.ToDisplayString());
+        Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "FirstName");
+        Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "LastName");
+        Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "Count");
+    }
+
     private static CSharpCompilation CreateCompilation(string code)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(code);

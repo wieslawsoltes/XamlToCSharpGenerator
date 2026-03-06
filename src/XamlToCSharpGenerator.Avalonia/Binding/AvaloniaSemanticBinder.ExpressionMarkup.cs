@@ -80,6 +80,7 @@ public sealed partial class AvaloniaSemanticBinder
         out string expressionBindingValueExpression,
         out string accessorExpression,
         out string normalizedExpression,
+        out string? resultTypeName,
         out string diagnosticId,
         out string diagnosticMessage)
     {
@@ -87,6 +88,7 @@ public sealed partial class AvaloniaSemanticBinder
         expressionBindingValueExpression = string.Empty;
         accessorExpression = string.Empty;
         normalizedExpression = string.Empty;
+        resultTypeName = null;
         diagnosticId = string.Empty;
         diagnosticMessage = string.Empty;
 
@@ -117,6 +119,7 @@ public sealed partial class AvaloniaSemanticBinder
                 csharpExpressionCode,
                 out accessorExpression,
                 out normalizedExpression,
+                out resultTypeName,
                 out var expressionDependencyNames,
                 out var errorMessage))
         {
@@ -146,16 +149,18 @@ public sealed partial class AvaloniaSemanticBinder
         string rawExpression,
         out string accessorExpression,
         out string normalizedExpression,
+        out string? resultTypeName,
         out ImmutableArray<string> dependencyNames,
         out string errorMessage)
     {
         _ = document;
         accessorExpression = ExpressionSourceParameterName;
         normalizedExpression = rawExpression.Trim();
+        resultTypeName = null;
         dependencyNames = ImmutableArray<string>.Empty;
         errorMessage = string.Empty;
 
-        if (!CSharpSourceContextExpressionBuilder.TryBuildAccessorExpression(
+        if (!CSharpSourceContextExpressionAnalysisService.TryAnalyze(
                 compilation,
                 sourceType,
                 rawExpression,
@@ -167,7 +172,8 @@ public sealed partial class AvaloniaSemanticBinder
         }
 
         accessorExpression = result.AccessorExpression;
-        normalizedExpression = result.AccessorExpression;
+        normalizedExpression = rawExpression.Trim();
+        resultTypeName = result.ResultTypeSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         dependencyNames = result.DependencyNames;
         return true;
     }
