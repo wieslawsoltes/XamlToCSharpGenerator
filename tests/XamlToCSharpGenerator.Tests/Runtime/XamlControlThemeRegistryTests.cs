@@ -64,6 +64,58 @@ public class XamlControlThemeRegistryTests
     }
 
     [Fact]
+    public void TryMaterialize_By_Key_Resolves_DynamicResource_BasedOn_Chain()
+    {
+        XamlControlThemeRegistry.Clear();
+        try
+        {
+            XamlControlThemeRegistry.Register(
+                "avares://Demo/Themes.axaml",
+                "Theme.Base",
+                "global::Avalonia.Controls.Button",
+                basedOn: null,
+                themeVariant: null,
+                rawXaml: "<ControlTheme x:Key=\"Theme.Base\" />",
+                factory: static () =>
+                {
+                    var theme = new ControlTheme(typeof(Button));
+                    theme.Setters.Add(new Setter(Button.ContentProperty, "Base"));
+                    return theme;
+                });
+
+            XamlControlThemeRegistry.Register(
+                "avares://Demo/Themes.axaml",
+                "Theme.Dynamic",
+                "global::Avalonia.Controls.Button",
+                basedOn: "{DynamicResource Theme.Base}",
+                themeVariant: null,
+                rawXaml: "<ControlTheme x:Key=\"Theme.Dynamic\" />",
+                factory: static () =>
+                {
+                    var theme = new ControlTheme(typeof(Button));
+                    theme.Setters.Add(new Setter(Button.ContentProperty, "Dynamic"));
+                    return theme;
+                });
+
+            var created = XamlControlThemeRegistry.TryMaterialize(
+                "avares://Demo/Themes.axaml",
+                "Theme.Dynamic",
+                out var theme);
+
+            Assert.True(created);
+            var materialized = Assert.IsType<ControlTheme>(theme);
+            Assert.NotNull(materialized.BasedOn);
+            Assert.Equal(
+                "Base",
+                Assert.IsType<Setter>(Assert.Single(Assert.IsType<ControlTheme>(materialized.BasedOn).Setters)).Value);
+        }
+        finally
+        {
+            XamlControlThemeRegistry.Clear();
+        }
+    }
+
+    [Fact]
     public void TryMaterialize_By_TargetType_Uses_ThemeVariant_And_Default_Fallback()
     {
         XamlControlThemeRegistry.Clear();

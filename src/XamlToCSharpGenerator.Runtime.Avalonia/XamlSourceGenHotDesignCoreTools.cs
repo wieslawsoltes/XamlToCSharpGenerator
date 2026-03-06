@@ -8,7 +8,6 @@ using System.Xml;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Runtime;
 

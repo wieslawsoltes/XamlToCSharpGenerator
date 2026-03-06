@@ -1989,6 +1989,12 @@ public static class XamlSourceGenHotReloadManager
             return false;
         }
 
+        if (XamlExplicitExpressionMarkupDetector.ContainsExplicitExpressionMarkup(xamlText))
+        {
+            Trace("Runtime source reload skipped for type '" + operation.Type.FullName + "' from '" + sourcePath + "': explicit expression markup requires generated reload path.");
+            return false;
+        }
+
         try
         {
             var baseUri = TryCreateBaseUriForType(operation.Type);
