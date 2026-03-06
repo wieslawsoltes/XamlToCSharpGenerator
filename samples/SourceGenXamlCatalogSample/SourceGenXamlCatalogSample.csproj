@@ -38,27 +38,13 @@
   <ItemGroup>
     <ProjectReference Include="..\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" WatchOnly="true" />
   </ItemGroup>
 
   <Import Project="..\..\src\XamlToCSharpGenerator.Build\buildTransitive\XamlToCSharpGenerator.Build.targets" />

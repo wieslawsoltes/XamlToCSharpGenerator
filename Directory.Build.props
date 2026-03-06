@@ -29,4 +29,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)eng/compat/System.Runtime.CompilerServices.IsExternalInit.cs"
              Link="Compatibility/System.Runtime.CompilerServices.IsExternalInit.cs" />
   </ItemGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Core' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Compiler' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Framework.Abstractions' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.MiniLanguageParsing' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.ExpressionSemantics' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Avalonia' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.Generator' Or '$(MSBuildProjectName)' == 'XamlToCSharpGenerator.NoUi'">
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
 </Project>

@@ -1,0 +1,75 @@
+<Project>
+  <Target Name="XamlToCSharpGenerator_GetLocalAnalyzerWatchFiles"
+          Returns="@(_XamlToCSharpGeneratorLocalAnalyzerWatchFile)">
+    <ItemGroup>
+      <_XamlToCSharpGeneratorLocalAnalyzerWatchFile Include="$(MSBuildProjectFullPath)" />
+      <_XamlToCSharpGeneratorLocalAnalyzerWatchFile Include="@(Compile->'%(FullPath)')"
+                                                    Condition="'@(Compile)' != ''" />
+    </ItemGroup>
+  </Target>
+
+  <ItemDefinitionGroup>
+    <XamlSourceGenLocalAnalyzerProject>
+      <TargetFramework>netstandard2.0</TargetFramework>
+      <WatchOnly>false</WatchOnly>
+    </XamlSourceGenLocalAnalyzerProject>
+  </ItemDefinitionGroup>
+
+  <Target Name="XamlToCSharpGenerator_BuildLocalAnalyzers"
+          BeforeTargets="CoreCompile"
+          Condition="'@(XamlSourceGenLocalAnalyzerProject)' != ''">
+    <ItemGroup>
+      <_XamlToCSharpGeneratorLocalAnalyzerProject Include="@(XamlSourceGenLocalAnalyzerProject)">
+        <NormalizedFullPath>$([System.IO.Path]::GetFullPath('%(XamlSourceGenLocalAnalyzerProject.Identity)'))</NormalizedFullPath>
+        <ProjectDirectory>$([System.IO.Path]::GetDirectoryName('%(XamlSourceGenLocalAnalyzerProject.Identity)'))</ProjectDirectory>
+        <ResolvedTargetFramework Condition="'%(XamlSourceGenLocalAnalyzerProject.TargetFramework)' == ''">netstandard2.0</ResolvedTargetFramework>
+        <ResolvedTargetFramework Condition="'%(XamlSourceGenLocalAnalyzerProject.TargetFramework)' != ''">%(XamlSourceGenLocalAnalyzerProject.TargetFramework)</ResolvedTargetFramework>
+        <ResolvedAssemblyName Condition="'%(XamlSourceGenLocalAnalyzerProject.AssemblyName)' == ''">$([System.IO.Path]::GetFileNameWithoutExtension('%(XamlSourceGenLocalAnalyzerProject.Identity)'))</ResolvedAssemblyName>
+        <ResolvedAssemblyName Condition="'%(XamlSourceGenLocalAnalyzerProject.AssemblyName)' != ''">%(XamlSourceGenLocalAnalyzerProject.AssemblyName)</ResolvedAssemblyName>
+      </_XamlToCSharpGeneratorLocalAnalyzerProject>
+    </ItemGroup>
+
+    <ItemGroup>
+      <_XamlToCSharpGeneratorLocalAnalyzerProject Update="@(_XamlToCSharpGeneratorLocalAnalyzerProject)">
+        <AnalyzerAssemblyPath>$([System.IO.Path]::Combine('%(_XamlToCSharpGeneratorLocalAnalyzerProject.ProjectDirectory)', 'bin', '$(Configuration)', '%(_XamlToCSharpGeneratorLocalAnalyzerProject.ResolvedTargetFramework)', '%(_XamlToCSharpGeneratorLocalAnalyzerProject.ResolvedAssemblyName).dll'))</AnalyzerAssemblyPath>
+      </_XamlToCSharpGeneratorLocalAnalyzerProject>
+    </ItemGroup>
+
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorLocalAnalyzerProject->'%(NormalizedFullPath)')">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct" />
+    </RemoveDuplicates>
+
+    <ItemGroup>
+      <_XamlToCSharpGeneratorBuildLocalAnalyzerProject Include="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct)"
+                                                       Condition="'%(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct.WatchOnly)' != 'true'" />
+    </ItemGroup>
+
+    <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
+             Targets="Build"
+             BuildInParallel="true"
+             Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
+             Properties="Configuration=$(Configuration)" />
+
+    <MSBuild Projects="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct)"
+             Targets="XamlToCSharpGenerator_GetLocalAnalyzerWatchFiles"
+             BuildInParallel="true"
+             Condition="'@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct)' != ''">
+      <Output TaskParameter="TargetOutputs" ItemName="_XamlToCSharpGeneratorLocalAnalyzerWatch" />
+    </MSBuild>
+
+    <RemoveDuplicates Inputs="@(_XamlToCSharpGeneratorLocalAnalyzerWatch)">
+      <Output TaskParameter="Filtered" ItemName="_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct" />
+    </RemoveDuplicates>
+
+    <ItemGroup>
+      <_XamlToCSharpGeneratorLocalAnalyzerAssembly Include="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct->'%(AnalyzerAssemblyPath)')"
+                                                   Condition="Exists('%(AnalyzerAssemblyPath)')" />
+      <Analyzer Include="@(_XamlToCSharpGeneratorLocalAnalyzerAssembly)" />
+
+      <Watch Remove="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)" />
+      <Watch Include="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)">
+        <XamlToCSharpGeneratorLocalAnalyzer>true</XamlToCSharpGeneratorLocalAnalyzer>
+      </Watch>
+    </ItemGroup>
+  </Target>
+</Project>

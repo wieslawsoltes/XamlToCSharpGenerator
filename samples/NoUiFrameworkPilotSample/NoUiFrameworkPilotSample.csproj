@@ -26,22 +26,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj"
-                      OutputItemType="Analyzer" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
   </ItemGroup>
 </Project>
