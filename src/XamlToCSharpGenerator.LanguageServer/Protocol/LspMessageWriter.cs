@@ -28,9 +28,11 @@ internal sealed class LspMessageWriter
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
-            await _stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-            await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            // Once framing starts, transport writes must complete atomically.
+            // Canceling between header and body corrupts the LSP stream.
+            await _stream.WriteAsync(header, CancellationToken.None).ConfigureAwait(false);
+            await _stream.WriteAsync(bytes, CancellationToken.None).ConfigureAwait(false);
+            await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {

@@ -15,6 +15,8 @@ const sourceLinkDocumentCache = new Map();
 const sourceLinkUriSubscriptions = new Map();
 let sourceLinkChangeEmitter;
 const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
+const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
+const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
 
 function decodeQueryValue(value) {
   try {
@@ -83,10 +85,8 @@ function renderMetadataProjectionFallback(query) {
 }
 
 function createMetadataLoadingDocument(query) {
-  const fullTypeName = decodeQueryValue(query.get('type') || 'symbol');
-  const memberName = decodeQueryValue(query.get('member') || '');
-  const targetName = memberName ? `${fullTypeName}.${memberName}` : fullTypeName;
-  return `// AXSG metadata as source\n// Loading metadata view for ${targetName}...\n`;
+  const baseDocument = renderMetadataProjectionFallback(query);
+  return padVirtualLoadingDocument(baseDocument);
 }
 
 function updateMetadataCacheAndNotify(documentId, state, text) {
@@ -130,18 +130,18 @@ async function fetchAndCacheMetadataDocument(documentId, uri) {
   try {
     const response = await client.sendRequest('axsg/metadataDocument', { id: documentId });
     if (!response || typeof response.text !== 'string' || response.text.length === 0) {
-      updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
+      updateMetadataCacheAndNotify(documentId, 'error', padVirtualLoadingDocument(renderMetadataProjectionFallback(new URLSearchParams(uri.query || ''))));
       return;
     }
 
     updateMetadataCacheAndNotify(documentId, 'ready', response.text);
   } catch {
-    updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
+    updateMetadataCacheAndNotify(documentId, 'error', padVirtualLoadingDocument(renderMetadataProjectionFallback(new URLSearchParams(uri.query || ''))));
   }
 }
 
 function createSourceLinkLoadingDocument(sourceUrl) {
-  return `// AXSG source-link projection\n// Loading source from ${sourceUrl}...\n`;
+  return padVirtualLoadingDocument(`// AXSG source-link projection\n// Loading source from ${sourceUrl}...\n`);
 }
 
 function updateSourceLinkCacheAndNotify(sourceUrl, state, text) {
@@ -185,7 +185,7 @@ async function fetchAndCacheSourceLinkDocument(sourceUrl) {
     });
 
     if (!response.ok) {
-      const failure = `// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// HTTP ${response.status} ${response.statusText}\n`;
+      const failure = padVirtualLoadingDocument(`// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// HTTP ${response.status} ${response.statusText}\n`);
       updateSourceLinkCacheAndNotify(sourceUrl, 'error', failure);
       return;
     }
