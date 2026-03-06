@@ -53,7 +53,7 @@ public sealed class XamlCompletionService
 
             case XamlCompletionContextKind.AttributeValue:
             case XamlCompletionContextKind.MarkupExtension:
-                AddAttributeValueCompletions(builder, context, analysis);
+                AddAttributeValueCompletions(builder, context, analysis, position);
                 break;
         }
 
@@ -138,8 +138,21 @@ public sealed class XamlCompletionService
     private static void AddAttributeValueCompletions(
         ImmutableArray<XamlCompletionItem>.Builder completions,
         XamlCompletionContext context,
-        XamlAnalysisResult analysis)
+        XamlAnalysisResult analysis,
+        SourcePosition position)
     {
+        if (XamlBindingCompletionService.TryGetCompletions(analysis, position, out var bindingCompletions))
+        {
+            completions.AddRange(bindingCompletions);
+            return;
+        }
+
+        if (XamlExpressionCompletionService.TryGetCompletions(analysis, position, out var expressionCompletions))
+        {
+            completions.AddRange(expressionCompletions);
+            return;
+        }
+
         completions.AddRange(MarkupExtensionCompletions);
 
         if (string.Equals(context.CurrentAttributeName, "x:Name", StringComparison.Ordinal))

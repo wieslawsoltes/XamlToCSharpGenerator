@@ -129,6 +129,42 @@ internal static class XamlClrNavigationLocationResolver
             MetadataNavigationRange);
     }
 
+    public static AvaloniaSymbolSourceLocation ResolveSymbolLocation(
+        XamlAnalysisResult analysis,
+        ISymbol symbol)
+    {
+        if (TryCreateSourceLocation(symbol) is { } sourceLocation)
+        {
+            return sourceLocation;
+        }
+
+        if (symbol is ITypeSymbol typeSymbol)
+        {
+            return ResolveTypeLocation(analysis, typeSymbol);
+        }
+
+        if (symbol.ContainingType is { } containingType &&
+            symbol is IPropertySymbol or IFieldSymbol &&
+            XamlMetadataAsSourceService.TryCreatePropertyLocation(
+                analysis,
+                GetClrTypeName(containingType),
+                symbol.Name,
+                symbol.ContainingAssembly?.Identity.Name,
+                out var propertyLocation))
+        {
+            return propertyLocation;
+        }
+
+        if (symbol.ContainingType is not null)
+        {
+            return ResolveTypeLocation(analysis, symbol.ContainingType);
+        }
+
+        return new AvaloniaSymbolSourceLocation(
+            XamlMetadataSymbolUri.CreateTypeUri(symbol.Name),
+            MetadataNavigationRange);
+    }
+
     private static AvaloniaSymbolSourceLocation? TryCreateSourceLocation(ISymbol symbol)
     {
         foreach (var location in symbol.Locations)

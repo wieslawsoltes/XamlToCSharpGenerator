@@ -1174,7 +1174,7 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["completionProvider"] = new JsonObject
                 {
                     ["resolveProvider"] = false,
-                    ["triggerCharacters"] = new JsonArray("<", ":", ".", "{", " ")
+                    ["triggerCharacters"] = new JsonArray("<", ":", ".", "{", " ", "=")
                 },
                 ["hoverProvider"] = true,
                 ["definitionProvider"] = true,
@@ -1214,6 +1214,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         {
             XamlCompletionItemKind.Element => 7,
             XamlCompletionItemKind.Property => 10,
+            XamlCompletionItemKind.Method => 2,
             XamlCompletionItemKind.AttachedProperty => 10,
             XamlCompletionItemKind.MarkupExtension => 3,
             XamlCompletionItemKind.EnumValue => 12,

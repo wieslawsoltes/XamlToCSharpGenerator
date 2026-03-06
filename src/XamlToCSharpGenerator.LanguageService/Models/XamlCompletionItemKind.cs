@@ -4,6 +4,7 @@ public enum XamlCompletionItemKind
 {
     Element,
     Property,
+    Method,
     AttachedProperty,
     MarkupExtension,
     EnumValue,

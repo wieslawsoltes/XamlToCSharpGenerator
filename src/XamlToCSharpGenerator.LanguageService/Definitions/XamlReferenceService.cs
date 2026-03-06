@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -130,6 +131,11 @@ public sealed class XamlReferenceService
         if (analysis.TypeIndex is null)
         {
             return ImmutableArray<XamlReferenceLocation>.Empty;
+        }
+
+        if (XamlExpressionBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var expressionTarget))
+        {
+            return CollectExpressionSymbolReferences(analysis, expressionTarget.Symbol);
         }
 
         if (XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out var selectorTarget))
@@ -332,12 +338,11 @@ public sealed class XamlReferenceService
                         continue;
                     }
 
-                    if (TryAddSelectorStyleClassReference(
-                            source.Text,
-                            element,
-                            attribute,
-                            className,
-                            out var selectorRange))
+                    foreach (var selectorRange in FindSelectorStyleClassReferences(
+                                 source.Text,
+                                 element,
+                                 attribute,
+                                 className))
                     {
                         AddReference(
                             builder,
@@ -428,25 +433,54 @@ public sealed class XamlReferenceService
                         continue;
                     }
 
-                    if (!TryAddSelectorPseudoClassReference(
-                            source.Text,
-                            element,
-                            attribute,
-                            selectorTarget.Name,
-                            out var pseudoClassRange))
+                    foreach (var pseudoClassRange in FindSelectorPseudoClassReferences(
+                                 source.Text,
+                                 element,
+                                 attribute,
+                                 selectorTarget.Name))
                     {
-                        continue;
+                        AddReference(
+                            builder,
+                            seen,
+                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            pseudoClassRange,
+                            isDeclaration: false);
                     }
-
-                    AddReference(
-                        builder,
-                        seen,
-                        UriPathHelper.ToDocumentUri(source.FilePath),
-                        pseudoClassRange,
-                        isDeclaration: false);
                 }
             }
         }
+
+        return builder
+            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
+            .ThenBy(static item => item.Range.Start.Line)
+            .ThenBy(static item => item.Range.Start.Character)
+            .ToImmutableArray();
+    }
+
+    private static ImmutableArray<XamlReferenceLocation> CollectExpressionSymbolReferences(
+        XamlAnalysisResult analysis,
+        ISymbol targetSymbol)
+    {
+        if (TryResolveTypeInfoFromSymbol(analysis, targetSymbol, out var typeInfo) &&
+            typeInfo is not null)
+        {
+            return CollectTypeReferences(analysis, typeInfo);
+        }
+
+        if (TryResolvePropertyInfoFromSymbol(analysis, targetSymbol, out var ownerTypeInfo, out var propertyInfo) &&
+            ownerTypeInfo is not null &&
+            propertyInfo is not null)
+        {
+            return CollectPropertyReferences(analysis, ownerTypeInfo, propertyInfo);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlReferenceLocation>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        var declaration = XamlClrNavigationLocationResolver.ResolveSymbolLocation(analysis, targetSymbol);
+        AddReference(builder, seen, declaration.Uri, declaration.Range, isDeclaration: true);
+
+        AddExpressionReferences(builder, seen, analysis, targetSymbol);
 
         return builder
             .OrderBy(static item => item.Uri, StringComparer.Ordinal)
@@ -534,22 +568,23 @@ public sealed class XamlReferenceService
                     }
 
                     if (string.Equals(element.Name.LocalName, "Style", StringComparison.Ordinal) &&
-                        string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal) &&
-                        TryAddSelectorTypeReference(
-                            analysis,
-                            typeInfo,
-                            source.Text,
-                            sourcePrefixMap,
-                            element,
-                            attribute,
-                            out var selectorRange))
+                        string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
                     {
-                        AddReference(
-                            builder,
-                            seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
-                            selectorRange,
-                            isDeclaration: false);
+                        foreach (var selectorRange in FindSelectorTypeReferences(
+                                     analysis,
+                                     typeInfo,
+                                     source.Text,
+                                     sourcePrefixMap,
+                                     element,
+                                     attribute))
+                        {
+                            AddReference(
+                                builder,
+                                seen,
+                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                selectorRange,
+                                isDeclaration: false);
+                        }
                     }
 
                     if (attribute.Value.IndexOf('{') >= 0 &&
@@ -588,6 +623,12 @@ public sealed class XamlReferenceService
                     }
                 }
             }
+        }
+
+        if (TryResolveTypeSymbol(analysis, typeInfo.FullTypeName, out var typeSymbol) &&
+            typeSymbol is not null)
+        {
+            AddExpressionReferences(builder, seen, analysis, typeSymbol);
         }
 
         return builder
@@ -684,6 +725,12 @@ public sealed class XamlReferenceService
                         isDeclaration: false);
                 }
             }
+        }
+
+        if (TryResolveTypeSymbol(analysis, targetTypeReference.FullTypeName, out var typeSymbol) &&
+            typeSymbol is not null)
+        {
+            AddExpressionReferences(builder, seen, analysis, typeSymbol);
         }
 
         return builder
@@ -838,11 +885,152 @@ public sealed class XamlReferenceService
             }
         }
 
+        if (TryResolvePropertySymbol(analysis, ownerTypeInfo.FullTypeName, targetProperty.Name, out var propertySymbol) &&
+            propertySymbol is not null)
+        {
+            AddExpressionReferences(builder, seen, analysis, propertySymbol);
+        }
+
         return builder
             .OrderBy(static item => item.Uri, StringComparer.Ordinal)
             .ThenBy(static item => item.Range.Start.Line)
             .ThenBy(static item => item.Range.Start.Character)
             .ToImmutableArray();
+    }
+
+    private static void AddExpressionReferences(
+        ImmutableArray<XamlReferenceLocation>.Builder builder,
+        HashSet<string> seen,
+        XamlAnalysisResult analysis,
+        ISymbol targetSymbol)
+    {
+        var symbolName = targetSymbol.Name;
+        if (string.IsNullOrWhiteSpace(symbolName))
+        {
+            return;
+        }
+
+        foreach (var source in EnumerateProjectXamlSources(analysis))
+        {
+            if (!ContainsAnyToken(source.Text, [symbolName]))
+            {
+                continue;
+            }
+
+            if (!TryEnsureXmlDocumentLoaded(source, out var xmlDocument) || xmlDocument is null)
+            {
+                continue;
+            }
+
+            foreach (var element in xmlDocument.Root?.DescendantsAndSelf() ?? Enumerable.Empty<XElement>())
+            {
+                foreach (var attribute in element.Attributes())
+                {
+                    if (attribute.IsNamespaceDeclaration ||
+                        !XamlExpressionBindingNavigationService.IsExplicitExpressionMarkup(attribute.Value))
+                    {
+                        continue;
+                    }
+
+                    foreach (var range in XamlExpressionBindingNavigationService.FindReferenceRanges(
+                                 analysis,
+                                 source.Text,
+                                 element,
+                                 attribute,
+                                 targetSymbol))
+                    {
+                        AddReference(
+                            builder,
+                            seen,
+                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            range,
+                            isDeclaration: false);
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool TryResolveTypeInfoFromSymbol(
+        XamlAnalysisResult analysis,
+        ISymbol symbol,
+        out AvaloniaTypeInfo? typeInfo)
+    {
+        typeInfo = null;
+        if (analysis.TypeIndex is null)
+        {
+            return false;
+        }
+
+        if (symbol is not ITypeSymbol typeSymbol)
+        {
+            return false;
+        }
+
+        var fullTypeName = typeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        return analysis.TypeIndex.TryGetTypeByFullTypeName(fullTypeName, out typeInfo) && typeInfo is not null;
+    }
+
+    private static bool TryResolvePropertyInfoFromSymbol(
+        XamlAnalysisResult analysis,
+        ISymbol symbol,
+        out AvaloniaTypeInfo? ownerTypeInfo,
+        out AvaloniaPropertyInfo? propertyInfo)
+    {
+        ownerTypeInfo = null;
+        propertyInfo = null;
+        if (analysis.TypeIndex is null ||
+            symbol is not IPropertySymbol propertySymbol)
+        {
+            return false;
+        }
+
+        var ownerTypeName = propertySymbol.ContainingType?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        if (string.IsNullOrWhiteSpace(ownerTypeName) ||
+            !analysis.TypeIndex.TryGetTypeByFullTypeName(ownerTypeName, out ownerTypeInfo) ||
+            ownerTypeInfo is null)
+        {
+            return false;
+        }
+
+        propertyInfo = ownerTypeInfo.Properties.FirstOrDefault(property =>
+            string.Equals(property.Name, propertySymbol.Name, StringComparison.Ordinal));
+        return propertyInfo is not null;
+    }
+
+    private static bool TryResolveTypeSymbol(
+        XamlAnalysisResult analysis,
+        string fullTypeName,
+        out INamedTypeSymbol? typeSymbol)
+    {
+        typeSymbol = null;
+        if (analysis.Compilation is null || string.IsNullOrWhiteSpace(fullTypeName))
+        {
+            return false;
+        }
+
+        typeSymbol = analysis.Compilation.GetTypeByMetadataName(fullTypeName);
+        return typeSymbol is not null;
+    }
+
+    private static bool TryResolvePropertySymbol(
+        XamlAnalysisResult analysis,
+        string ownerTypeName,
+        string propertyName,
+        out IPropertySymbol? propertySymbol)
+    {
+        propertySymbol = null;
+        if (!TryResolveTypeSymbol(analysis, ownerTypeName, out var ownerTypeSymbol) ||
+            ownerTypeSymbol is null ||
+            string.IsNullOrWhiteSpace(propertyName))
+        {
+            return false;
+        }
+
+        propertySymbol = ownerTypeSymbol.GetMembers(propertyName)
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(static property => !property.IsStatic);
+        return propertySymbol is not null;
     }
 
     private static bool IsPropertyReferenceMatch(
@@ -1019,20 +1207,19 @@ public sealed class XamlReferenceService
         return string.Equals(candidateProperty.TypeName, targetProperty.TypeName, StringComparison.Ordinal);
     }
 
-    private static bool TryAddSelectorTypeReference(
+    private static ImmutableArray<SourceRange> FindSelectorTypeReferences(
         XamlAnalysisResult analysis,
         AvaloniaTypeInfo targetTypeInfo,
         string sourceText,
         ImmutableDictionary<string, string> prefixMap,
         XElement element,
-        XAttribute attribute,
-        out SourceRange range)
+        XAttribute attribute)
     {
-        range = default;
+        var builder = ImmutableArray.CreateBuilder<SourceRange>();
         if (!string.Equals(element.Name.LocalName, "Style", StringComparison.Ordinal) ||
             !string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
         {
-            return false;
+            return ImmutableArray<SourceRange>.Empty;
         }
 
         foreach (var selectorReference in SelectorReferenceSemantics.EnumerateReferences(attribute.Value))
@@ -1055,13 +1242,13 @@ public sealed class XamlReferenceService
                     attribute,
                     selectorReference.Start,
                     selectorReference.Length,
-                    out range))
+                    out var range))
             {
-                return true;
+                builder.Add(range);
             }
         }
 
-        return false;
+        return builder.ToImmutable();
     }
 
     private static bool TryResolvePseudoClassInfo(
@@ -1096,18 +1283,17 @@ public sealed class XamlReferenceService
         return false;
     }
 
-    private static bool TryAddSelectorStyleClassReference(
+    private static ImmutableArray<SourceRange> FindSelectorStyleClassReferences(
         string sourceText,
         XElement element,
         XAttribute attribute,
-        string className,
-        out SourceRange range)
+        string className)
     {
-        range = default;
+        var builder = ImmutableArray.CreateBuilder<SourceRange>();
         if (!string.Equals(element.Name.LocalName, "Style", StringComparison.Ordinal) ||
             !string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
         {
-            return false;
+            return ImmutableArray<SourceRange>.Empty;
         }
 
         foreach (var selectorReference in SelectorReferenceSemantics.EnumerateReferences(attribute.Value))
@@ -1123,27 +1309,26 @@ public sealed class XamlReferenceService
                     attribute,
                     selectorReference.Start,
                     selectorReference.Length,
-                    out range))
+                    out var range))
             {
-                return true;
+                builder.Add(range);
             }
         }
 
-        return false;
+        return builder.ToImmutable();
     }
 
-    private static bool TryAddSelectorPseudoClassReference(
+    private static ImmutableArray<SourceRange> FindSelectorPseudoClassReferences(
         string sourceText,
         XElement element,
         XAttribute attribute,
-        string pseudoClassName,
-        out SourceRange range)
+        string pseudoClassName)
     {
-        range = default;
+        var builder = ImmutableArray.CreateBuilder<SourceRange>();
         if (!string.Equals(element.Name.LocalName, "Style", StringComparison.Ordinal) ||
             !string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
         {
-            return false;
+            return ImmutableArray<SourceRange>.Empty;
         }
 
         foreach (var selectorReference in SelectorReferenceSemantics.EnumerateReferences(attribute.Value))
@@ -1159,13 +1344,13 @@ public sealed class XamlReferenceService
                     attribute,
                     selectorReference.Start,
                     selectorReference.Length,
-                    out range))
+                    out var range))
             {
-                return true;
+                builder.Add(range);
             }
         }
 
-        return false;
+        return builder.ToImmutable();
     }
 
     private static bool TryAddClassesValueReference(

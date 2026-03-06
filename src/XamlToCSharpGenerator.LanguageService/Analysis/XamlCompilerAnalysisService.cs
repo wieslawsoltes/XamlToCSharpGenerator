@@ -64,7 +64,7 @@ public sealed class XamlCompilerAnalysisService
             SourceItemGroup: "AvaloniaXaml",
             Text: document.Text));
 
-        diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(parseDiagnostics));
+        diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(parseDiagnostics, source: "AXSG.Parse"));
 
         if (parsedDocument is not null && snapshot.Compilation is not null)
         {
@@ -78,7 +78,7 @@ public sealed class XamlCompilerAnalysisService
 
             if (options.IncludeSemanticDiagnostics)
             {
-                diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(semanticDiagnostics));
+                diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(semanticDiagnostics, source: "AXSG.Semantic"));
             }
         }
 

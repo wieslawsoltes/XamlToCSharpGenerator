@@ -134,6 +134,46 @@ public class MiniLanguageParsingTests
     }
 
     [Fact]
+    public void SelectorReferenceSemantics_Enumerates_Complex_Child_Selector_Tokens()
+    {
+        var references = SelectorReferenceSemantics.EnumerateReferences(
+            "Border.local-card > StackPanel > TextBlock.subtitle");
+
+        Assert.Collection(
+            references,
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.Type, reference.Kind);
+                Assert.Equal("Border", reference.Name);
+                Assert.Equal("Border", reference.TypeContextToken);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.StyleClass, reference.Kind);
+                Assert.Equal("local-card", reference.Name);
+                Assert.Equal("Border", reference.TypeContextToken);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.Type, reference.Kind);
+                Assert.Equal("StackPanel", reference.Name);
+                Assert.Equal("StackPanel", reference.TypeContextToken);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.Type, reference.Kind);
+                Assert.Equal("TextBlock", reference.Name);
+                Assert.Equal("TextBlock", reference.TypeContextToken);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.StyleClass, reference.Kind);
+                Assert.Equal("subtitle", reference.Name);
+                Assert.Equal("TextBlock", reference.TypeContextToken);
+            });
+    }
+
+    [Fact]
     public void SelectorSyntaxValidator_Validates_Selector_And_Extracts_Branch_Type_Tokens()
     {
         var validation = SelectorSyntaxValidator.Validate("Button:pointerover, TextBlock.warning");

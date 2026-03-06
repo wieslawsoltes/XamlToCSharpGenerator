@@ -96,7 +96,12 @@ internal static class LanguageServiceTestCompilationFactory
                                   public class MainWindowViewModel
                                   {
                                       public string Name { get; set; } = string.Empty;
+                                      public string FirstName { get; set; } = string.Empty;
+                                      public string LastName { get; set; } = string.Empty;
+                                      public int Count { get; set; }
                                       public CustomerViewModel Customer { get; set; } = new CustomerViewModel();
+                                      public CustomerViewModel GetCustomer() => Customer;
+                                      public string FormatSummary(string firstName, string lastName, int count) => firstName + lastName + count;
                                   }
 
                                   public class MyExtension

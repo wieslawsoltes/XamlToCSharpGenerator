@@ -8,7 +8,8 @@ namespace XamlToCSharpGenerator.LanguageService.Diagnostics;
 internal static class DiagnosticConversion
 {
     public static ImmutableArray<LanguageServiceDiagnostic> FromCoreDiagnostics(
-        ImmutableArray<DiagnosticInfo> diagnostics)
+        ImmutableArray<DiagnosticInfo> diagnostics,
+        string source = "AXSG")
     {
         if (diagnostics.IsDefaultOrEmpty)
         {
@@ -31,7 +32,7 @@ internal static class DiagnosticConversion
                 diagnostic.IsError
                     ? LanguageServiceDiagnosticSeverity.Error
                     : LanguageServiceDiagnosticSeverity.Warning,
-                Source: "AXSG"));
+                Source: source));
         }
 
         return builder.ToImmutable();

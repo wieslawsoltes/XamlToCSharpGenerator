@@ -45,6 +45,44 @@ public class SelectorExpressionBuildSemanticsTests
     }
 
     [Fact]
+    public void TryBuildSelectorExpression_Builds_Complex_Descendant_And_Child_Selector_Chain()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo;
+
+            public class StyledElement { }
+            public class Border : StyledElement { }
+            public class StackPanel : StyledElement { }
+            public class TextBlock : StyledElement { }
+            """);
+
+        var emitter = new TestSelectorExpressionEmitter();
+        var success = SelectorExpressionBuildSemantics.TryBuildSelectorExpression(
+            "Border.local-card > StackPanel > TextBlock.subtitle",
+            selectorTypeFallback: null,
+            selectorNestingTypeHint: null,
+            resolveTypeToken: token => compilation.GetTypeByMetadataName("Demo." + token),
+            emitter: emitter,
+            tryResolvePropertyPredicate: static (
+                string _,
+                INamedTypeSymbol? __,
+                out string ___,
+                out string ____) =>
+            {
+                ___ = string.Empty;
+                ____ = string.Empty;
+                return false;
+            },
+            out var expression);
+
+        Assert.True(success);
+        Assert.Equal(
+            "class(of-type(child(of-type(child(class(of-type(null,Border),local-card)),StackPanel)),TextBlock),subtitle)",
+            expression);
+    }
+
+    [Fact]
     public void TryBuildSelectorExpression_Invokes_Property_Predicate_Callback_With_Type_Hint()
     {
         var compilation = CreateCompilation(

@@ -213,6 +213,9 @@
       "[xaml]": {
         "editor.inlayHints.enabled": "onUnlessPressed",
         "editor.semanticHighlighting.enabled": true,
+        "editor.quickSuggestions": {
+          "strings": "on"
+        },
         "editor.semanticTokenColorCustomizations": {
           "rules": {
             "xamlDelimiter": "#0000FF",
@@ -233,6 +236,9 @@
       "[axaml]": {
         "editor.inlayHints.enabled": "onUnlessPressed",
         "editor.semanticHighlighting.enabled": true,
+        "editor.quickSuggestions": {
+          "strings": "on"
+        },
         "editor.semanticTokenColorCustomizations": {
           "rules": {
             "xamlDelimiter": "#0000FF",

@@ -32,6 +32,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlRefactoringService _refactoringService;
     private readonly ConcurrentDictionary<AnalysisCacheKey, (int Version, XamlAnalysisResult Result)> _analysisCache =
         new();
+    private readonly ConcurrentDictionary<InflightAnalysisCacheKey, Lazy<Task<XamlAnalysisResult>>> _inflightAnalysisCache =
+        new();
     private readonly ConcurrentDictionary<DocumentCacheKey, ImmutableArray<XamlSemanticToken>> _semanticTokenCache =
         new();
     private readonly ConcurrentDictionary<PositionRequestCacheKey, ImmutableArray<XamlDefinitionLocation>> _definitionCache =
@@ -73,12 +75,13 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         options ??= XamlLanguageServiceOptions.Default;
-        var document = _documentStore.Open(uri, text, version);
+        _documentStore.Open(uri, text, version);
         InvalidateUriCaches(uri);
 
-        var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
-        _analysisCache[BuildAnalysisCacheKey(uri, options)] = (document.Version, analysis);
-        return analysis.Diagnostics;
+        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? ImmutableArray<LanguageServiceDiagnostic>.Empty
+            : FilterDiagnostics(analysis.Diagnostics, options);
     }
 
     public void UpsertDocument(string uri, string text, int version)
@@ -96,12 +99,13 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         options ??= XamlLanguageServiceOptions.Default;
-        var document = _documentStore.Update(uri, text, version) ?? _documentStore.Open(uri, text, version);
+        _ = _documentStore.Update(uri, text, version) ?? _documentStore.Open(uri, text, version);
         InvalidateUriCaches(uri);
 
-        var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
-        _analysisCache[BuildAnalysisCacheKey(uri, options)] = (document.Version, analysis);
-        return analysis.Diagnostics;
+        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? ImmutableArray<LanguageServiceDiagnostic>.Empty
+            : FilterDiagnostics(analysis.Diagnostics, options);
     }
 
     public void CloseDocument(string uri)
@@ -116,7 +120,9 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
-        return analysis?.Diagnostics ?? ImmutableArray<LanguageServiceDiagnostic>.Empty;
+        return analysis is null
+            ? ImmutableArray<LanguageServiceDiagnostic>.Empty
+            : FilterDiagnostics(analysis.Diagnostics, options);
     }
 
     public async Task<ImmutableArray<XamlCompletionItem>> GetCompletionsAsync(
@@ -324,8 +330,33 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return cached.Result;
         }
 
-        var analysis = await AnalyzeAsync(document, options, cancellationToken).ConfigureAwait(false);
-        _analysisCache[cacheKey] = (document.Version, analysis);
+        var inflightKey = new InflightAnalysisCacheKey(uri, cacheKey.WorkspaceRoot, document.Version);
+        var lazyAnalysis = _inflightAnalysisCache.GetOrAdd(
+            inflightKey,
+            _ => new Lazy<Task<XamlAnalysisResult>>(
+                () => AnalyzeAsync(document, CreateSharedAnalysisOptions(options), CancellationToken.None),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        XamlAnalysisResult analysis;
+        try
+        {
+            analysis = cancellationToken.CanBeCanceled
+                ? await lazyAnalysis.Value.WaitAsync(cancellationToken).ConfigureAwait(false)
+                : await lazyAnalysis.Value.ConfigureAwait(false);
+        }
+        finally
+        {
+            if (lazyAnalysis.IsValueCreated && lazyAnalysis.Value.IsCompleted)
+            {
+                _inflightAnalysisCache.TryRemove(inflightKey, out _);
+            }
+        }
+
+        if (_documentStore.Get(uri) is { Version: var currentVersion } && currentVersion == document.Version)
+        {
+            _analysisCache[cacheKey] = (document.Version, analysis);
+        }
+
         return analysis;
     }
 
@@ -404,9 +435,49 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         options ??= XamlLanguageServiceOptions.Default;
         return new AnalysisCacheKey(
             Uri: uri,
-            WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
-            IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
-            IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics);
+            WorkspaceRoot: options.WorkspaceRoot ?? string.Empty);
+    }
+
+    private static XamlLanguageServiceOptions CreateSharedAnalysisOptions(XamlLanguageServiceOptions options)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        return options with
+        {
+            IncludeCompilationDiagnostics = true,
+            IncludeSemanticDiagnostics = true
+        };
+    }
+
+    private static ImmutableArray<LanguageServiceDiagnostic> FilterDiagnostics(
+        ImmutableArray<LanguageServiceDiagnostic> diagnostics,
+        XamlLanguageServiceOptions options)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        if (diagnostics.IsDefaultOrEmpty ||
+            (options.IncludeCompilationDiagnostics && options.IncludeSemanticDiagnostics))
+        {
+            return diagnostics;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>(diagnostics.Length);
+        foreach (var diagnostic in diagnostics)
+        {
+            if (!options.IncludeCompilationDiagnostics &&
+                string.Equals(diagnostic.Source, "MSBuildWorkspace", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!options.IncludeSemanticDiagnostics &&
+                string.Equals(diagnostic.Source, "AXSG.Semantic", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            builder.Add(diagnostic);
+        }
+
+        return builder.ToImmutable();
     }
 
     private static ImmutableArray<XamlInlayHint> FilterInlayHints(
@@ -446,9 +517,12 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     private readonly record struct AnalysisCacheKey(
         string Uri,
+        string WorkspaceRoot);
+
+    private readonly record struct InflightAnalysisCacheKey(
+        string Uri,
         string WorkspaceRoot,
-        bool IncludeCompilationDiagnostics,
-        bool IncludeSemanticDiagnostics);
+        int Version);
 
     private readonly record struct PositionRequestCacheKey(
         string Uri,

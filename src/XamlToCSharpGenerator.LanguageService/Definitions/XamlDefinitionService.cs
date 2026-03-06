@@ -184,6 +184,11 @@ public sealed class XamlDefinitionService
             return ImmutableArray<XamlDefinitionLocation>.Empty;
         }
 
+        if (XamlExpressionBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var expressionTarget))
+        {
+            return [CreateSymbolDefinitionLocation(analysis, expressionTarget.Symbol)];
+        }
+
         if (XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out var selectorTarget))
         {
             switch (selectorTarget.Kind)
@@ -463,6 +468,14 @@ public sealed class XamlDefinitionService
         XamlToCSharpGenerator.LanguageService.Symbols.AvaloniaTypeInfo typeInfo)
     {
         var location = XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, typeInfo);
+        return new XamlDefinitionLocation(location.Uri, location.Range);
+    }
+
+    private static XamlDefinitionLocation CreateSymbolDefinitionLocation(
+        XamlAnalysisResult analysis,
+        Microsoft.CodeAnalysis.ISymbol symbol)
+    {
+        var location = XamlClrNavigationLocationResolver.ResolveSymbolLocation(analysis, symbol);
         return new XamlDefinitionLocation(location.Uri, location.Range);
     }
 

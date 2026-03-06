@@ -36,8 +36,36 @@ internal readonly struct XamlSelectorNavigationTarget
     public string? TypeContextToken { get; }
 }
 
+internal readonly struct XamlSelectorNavigationReference
+{
+    public XamlSelectorNavigationReference(XamlSelectorNavigationTarget target, SourceRange range)
+    {
+        Target = target;
+        Range = range;
+    }
+
+    public XamlSelectorNavigationTarget Target { get; }
+
+    public SourceRange Range { get; }
+}
+
 internal static class XamlSelectorNavigationService
 {
+    public static bool TryResolveReferenceAtOffset(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        out XamlSelectorNavigationReference reference)
+    {
+        reference = default;
+        if (!TryResolveSelectorAttributeReferenceAtPosition(analysis, position, out var selectorTarget, out var range))
+        {
+            return false;
+        }
+
+        reference = new XamlSelectorNavigationReference(selectorTarget, range);
+        return true;
+    }
+
     public static bool TryResolveTargetAtOffset(
         XamlAnalysisResult analysis,
         SourcePosition position,
@@ -50,37 +78,12 @@ internal static class XamlSelectorNavigationService
             return false;
         }
 
-        var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
-        if (context.Kind == XamlCompletionContextKind.AttributeValue &&
-            XamlStyleNavigationSemantics.IsSelectorAttribute(context.CurrentAttributeName))
+        if (TryResolveSelectorAttributeReferenceAtPosition(analysis, position, out target, out _))
         {
-            var selectorToken = string.IsNullOrWhiteSpace(context.Token)
-                ? context.CurrentAttributeValue
-                : context.Token;
-            var selectorOffset = offset - context.TokenStartOffset;
-            if (!string.IsNullOrWhiteSpace(selectorToken) &&
-                selectorOffset >= 0 &&
-                SelectorReferenceSemantics.TryFindReferenceAtOffset(selectorToken, selectorOffset, out var selectorReference))
-            {
-                var kind = selectorReference.Kind switch
-                {
-                    SelectorReferenceKind.Type => XamlSelectorNavigationTargetKind.Type,
-                    SelectorReferenceKind.StyleClass => XamlSelectorNavigationTargetKind.StyleClass,
-                    SelectorReferenceKind.PseudoClass => XamlSelectorNavigationTargetKind.PseudoClass,
-                    _ => XamlSelectorNavigationTargetKind.Unknown
-                };
-
-                if (kind != XamlSelectorNavigationTargetKind.Unknown)
-                {
-                    var typeContextToken = kind == XamlSelectorNavigationTargetKind.PseudoClass
-                        ? ResolveEffectiveTypeContextToken(analysis, position, selectorReference.TypeContextToken)
-                        : selectorReference.TypeContextToken;
-                    target = new XamlSelectorNavigationTarget(kind, selectorReference.Name, typeContextToken);
-                    return true;
-                }
-            }
+            return true;
         }
 
+        var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
         if (context.Kind == XamlCompletionContextKind.AttributeValue &&
             IsClassesAttributeValueContext(context.CurrentAttributeName) &&
             !string.IsNullOrWhiteSpace(context.Token))
@@ -103,6 +106,55 @@ internal static class XamlSelectorNavigationService
         }
 
         return false;
+    }
+
+    private static bool TryResolveSelectorAttributeReferenceAtPosition(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        out XamlSelectorNavigationTarget target,
+        out SourceRange range)
+    {
+        target = default;
+        range = default;
+
+        if (!TryFindSelectorAttributeAtPosition(analysis, position, out var selectorElement, out var selectorAttribute, out var selectorValueRange))
+        {
+            return false;
+        }
+
+        var absoluteOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
+        var selectorValueStartOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, selectorValueRange.Start);
+        if (absoluteOffset < selectorValueStartOffset)
+        {
+            return false;
+        }
+
+        var relativeOffset = absoluteOffset - selectorValueStartOffset;
+        if (!SelectorReferenceSemantics.TryFindReferenceAtOffset(selectorAttribute.Value, relativeOffset, out var selectorReference))
+        {
+            return false;
+        }
+
+        var kind = selectorReference.Kind switch
+        {
+            SelectorReferenceKind.Type => XamlSelectorNavigationTargetKind.Type,
+            SelectorReferenceKind.StyleClass => XamlSelectorNavigationTargetKind.StyleClass,
+            SelectorReferenceKind.PseudoClass => XamlSelectorNavigationTargetKind.PseudoClass,
+            _ => XamlSelectorNavigationTargetKind.Unknown
+        };
+        if (kind == XamlSelectorNavigationTargetKind.Unknown)
+        {
+            return false;
+        }
+
+        var typeContextToken = kind == XamlSelectorNavigationTargetKind.PseudoClass
+            ? ResolveEffectiveTypeContextToken(analysis, selectorElement, position, selectorReference.TypeContextToken)
+            : selectorReference.TypeContextToken;
+        target = new XamlSelectorNavigationTarget(kind, selectorReference.Name, typeContextToken);
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(analysis.Document.Text, selectorValueStartOffset + selectorReference.Start),
+            TextCoordinateHelper.GetPosition(analysis.Document.Text, selectorValueStartOffset + selectorReference.Start + selectorReference.Length));
+        return true;
     }
 
     private static bool IsClassesAttributeValueContext(string? attributeName)
@@ -136,6 +188,7 @@ internal static class XamlSelectorNavigationService
 
     private static string? ResolveEffectiveTypeContextToken(
         XamlAnalysisResult analysis,
+        XElement? selectorElement,
         SourcePosition position,
         string? immediateTypeContextToken)
     {
@@ -144,7 +197,8 @@ internal static class XamlSelectorNavigationService
             return immediateTypeContextToken;
         }
 
-        if (!TryFindSelectorAttributeAtPosition(analysis, position, out var selectorElement))
+        selectorElement ??= TryFindSelectorElementAtPosition(analysis, position);
+        if (selectorElement is null)
         {
             return null;
         }
@@ -185,12 +239,25 @@ internal static class XamlSelectorNavigationService
         return null;
     }
 
+    private static XElement? TryFindSelectorElementAtPosition(
+        XamlAnalysisResult analysis,
+        SourcePosition position)
+    {
+        return TryFindSelectorAttributeAtPosition(analysis, position, out var selectorElement, out _, out _)
+            ? selectorElement
+            : null;
+    }
+
     private static bool TryFindSelectorAttributeAtPosition(
         XamlAnalysisResult analysis,
         SourcePosition position,
-        out XElement selectorElement)
+        out XElement selectorElement,
+        out XAttribute selectorAttribute,
+        out SourceRange selectorValueRange)
     {
         selectorElement = null!;
+        selectorAttribute = null!;
+        selectorValueRange = default;
         var root = analysis.XmlDocument?.Root;
         if (root is null)
         {
@@ -210,6 +277,8 @@ internal static class XamlSelectorNavigationService
                 }
 
                 selectorElement = element;
+                selectorAttribute = attribute;
+                selectorValueRange = range;
                 return true;
             }
         }

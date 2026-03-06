@@ -15,9 +15,7 @@ internal static class XamlCompletionContextDetector
             return new XamlCompletionContext(XamlCompletionContextKind.Unknown, string.Empty, null, null, null, offset, offset);
         }
 
-        var tagStart = text.LastIndexOf('<', Math.Max(0, offset - 1));
-        var tagEnd = text.LastIndexOf('>', Math.Max(0, offset - 1));
-        if (tagStart < 0 || tagStart < tagEnd)
+        if (!TryFindCurrentTagStart(text, offset, out var tagStart))
         {
             return new XamlCompletionContext(XamlCompletionContextKind.Unknown, string.Empty, null, null, null, offset, offset);
         }
@@ -227,5 +225,60 @@ internal static class XamlCompletionContextDetector
         }
 
         return value is '{' or '}' or ',' or '=' or '(' or ')' or '+' or '*' or '/';
+    }
+
+    private static bool TryFindCurrentTagStart(string text, int offset, out int tagStart)
+    {
+        tagStart = -1;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        var scanEnd = Math.Min(Math.Max(0, offset), text.Length);
+        var lastOpenTag = -1;
+        var lastClosedTag = -1;
+        var inQuote = false;
+        var quoteChar = '\0';
+
+        for (var index = 0; index < scanEnd; index++)
+        {
+            var ch = text[index];
+            if (inQuote)
+            {
+                if (ch == quoteChar)
+                {
+                    inQuote = false;
+                }
+
+                continue;
+            }
+
+            if (ch is '"' or '\'')
+            {
+                inQuote = true;
+                quoteChar = ch;
+                continue;
+            }
+
+            if (ch == '<')
+            {
+                lastOpenTag = index;
+                continue;
+            }
+
+            if (ch == '>')
+            {
+                lastClosedTag = index;
+            }
+        }
+
+        if (lastOpenTag < 0 || lastOpenTag < lastClosedTag)
+        {
+            return false;
+        }
+
+        tagStart = lastOpenTag;
+        return true;
     }
 }

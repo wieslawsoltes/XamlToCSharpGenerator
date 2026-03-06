@@ -611,42 +611,35 @@ internal sealed class XamlRenameService
         out RenameTarget target)
     {
         target = default;
-        if (!XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out var selectorTarget))
-        {
-            return false;
-        }
-
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
         var absoluteRange = default(SourceRange);
         var selectedText = string.Empty;
+        var selectorTarget = default(XamlSelectorNavigationTarget);
 
-        if (context.Kind == XamlCompletionContextKind.AttributeValue &&
-            XamlStyleNavigationSemantics.IsSelectorAttribute(context.CurrentAttributeName))
+        if (XamlSelectorNavigationService.TryResolveReferenceAtOffset(analysis, position, out var selectorReference))
         {
-            var selectorText = string.IsNullOrWhiteSpace(context.Token)
-                ? context.CurrentAttributeValue
-                : context.Token;
-            var offsetInToken = TextCoordinateHelper.GetOffset(analysis.Document.Text, position) - context.TokenStartOffset;
-            if (offsetInToken < 0 ||
-                string.IsNullOrWhiteSpace(selectorText) ||
-                !SelectorReferenceSemantics.TryFindReferenceAtOffset(selectorText, offsetInToken, out var selectorReference))
-            {
-                return false;
-            }
-
-            absoluteRange = new SourceRange(
-                TextCoordinateHelper.GetPosition(analysis.Document.Text, context.TokenStartOffset + selectorReference.Start),
-                TextCoordinateHelper.GetPosition(analysis.Document.Text, context.TokenStartOffset + selectorReference.Start + selectorReference.Length));
+            selectorTarget = selectorReference.Target;
+            absoluteRange = selectorReference.Range;
             selectedText = ReadRangeText(analysis.Document.Text, absoluteRange);
         }
         else if (context.Kind == XamlCompletionContextKind.AttributeValue &&
                  string.Equals(GetLocalName(context.CurrentAttributeName), "Classes", StringComparison.Ordinal))
         {
+            if (!XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out selectorTarget))
+            {
+                return false;
+            }
+
             absoluteRange = ResolveTokenRange(analysis.Document.Text, context, position);
             selectedText = ReadRangeText(analysis.Document.Text, absoluteRange);
         }
         else if (context.Kind == XamlCompletionContextKind.AttributeName)
         {
+            if (!XamlSelectorNavigationService.TryResolveTargetAtOffset(analysis, position, out selectorTarget))
+            {
+                return false;
+            }
+
             var tokenRange = ResolveTokenRange(analysis.Document.Text, context, position);
             var tokenText = ReadRangeText(analysis.Document.Text, tokenRange);
             const string prefix = "Classes.";
@@ -662,6 +655,10 @@ internal sealed class XamlRenameService
                 TextCoordinateHelper.GetPosition(analysis.Document.Text, classStartOffset),
                 TextCoordinateHelper.GetPosition(analysis.Document.Text, classStartOffset + localTokenText.Length - prefix.Length));
             selectedText = ReadRangeText(analysis.Document.Text, absoluteRange);
+        }
+        else
+        {
+            return false;
         }
 
         if (string.IsNullOrWhiteSpace(selectedText))

@@ -59,7 +59,9 @@ public sealed class XamlInlayHintService
                     options,
                     compiledBinding.ResultTypeName!,
                     BuildTooltip(
-                        heading: "**Compiled Binding**",
+                        heading: IsExpressionBindingPath(compiledBinding.Path)
+                            ? "**Expression Binding**"
+                            : "**Compiled Binding**",
                         targetTypeName: compiledBinding.TargetTypeName,
                         targetPropertyName: compiledBinding.TargetPropertyName,
                         path: compiledBinding.Path,
@@ -73,12 +75,35 @@ public sealed class XamlInlayHintService
         {
             foreach (var attribute in element.Attributes())
             {
-                if (!XamlBindingNavigationService.TryResolveInlayHintTarget(
+                if (XamlBindingNavigationService.TryResolveInlayHintTarget(
                         analysis,
                         analysis.Document.Text,
                         element,
                         attribute,
                         out var bindingHint))
+                {
+                    AddInlayHint(
+                        builder,
+                        seen,
+                        bindingHint.HintAnchorRange,
+                        options,
+                        bindingHint.ResultTypeName,
+                        BuildTooltip(
+                            heading: "**Binding Type**",
+                            targetTypeName: null,
+                            targetPropertyName: null,
+                            path: bindingHint.Path,
+                            sourceTypeName: bindingHint.SourceTypeName,
+                            resultTypeName: bindingHint.ResultTypeName),
+                        bindingHint.ResultTypeLocation);
+                }
+
+                if (!XamlExpressionBindingNavigationService.TryResolveInlayHintTarget(
+                        analysis,
+                        analysis.Document.Text,
+                        element,
+                        attribute,
+                        out var expressionHint))
                 {
                     continue;
                 }
@@ -86,17 +111,17 @@ public sealed class XamlInlayHintService
                 AddInlayHint(
                     builder,
                     seen,
-                    bindingHint.HintAnchorRange,
+                    expressionHint.HintAnchorRange,
                     options,
-                    bindingHint.ResultTypeName,
+                    expressionHint.ResultTypeName,
                     BuildTooltip(
-                        heading: "**Binding Type**",
+                        heading: "**Expression Binding**",
                         targetTypeName: null,
                         targetPropertyName: null,
-                        path: bindingHint.Path,
-                        sourceTypeName: bindingHint.SourceTypeName,
-                        resultTypeName: bindingHint.ResultTypeName),
-                    bindingHint.ResultTypeLocation);
+                        path: expressionHint.Expression,
+                        sourceTypeName: expressionHint.SourceTypeName,
+                        resultTypeName: expressionHint.ResultTypeName),
+                    expressionHint.ResultTypeLocation);
             }
         }
 
@@ -202,6 +227,12 @@ public sealed class XamlInlayHintService
         lines.Add("- Source type: `" + NormalizeQualifiedTypeName(sourceTypeName) + "`");
         lines.Add("- Result type: `" + NormalizeQualifiedTypeName(resultTypeName) + "`");
         return string.Join("\n", lines);
+    }
+
+    private static bool IsExpressionBindingPath(string path)
+    {
+        return !string.IsNullOrWhiteSpace(path) &&
+               path.TrimStart().StartsWith("{=", StringComparison.Ordinal);
     }
 
     private static AvaloniaSymbolSourceLocation? TryResolveTypeLocation(
