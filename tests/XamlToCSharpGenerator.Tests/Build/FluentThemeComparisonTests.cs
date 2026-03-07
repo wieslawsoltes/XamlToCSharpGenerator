@@ -105,7 +105,7 @@ public class FluentThemeComparisonTests
 
         var sliderGeneratedFiles = Directory.GetFiles(
                 generatedRoot,
-                "XamlToCSharpGenerator.Generated.GeneratedXaml_Slider_*.XamlSourceGen.g.cs",
+                "*GeneratedXaml_Slider_*.XamlSourceGen.g.cs",
                 SearchOption.AllDirectories)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();

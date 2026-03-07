@@ -4448,7 +4448,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("XamlCompiledBindingRegistry.Register", generated);
-        Assert.Contains("\"{= source.Caption + '!'", generated);
+        Assert.Contains("\"{= Caption + '!'", generated);
         Assert.Contains("source.Title", generated);
         Assert.Contains("source.Count", generated);
     }
