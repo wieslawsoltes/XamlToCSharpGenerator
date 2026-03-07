@@ -246,7 +246,7 @@ internal static class XamlSourceLinkResolver
         out MetadataReader metadataReader)
     {
         provider = null!;
-        metadataReader = default;
+        metadataReader = default!;
 
         var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
         if (File.Exists(pdbPath))
