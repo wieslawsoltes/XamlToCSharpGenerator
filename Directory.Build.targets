@@ -45,6 +45,12 @@
     </ItemGroup>
 
     <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
+             Targets="Restore"
+             BuildInParallel="true"
+             Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
+
+    <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
              Targets="Build"
              BuildInParallel="true"
              Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"

@@ -170,6 +170,88 @@ public class BuildIntegrationTests
         Assert.True(CountMatches(output, "UTDI|") == 1, output);
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task Local_Analyzer_Target_Restores_Analyzer_Project_Before_Build()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var repoTargetsPath = Path.Combine(repositoryRoot, "Directory.Build.targets");
+        var analyzerProjectPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
+        var analyzerAssetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "obj", "project.assets.json");
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-local-analyzer-restore");
+
+        byte[]? originalAssets = null;
+
+        try
+        {
+            if (File.Exists(analyzerAssetsPath))
+            {
+                originalAssets = File.ReadAllBytes(analyzerAssetsPath);
+                File.Delete(analyzerAssetsPath);
+            }
+
+            var projectFile = Path.Combine(tempDir, "AnalyzerRestoreProbe.csproj");
+            File.WriteAllText(projectFile, $$"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <XamlSourceGenLocalAnalyzerProject Include="{{NormalizeForMsBuild(analyzerProjectPath)}}" />
+  </ItemGroup>
+  <Import Project="{{NormalizeForMsBuild(repoTargetsPath)}}" />
+  <Target Name="VerifyLocalAnalyzerRestore" DependsOnTargets="XamlToCSharpGenerator_BuildLocalAnalyzers">
+    <Error Condition="!Exists('{{NormalizeForMsBuild(analyzerAssetsPath)}}')" Text="Expected analyzer assets file was not restored." />
+  </Target>
+</Project>
+""");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:VerifyLocalAnalyzerRestore -m:1 /nodeReuse:false",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir
+            };
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+
+            var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await stdoutTask + await stderrTask;
+            Assert.True(process.ExitCode == 0, output);
+            Assert.True(File.Exists(analyzerAssetsPath), output);
+        }
+        finally
+        {
+            try
+            {
+                if (originalAssets is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(analyzerAssetsPath)!);
+                    File.WriteAllBytes(analyzerAssetsPath, originalAssets);
+                }
+            }
+            catch
+            {
+                // Best effort restore of test fixture state.
+            }
+
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best effort cleanup in tests.
+            }
+        }
+    }
+
     private static string RunEvaluation(
         bool sourceGenBackend,
         bool seedAdditionalFile = false,
