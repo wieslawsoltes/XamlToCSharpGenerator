@@ -51,16 +51,7 @@ public class DifferentialFeatureCorpusTests
     public void Feature_Tagged_Fixture_Has_Equivalent_Backend_Build_Diagnostics(DifferentialFixture fixture)
     {
         var repositoryRoot = GetRepositoryRoot();
-        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
-        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
-        var runtimeProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime", "XamlToCSharpGenerator.Runtime.csproj");
-        var coreProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Core", "XamlToCSharpGenerator.Core.csproj");
-        var compilerProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Compiler", "XamlToCSharpGenerator.Compiler.csproj");
-        var frameworkProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Framework.Abstractions", "XamlToCSharpGenerator.Framework.Abstractions.csproj");
-        var expressionSemanticsProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.ExpressionSemantics", "XamlToCSharpGenerator.ExpressionSemantics.csproj");
-        var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
-        var miniLanguageParsingProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.MiniLanguageParsing", "XamlToCSharpGenerator.MiniLanguageParsing.csproj");
-        var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
+        var artifacts = BuildTestArtifactCache.GetSourceGenArtifacts();
 
         var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "feature-diff");
 
@@ -68,16 +59,9 @@ public class DifferentialFeatureCorpusTests
         {
             var projectPath = Path.Combine(tempDir, "DifferentialFeatureFixture.csproj");
             File.WriteAllText(projectPath, BuildProjectText(
-                NormalizeForMsBuild(propsPath),
-                NormalizeForMsBuild(targetsPath),
-                NormalizeForMsBuild(runtimeProject),
-                NormalizeForMsBuild(coreProject),
-                NormalizeForMsBuild(compilerProject),
-                NormalizeForMsBuild(frameworkProject),
-                NormalizeForMsBuild(expressionSemanticsProject),
-                NormalizeForMsBuild(avaloniaProject),
-                NormalizeForMsBuild(miniLanguageParsingProject),
-                NormalizeForMsBuild(generatorProject)));
+                artifacts.PropsPath,
+                artifacts.TargetsPath,
+                artifacts.CreateConditionalSourceGenItemGroup()));
 
             foreach (var file in fixture.Files)
             {
@@ -143,16 +127,7 @@ public class DifferentialFeatureCorpusTests
     public void Warning_Feature_Fixture_Emits_SourceGen_Diagnostic_Without_Build_Break(DifferentialFixture fixture)
     {
         var repositoryRoot = GetRepositoryRoot();
-        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
-        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
-        var runtimeProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime", "XamlToCSharpGenerator.Runtime.csproj");
-        var coreProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Core", "XamlToCSharpGenerator.Core.csproj");
-        var compilerProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Compiler", "XamlToCSharpGenerator.Compiler.csproj");
-        var frameworkProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Framework.Abstractions", "XamlToCSharpGenerator.Framework.Abstractions.csproj");
-        var expressionSemanticsProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.ExpressionSemantics", "XamlToCSharpGenerator.ExpressionSemantics.csproj");
-        var avaloniaProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "XamlToCSharpGenerator.Avalonia.csproj");
-        var miniLanguageParsingProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.MiniLanguageParsing", "XamlToCSharpGenerator.MiniLanguageParsing.csproj");
-        var generatorProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
+        var artifacts = BuildTestArtifactCache.GetSourceGenArtifacts();
 
         var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "feature-diff-invalid");
 
@@ -160,16 +135,9 @@ public class DifferentialFeatureCorpusTests
         {
             var projectPath = Path.Combine(tempDir, "DifferentialFeatureFixture.csproj");
             File.WriteAllText(projectPath, BuildProjectText(
-                NormalizeForMsBuild(propsPath),
-                NormalizeForMsBuild(targetsPath),
-                NormalizeForMsBuild(runtimeProject),
-                NormalizeForMsBuild(coreProject),
-                NormalizeForMsBuild(compilerProject),
-                NormalizeForMsBuild(frameworkProject),
-                NormalizeForMsBuild(expressionSemanticsProject),
-                NormalizeForMsBuild(avaloniaProject),
-                NormalizeForMsBuild(miniLanguageParsingProject),
-                NormalizeForMsBuild(generatorProject)));
+                artifacts.PropsPath,
+                artifacts.TargetsPath,
+                artifacts.CreateConditionalSourceGenItemGroup()));
 
             foreach (var file in fixture.Files)
             {
@@ -1076,7 +1044,7 @@ public class DifferentialFeatureCorpusTests
     private static (int ExitCode, string Output) BuildFixture(string projectPath, string workingDirectory, string backend)
     {
         var arguments =
-            $"build \"{projectPath}\" --nologo -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers " +
+            $"build \"{projectPath}\" -c Debug --nologo -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers --no-restore " +
             $"-p:AvaloniaXamlCompilerBackend={backend} " +
             "-p:UseSharedCompilation=false " +
             "-p:ProduceReferenceAssembly=false";
@@ -1086,14 +1054,7 @@ public class DifferentialFeatureCorpusTests
     private static string BuildProjectText(
         string propsPath,
         string targetsPath,
-        string runtimeProject,
-        string coreProject,
-        string compilerProject,
-        string frameworkProject,
-        string expressionSemanticsProject,
-        string avaloniaProject,
-        string miniLanguageParsingProject,
-        string generatorProject)
+        string sourceGenItemGroup)
     {
         return $"""
 <Project Sdk="Microsoft.NET.Sdk">
@@ -1112,16 +1073,7 @@ public class DifferentialFeatureCorpusTests
     <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'">
-    <ProjectReference Include="{runtimeProject}" />
-    <ProjectReference Include="{coreProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{compilerProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{frameworkProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{expressionSemanticsProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{avaloniaProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{miniLanguageParsingProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="{generatorProject}" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-  </ItemGroup>
+{sourceGenItemGroup}
 
   <Import Project="{targetsPath}" Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'" />
 </Project>
@@ -1231,11 +1183,6 @@ public class DifferentialFeatureCorpusTests
     private static string GetRepositoryRoot()
     {
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-    }
-
-    private static string NormalizeForMsBuild(string path)
-    {
-        return path.Replace('\\', '/');
     }
 
     public sealed record DifferentialFixture(string Id, string FeatureTag, IReadOnlyDictionary<string, string> Files)
