@@ -15,7 +15,7 @@ Implemented:
   - `samples/SourceGenConventionsSample/SourceGenConventionsSample.csproj`
   - `src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj`
   - `tests/XamlToCSharpGenerator.FluentTheme.HeadlessTests/XamlToCSharpGenerator.FluentTheme.HeadlessTests.csproj`
-- Verified `dotnet build XamlToCSharpGenerator.sln` succeeds.
+- Verified `dotnet build XamlToCSharpGenerator.slnx` succeeds.
 
 Outcome:
 - Full solution restore/build is unblocked with no missing-project MSB3202 failures.
@@ -87,7 +87,7 @@ Remaining Wave 7 core elimination work:
 
 ## Validation Executed
 
-- `dotnet build XamlToCSharpGenerator.sln`
+- `dotnet build XamlToCSharpGenerator.slnx`
 - `dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --filter "FullyQualifiedName~BuildIntegrationTests|FullyQualifiedName~FrameworkPipelineProfileTests|FullyQualifiedName~ReflectionGuardTests"`
 - `dotnet build samples/SourceGenCrudSample/SourceGenCrudSample.csproj`
 - `dotnet build samples/NoUiFrameworkPilotSample/NoUiFrameworkPilotSample.csproj`

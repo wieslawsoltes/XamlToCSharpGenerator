@@ -107,7 +107,7 @@ Result impact:
    - `dotnet clean ... && dotnet build ...`
    - passes with 0 errors.
 2. Solution build:
-   - `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.sln`
+   - `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.slnx`
    - passes with 0 warnings and 0 errors.
 
 ## Remaining high-volume warnings (post-reduction)

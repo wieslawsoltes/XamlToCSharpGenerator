@@ -46,7 +46,7 @@ This execution completes the hot reload plan from:
      - idempotent clear + event rewire patterns
 
 ## Build and validation status
-1. `dotnet build /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.sln -m:1 /nodeReuse:false --disable-build-servers`
+1. `dotnet build /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.slnx -m:1 /nodeReuse:false --disable-build-servers`
    - Result: success (0 errors)
 2. `dotnet test` execution in this environment
    - Build phase succeeds

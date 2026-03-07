@@ -93,7 +93,7 @@ Exit criteria:
    - Added release warning policy section and tracked current warning debt in checklist docs.
 
 ## Validation Commands
-1. `dotnet build /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.sln --nologo -m:1 /nodeReuse:false --disable-build-servers`
+1. `dotnet build /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.slnx --nologo -m:1 /nodeReuse:false --disable-build-servers`
 2. `dotnet test /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers`
 3. `dotnet watch --verbose --project /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample/SourceGenCrudSample.csproj`
 

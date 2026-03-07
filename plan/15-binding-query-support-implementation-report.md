@@ -28,7 +28,7 @@ Implemented the next WP2-aligned increment after pass-engine work:
 ## Validation
 
 1. Command:
-   - `dotnet test /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.sln -m:1 /nodeReuse:false --disable-build-servers`
+   - `dotnet test /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.slnx -m:1 /nodeReuse:false --disable-build-servers`
 2. Result:
    - Passed: 45
    - Failed: 0

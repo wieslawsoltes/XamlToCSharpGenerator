@@ -45,7 +45,7 @@ Impact: Build package is not backend-neutral and prevents clean multi-framework 
 Impact: Runtime cannot be reused as a portable base; AOT pressure remains in shared surface.
 
 ## 2.5 Solution/packaging drift
-- `XamlToCSharpGenerator.sln` references `src/XamlToCSharpGenerator.LanguageServer/...` but directory is absent.
+- `XamlToCSharpGenerator.slnx` references `src/XamlToCSharpGenerator.LanguageServer/...` but directory is absent.
 
 Impact: Solution topology is inconsistent and blocks clean incremental architecture migration.
 

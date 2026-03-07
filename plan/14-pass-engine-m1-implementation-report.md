@@ -56,7 +56,7 @@ Implemented Milestone 1 pass-engine scaffolding from:
 ## Validation
 
 1. Command:
-   - `dotnet test /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.sln -m:1 /nodeReuse:false --disable-build-servers`
+   - `dotnet test /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/XamlToCSharpGenerator.slnx -m:1 /nodeReuse:false --disable-build-servers`
 2. Result:
    - Passed: 43
    - Failed: 0
