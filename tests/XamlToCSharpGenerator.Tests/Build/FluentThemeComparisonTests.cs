@@ -17,21 +17,19 @@ public class FluentThemeComparisonTests
         "BoundStepThroughSequencePoint.<Span>k__BackingField",
         "ILOpCodeExtensions.StackPushCount"
     };
+    private static readonly Lazy<FluentThemeBuildOutput> SourceGenBuildOutput =
+        new(() => BuildFluentTheme("SourceGen"), isThreadSafe: true);
+    private static readonly Lazy<FluentThemeBuildOutput> XamlIlBuildOutput =
+        new(() => BuildFluentTheme("XamlIl"), isThreadSafe: true);
+    private static readonly Lazy<Dictionary<string, string>> SourceGenProbeOutput =
+        new(() => RunProbe("SourceGen"), isThreadSafe: true);
+    private static readonly Lazy<Dictionary<string, string>> XamlIlProbeOutput =
+        new(() => RunProbe("XamlIl"), isThreadSafe: true);
 
     [Fact]
     public void FluentTheme_Rebuild_Has_No_Selector_Conversion_Or_CrossFile_ControlTheme_BasedOn_Warnings()
     {
-        var repositoryRoot = GetRepositoryRoot();
-        var projectPath = Path.Combine(
-            repositoryRoot,
-            "samples",
-            "Avalonia.Themes.Fluent",
-            "Avalonia.Themes.Fluent.csproj");
-
-        var result = RunProcess(
-            repositoryRoot,
-            "dotnet",
-            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend=SourceGen");
+        var result = SourceGenBuildOutput.Value.BuildResult;
 
         Assert.True(result.ExitCode == 0, result.Output);
         Assert.DoesNotContain("warning AXSG0102", result.Output, StringComparison.Ordinal);
@@ -41,10 +39,7 @@ public class FluentThemeComparisonTests
         Assert.DoesNotContain("warning AXSG0110", result.Output, StringComparison.Ordinal);
         Assert.DoesNotContain("warning AXSG0111", result.Output, StringComparison.Ordinal);
 
-        var xamlIlResult = RunProcess(
-            repositoryRoot,
-            "dotnet",
-            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend=XamlIl");
+        var xamlIlResult = XamlIlBuildOutput.Value.BuildResult;
 
         Assert.True(xamlIlResult.ExitCode == 0, xamlIlResult.Output);
     }
@@ -52,26 +47,11 @@ public class FluentThemeComparisonTests
     [Fact]
     public void FluentTheme_SourceGen_Emits_Expected_Include_And_Resource_Wiring()
     {
-        var repositoryRoot = GetRepositoryRoot();
-        var projectPath = Path.Combine(
-            repositoryRoot,
-            "samples",
-            "Avalonia.Themes.Fluent",
-            "Avalonia.Themes.Fluent.csproj");
-
-        var sourceGenResult = RunProcess(
-            repositoryRoot,
-            "dotnet",
-            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend=SourceGen");
+        var sourceGenOutput = SourceGenBuildOutput.Value;
+        var sourceGenResult = sourceGenOutput.BuildResult;
 
         Assert.True(sourceGenResult.ExitCode == 0, sourceGenResult.Output);
-
-        var generatedRoot = Path.Combine(
-            repositoryRoot,
-            "samples",
-            "Avalonia.Themes.Fluent",
-            "obj",
-            "GeneratedFiles");
+        var generatedRoot = sourceGenOutput.GeneratedRoot;
         var generatedFiles = Directory.GetFiles(
                 generatedRoot,
                 "Avalonia.Themes.Fluent.FluentTheme.*.XamlSourceGen.g.cs",
@@ -121,26 +101,11 @@ public class FluentThemeComparisonTests
     [Fact]
     public void FluentTheme_SourceGen_Preserves_TemplateBinding_Mode_And_Converters_For_Interactive_Controls()
     {
-        var repositoryRoot = GetRepositoryRoot();
-        var projectPath = Path.Combine(
-            repositoryRoot,
-            "samples",
-            "Avalonia.Themes.Fluent",
-            "Avalonia.Themes.Fluent.csproj");
-
-        var sourceGenResult = RunProcess(
-            repositoryRoot,
-            "dotnet",
-            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend=SourceGen");
+        var sourceGenOutput = SourceGenBuildOutput.Value;
+        var sourceGenResult = sourceGenOutput.BuildResult;
 
         Assert.True(sourceGenResult.ExitCode == 0, sourceGenResult.Output);
-
-        var generatedRoot = Path.Combine(
-            repositoryRoot,
-            "samples",
-            "Avalonia.Themes.Fluent",
-            "obj",
-            "GeneratedFiles");
+        var generatedRoot = sourceGenOutput.GeneratedRoot;
 
         var comboBoxSources = Directory.GetFiles(
                 generatedRoot,
@@ -198,15 +163,8 @@ public class FluentThemeComparisonTests
     [Fact]
     public void FluentTheme_Runtime_Probe_Matches_Selected_SourceGen_And_XamlIl_Behavior()
     {
-        var repositoryRoot = GetRepositoryRoot();
-        var probeProjectPath = Path.Combine(
-            repositoryRoot,
-            "tests",
-            "FluentTheme.RuntimeProbe",
-            "FluentTheme.RuntimeProbe.csproj");
-
-        var sourceGenProbe = RunProbe(repositoryRoot, probeProjectPath, backend: "SourceGen");
-        var xamlIlProbe = RunProbe(repositoryRoot, probeProjectPath, backend: "XamlIl");
+        var sourceGenProbe = SourceGenProbeOutput.Value;
+        var xamlIlProbe = XamlIlProbeOutput.Value;
 
         AssertSelectedControlThemeParity(sourceGenProbe, xamlIlProbe, "Theme.Button");
         AssertSelectedControlThemeParity(sourceGenProbe, xamlIlProbe, "Theme.TextBox");
@@ -296,12 +254,41 @@ public class FluentThemeComparisonTests
         Assert.DoesNotContain(sourceGenProbe.Keys, key => key.StartsWith("TemplateApply.Window.Exception.", StringComparison.Ordinal));
     }
 
-    private static Dictionary<string, string> RunProbe(string repositoryRoot, string probeProjectPath, string backend)
+    private static FluentThemeBuildOutput BuildFluentTheme(string backend)
     {
+        var repositoryRoot = GetRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            "samples",
+            "Avalonia.Themes.Fluent",
+            "Avalonia.Themes.Fluent.csproj");
+
         var buildResult = RunProcess(
             repositoryRoot,
             "dotnet",
-            $"build \"{probeProjectPath}\" --nologo -v:minimal -m:1 /nodeReuse:false --disable-build-servers -p:AvaloniaXamlCompilerBackend={backend}");
+            $"build \"{projectPath}\" --nologo -v:minimal -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers " +
+            $"-p:AvaloniaXamlCompilerBackend={backend}");
+        Assert.True(buildResult.ExitCode == 0, buildResult.Output);
+
+        return new FluentThemeBuildOutput(
+            buildResult,
+            Path.Combine(repositoryRoot, "samples", "Avalonia.Themes.Fluent", "obj", "GeneratedFiles"));
+    }
+
+    private static Dictionary<string, string> RunProbe(string backend)
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var probeProjectPath = Path.Combine(
+            repositoryRoot,
+            "tests",
+            "FluentTheme.RuntimeProbe",
+            "FluentTheme.RuntimeProbe.csproj");
+
+        var buildResult = RunProcess(
+            repositoryRoot,
+            "dotnet",
+            $"build \"{probeProjectPath}\" --nologo -v:minimal -m:1 /nodeReuse:false --disable-build-servers " +
+            $"-p:AvaloniaXamlCompilerBackend={backend}");
         Assert.True(buildResult.ExitCode == 0, buildResult.Output);
 
         var probeDllPath = Path.Combine(
@@ -469,4 +456,6 @@ public class FluentThemeComparisonTests
     {
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     }
+
+    private sealed record FluentThemeBuildOutput((int ExitCode, string Output) BuildResult, string GeneratedRoot);
 }
