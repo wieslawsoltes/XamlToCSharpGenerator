@@ -8,8 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  DOTNET_NOLOGO: "true"
+
 jobs:
-  build-test:
+  build-test-pack:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,14 +23,45 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tools/vscode/axsg-language-server/package-lock.json
+
+      - name: Resolve CI artifact version
+        shell: bash
+        run: |
+          version="$(python3 eng/release/resolve-version.py --props Directory.Build.props --ci-run-number "${GITHUB_RUN_NUMBER}")"
+          echo "AXSG_VERSION=${version}" >> "${GITHUB_ENV}"
+
       - name: Restore
-        run: dotnet restore XamlToCSharpGenerator.CI.slnf --nologo
+        run: dotnet restore XamlToCSharpGenerator.CI.slnf
 
       - name: Build
-        run: dotnet build XamlToCSharpGenerator.CI.slnf --nologo -m:1 /nodeReuse:false --disable-build-servers
+        run: dotnet build XamlToCSharpGenerator.CI.slnf -c Release -m:1 /nodeReuse:false --disable-build-servers
 
       - name: Test
-        run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers --no-build
+        run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj -c Release -m:1 /nodeReuse:false --disable-build-servers --no-build
+
+      - name: Pack NuGet artifacts
+        shell: bash
+        run: |
+          bash eng/release/pack-nuget-artifacts.sh "${GITHUB_WORKSPACE}/artifacts/nuget" "${AXSG_VERSION}"
+
+      - name: Package VS Code extension
+        shell: bash
+        run: |
+          bash eng/release/package-vscode-extension.sh "${GITHUB_WORKSPACE}/artifacts/vsix/axsg-language-server-${AXSG_VERSION}.vsix" "${AXSG_VERSION}"
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts-${{ github.run_number }}
+          path: |
+            artifacts/nuget/*.nupkg
+            artifacts/vsix/*.vsix
 
   mobile-build:
     runs-on: macos-26

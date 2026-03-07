@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: "true"
+
+jobs:
+  pack-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tools/vscode/axsg-language-server/package-lock.json
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(python3 eng/release/resolve-version.py --props Directory.Build.props --ci-run-number "${GITHUB_RUN_NUMBER}")"
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "AXSG_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Restore
+        run: dotnet restore XamlToCSharpGenerator.CI.slnf
+
+      - name: Build
+        run: dotnet build XamlToCSharpGenerator.CI.slnf -c Release -m:1 /nodeReuse:false --disable-build-servers
+
+      - name: Test
+        run: dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj -c Release -m:1 /nodeReuse:false --disable-build-servers --no-build
+
+      - name: Pack NuGet artifacts
+        shell: bash
+        run: |
+          bash eng/release/pack-nuget-artifacts.sh "${GITHUB_WORKSPACE}/artifacts/nuget" "${AXSG_VERSION}"
+
+      - name: Package VS Code extension
+        shell: bash
+        run: |
+          bash eng/release/package-vscode-extension.sh "${GITHUB_WORKSPACE}/artifacts/vsix/axsg-language-server-${AXSG_VERSION}.vsix" "${AXSG_VERSION}"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/nuget/*.nupkg
+            artifacts/vsix/*.vsix
+
+      - name: Publish NuGet artifacts
+        if: startsWith(github.ref, 'refs/tags/v') && secrets.NUGET_API_KEY != ''
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for package in "${GITHUB_WORKSPACE}"/artifacts/nuget/*.nupkg; do
+            dotnet nuget push "${package}" \
+              --api-key "${NUGET_API_KEY}" \
+              --source "https://api.nuget.org/v3/index.json" \
+              --skip-duplicate
+          done
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: pack-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-${{ needs.pack-release.outputs.version }}
+          path: release-artifacts
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.nupkg
+            release-artifacts/**/*.vsix
