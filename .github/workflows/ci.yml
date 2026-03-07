@@ -84,6 +84,9 @@ jobs:
           xcodebuild -version
           xcode-select -p
 
+      - name: Restore shared generator and sample graph
+        run: dotnet restore XamlToCSharpGenerator.CI.slnf --nologo
+
       - name: Restore iOS workload
         run: dotnet workload restore samples/ControlCatalog.iOS/ControlCatalog.iOS.csproj --nologo --skip-manifest-update
 
