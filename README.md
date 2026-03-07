@@ -131,6 +131,26 @@ For feature-specific details:
 - configuration migration: [`docs/configuration-migration.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-migration.md)
 - iOS hot reload: [`docs/hot-reload-ios.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/hot-reload-ios.md)
 
+## AXSG vs XamlX
+
+For Avalonia, `XamlX` is the compiler foundation behind the default `XamlIl` backend. `XamlToCSharpGenerator` is the source-generator alternative in this repository. The goal is standard Avalonia XAML parity first, then SourceGen-specific tooling and live-edit capabilities on top of that baseline.
+
+| Area | AXSG (`XamlToCSharpGenerator`) | XamlX / Avalonia `XamlIl` | Notes |
+| --- | --- | --- | --- |
+| Primary build artifact | Generates C# into the normal Roslyn/MSBuild graph | Compiles XAML through the XamlX/XamlIl pipeline into generated IL/helpers | This is the main architectural difference. |
+| Avalonia backend selection | Opt-in with `AvaloniaXamlCompilerBackend=SourceGen` | Avalonia default backend | AXSG is intentionally explicit so projects can switch per app/repo. |
+| Standard Avalonia XAML surface | Implemented with ongoing parity work and guard tests | Mature baseline used by Avalonia itself | AXSG uses XamlX/XamlIl behavior as the parity reference for standard semantics. |
+| Compiled bindings | Yes | Yes | Both stacks support typed binding flows for Avalonia. |
+| Runtime loading | Shipped as AXSG runtime packages with source-generated registries | Shipped in Avalonia via `AvaloniaRuntimeXamlLoader` / `AvaloniaXamlIlRuntimeCompiler` | Both support runtime loading, but through different runtime contracts. |
+| AOT / trimming posture | Explicit project rule: no reflection in emitted/runtime execution paths | Compile-time path is mature; Avalonia runtime loader paths are marked `RequiresUnreferencedCode` | AXSG is stricter here because NativeAOT/trimming is a first-class contract in this repo. |
+| C# expression bindings (`{= ...}`) | Yes | No equivalent compiler feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
+| Event bindings | Yes | No equivalent AXSG-style event-binding feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
+| Conditional XAML pruning | Yes | Not part of the default Avalonia `XamlIl` compiler surface | AXSG-specific extension. |
+| Global xmlns and transform-rule configuration | Yes | Not exposed as the same unified configuration model | AXSG-specific configuration surface. |
+| Hot reload / hot design hooks | Built into the AXSG runtime and build flow in this repo | Not shipped as part of XamlX itself | This table compares compiler stacks, not every external IDE feature around Avalonia. |
+| Language service and editor tooling | Shared semantic language-service core, VS Code extension, Avalonia editor control, rename propagation | Not shipped as part of the XamlX compiler stack | AXSG treats compiler semantics and editor tooling as one product surface. |
+| Best fit | Projects that want generated C#, strong tooling integration, and SourceGen-specific live-edit features | Projects staying on Avalonia's default production compiler path | Both can coexist because backend selection is explicit. |
+
 ## Build Instructions
 
 ### Prerequisites
