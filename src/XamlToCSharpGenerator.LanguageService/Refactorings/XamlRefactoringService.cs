@@ -61,4 +61,21 @@ internal sealed class XamlRefactoringService
     {
         return _renameProvider.RenameAsync(uri, position, newName, options, documentTextOverride, cancellationToken);
     }
+
+    public Task<XamlWorkspaceEdit> GetCSharpRenamePropagationEditsAsync(
+        string uri,
+        SourcePosition position,
+        string newName,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _renameProvider.GetCSharpRenamePropagationEditsAsync(
+            uri,
+            position,
+            newName,
+            options,
+            documentTextOverride,
+            cancellationToken);
+    }
 }

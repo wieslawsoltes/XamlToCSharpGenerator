@@ -500,7 +500,7 @@ public sealed class LspServerIntegrationTests
         var project = await CreateRenameProjectFixtureAsync();
         try
         {
-            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
             await harness.InitializeAsync();
 
             await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
@@ -548,7 +548,7 @@ public sealed class LspServerIntegrationTests
         var project = await CreateRenameProjectFixtureAsync();
         try
         {
-            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
             await harness.InitializeAsync();
 
             await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
@@ -607,7 +607,7 @@ public sealed class LspServerIntegrationTests
         var project = await CreateRenameProjectFixtureAsync();
         try
         {
-            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
             await harness.InitializeAsync();
 
             await harness.SendRequestAsync(212, "axsg/refactor/rename", new JsonObject
@@ -630,6 +630,124 @@ public sealed class LspServerIntegrationTests
 
             Assert.True(changes.TryGetProperty(project.XamlUri, out _));
             Assert.True(changes.TryGetProperty(project.CodeUri, out _));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CSharpRenamePropagation_Request_ForProperty_ReturnsXamlOnlyWorkspaceEdit()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(215, "axsg/csharp/renamePropagation", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.CodeUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.CodeNamePosition.Line,
+                    ["character"] = project.CodeNamePosition.Character
+                },
+                ["documentText"] = project.CodeText,
+                ["newName"] = "DisplayName"
+            });
+
+            using var response = await harness.ReadResponseAsync(215);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            Assert.Contains(changes.EnumerateObject(), property =>
+                string.Equals(property.Name, project.XamlUri, StringComparison.Ordinal));
+            Assert.DoesNotContain(changes.EnumerateObject(), property =>
+                string.Equals(property.Name, project.CodeUri, StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CSharpRenamePropagation_Request_ForMethod_ReturnsExpressionBindingEdits()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(216, "axsg/csharp/renamePropagation", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.CodeUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.CodeMethodPosition.Line,
+                    ["character"] = project.CodeMethodPosition.Character
+                },
+                ["documentText"] = project.CodeText,
+                ["newName"] = "BuildName"
+            });
+
+            using var response = await harness.ReadResponseAsync(216);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            var xamlChanges = changes.EnumerateObject()
+                .FirstOrDefault(property => string.Equals(property.Name, project.XamlUri, StringComparison.Ordinal));
+            Assert.False(string.IsNullOrWhiteSpace(xamlChanges.Name));
+            Assert.DoesNotContain(changes.EnumerateObject(), property =>
+                string.Equals(property.Name, project.CodeUri, StringComparison.Ordinal));
+            Assert.Contains("BuildName", xamlChanges.Value.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CSharpRenamePropagation_Request_ForType_ReturnsXDataTypeEdits()
+    {
+        var project = await CreateRenameProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(217, "axsg/csharp/renamePropagation", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.CodeUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = project.CodeTypePosition.Line,
+                    ["character"] = project.CodeTypePosition.Character
+                },
+                ["documentText"] = project.CodeText,
+                ["newName"] = "ShellViewModel"
+            });
+
+            using var response = await harness.ReadResponseAsync(217);
+            var changes = response.RootElement.GetProperty("result").GetProperty("changes");
+
+            var xamlChanges = changes.EnumerateObject()
+                .FirstOrDefault(property => string.Equals(property.Name, project.XamlUri, StringComparison.Ordinal));
+            Assert.False(string.IsNullOrWhiteSpace(xamlChanges.Name));
+            Assert.DoesNotContain(changes.EnumerateObject(), property =>
+                string.Equals(property.Name, project.CodeUri, StringComparison.Ordinal));
+            Assert.Contains("ShellViewModel", xamlChanges.Value.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1978,8 +2096,11 @@ public sealed class LspServerIntegrationTests
         private readonly Task<int> _runTask;
         private bool _stopped;
 
-        private LspServerHarness(ICompilationProvider? compilationProvider = null)
+        private readonly string _workspaceRoot;
+
+        private LspServerHarness(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null)
         {
+            _workspaceRoot = string.IsNullOrWhiteSpace(workspaceRoot) ? "/tmp" : workspaceRoot;
             _clientWriteStream = _clientToServer.Writer.AsStream();
             _serverReadStream = _clientToServer.Reader.AsStream();
             _serverWriteStream = _serverToClient.Writer.AsStream();
@@ -1992,13 +2113,13 @@ public sealed class LspServerIntegrationTests
                 new LspMessageReader(_serverReadStream),
                 new LspMessageWriter(_serverWriteStream),
                 engine,
-                new XamlLanguageServiceOptions("/tmp"));
+                new XamlLanguageServiceOptions(_workspaceRoot));
             _runTask = _server.RunAsync(_cts.Token);
         }
 
-        public static Task<LspServerHarness> StartAsync(ICompilationProvider? compilationProvider = null)
+        public static Task<LspServerHarness> StartAsync(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null)
         {
-            return Task.FromResult(new LspServerHarness(compilationProvider));
+            return Task.FromResult(new LspServerHarness(compilationProvider, workspaceRoot));
         }
 
         public async Task InitializeAsync()
@@ -2006,7 +2127,7 @@ public sealed class LspServerIntegrationTests
             await SendRequestAsync(100, "initialize", new JsonObject
             {
                 ["processId"] = null,
-                ["rootUri"] = "file:///tmp",
+                ["rootUri"] = new Uri(_workspaceRoot).AbsoluteUri,
                 ["capabilities"] = new JsonObject()
             });
 
@@ -2416,6 +2537,7 @@ public sealed class LspServerIntegrationTests
                                              xmlns:vm="using:TestApp"
                                              x:DataType="vm:MainViewModel">
                                   <TextBlock Text="{Binding Name}" />
+                                  <TextBlock Text="{= GetName()}" />
                                 </UserControl>
                                 """;
 
@@ -2436,6 +2558,8 @@ public sealed class LspServerIntegrationTests
             new Uri(codePath).AbsoluteUri,
             codeText,
             GetPosition(codeText, codeText.IndexOf("Name { get;", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("GetName()", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainViewModel", StringComparison.Ordinal) + 2),
             new Uri(xamlPath).AbsoluteUri,
             xamlText,
             GetPosition(xamlText, xamlText.IndexOf("Name", StringComparison.Ordinal) + 2));
@@ -2466,6 +2590,8 @@ public sealed class LspServerIntegrationTests
         string CodeUri,
         string CodeText,
         SourcePosition CodeNamePosition,
+        SourcePosition CodeMethodPosition,
+        SourcePosition CodeTypePosition,
         string XamlUri,
         string XamlText,
         SourcePosition XamlNamePosition);

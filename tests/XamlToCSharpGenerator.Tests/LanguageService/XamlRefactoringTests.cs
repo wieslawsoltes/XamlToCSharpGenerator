@@ -109,6 +109,96 @@ public sealed class XamlRefactoringTests
     }
 
     [Fact]
+    public async Task CSharpRenamePropagation_FromProperty_ProducesOnlyXamlEdits()
+    {
+        var project = await CreateRenameProjectAsync();
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            var renameEdit = await engine.GetCSharpRenamePropagationEditsAsync(
+                project.CodeUri,
+                project.CodeNamePosition,
+                "DisplayName",
+                options,
+                project.CodeText,
+                CancellationToken.None);
+
+            Assert.True(renameEdit.HasChanges);
+            Assert.Contains(project.XamlUri, renameEdit.Changes.Keys);
+            Assert.DoesNotContain(project.CodeUri, renameEdit.Changes.Keys);
+
+            var rewrittenXaml = ApplyEdits(project.XamlText, renameEdit.Changes[project.XamlUri]);
+            Assert.Contains("{Binding DisplayName}", rewrittenXaml, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CSharpRenamePropagation_FromMethod_ProducesExpressionBindingEdits()
+    {
+        var project = await CreateRenameProjectAsync();
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            var renameEdit = await engine.GetCSharpRenamePropagationEditsAsync(
+                project.CodeUri,
+                project.CodeMethodPosition,
+                "BuildName",
+                options,
+                project.CodeText,
+                CancellationToken.None);
+
+            Assert.True(renameEdit.HasChanges);
+            Assert.Contains(project.XamlUri, renameEdit.Changes.Keys);
+            Assert.DoesNotContain(project.CodeUri, renameEdit.Changes.Keys);
+
+            var rewrittenXaml = ApplyEdits(project.XamlText, renameEdit.Changes[project.XamlUri]);
+            Assert.Contains("{= BuildName()}", rewrittenXaml, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CSharpRenamePropagation_FromType_ProducesXDataTypeEdits()
+    {
+        var project = await CreateRenameProjectAsync();
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            var renameEdit = await engine.GetCSharpRenamePropagationEditsAsync(
+                project.CodeUri,
+                project.CodeTypePosition,
+                "ShellViewModel",
+                options,
+                project.CodeText,
+                CancellationToken.None);
+
+            Assert.True(renameEdit.HasChanges);
+            Assert.Contains(project.XamlUri, renameEdit.Changes.Keys);
+            Assert.DoesNotContain(project.CodeUri, renameEdit.Changes.Keys);
+
+            var rewrittenXaml = ApplyEdits(project.XamlText, renameEdit.Changes[project.XamlUri]);
+            Assert.Contains("x:DataType=\"vm:ShellViewModel\"", rewrittenXaml, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Rename_FromXamlStyleClass_ProducesSelectorAndUsageEdits()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -329,6 +419,7 @@ public sealed class XamlRefactoringTests
                                              xmlns:vm="using:TestApp"
                                              x:DataType="vm:MainViewModel">
                                   <TextBlock Text="{Binding Name}" />
+                                  <TextBlock Text="{= GetName()}" />
                                 </UserControl>
                                 """;
 
@@ -351,6 +442,8 @@ public sealed class XamlRefactoringTests
             new Uri(codePath).AbsoluteUri,
             codeText,
             GetPosition(codeText, codeText.IndexOf("Name { get;", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("GetName()", StringComparison.Ordinal) + 2),
+            GetPosition(codeText, codeText.IndexOf("MainViewModel", StringComparison.Ordinal) + 2),
             xamlPath,
             new Uri(xamlPath).AbsoluteUri,
             xamlText,
@@ -494,6 +587,8 @@ public sealed class XamlRefactoringTests
         string CodeUri,
         string CodeText,
         SourcePosition CodeNamePosition,
+        SourcePosition CodeMethodPosition,
+        SourcePosition CodeTypePosition,
         string XamlPath,
         string XamlUri,
         string XamlText,

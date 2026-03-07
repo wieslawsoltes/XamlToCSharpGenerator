@@ -75,8 +75,7 @@ internal static class XamlTypeReferenceNavigationResolver
         out XamlResolvedTypeReference resolvedTypeReference)
     {
         resolvedTypeReference = default;
-        if (analysis.TypeIndex is null ||
-            !IsTypeReferenceAttributeName(attributeName) ||
+        if (!IsTypeReferenceAttributeName(attributeName) ||
             string.IsNullOrWhiteSpace(rawTypeValue))
         {
             return false;
@@ -94,7 +93,29 @@ internal static class XamlTypeReferenceNavigationResolver
             return TryResolveByFullTypeName(analysis, normalizedTypeToken, out resolvedTypeReference);
         }
 
-        if (XamlClrSymbolResolver.TryResolveTypeInfo(
+        return TryResolveQualifiedTypeToken(analysis, prefixMap, normalizedTypeToken, out resolvedTypeReference);
+    }
+
+    public static bool TryResolveQualifiedTypeToken(
+        XamlAnalysisResult analysis,
+        ImmutableDictionary<string, string> prefixMap,
+        string? rawTypeValue,
+        out XamlResolvedTypeReference resolvedTypeReference)
+    {
+        resolvedTypeReference = default;
+        if (string.IsNullOrWhiteSpace(rawTypeValue))
+        {
+            return false;
+        }
+
+        var normalizedTypeToken = NormalizeTypeReferenceToken(rawTypeValue);
+        if (string.IsNullOrWhiteSpace(normalizedTypeToken))
+        {
+            return false;
+        }
+
+        if (analysis.TypeIndex is not null &&
+            XamlClrSymbolResolver.TryResolveTypeInfo(
                 analysis.TypeIndex,
                 prefixMap,
                 normalizedTypeToken,

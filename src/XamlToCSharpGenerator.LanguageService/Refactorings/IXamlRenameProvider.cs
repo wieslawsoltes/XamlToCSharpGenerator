@@ -20,4 +20,12 @@ internal interface IXamlRenameProvider
         XamlLanguageServiceOptions options,
         string? documentTextOverride,
         CancellationToken cancellationToken);
+
+    Task<XamlWorkspaceEdit> GetCSharpRenamePropagationEditsAsync(
+        string uri,
+        SourcePosition position,
+        string newName,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken);
 }

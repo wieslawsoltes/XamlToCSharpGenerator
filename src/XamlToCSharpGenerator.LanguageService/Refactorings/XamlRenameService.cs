@@ -32,6 +32,8 @@ internal sealed class XamlRenameService
     private readonly XamlDocumentStore _documentStore;
     private readonly ICompilationProvider _compilationProvider;
     private readonly XamlCompilerAnalysisService _analysisService;
+    private readonly XamlReferenceService _referenceService;
+    private readonly CSharpSymbolResolutionService _csharpSymbolResolutionService;
 
     public XamlRenameService(
         XamlDocumentStore documentStore,
@@ -41,6 +43,8 @@ internal sealed class XamlRenameService
         _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
         _analysisService = analysisService ?? throw new ArgumentNullException(nameof(analysisService));
+        _referenceService = new XamlReferenceService();
+        _csharpSymbolResolutionService = new CSharpSymbolResolutionService(_compilationProvider);
     }
 
     public async Task<XamlPrepareRenameResult?> PrepareRenameAsync(
@@ -158,6 +162,37 @@ internal sealed class XamlRenameService
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<XamlWorkspaceEdit> GetCSharpRenamePropagationEditsAsync(
+        string uri,
+        SourcePosition position,
+        string newName,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            return XamlWorkspaceEdit.Empty;
+        }
+
+        var resolvedSymbol = await _csharpSymbolResolutionService
+            .ResolveSymbolAtPositionAsync(uri, position, documentTextOverride, options, cancellationToken)
+            .ConfigureAwait(false);
+        if (resolvedSymbol is null ||
+            !TryResolveXamlClrRenameTarget(resolvedSymbol.Symbol, out var target) ||
+            !ValidateNewName(target.Kind, newName))
+        {
+            return XamlWorkspaceEdit.Empty;
+        }
+
+        return await BuildXamlPropagationWorkspaceEditAsync(
+            resolvedSymbol.Snapshot.ProjectPath,
+            options,
+            resolvedSymbol.Symbol,
+            newName,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<XamlWorkspaceEdit> RenameRoslynSymbolAsync(
         ISymbol symbol,
         string sourceFilePath,
@@ -212,11 +247,31 @@ internal sealed class XamlRenameService
         string newName,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveXamlClrRenameTarget(symbol, out var clrTarget))
+        var propagationEdit = await BuildXamlPropagationWorkspaceEditAsync(
+            projectPath,
+            options,
+            symbol,
+            newName,
+            cancellationToken).ConfigureAwait(false);
+        foreach (var pair in propagationEdit.Changes)
         {
-            return;
+            MergeDocumentEdits(changesBuilder, pair.Key, pair.Value);
+        }
+    }
+
+    private async Task<XamlWorkspaceEdit> BuildXamlPropagationWorkspaceEditAsync(
+        string? projectPath,
+        XamlLanguageServiceOptions options,
+        ISymbol symbol,
+        string newName,
+        CancellationToken cancellationToken)
+    {
+        if (!SupportsCSharpRenamePropagation(symbol))
+        {
+            return XamlWorkspaceEdit.Empty;
         }
 
+        var changesBuilder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<XamlDocumentTextEdit>>(StringComparer.Ordinal);
         var xamlFilePaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(projectPath, currentFilePath: null);
         foreach (var xamlFilePath in xamlFilePaths)
         {
@@ -226,22 +281,19 @@ internal sealed class XamlRenameService
                 continue;
             }
 
-            ImmutableArray<XamlDocumentTextEdit> edits = clrTarget.Kind switch
-            {
-                RenameTargetKind.ClrType when clrTarget.TypeFullName is not null =>
-                    BuildTypeRenameEditsForDocument(analysis, clrTarget.TypeFullName, clrTarget.CurrentName, newName),
-                RenameTargetKind.ClrProperty when clrTarget.TypeFullName is not null =>
-                    BuildPropertyRenameEditsForDocument(analysis, clrTarget.TypeFullName, clrTarget.CurrentName, newName),
-                _ => ImmutableArray<XamlDocumentTextEdit>.Empty
-            };
-
-            if (edits.IsDefaultOrEmpty)
+            var currentDocumentUri = UriPathHelper.ToDocumentUri(xamlFilePath);
+            var documentEdits = BuildClrRenamePropagationEditsForDocument(analysis, currentDocumentUri, symbol, newName);
+            if (documentEdits.IsDefaultOrEmpty)
             {
                 continue;
             }
 
-            MergeDocumentEdits(changesBuilder, UriPathHelper.ToDocumentUri(xamlFilePath), edits);
+            MergeDocumentEdits(changesBuilder, currentDocumentUri, documentEdits);
         }
+
+        return changesBuilder.Count == 0
+            ? XamlWorkspaceEdit.Empty
+            : new XamlWorkspaceEdit(changesBuilder.ToImmutable());
     }
 
     private async Task<XamlAnalysisResult?> AnalyzeProjectXamlFileAsync(
@@ -996,6 +1048,7 @@ internal sealed class XamlRenameService
             {
                 RenameTargetKind.ClrType => ResolveTypeSymbol(compilation, target.TypeFullName),
                 RenameTargetKind.ClrProperty => ResolvePropertySymbol(compilation, target.TypeFullName, target.CurrentName),
+                RenameTargetKind.ClrMethod => ResolveMethodSymbol(compilation, target.TypeFullName, target.CurrentName),
                 _ => null
             };
             if (candidate is not null)
@@ -1019,6 +1072,66 @@ internal sealed class XamlRenameService
                     builder.Add(document.Id);
                 }
             }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private ImmutableArray<XamlDocumentTextEdit> BuildClrRenamePropagationEditsForDocument(
+        XamlAnalysisResult analysis,
+        string currentDocumentUri,
+        ISymbol symbol,
+        string newName)
+    {
+        var builder = ImmutableArray.CreateBuilder<XamlDocumentTextEdit>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var hasClrTarget = TryResolveXamlClrRenameTarget(symbol, out var clrTarget);
+
+        if (hasClrTarget)
+        {
+            ImmutableArray<XamlDocumentTextEdit> structuralEdits = clrTarget.Kind switch
+            {
+                RenameTargetKind.ClrType => BuildTypeRenameEditsForDocument(
+                    analysis,
+                    clrTarget.TypeFullName,
+                    clrTarget.CurrentName,
+                    newName),
+                RenameTargetKind.ClrProperty => BuildPropertyRenameEditsForDocument(
+                    analysis,
+                    clrTarget.TypeFullName,
+                    clrTarget.CurrentName,
+                    newName),
+                _ => ImmutableArray<XamlDocumentTextEdit>.Empty
+            };
+
+            foreach (var edit in structuralEdits)
+            {
+                AddEdit(builder, seen, edit.Range, edit.NewText);
+            }
+        }
+
+        foreach (var reference in _referenceService.GetReferencesForClrSymbol(analysis, symbol))
+        {
+            if (!string.Equals(reference.Uri, currentDocumentUri, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (hasClrTarget && clrTarget.Kind == RenameTargetKind.ClrType)
+            {
+                var renameRange = CreateTypeRenameRange(
+                    analysis.Document.Text,
+                    reference.Range,
+                    ReadRangeText(analysis.Document.Text, reference.Range));
+                AddEdit(
+                    builder,
+                    seen,
+                    renameRange,
+                    ComputeTypeReplacement(ReadRangeText(analysis.Document.Text, renameRange), clrTarget.CurrentName, newName));
+                continue;
+            }
+
+            AddEdit(builder, seen, reference.Range, newName);
         }
 
         return builder.ToImmutable();
@@ -1078,16 +1191,6 @@ internal sealed class XamlRenameService
         string oldName,
         string newName)
     {
-        if (analysis.TypeIndex is null)
-        {
-            return ImmutableArray<XamlDocumentTextEdit>.Empty;
-        }
-
-        if (!analysis.TypeIndex.TryGetTypeByFullTypeName(targetFullTypeName, out var typeInfo) || typeInfo is null)
-        {
-            return ImmutableArray<XamlDocumentTextEdit>.Empty;
-        }
-
         var builder = ImmutableArray.CreateBuilder<XamlDocumentTextEdit>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var root = analysis.XmlDocument?.Root;
@@ -1098,10 +1201,8 @@ internal sealed class XamlRenameService
 
         foreach (var element in root.DescendantsAndSelf())
         {
-            if (string.Equals(element.Name.LocalName, typeInfo.XmlTypeName, StringComparison.Ordinal) &&
-                TryResolveTypeInfoByXmlNamespace(analysis, element.Name.NamespaceName, element.Name.LocalName, out var elementTypeInfo) &&
-                elementTypeInfo is not null &&
-                string.Equals(elementTypeInfo.FullTypeName, typeInfo.FullTypeName, StringComparison.Ordinal) &&
+            if (TryResolveElementTypeReference(analysis, element, out var elementTypeReference) &&
+                string.Equals(elementTypeReference.FullTypeName, targetFullTypeName, StringComparison.Ordinal) &&
                 TryCreateElementTypeRenameRange(analysis.Document.Text, element, out var elementRange))
             {
                 AddEdit(builder, seen, elementRange, ComputeTypeReplacement(ReadRangeText(analysis.Document.Text, elementRange), oldName, newName));
@@ -1120,7 +1221,7 @@ internal sealed class XamlRenameService
                         sourcePrefixMap,
                         element,
                         attribute,
-                        typeInfo,
+                        targetFullTypeName,
                         oldName,
                         newName,
                         builder,
@@ -1133,7 +1234,7 @@ internal sealed class XamlRenameService
                         analysis,
                         sourcePrefixMap,
                         attribute,
-                        typeInfo,
+                        targetFullTypeName,
                         oldName,
                         newName,
                         builder,
@@ -1149,7 +1250,7 @@ internal sealed class XamlRenameService
                                  analysis.Document.Text,
                                  element,
                                  attribute,
-                                 typeInfo.FullTypeName))
+                                 targetFullTypeName))
                     {
                         AddEdit(
                             builder,
@@ -1166,7 +1267,7 @@ internal sealed class XamlRenameService
                         attribute.Name.LocalName,
                         attribute.Value,
                         out var typeReference) ||
-                    !string.Equals(typeReference.FullTypeName, typeInfo.FullTypeName, StringComparison.Ordinal))
+                    !string.Equals(typeReference.FullTypeName, targetFullTypeName, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -1184,6 +1285,23 @@ internal sealed class XamlRenameService
         }
 
         return builder.ToImmutable();
+    }
+
+    private static bool TryResolveElementTypeReference(
+        XamlAnalysisResult analysis,
+        XElement element,
+        out XamlResolvedTypeReference resolvedTypeReference)
+    {
+        resolvedTypeReference = default;
+        var prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+        var qualifiedTypeToken = element.GetPrefixOfNamespace(element.Name.Namespace) is { Length: > 0 } prefix
+            ? prefix + ":" + element.Name.LocalName
+            : element.Name.LocalName;
+        return XamlTypeReferenceNavigationResolver.TryResolveQualifiedTypeToken(
+            analysis,
+            prefixMap,
+            qualifiedTypeToken,
+            out resolvedTypeReference);
     }
 
     private static ImmutableArray<XamlDocumentTextEdit> BuildPropertyRenameEditsForDocument(
@@ -1574,6 +1692,18 @@ internal sealed class XamlRenameService
             return true;
         }
 
+        if (symbol is IMethodSymbol methodSymbol &&
+            methodSymbol.ContainingType is not null &&
+            !methodSymbol.IsStatic &&
+            methodSymbol.Parameters.Length == 0)
+        {
+            target = new XamlClrRenameTarget(
+                RenameTargetKind.ClrMethod,
+                methodSymbol.ContainingType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                methodSymbol.Name);
+            return true;
+        }
+
         return false;
     }
 
@@ -1595,6 +1725,35 @@ internal sealed class XamlRenameService
             .GetMembers(propertyName)
             .OfType<IPropertySymbol>()
             .FirstOrDefault();
+    }
+
+    private static ISymbol? ResolveMethodSymbol(Compilation? compilation, string ownerTypeFullName, string methodName)
+    {
+        var typeSymbol = ResolveTypeSymbol(compilation, ownerTypeFullName) as INamedTypeSymbol;
+        return typeSymbol?
+            .GetMembers(methodName)
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(static method => !method.IsStatic && method.Parameters.Length == 0);
+    }
+
+    private static bool SupportsCSharpRenamePropagation(ISymbol symbol)
+    {
+        symbol = symbol switch
+        {
+            IAliasSymbol aliasSymbol => aliasSymbol.Target,
+            _ => symbol
+        };
+
+        return symbol is INamedTypeSymbol
+            or IPropertySymbol
+            or IMethodSymbol;
+    }
+
+    private static bool IsXamlUri(string uri)
+    {
+        var filePath = UriPathHelper.ToFilePath(uri);
+        return string.Equals(Path.GetExtension(filePath), ".xaml", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(Path.GetExtension(filePath), ".axaml", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ValidateNewName(RenameTargetKind kind, string newName)
@@ -1889,7 +2048,7 @@ internal sealed class XamlRenameService
         ImmutableDictionary<string, string> prefixMap,
         XElement element,
         XAttribute attribute,
-        AvaloniaTypeInfo targetTypeInfo,
+        string targetFullTypeName,
         string oldName,
         string newName,
         ImmutableArray<XamlDocumentTextEdit>.Builder builder,
@@ -1905,13 +2064,12 @@ internal sealed class XamlRenameService
         {
             if (selectorReference.Kind != SelectorReferenceKind.Type ||
                 string.IsNullOrWhiteSpace(selectorReference.Name) ||
-                !XamlClrSymbolResolver.TryResolveTypeInfo(
-                    analysis.TypeIndex!,
+                !XamlTypeReferenceNavigationResolver.TryResolveQualifiedTypeToken(
+                    analysis,
                     prefixMap,
                     selectorReference.Name,
-                    out var selectorTypeInfo) ||
-                selectorTypeInfo is null ||
-                !string.Equals(selectorTypeInfo.FullTypeName, targetTypeInfo.FullTypeName, StringComparison.Ordinal))
+                    out var selectorTypeReference) ||
+                !string.Equals(selectorTypeReference.FullTypeName, targetFullTypeName, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -1938,7 +2096,7 @@ internal sealed class XamlRenameService
         XamlAnalysisResult analysis,
         ImmutableDictionary<string, string> prefixMap,
         XAttribute attribute,
-        AvaloniaTypeInfo targetTypeInfo,
+        string targetFullTypeName,
         string oldName,
         string newName,
         ImmutableArray<XamlDocumentTextEdit>.Builder builder,
@@ -1951,7 +2109,7 @@ internal sealed class XamlRenameService
                     prefixMap,
                     classToken.Name,
                     out var resolvedTypeReference) ||
-                !string.Equals(resolvedTypeReference.FullTypeName, targetTypeInfo.FullTypeName, StringComparison.Ordinal))
+                !string.Equals(resolvedTypeReference.FullTypeName, targetFullTypeName, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -2723,6 +2881,7 @@ internal sealed class XamlRenameService
         StyleClass,
         PseudoClass,
         ClrType,
-        ClrProperty
+        ClrProperty,
+        ClrMethod
     }
 }

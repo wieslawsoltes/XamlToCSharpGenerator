@@ -276,6 +276,15 @@ internal sealed class AxsgLanguageServer : IDisposable
                 }
                 break;
 
+            case "axsg/csharp/renamePropagation":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleCSharpRenamePropagationAsync(requestId, requestParameters, token));
+                }
+                break;
+
             case "axsg/refactor/prepareRename":
                 if (hasId)
                 {
@@ -959,6 +968,29 @@ internal sealed class AxsgLanguageServer : IDisposable
         }
 
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleCSharpRenamePropagationAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+        var newName = parameters.TryGetProperty("newName", out var newNameElement) &&
+                      newNameElement.ValueKind == JsonValueKind.String
+            ? newNameElement.GetString() ?? string.Empty
+            : string.Empty;
+
+        var edit = await _engine.GetCSharpRenamePropagationEditsAsync(
+            request.Uri,
+            request.Position,
+            newName,
+            _navigationOptions,
+            documentTextOverride,
+            cancellationToken).ConfigureAwait(false);
+
+        await SendResponseAsync(id, SerializeWorkspaceEdit(edit), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleAxsgPrepareRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)

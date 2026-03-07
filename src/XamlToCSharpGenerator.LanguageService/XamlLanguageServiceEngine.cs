@@ -325,6 +325,23 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return _refactoringService.RenameAsync(uri, position, newName, options, documentTextOverride, cancellationToken);
     }
 
+    public Task<XamlWorkspaceEdit> GetCSharpRenamePropagationEditsAsync(
+        string uri,
+        SourcePosition position,
+        string newName,
+        XamlLanguageServiceOptions options,
+        string? documentTextOverride,
+        CancellationToken cancellationToken)
+    {
+        return _refactoringService.GetCSharpRenamePropagationEditsAsync(
+            uri,
+            position,
+            newName,
+            options,
+            documentTextOverride,
+            cancellationToken);
+    }
+
     public Task<ImmutableArray<XamlRefactoringAction>> GetCodeActionsAsync(
         string uri,
         SourcePosition position,
