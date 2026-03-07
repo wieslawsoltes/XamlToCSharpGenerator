@@ -7,6 +7,7 @@
     <PackageId>XamlToCSharpGenerator</PackageId>
     <Description>Single-package distribution for the Avalonia source-generated XAML compiler backend and runtime bootstrap.</Description>
     <PackageTags>$(PackageTags);build;compiler;generator;runtime</PackageTags>
+    <BundledAnalyzerTargetFramework>netstandard2.0</BundledAnalyzerTargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,33 +37,44 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\XamlToCSharpGenerator.Generator\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Generator.dll"
+    <None Include="..\XamlToCSharpGenerator.Generator\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Generator.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="..\XamlToCSharpGenerator.Core\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Core.dll"
+    <None Include="..\XamlToCSharpGenerator.Core\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Core.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="..\XamlToCSharpGenerator.Compiler\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Compiler.dll"
+    <None Include="..\XamlToCSharpGenerator.Compiler\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Compiler.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Framework.Abstractions.dll"
+    <None Include="..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Framework.Abstractions.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="..\XamlToCSharpGenerator.Avalonia\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Avalonia.dll"
+    <None Include="..\XamlToCSharpGenerator.Avalonia\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Avalonia.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="..\XamlToCSharpGenerator.NoUi\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.NoUi.dll"
+    <None Include="..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.MiniLanguageParsing.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.ExpressionSemantics\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.ExpressionSemantics.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.NoUi\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.NoUi.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
   </ItemGroup>
 
   <Target Name="BuildBundledAssets" BeforeTargets="_GetPackageFiles;Pack">
+    <MSBuild Projects="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
@@ -70,6 +82,9 @@
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
+    <MSBuild Projects="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj"
