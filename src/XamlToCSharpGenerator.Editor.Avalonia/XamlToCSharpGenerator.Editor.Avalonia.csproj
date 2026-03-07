@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Editor.Avalonia</PackageId>
     <Description>AvaloniaEdit-based AXAML editor control powered by XamlToCSharpGenerator language service.</Description>
+    <PackageTags>$(PackageTags);avalonia;avaloniaedit;editor;ide</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

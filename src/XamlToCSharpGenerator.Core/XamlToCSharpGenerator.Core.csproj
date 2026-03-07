@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Core</PackageId>
     <Description>Core contracts and parser model for the Avalonia source generator compiler.</Description>
+    <PackageTags>$(PackageTags);compiler;parser;semantics</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

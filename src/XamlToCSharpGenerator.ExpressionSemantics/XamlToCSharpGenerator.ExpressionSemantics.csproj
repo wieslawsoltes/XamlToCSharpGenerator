@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.ExpressionSemantics</PackageId>
     <Description>Framework-agnostic Roslyn-based expression rewriting and dependency analysis services for XAML semantic binders.</Description>
+    <PackageTags>$(PackageTags);bindings;expressions;roslyn</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

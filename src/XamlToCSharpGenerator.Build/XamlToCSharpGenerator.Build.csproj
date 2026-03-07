@@ -6,6 +6,7 @@
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <PackageId>XamlToCSharpGenerator.Build</PackageId>
     <Description>MSBuild backend switch and compiler integration props/targets for source-generated Avalonia XAML.</Description>
+    <PackageTags>$(PackageTags);avalonia;build;msbuild;sdk</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

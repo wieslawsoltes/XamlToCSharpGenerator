@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Avalonia</PackageId>
     <Description>Avalonia semantic binder and emitter passes for the standalone source generator compiler.</Description>
+    <PackageTags>$(PackageTags);avalonia;binder;compiler;emitter</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime</PackageId>
     <Description>Compatibility runtime package that composes Runtime.Core and Runtime.Avalonia.</Description>
+    <PackageTags>$(PackageTags);hot-reload;loader;runtime</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

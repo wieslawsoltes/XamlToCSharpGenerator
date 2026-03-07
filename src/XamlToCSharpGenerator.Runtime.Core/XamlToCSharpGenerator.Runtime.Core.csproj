@@ -4,5 +4,6 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime.Core</PackageId>
     <Description>Framework-agnostic runtime registries, URI mapping, and hot-reload contracts for source-generated XAML.</Description>
+    <PackageTags>$(PackageTags);hot-reload;registries;runtime</PackageTags>
   </PropertyGroup>
 </Project>

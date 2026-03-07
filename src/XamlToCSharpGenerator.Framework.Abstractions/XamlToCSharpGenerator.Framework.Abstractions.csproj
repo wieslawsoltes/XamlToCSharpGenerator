@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Framework.Abstractions</PackageId>
     <Description>Framework profile extension contracts for the standalone XAML source-generator compiler.</Description>
+    <PackageTags>$(PackageTags);abstractions;compiler;framework</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

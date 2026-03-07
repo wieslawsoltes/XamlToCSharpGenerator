@@ -5,6 +5,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <PackageId>XamlToCSharpGenerator.NoUi</PackageId>
     <Description>NoUI pilot framework profile used to validate framework-agnostic source generator host reuse.</Description>
+    <PackageTags>$(PackageTags);compiler;framework;noui</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

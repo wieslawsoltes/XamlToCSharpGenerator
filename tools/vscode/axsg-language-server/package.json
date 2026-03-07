@@ -2,13 +2,30 @@
   "name": "axsg-language-server",
   "displayName": "AXSG XAML Language Service",
   "description": "XAML/AXAML IntelliSense powered by XamlToCSharpGenerator.",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "publisher": "xamltocsharpgenerator",
   "license": "MIT",
+  "homepage": "https://github.com/wieslawsoltes/XamlToCSharpGenerator/tree/main/tools/vscode/axsg-language-server",
+  "bugs": {
+    "url": "https://github.com/wieslawsoltes/XamlToCSharpGenerator/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/wieslawsoltes/XamlToCSharpGenerator.git",
     "directory": "tools/vscode/axsg-language-server"
+  },
+  "keywords": [
+    "avalonia",
+    "axaml",
+    "xaml",
+    "language-server",
+    "source-generator",
+    "hot-reload"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0B5CAB",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.95.0"
@@ -23,15 +40,6 @@
     "onCommand:axsg.refactor.renameSymbol"
   ],
   "main": "./extension.js",
-  "files": [
-    "extension.js",
-    "package.json",
-    "README.md",
-    "LICENSE",
-    "node_modules/**",
-    "scripts/**",
-    "server/**"
-  ],
   "contributes": {
     "languages": [
       {

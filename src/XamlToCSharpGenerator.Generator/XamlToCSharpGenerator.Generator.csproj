@@ -7,6 +7,7 @@
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <PackageId>XamlToCSharpGenerator.Generator</PackageId>
     <Description>Standalone Avalonia XAML source generator compiler backend (XamlX alternative).</Description>
+    <PackageTags>$(PackageTags);analyzer;generator;roslyn</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

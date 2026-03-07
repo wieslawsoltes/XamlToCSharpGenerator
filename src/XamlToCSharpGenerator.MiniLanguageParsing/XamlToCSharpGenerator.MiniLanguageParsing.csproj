@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.MiniLanguageParsing</PackageId>
     <Description>Reusable low-allocation parsers and tokenizers for XAML mini languages (selectors, binding paths, markup fragments).</Description>
+    <PackageTags>$(PackageTags);bindings;parser;selectors</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

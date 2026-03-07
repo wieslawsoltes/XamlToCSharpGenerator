@@ -6,6 +6,7 @@
     <NoWarn>$(NoWarn);NU5128;NU5130</NoWarn>
     <PackageId>XamlToCSharpGenerator</PackageId>
     <Description>Single-package distribution for the Avalonia source-generated XAML compiler backend and runtime bootstrap.</Description>
+    <PackageTags>$(PackageTags);build;compiler;generator;runtime</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

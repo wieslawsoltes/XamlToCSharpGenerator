@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime.Avalonia</PackageId>
     <Description>Avalonia runtime loader, bootstrap, and hot-reload integration for source-generated XAML.</Description>
+    <PackageTags>$(PackageTags);avalonia;hot-reload;loader;runtime</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
