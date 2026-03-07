@@ -6,10 +6,13 @@ using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Data.Core;
 using Avalonia.Markup.Xaml;
+using Avalonia.Markup.Xaml.Converters;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
 using Avalonia.Platform;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -1200,6 +1203,7 @@ public static class SourceGenMarkupExtensionRuntime
         return ResolveStaticResourceExtensionImmediate(
             extension,
             targetObject,
+            targetProperty,
             baseUri,
             parentStack,
             serviceProvider);
@@ -1208,6 +1212,7 @@ public static class SourceGenMarkupExtensionRuntime
     private static object? ResolveStaticResourceExtensionImmediate(
         StaticResourceExtension extension,
         object targetObject,
+        object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack,
         IServiceProvider? serviceProvider)
@@ -1223,6 +1228,18 @@ public static class SourceGenMarkupExtensionRuntime
         var resourceKey = extension.ResourceKey ?? AvaloniaProperty.UnsetValue;
         var effectiveParentStack = BuildEffectiveParentStack(effectiveServiceProvider, parentStack);
 
+        if (TryResolveStaticResourceWithoutAvaloniaExtension(
+                resourceKey,
+                targetObject,
+                targetProperty,
+                baseUri,
+                effectiveServiceProvider,
+                effectiveParentStack,
+                out var resolvedWithoutExtension))
+        {
+            return resolvedWithoutExtension;
+        }
+
         try
         {
             var value = extension.ProvideValue(effectiveServiceProvider);
@@ -1231,9 +1248,10 @@ public static class SourceGenMarkupExtensionRuntime
                 return value;
             }
 
-            if (TryResolveStaticResourceFallback(
+            if (TryResolveStaticResourceWithoutAvaloniaExtension(
                     resourceKey,
                     targetObject,
+                    targetProperty,
                     baseUri,
                     effectiveServiceProvider,
                     effectiveParentStack,
@@ -1247,9 +1265,10 @@ public static class SourceGenMarkupExtensionRuntime
         }
         catch (KeyNotFoundException)
         {
-            if (TryResolveStaticResourceFallback(
+            if (TryResolveStaticResourceWithoutAvaloniaExtension(
                     resourceKey,
                     targetObject,
+                    targetProperty,
                     baseUri,
                     effectiveServiceProvider,
                     effectiveParentStack,
@@ -1267,9 +1286,10 @@ public static class SourceGenMarkupExtensionRuntime
         }
         catch (XamlLoadException)
         {
-            if (TryResolveStaticResourceFallback(
+            if (TryResolveStaticResourceWithoutAvaloniaExtension(
                     resourceKey,
                     targetObject,
+                    targetProperty,
                     baseUri,
                     effectiveServiceProvider,
                     effectiveParentStack,
@@ -1418,6 +1438,55 @@ public static class SourceGenMarkupExtensionRuntime
             ? new Uri("avares://" + fallbackAssemblyName + "/")
             : new Uri("avares://" + fallbackAssemblyName + "/" + normalizedPath);
         return true;
+    }
+
+    private static bool TryResolveStaticResourceWithoutAvaloniaExtension(
+        object resourceKey,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IServiceProvider? serviceProvider,
+        IReadOnlyList<object>? parentStack,
+        out object? resolved)
+    {
+        if (!TryResolveStaticResourceFallback(
+                resourceKey,
+                targetObject,
+                baseUri,
+                serviceProvider,
+                parentStack,
+                out var fallbackResolved))
+        {
+            resolved = null;
+            return false;
+        }
+
+        resolved = CoerceStaticResourceResolvedValue(fallbackResolved, targetObject, targetProperty);
+        return true;
+    }
+
+    private static object? CoerceStaticResourceResolvedValue(
+        object? value,
+        object targetObject,
+        object? targetProperty)
+    {
+        var targetType = GetStaticResourceTargetType(targetObject, targetProperty);
+        return ColorToBrushConverter.Convert(value, targetType);
+    }
+
+    private static Type? GetStaticResourceTargetType(object targetObject, object? targetProperty)
+    {
+        if (targetObject is Setter { Property: { } setterProperty })
+        {
+            return setterProperty.PropertyType;
+        }
+
+        return targetProperty switch
+        {
+            AvaloniaProperty avaloniaProperty => avaloniaProperty.PropertyType,
+            IPropertyInfo propertyInfo => propertyInfo.PropertyType,
+            _ => null
+        };
     }
 
     private static bool HasExplicitUriScheme(string value)
@@ -1574,6 +1643,7 @@ public static class SourceGenMarkupExtensionRuntime
                 return ResolveStaticResourceExtensionImmediate(
                     new StaticResourceExtension(_resourceKey),
                     _anchor,
+                    targetProperty: null,
                     _baseUri,
                     _parentStack,
                     effectiveServiceProvider);

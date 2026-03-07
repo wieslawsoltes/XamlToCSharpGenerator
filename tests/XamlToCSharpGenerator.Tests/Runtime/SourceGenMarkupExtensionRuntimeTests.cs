@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Core;
+using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
@@ -92,6 +94,81 @@ public class SourceGenMarkupExtensionRuntimeTests
             parentStack: parentStack);
 
         Assert.Equal("Purple", value);
+    }
+
+    [Fact]
+    public void ProvideStaticResource_Does_Not_Use_KeyNotFound_Control_Flow_For_Successful_Fallback_Resolution()
+    {
+        var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<BorderTarget, object?>(
+            nameof(BorderTarget.Value),
+            static (target, value) => target.Value = value);
+        var parentStack = new object[]
+        {
+            new Hashtable
+            {
+                ["AccentBrush"] = "Purple"
+            }
+        };
+
+        var firstChanceCount = 0;
+
+        void OnFirstChance(object? sender, FirstChanceExceptionEventArgs args)
+        {
+            if (args.Exception is KeyNotFoundException &&
+                args.Exception.StackTrace?.Contains(
+                    "Avalonia.Markup.Xaml",
+                    StringComparison.Ordinal) == true)
+            {
+                firstChanceCount++;
+            }
+        }
+
+        AppDomain.CurrentDomain.FirstChanceException += OnFirstChance;
+        try
+        {
+            var value = SourceGenMarkupExtensionRuntime.ProvideStaticResource(
+                resourceKey: "AccentBrush",
+                parentServiceProvider: null,
+                rootObject: new object(),
+                intermediateRootObject: new object(),
+                targetObject: new BorderTarget(),
+                targetProperty: propertyInfo,
+                baseUri: "avares://Demo/MainView.axaml",
+                parentStack: parentStack);
+
+            Assert.Equal("Purple", value);
+            Assert.Equal(0, firstChanceCount);
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.FirstChanceException -= OnFirstChance;
+        }
+    }
+
+    [Fact]
+    public void ProvideStaticResource_Preserves_Color_To_Brush_Coercion_When_Fallback_Resolves_First()
+    {
+        var parentStack = new object[]
+        {
+            new Hashtable
+            {
+                ["AccentColor"] = Colors.Red
+            }
+        };
+
+        var value = SourceGenMarkupExtensionRuntime.ProvideStaticResource(
+            resourceKey: "AccentColor",
+            parentServiceProvider: null,
+            rootObject: new object(),
+            intermediateRootObject: new object(),
+            targetObject: new Border(),
+            targetProperty: Border.BackgroundProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: parentStack);
+
+        var brush = Assert.IsAssignableFrom<IBrush>(value);
+        var solidColorBrush = Assert.IsAssignableFrom<ISolidColorBrush>(brush);
+        Assert.Equal(Colors.Red, solidColorBrush.Color);
     }
 
     [Fact]
