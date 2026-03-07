@@ -1,191 +1,46 @@
 # XamlToCSharpGenerator
 
-Standalone Avalonia source-generator compiler backend as an alternative to XamlX.
+`XamlToCSharpGenerator` is a source-generated XAML compiler stack for Avalonia, with optional runtime services, hot reload/hot design support, a reusable language-service core, an Avalonia editor control, a CLI language-server tool, and a VS Code extension.
 
-## Install
+The repository ships both a recommended end-user install surface and the lower-level packages used to compose custom tooling, editors, and framework adapters.
 
-Add one package to your Avalonia app:
+## What Ships
+
+| Artifact | Kind | Audience | Install | Purpose |
+| --- | --- | --- | --- | --- |
+| `XamlToCSharpGenerator` | NuGet package | Application authors | `dotnet add package XamlToCSharpGenerator` | Recommended umbrella package. Installs build integration, generator assets, and runtime bootstrap pieces needed by Avalonia apps. |
+| `XamlToCSharpGenerator.Build` | NuGet package | Application authors, SDK integrators | `dotnet add package XamlToCSharpGenerator.Build` | MSBuild-only integration package. Use when you want SourceGen build integration without the umbrella package. |
+| `XamlToCSharpGenerator.Runtime` | NuGet package | Runtime/hot-reload consumers | `dotnet add package XamlToCSharpGenerator.Runtime` | Compatibility runtime package that composes the framework-neutral and Avalonia runtime layers. |
+| `XamlToCSharpGenerator.Runtime.Core` | NuGet package | Tooling/runtime authors | `dotnet add package XamlToCSharpGenerator.Runtime.Core` | Framework-neutral runtime registries, URI mapping, and hot-reload contracts. |
+| `XamlToCSharpGenerator.Runtime.Avalonia` | NuGet package | Avalonia runtime authors | `dotnet add package XamlToCSharpGenerator.Runtime.Avalonia` | Avalonia-specific runtime loader, markup helpers, bootstrap extensions, and hot-reload integration. |
+| `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | Editor/tool authors | `dotnet add package XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based AXAML editor control backed by the AXSG language-service core. |
+| `XamlToCSharpGenerator.LanguageService` | NuGet package | Tooling authors | `dotnet add package XamlToCSharpGenerator.LanguageService` | Shared semantic language-service layer used by LSP and in-app editors. |
+| `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | CLI and editor integration | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` | Packs the `axsg-lsp` command for LSP hosting outside VS Code. |
+| `AXSG Language Server` | VS Code extension (`.vsix`) | VS Code users | `code --install-extension ./axsg-language-server-<version>.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, and semantic highlighting. |
+| `XamlToCSharpGenerator.Generator` | NuGet package | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Generator` | Standalone Roslyn generator backend. Use when you need the generator without the umbrella package. |
+| `XamlToCSharpGenerator.Core` | NuGet package | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Core` | Immutable parser model, diagnostics, configuration contracts, and shared semantic core. |
+| `XamlToCSharpGenerator.Compiler` | NuGet package | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Compiler` | Incremental host orchestration and generator pipeline entry points. |
+| `XamlToCSharpGenerator.Framework.Abstractions` | NuGet package | Framework adapter authors | `dotnet add package XamlToCSharpGenerator.Framework.Abstractions` | Framework profile abstractions for non-Avalonia reuse. |
+| `XamlToCSharpGenerator.ExpressionSemantics` | NuGet package | Binding/expression tooling authors | `dotnet add package XamlToCSharpGenerator.ExpressionSemantics` | Roslyn-based expression rewriting and dependency analysis shared across compiler and tooling paths. |
+| `XamlToCSharpGenerator.MiniLanguageParsing` | NuGet package | Parser/tooling authors | `dotnet add package XamlToCSharpGenerator.MiniLanguageParsing` | Shared low-allocation parsers for selectors, bindings, and markup fragments. |
+| `XamlToCSharpGenerator.Avalonia` | NuGet package | Avalonia compiler integrators | `dotnet add package XamlToCSharpGenerator.Avalonia` | Avalonia semantic binder and emitter passes over the framework-neutral compiler core. |
+| `XamlToCSharpGenerator.NoUi` | NuGet package | Framework experiments | `dotnet add package XamlToCSharpGenerator.NoUi` | NoUI framework profile used to validate framework-neutral host reuse. |
+
+## Recommended Install Paths
+
+### Avalonia app using the SourceGen backend
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="XamlToCSharpGenerator" Version="1.0.0" />
+  <PackageReference Include="XamlToCSharpGenerator" Version="<VERSION>" />
 </ItemGroup>
-```
 
-## Enable Source-Generator Backend
-
-```xml
 <PropertyGroup>
   <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
 </PropertyGroup>
 ```
 
-`AvaloniaSourceGenCompilerEnabled` is set automatically when the backend is `SourceGen`.
-
-Optional backend knobs:
-
-```xml
-<PropertyGroup>
-  <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
-  <AvaloniaSourceGenCSharpExpressionsEnabled>true</AvaloniaSourceGenCSharpExpressionsEnabled>
-  <AvaloniaSourceGenImplicitCSharpExpressionsEnabled>true</AvaloniaSourceGenImplicitCSharpExpressionsEnabled>
-  <AvaloniaSourceGenCreateSourceInfo>true</AvaloniaSourceGenCreateSourceInfo>
-  <AvaloniaSourceGenStrictMode>true</AvaloniaSourceGenStrictMode>
-  <AvaloniaSourceGenHotReloadEnabled>true</AvaloniaSourceGenHotReloadEnabled>
-  <AvaloniaSourceGenHotReloadErrorResilienceEnabled>true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
-  <AvaloniaSourceGenIdeHotReloadEnabled>true</AvaloniaSourceGenIdeHotReloadEnabled>
-  <AvaloniaSourceGenHotDesignEnabled>true</AvaloniaSourceGenHotDesignEnabled>
-  <AvaloniaSourceGenMetricsEnabled>true</AvaloniaSourceGenMetricsEnabled>
-  <AvaloniaSourceGenMetricsDetailed>true</AvaloniaSourceGenMetricsDetailed>
-  <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
-  <AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>true</AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled>
-  <AvaloniaSourceGenInferClassFromPath>true</AvaloniaSourceGenInferClassFromPath>
-  <AvaloniaSourceGenImplicitProjectNamespacesEnabled>true</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
-</PropertyGroup>
-```
-
-## Configuration Model Docs
-
-- Configuration schema and source layering: [`docs/configuration-model.md`](docs/configuration-model.md)
-- Migration guide (legacy properties/transform rules to unified model): [`docs/configuration-migration.md`](docs/configuration-migration.md)
-
-When `AvaloniaSourceGenCreateSourceInfo=true`, generated C# also emits AXAML `#line` mappings (`// AXSG:XAML line:column` + `#line`) to improve debugger stepping and stack-trace source correlation.
-
-## C# XAML Expressions
-
-SourceGen supports C# expression markup for Avalonia bindings:
-
-```xml
-<TextBlock Text="{= FirstName + ' ' + LastName}" />
-<TextBlock Text="{FirstName + '!'}" />
-<TextBlock IsVisible="{Count GT 0}" />
-```
-
-Behavior:
-- Explicit expressions use `{= ...}`.
-- Implicit expressions use `{ ... }` when the payload is detected as C# (and not a markup extension).
-- Expressions are compiled against the current `x:DataType` scope and emitted as typed runtime expression bindings.
-- Style and `ControlTheme` setters also support expression bindings when their scope defines `x:DataType`.
-- `x:DataType` is required for expression bindings (`AXSG0110` when missing).
-- `AvaloniaSourceGenCSharpExpressionsEnabled=false` disables expression parsing entirely.
-- `AvaloniaSourceGenImplicitCSharpExpressionsEnabled=false` keeps explicit `{= ...}` support while disabling implicit `{ ... }` C# detection.
-
-## Event Bindings
-
-SourceGen supports first-class event bindings in AXAML:
-
-```xml
-<Button Click="{EventBinding SaveCommand}" />
-<Button Click="{EventBinding Command=SaveCommand, Parameter={Binding SelectedItem}}" />
-<Button Click="{EventBinding Method=SaveWithArgs, PassEventArgs=True}" />
-<Button Click="{EventBinding Method=HandleRootAction, Source=Root}" />
-```
-
-EventBinding arguments:
-- `Command` or `Path`: command member path on the event source.
-- `Method`: method path on the event source.
-- `Parameter` / `CommandParameter`: optional parameter value/path.
-- `PassEventArgs`: when `true`, event args are passed when no explicit parameter is provided.
-- `Source`: `DataContext`, `Root`, or `DataContextThenRoot` (default).
-
-Notes:
-- Existing handler syntax (`Click="OnClick"`) continues to work.
-- EventBinding can target commands or methods without manual event-hook code-behind wiring.
-
-## Global XMLNS Imports
-
-SourceGen can pre-seed XML namespace prefixes globally so individual AXAML files don’t need repeated `xmlns:*` declarations.
-
-### MSBuild-based global prefixes
-
-```xml
-<PropertyGroup>
-  <AvaloniaSourceGenGlobalXmlnsPrefixes>
-    x=http://schemas.microsoft.com/winfx/2006/xaml,
-    vm=using:MyApp.ViewModels,
-    catalog=using:MyApp.Catalog
-  </AvaloniaSourceGenGlobalXmlnsPrefixes>
-</PropertyGroup>
-```
-
-`AvaloniaSourceGenGlobalXmlnsPrefixes` accepts comma/semicolon/newline separators. Comma-separated entries are recommended in MSBuild properties.
-
-### Assembly-attribute global prefixes
-
-```csharp
-using Avalonia.Metadata;
-using XamlToCSharpGenerator.Runtime;
-
-[assembly: XmlnsPrefix("using:MyApp.ViewModels", "vm")]
-[assembly: SourceGenGlobalXmlnsPrefix("catalog", "using:MyApp.Catalog")]
-```
-
-### Optional implicit default namespace
-
-```xml
-<PropertyGroup>
-  <AvaloniaSourceGenAllowImplicitXmlnsDeclaration>true</AvaloniaSourceGenAllowImplicitXmlnsDeclaration>
-  <AvaloniaSourceGenImplicitDefaultXmlns>https://github.com/avaloniaui</AvaloniaSourceGenImplicitDefaultXmlns>
-</PropertyGroup>
-```
-
-With implicit mode enabled, AXAML can omit the default `xmlns="https://github.com/avaloniaui"` declaration.
-
-When `AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled=true`, SourceGen also pre-seeds:
-
-- `x -> http://schemas.microsoft.com/winfx/2006/xaml`
-- `d -> http://schemas.microsoft.com/expression/blend/2008`
-- `mc -> http://schemas.openxmlformats.org/markup-compatibility/2006`
-
-Notes:
-- File-local `xmlns:*` declarations still win over global mappings.
-- `using:` namespace URIs are supported in resolver paths.
-- Generic XML URI -> CLR namespace resolution now honors `XmlnsDefinition` attributes beyond Avalonia default URI.
-- Under default Avalonia build integration, AXAML still needs to remain XML-valid for Avalonia resource preprocessing (for example prefixed element names may still require a declaration even when SourceGen globals are configured).
-
-## Convention-Based Class And Type Resolution
-
-Optional conventions inspired by Avalonia issue `#11906`:
-
-```xml
-<PropertyGroup>
-  <AvaloniaSourceGenInferClassFromPath>true</AvaloniaSourceGenInferClassFromPath>
-  <AvaloniaSourceGenImplicitProjectNamespacesEnabled>true</AvaloniaSourceGenImplicitProjectNamespacesEnabled>
-</PropertyGroup>
-```
-
-Behavior:
-
-- `AvaloniaSourceGenInferClassFromPath=true` infers `x:Class` from `RootNamespace + TargetPath` when `x:Class` is omitted, and applies it when the partial class already exists in compilation.
-- `AvaloniaSourceGenImplicitProjectNamespacesEnabled=true` lets unprefixed controls resolve from project namespaces (scoped by `RootNamespace`) under the default Avalonia XML namespace.
-
-## Conditional XAML
-
-SourceGen supports conditional namespace aliases in AXAML:
-
-```xml
-<UserControl
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:cx="https://github.com/avaloniaui?ApiInformation.IsTypePresent('Avalonia.Controls.TextBlock')">
-  <cx:TextBlock cx:Text="Only emitted when TextBlock type is present." />
-</UserControl>
-```
-
-Supported conditional methods:
-- `IsTypePresent` / `IsTypeNotPresent`
-- `IsPropertyPresent` / `IsPropertyNotPresent`
-- `IsMethodPresent` / `IsMethodNotPresent`
-- `IsEventPresent` / `IsEventNotPresent`
-- `IsEnumNamedValuePresent` / `IsEnumNamedValueNotPresent`
-- `IsApiContractPresent` / `IsApiContractNotPresent`
-
-Behavior:
-- Conditional namespace URIs are normalized to the base namespace for normal type/property resolution.
-- Condition-false branches are pruned before semantic binding, so unreachable markup does not produce unknown-type/property diagnostics.
-- Invalid conditional expressions produce `AXSG0120`.
-
-## Bootstrap Runtime
+Minimal bootstrap:
 
 ```csharp
 using XamlToCSharpGenerator.Runtime;
@@ -196,351 +51,261 @@ public static AppBuilder BuildAvaloniaApp() =>
         .UseAvaloniaSourceGeneratedXaml();
 ```
 
-Enable runtime compilation fallback for dynamic URI/string loads:
+### VS Code extension
 
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-public static AppBuilder BuildAvaloniaApp() =>
-    AppBuilder.Configure<App>()
-        .UsePlatformDetect()
-        .UseAvaloniaSourceGeneratedXaml()
-        .UseAvaloniaSourceGeneratedRuntimeXamlCompilation(enable: true, configure: options =>
-        {
-            options.TraceDiagnostics = true;
-        });
-```
-
-Runtime load APIs:
-
-```csharp
-var fromUri = AvaloniaXamlLoader.Load(new Uri("avares://MyApp/Assets/RuntimeCard.xml"));
-var fromInline = AvaloniaSourceGeneratedXamlLoader.Load(
-    "<TextBlock xmlns='https://github.com/avaloniaui' Text='Runtime SourceGen' />",
-    localAssemblyAnchorType: typeof(App));
-```
-
-Optional Rider/IDE fallback poller (only needed when native metadata callback is unreliable in a specific IDE session):
-
-```csharp
-public static AppBuilder BuildAvaloniaApp() =>
-    AppBuilder.Configure<App>()
-        .UsePlatformDetect()
-        .UseAvaloniaSourceGeneratedXaml()
-        .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
-```
-
-Advanced hot reload pipeline hooks (phased extensibility):
-
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-public sealed class MyHotReloadHandler : ISourceGenHotReloadHandler
-{
-    public void ReloadCompleted(SourceGenHotReloadUpdateContext context)
-    {
-        // custom refresh/reporting
-    }
-}
-
-public static AppBuilder BuildAvaloniaApp() =>
-    AppBuilder.Configure<App>()
-        .UsePlatformDetect()
-        .UseAvaloniaSourceGeneratedXaml()
-        .UseAvaloniaSourceGeneratedXamlHotReloadHandler(new MyHotReloadHandler());
-```
-
-Assembly-level handler registration is also supported:
-
-```csharp
-[assembly: SourceGenHotReloadHandler(typeof(MyHotReloadHandler))]
-```
-
-## Hot Design Mode (Runtime Tool API)
-
-Enable runtime hot-design orchestration (opt-in):
-
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-public static AppBuilder BuildAvaloniaApp() =>
-    AppBuilder.Configure<App>()
-        .UsePlatformDetect()
-        .UseAvaloniaSourceGeneratedXaml()
-        .UseAvaloniaSourceGeneratedXamlHotDesign(configure: options =>
-        {
-            options.PersistChangesToSource = true;
-            options.WaitForHotReload = true;
-            options.HotReloadWaitTimeout = TimeSpan.FromSeconds(10);
-            options.FallbackToRuntimeApplyOnTimeout = false;
-        });
-```
-
-Runtime tool facade (invocable from debug/dev tooling code paths):
-
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-XamlSourceGenHotDesignTool.Enable();
-var status = XamlSourceGenHotDesignTool.GetStatus();
-var docs = XamlSourceGenHotDesignTool.ListDocuments();
-
-var result = await XamlSourceGenHotDesignTool.ApplyUpdateByUriAsync(
-    "avares://MyApp/MainWindow.axaml",
-    "<Window xmlns=\"https://github.com/avaloniaui\" />");
-```
-
-Core tool-panel API surface (toolbar/elements/toolbox/canvas/properties):
-
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-var snapshot = XamlSourceGenHotDesignTool.GetWorkspaceSnapshot();
-XamlSourceGenHotDesignTool.SetWorkspaceMode(SourceGenHotDesignWorkspaceMode.Design);
-XamlSourceGenHotDesignTool.SetPropertyFilterMode(SourceGenHotDesignPropertyFilterMode.Smart);
-XamlSourceGenHotDesignTool.SetCanvasZoom(1.15);
-XamlSourceGenHotDesignTool.SelectElement(snapshot.ActiveBuildUri, "0/0");
-
-await XamlSourceGenHotDesignTool.ApplyPropertyUpdateAsync(new SourceGenHotDesignPropertyUpdateRequest
-{
-    BuildUri = snapshot.ActiveBuildUri,
-    ElementId = "0/0",
-    PropertyName = "Margin",
-    PropertyValue = "16",
-    PersistChangesToSource = true,
-    WaitForHotReload = false
-});
-
-await XamlSourceGenHotDesignTool.InsertElementAsync(new SourceGenHotDesignElementInsertRequest
-{
-    BuildUri = snapshot.ActiveBuildUri,
-    ParentElementId = "0/0",
-    ElementName = "Button",
-    PersistChangesToSource = true,
-    WaitForHotReload = false
-});
-
-await XamlSourceGenHotDesignTool.UndoAsync(snapshot.ActiveBuildUri);
-await XamlSourceGenHotDesignTool.RedoAsync(snapshot.ActiveBuildUri);
-```
-
-The hot-design manager is extensible via `ISourceGenHotDesignUpdateApplier` for custom source propagation or update policies.
-
-Policy-style handler helpers are available for app-owned side effects (for example manual style/resource/event wiring that must be explicitly cleaned/reapplied during reload):
-
-```csharp
-using XamlToCSharpGenerator.Runtime;
-
-var cleanupPolicy = SourceGenHotReloadPolicies.Create<MyView, string[]>(
-    priority: 50,
-    captureState: static (_, view) => view.Classes.ToArray(),
-    beforeElementReload: static (_, view, _) => view.Classes.Clear(),
-    afterElementReload: static (_, view, previous) =>
-    {
-        if (previous is null)
-        {
-            return;
-        }
-
-        foreach (var cls in previous)
-        {
-            if (cls.StartsWith("manual-", StringComparison.Ordinal))
-            {
-                view.Classes.Add(cls);
-            }
-        }
-    });
-```
-
-## IDE Hot Reload (Visual Studio and Rider)
-
-When `AvaloniaXamlCompilerBackend=SourceGen`:
-
-1. AXAML files are projected into Roslyn `AdditionalFiles` for source generation.
-2. AXAML files are also injected into `CustomAdditionalCompileInputs` and `UpToDateCheckInput` so IDE fast up-to-date and compile invalidation detect AXAML edits.
-3. Generated runtime refresh is driven by `.NET` metadata update callbacks (`MetadataUpdateHandler`).
-4. Hot reload error resilience is enabled in `dotnet watch` and IDE build sessions by default (`AvaloniaSourceGenIdeHotReloadEnabled=true`).
-5. Runtime hot reload pipeline maps replacement types to original types and serializes reentrant updates.
-6. Runtime emits `HotReloadRudeEditDetected` when CLR/metadata shape changes are not patchable via Edit-and-Continue and require rebuild/restart.
-
-## iOS Hot Reload (dotnet watch)
-
-Simulator quickstart (`ControlCatalog.iOS`):
+The release pipeline produces a `.vsix` asset. Install it with:
 
 ```bash
-cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS
-AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
+code --install-extension ./axsg-language-server-<version>.vsix
 ```
 
-Recommended device setup (remote transport):
+The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
 
-```xml
-<PropertyGroup>
-  <AvaloniaSourceGenIosHotReloadTransportMode>RemoteOnly</AvaloniaSourceGenIosHotReloadTransportMode>
-  <AvaloniaSourceGenHotReloadRemoteEndpoint>tcp://192.168.1.10:45820</AvaloniaSourceGenHotReloadRemoteEndpoint>
-</PropertyGroup>
-```
-
-Device/network notes:
-
-1. Device and host machine must be on the same network.
-2. The remote endpoint must be reachable from device.
-3. Supported endpoint formats are:
-   - `host:port`
-   - `tcp://host:port`
-   - `ws://host:port/path`
-   - `wss://host:port/path`
-
-Detailed iOS setup and troubleshooting matrix:
-
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/docs/hot-reload-ios.md`
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS/README.md`
-
-## Language Service (LSP)
-
-SourceGen now includes a standalone LSP server:
-
-- Project:
-  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer`
-- Tool command:
-  `axsg-lsp --workspace <workspace-root>`
-
-Supported LSP features:
-- `initialize`, `shutdown`, `exit`
-- `textDocument/didOpen`, `didChange`, `didSave`, `didClose`
-- `textDocument/publishDiagnostics`
-- `textDocument/completion`
-- `textDocument/hover`
-- `textDocument/definition` (Go To Definition from XAML element/property tokens)
-
-Diagnostics reuse SourceGen compiler semantics (`SimpleXamlDocumentParser` + `AvaloniaSemanticBinder`) and publish existing `AXSG####` codes directly in editor diagnostics.
-
-### AvaloniaEdit AXAML Editor Control
-
-New editor control project:
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.Editor.Avalonia`
-
-Control:
-- `XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor`
-
-Features:
-- completion (element/property/markup extension),
-- diagnostics underlines from SourceGen parser/semantic diagnostics,
-- hover/definition/symbol/token services through shared `XamlToCSharpGenerator.LanguageService`.
-
-Minimal usage:
-
-```csharp
-var editor = new AxamlTextEditor
-{
-    DocumentUri = "file:///absolute/path/View.axaml",
-    WorkspaceRoot = "/Users/wieslawsoltes/GitHub/MyApp",
-    Text = initialAxamlText
-};
-```
-
-### Package and Install `axsg-lsp`
-
-Pack locally:
+### CLI language server tool
 
 ```bash
-dotnet pack /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj -c Release -o /tmp/axsg-pack
+dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool
+axsg-lsp
 ```
 
-Install/update globally from local package output:
+Use the tool when you want editor integration outside VS Code or when the VS Code extension is configured to launch a custom server.
+
+## Package Overview And Usage
+
+### `XamlToCSharpGenerator`
+
+Use this unless you have a specific reason not to. It is the application-facing distribution for Avalonia projects and carries the standard build integration plus runtime bootstrap assemblies.
+
+### `XamlToCSharpGenerator.Build`
+
+Use this when you want build-transitive props/targets only and intend to manage generator/runtime package composition yourself.
+
+### `XamlToCSharpGenerator.Runtime`, `Runtime.Core`, `Runtime.Avalonia`
+
+These packages cover runtime loading, URI registries, hot reload, hot design, and Avalonia-specific runtime services.
+
+Use:
+- `Runtime` when you want the composed runtime package.
+- `Runtime.Core` when you are building framework-neutral runtime infrastructure.
+- `Runtime.Avalonia` when you are integrating directly with Avalonia runtime services.
+
+### `XamlToCSharpGenerator.LanguageService`, `Editor.Avalonia`, `LanguageServer.Tool`, and the VS Code extension
+
+These are the tooling-facing artifacts.
+
+Use:
+- `LanguageService` for custom IDE or editor integrations.
+- `Editor.Avalonia` for an in-app AXAML editor surface.
+- `LanguageServer.Tool` when you need a CLI/LSP host.
+- the VS Code extension when you want the packaged editor experience.
+
+### Compiler building blocks
+
+The remaining NuGet packages exist for advanced composition:
+
+- `XamlToCSharpGenerator.Generator`: Roslyn generator entrypoint.
+- `XamlToCSharpGenerator.Core`: parser model, diagnostics, configuration, semantic contracts.
+- `XamlToCSharpGenerator.Compiler`: incremental host orchestration.
+- `XamlToCSharpGenerator.Framework.Abstractions`: framework adapter contracts.
+- `XamlToCSharpGenerator.ExpressionSemantics`: Roslyn-backed expression analysis.
+- `XamlToCSharpGenerator.MiniLanguageParsing`: shared mini-language parsers.
+- `XamlToCSharpGenerator.Avalonia`: Avalonia binder and emitter layer.
+- `XamlToCSharpGenerator.NoUi`: framework-neutral pilot profile.
+
+## Core Capabilities
+
+- Source-generated Avalonia XAML backend selected with `AvaloniaXamlCompilerBackend=SourceGen`
+- Compiled-binding-first workflow with semantic type analysis
+- C# expression bindings (`{= ...}` and optional implicit expression mode)
+- Event bindings for commands and methods
+- Global XML namespace imports and implicit namespace conventions
+- Conditional XAML pruning
+- Runtime loading for URI and inline XAML scenarios
+- Hot reload, iOS hot reload transport support, and hot design tooling
+- Shared XAML language-service core with references/definitions/hover/inlay hints/rename
+- VS Code extension and Avalonia editor control built on the same semantic engine
+
+For feature-specific details:
+
+- configuration model: [`docs/configuration-model.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-model.md)
+- configuration migration: [`docs/configuration-migration.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-migration.md)
+- iOS hot reload: [`docs/hot-reload-ios.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/hot-reload-ios.md)
+
+## Build Instructions
+
+### Prerequisites
+
+- .NET 10 SDK
+- Node.js 20+ for the VS Code extension
+- Xcode 26.2 for the iOS sample and iOS hot-reload validation
+- Android SDK for the Android sample
+
+### Fast CI-equivalent build
+
+Use the solution filter when you do not need mobile workloads:
 
 ```bash
-dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --add-source /tmp/axsg-pack
-dotnet tool update --global XamlToCSharpGenerator.LanguageServer.Tool --add-source /tmp/axsg-pack
+dotnet restore XamlToCSharpGenerator.CI.slnf --nologo
+dotnet build XamlToCSharpGenerator.CI.slnf --nologo -m:1 /nodeReuse:false --disable-build-servers
+dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo -m:1 /nodeReuse:false --disable-build-servers --no-build
 ```
 
-Publishable package id:
-- `XamlToCSharpGenerator.LanguageServer.Tool`
+### Full repository build
 
-### VS Code Local Install
-
-VS Code language-client wrapper project:
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/tools/vscode/axsg-language-server`
-
-Build a local VSIX:
+Use the full solution when mobile prerequisites are installed:
 
 ```bash
-cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/tools/vscode/axsg-language-server
-npm install
+dotnet restore XamlToCSharpGenerator.sln --nologo
+dotnet build XamlToCSharpGenerator.sln --nologo -m:1 /nodeReuse:false --disable-build-servers
+```
+
+### Package the NuGet and tool artifacts locally
+
+Pack a specific artifact:
+
+```bash
+dotnet pack src/XamlToCSharpGenerator/XamlToCSharpGenerator.csproj -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
+dotnet pack src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
+```
+
+The release workflow packs every shippable project under `src/` that is marked packable.
+
+To mirror the workflow artifact packaging locally:
+
+```bash
+bash eng/release/pack-nuget-artifacts.sh ./artifacts/nuget 1.0.0-local
+bash eng/release/package-vscode-extension.sh ./artifacts/vsix/axsg-language-server-1.0.0-local.vsix 1.0.0-local
+```
+
+### Build the VS Code extension locally
+
+```bash
+cd tools/vscode/axsg-language-server
+npm ci
+npm run prepare:server
 npx @vscode/vsce package
 ```
 
-Then install the generated VSIX via:
-- Extensions panel
-- `...` menu
-- `Install from VSIX...`
+## Release Pipeline
 
-Client wiring requirements (VS Code and other IDEs):
-- Start server process over stdio with the command above (or a custom configured command path).
-- Register language IDs/extensions for `*.axaml` and `*.xaml`.
-- Use full document sync (`textDocumentSync.change = 1`).
-- Pass workspace root (`--workspace`) so project resolution can locate nearest `*.csproj`.
+The repository ships release artifacts through [`.github/workflows/release.yml`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/.github/workflows/release.yml).
 
-Example Neovim `lspconfig` wiring:
+Behavior:
 
-```lua
-require('lspconfig').axsg = {
-  cmd = {
-    'dotnet',
-    'run',
-    '--project',
-    '/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj',
-    '--',
-    '--workspace',
-    vim.fn.getcwd(),
-  },
-  filetypes = { 'xml', 'xaml', 'axaml' },
-  root_dir = require('lspconfig.util').root_pattern('*.sln', '*.csproj', '.git'),
-}
-```
+- tag `v*` pushes create a release build
+- all shippable NuGet packages and the `.NET` tool package are packed
+- the VS Code extension is packaged as a `.vsix`
+- artifacts are uploaded to the workflow run
+- GitHub Releases are created automatically for tag builds
+- NuGet publishing runs automatically when `NUGET_API_KEY` is configured
 
-## Migration Guide (XamlIl -> SourceGen)
+Release assets include:
 
-1. Install `XamlToCSharpGenerator` package.
-2. Set `<AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>`.
-3. Add runtime bootstrap extension:
-   `AppBuilder.Configure<App>().UsePlatformDetect().UseAvaloniaSourceGeneratedXaml();`
-4. Build and fix diagnostics under `AXSG####`.
-5. Keep fallback path by switching backend back to `XamlIl` if needed.
+- `*.nupkg` for every shipped package/tool
+- `axsg-language-server-<version>.vsix`
 
-Detailed migration/release checklist:
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/plan/32-ws73-packaging-migration-and-release-checklist.md`
+## Development Flags
 
-## Compatibility Matrix
+### Core compiler MSBuild properties
 
-| Scenario | XamlIl | SourceGen |
+These properties are exported through `XamlToCSharpGenerator.Build.props` and are the canonical switches for SourceGen-enabled Avalonia projects.
+
+| Property | Default | Purpose |
 | --- | --- | --- |
-| C# Avalonia app | Supported | Supported (target path) |
-| F#/VB Avalonia app | Supported | Not in v1 (stay on XamlIl) |
-| Dynamic runtime XAML compilation API | Supported by Avalonia runtime paths | Not provided in v1 |
-| Hot reload transient AXAML errors | N/A | Resilience mode supported (`AXSG0700`) |
+| `AvaloniaXamlCompilerBackend` | `XamlIl` | Selects the active XAML backend. Set to `SourceGen` to enable AXSG. |
+| `AvaloniaSourceGenCompilerEnabled` | `false` | Explicit master enable switch for the SourceGen compiler path. |
+| `AvaloniaSourceGenUseCompiledBindingsByDefault` | `false` | Makes bindings compiled by default when binding scopes support it. |
+| `AvaloniaSourceGenCSharpExpressionsEnabled` | `true` | Enables explicit C# expression bindings (`{= ...}`). |
+| `AvaloniaSourceGenImplicitCSharpExpressionsEnabled` | `true` | Enables implicit expression detection for `{ ... }` payloads. |
+| `AvaloniaSourceGenCreateSourceInfo` | `false` | Emits `#line` and source mapping metadata into generated C#. |
+| `AvaloniaSourceGenStrictMode` | `false` | Enables stricter semantic validation and warning behavior. |
+| `AvaloniaSourceGenHotReloadEnabled` | `true` | Enables SourceGen hot reload integration. |
+| `AvaloniaSourceGenHotReloadErrorResilienceEnabled` | `true` | Keeps last-known-good output during transient invalid edits. |
+| `AvaloniaSourceGenIdeHotReloadEnabled` | `true` | Enables IDE-triggered hot reload behavior. |
+| `AvaloniaSourceGenHotDesignEnabled` | `false` | Enables hot design tooling support. |
+| `AvaloniaSourceGenTracePasses` | `false` | Traces compiler pass execution for diagnostics/perf investigation. |
+| `AvaloniaSourceGenMetricsEnabled` | `false` | Enables compiler metrics emission. |
+| `AvaloniaSourceGenMetricsDetailed` | `false` | Enables detailed compiler metrics output. |
+| `AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled` | `false` | Opt-in compatibility fallback for legacy invalid markup-argument behavior. |
+| `AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled` | `false` | Opt-in compatibility fallback for legacy type-resolution behavior. |
+| `AvaloniaSourceGenAllowImplicitXmlnsDeclaration` | `false` | Allows implicit default XAML namespace behavior. |
+| `AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled` | `true` | Pre-seeds `x`, `d`, and `mc` namespace prefixes. |
+| `AvaloniaSourceGenImplicitDefaultXmlns` | `https://github.com/avaloniaui` | Default XML namespace used when implicit xmlns mode is enabled. |
+| `AvaloniaSourceGenInferClassFromPath` | `false` | Infers `x:Class` from root namespace and target path when possible. |
+| `AvaloniaSourceGenImplicitProjectNamespacesEnabled` | `false` | Lets project-local namespaces participate in default type resolution. |
+| `AvaloniaSourceGenGlobalXmlnsPrefixes` | empty | Declares global namespace prefix mappings. |
+| `AvaloniaSourceGenTransformRules` | empty | Adds transform rules to the unified configuration model. |
 
-## Diagnostics Bands
+### Build-host and configuration alias properties
 
-- `AXSG000x`: parse/document contract.
-- `AXSG010x`: semantic binding and property/type conversion.
-- `AXSG012x`: conditional XAML parsing/evaluation.
-- `AXSG030x`: style/selector/control-theme semantics.
-- `AXSG040x`: include graph and merge/source resolution.
-- `AXSG050x`: template semantics/checkers.
-- `AXSG060x`: integration/runtime wiring.
-- `AXSG070x`: hot reload resilience/incremental behavior.
-- `AXSG080x`: compile-time metrics and performance instrumentation.
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `XamlSourceGenBackend` | mirrors `AvaloniaXamlCompilerBackend` | Backward-compatible backend alias. |
+| `XamlSourceGenEnabled` | mirrors `AvaloniaSourceGenCompilerEnabled` | Backward-compatible enable switch alias. |
+| `XamlSourceGenInputItemGroup` | `AvaloniaXaml` | Item group used as XAML input for the generator host. |
+| `XamlSourceGenAdditionalFilesSourceItemGroup` | `AvaloniaXaml` | AdditionalFiles source item group for XAML inputs. |
+| `XamlSourceGenTransformRules` | empty | Backward-compatible transform-rule alias. |
+| `XamlSourceGenTransformRuleItemGroup` | `AvaloniaSourceGenTransformRule` | Item group used to contribute transform rules. |
+| `XamlSourceGenConfigurationPrecedence` | empty | Overrides configuration source precedence. |
+| `AvaloniaSourceGenConfigurationPrecedence` | empty | Canonical configuration precedence override. |
+| `XamlSourceGenLocalAnalyzerProject` | none | Development-only item used to point sample apps at locally built generator projects and watch graph inputs. |
 
-## Notes
+### iOS and remote hot-reload MSBuild properties
 
-- Source generation is opt-in.
-- Default Avalonia backend remains unchanged (`XamlIl`) unless switched.
-- Build integration disables Avalonia XAML compile task and Avalonia name generator when SourceGen backend is enabled.
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `AvaloniaSourceGenIosHotReloadEnabled` | `true` for Debug iOS, otherwise `false` | Enables iOS-specific hot-reload wiring. |
+| `AvaloniaSourceGenIosHotReloadUseInterpreter` | `true` when iOS hot reload is enabled | Turns on interpreter mode needed by the iOS edit-and-continue path. |
+| `AvaloniaSourceGenIosHotReloadEnableStartupHookSupport` | `false` | Enables startup-hook forwarding support on iOS. |
+| `AvaloniaSourceGenIosHotReloadForwardWatchEnvironment` | `true` | Forwards `dotnet watch` environment variables into the iOS launch flow. |
+| `AvaloniaSourceGenIosHotReloadForwardStartupHooks` | `false` | Forwards startup hook variables into the iOS launch flow. |
+| `AvaloniaSourceGenIosHotReloadForwardModifiableAssemblies` | `false` | Forwards modifiable-assemblies settings into the iOS launch flow. |
+| `AvaloniaSourceGenIosHotReloadStartupBannerEnabled` | `true` | Prints the iOS hot-reload startup banner. |
+| `AvaloniaSourceGenIosHotReloadTransportMode` | `Auto` | Chooses `Auto`, `MetadataOnly`, or `RemoteOnly` transport selection. |
+| `AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs` | `3000` | Transport handshake timeout. |
+| `AvaloniaSourceGenHotReloadRemoteEndpoint` | empty | Explicit remote host endpoint for device/simulator transport. |
+| `AvaloniaSourceGenHotReloadRemotePort` | `45820` | Default remote transport port when endpoint auto-resolution is used. |
+| `AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled` | `false` | Allows simulator endpoint auto-selection. |
+| `AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint` | `true` | Requires an explicit device endpoint instead of guessing. |
+| `AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled` | `false` | Enables iOS-specific `dotnet watch` XAML build trigger plumbing. |
+| `AvaloniaSourceGenIosDotNetWatchProxyProjectPath` | empty | Points to the dotnet-watch proxy project used by iOS debugging flows. |
+| `AvaloniaSourceGenIosDotNetWatchProxyPath` | empty | Points to the published proxy assembly used by iOS debugging flows. |
 
-## Samples
+### Runtime and test environment variables
 
-- CRUD sample:
-  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample`
-- Feature catalog sample (tabbed coverage of supported XAML features):
-  `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenXamlCatalogSample`
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AXSG_HOTRELOAD_TRACE` | off | Enables runtime hot-reload trace logging. |
+| `AXSG_HOTRELOAD_TRANSPORT_MODE` | unset | Overrides transport selection at runtime. |
+| `AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS` | unset | Overrides hot-reload handshake timeout. |
+| `AXSG_HOTRELOAD_REMOTE_ENDPOINT` | unset | Supplies the remote endpoint directly from the environment. |
+| `AXSG_RUN_PERF_TESTS` | unset | Enables the performance harness tests. |
+| `AXSG_PERF_TEST_TIMEOUT_MS` | harness default | Overrides perf-test timeout. |
+| `AXSG_PERF_MAX_FULL_BUILD_MS` | harness default | Max acceptable full build duration for perf validation. |
+| `AXSG_PERF_MAX_SINGLE_EDIT_MS` | harness default | Max acceptable single-edit incremental duration. |
+| `AXSG_PERF_MAX_INCLUDE_EDIT_MS` | harness default | Max acceptable include-edit incremental duration. |
+| `AXSG_PERF_MAX_INCREMENTAL_TO_FULL_RATIO` | harness default | Max acceptable incremental/full build ratio. |
+
+### VS Code extension settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `axsg.languageServer.mode` | `bundled` | Chooses bundled vs custom language-server launch mode. |
+| `axsg.languageServer.command` | `axsg-lsp` | Command used when `mode=custom`. |
+| `axsg.languageServer.args` | `[]` | Additional arguments passed to the custom server. |
+| `axsg.languageServer.trace` | `off` | LSP trace level. |
+| `axsg.inlayHints.bindingTypeHints.enabled` | `true` | Enables semantic binding type hints. |
+| `axsg.inlayHints.typeDisplayStyle` | `short` | Shows short or fully qualified type names in hints. |
+
+## Repository Layout
+
+- `src`: packages, tool, generator, runtime, and language-service projects
+- `tools/vscode/axsg-language-server`: VS Code extension source
+- `tests`: compiler, runtime, and language-service test suite
+- `samples`: sample apps used to validate compiler/runtime/tooling behavior
+- `docs`: focused documentation for configuration and platform-specific flows
+- `.github/workflows`: CI and release pipelines
+
+## License
+
+MIT. See [`LICENSE`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE).
