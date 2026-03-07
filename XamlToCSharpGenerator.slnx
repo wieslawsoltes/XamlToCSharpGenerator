@@ -1,0 +1,44 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/samples/">
+    <Project Path="samples/Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj" />
+    <Project Path="samples/ControlCatalog.Android/ControlCatalog.Android.csproj">
+      <Build Project="false" />
+    </Project>
+    <Project Path="samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj" />
+    <Project Path="samples/ControlCatalog.iOS/ControlCatalog.iOS.csproj" />
+    <Project Path="samples/ControlCatalog/ControlCatalog.csproj" />
+    <Project Path="samples/MiniMvvm/MiniMvvm.csproj" />
+    <Project Path="samples/NoUiFrameworkPilotSample/NoUiFrameworkPilotSample.csproj" />
+    <Project Path="samples/SourceGenCrudSample/SourceGenCrudSample.csproj" />
+    <Project Path="samples/SourceGenXamlCatalogSample/SourceGenXamlCatalogSample.csproj" />
+  </Folder>
+  <Folder Name="/samples/SampleControls/">
+    <Project Path="samples/SampleControls/ControlSamples.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/XamlToCSharpGenerator.Avalonia/XamlToCSharpGenerator.Avalonia.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Build/XamlToCSharpGenerator.Build.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Compiler/XamlToCSharpGenerator.Compiler.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Core/XamlToCSharpGenerator.Core.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.ExpressionSemantics/XamlToCSharpGenerator.ExpressionSemantics.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Framework.Abstractions/XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.NoUi/XamlToCSharpGenerator.NoUi.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Runtime/XamlToCSharpGenerator.Runtime.csproj" />
+    <Project Path="src/XamlToCSharpGenerator/XamlToCSharpGenerator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj" />
+  </Folder>
+</Solution>

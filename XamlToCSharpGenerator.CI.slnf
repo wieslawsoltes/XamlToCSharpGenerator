@@ -1,6 +1,6 @@
 {
   "solution": {
-    "path": "XamlToCSharpGenerator.sln",
+    "path": "XamlToCSharpGenerator.slnx",
     "projects": [
       "samples/Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj",
       "samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj",

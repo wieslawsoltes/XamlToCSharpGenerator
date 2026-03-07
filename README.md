@@ -155,8 +155,8 @@ dotnet test tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj
 Use the full solution when mobile prerequisites are installed:
 
 ```bash
-dotnet restore XamlToCSharpGenerator.sln --nologo
-dotnet build XamlToCSharpGenerator.sln --nologo -m:1 /nodeReuse:false --disable-build-servers
+dotnet restore XamlToCSharpGenerator.slnx --nologo
+dotnet build XamlToCSharpGenerator.slnx --nologo -m:1 /nodeReuse:false --disable-build-servers
 ```
 
 ### Package the NuGet and tool artifacts locally

@@ -2548,7 +2548,7 @@ public sealed class XamlLanguageServiceEngineTests
         var directory = AppContext.BaseDirectory;
         while (!string.IsNullOrWhiteSpace(directory))
         {
-            var solutionPath = Path.Combine(directory, "XamlToCSharpGenerator.sln");
+            var solutionPath = Path.Combine(directory, "XamlToCSharpGenerator.slnx");
             if (File.Exists(solutionPath))
             {
                 return directory;
