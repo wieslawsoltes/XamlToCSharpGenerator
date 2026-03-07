@@ -13,6 +13,12 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $extensionDir = Join-Path $repoRoot 'tools/vscode/axsg-language-server'
 $packageJsonPath = Join-Path $extensionDir 'package.json'
 
+if (($Version.Contains('/') -or $Version.Contains('\') -or $Version.EndsWith('.vsix')) -and $OutputVsixPath -and -not ($OutputVsixPath.Contains('/') -or $OutputVsixPath.Contains('\') -or $OutputVsixPath.EndsWith('.vsix'))) {
+    $legacyOutputVsixPath = $Version
+    $Version = $OutputVsixPath
+    $OutputVsixPath = $legacyOutputVsixPath
+}
+
 function Resolve-AbsolutePath([string]$PathValue) {
     if ([System.IO.Path]::IsPathRooted($PathValue)) {
         return [System.IO.Path]::GetFullPath($PathValue)

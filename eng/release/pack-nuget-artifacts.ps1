@@ -11,6 +11,12 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
+if (($Version.Contains('/') -or $Version.Contains('\')) -and $OutputDir -and -not ($OutputDir.Contains('/') -or $OutputDir.Contains('\'))) {
+    $legacyOutputDir = $Version
+    $Version = $OutputDir
+    $OutputDir = $legacyOutputDir
+}
+
 function Resolve-AbsolutePath([string]$PathValue) {
     if ([System.IO.Path]::IsPathRooted($PathValue)) {
         return [System.IO.Path]::GetFullPath($PathValue)

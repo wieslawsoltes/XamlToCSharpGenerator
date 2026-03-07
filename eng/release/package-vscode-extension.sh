@@ -6,8 +6,14 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 1
 fi
 
-version="$1"
-output_vsix="${2:-./artifacts/vsix/axsg-language-server-${version}.vsix}"
+if [[ $# -eq 2 && ( "$1" == */* || "$1" == .* || "$1" == ~* || "$1" == *.vsix ) ]]; then
+  # Backward-compatible form: <output-vsix-path> <version>
+  output_vsix="$1"
+  version="$2"
+else
+  version="$1"
+  output_vsix="${2:-./artifacts/vsix/axsg-language-server-${version}.vsix}"
+fi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_vsix="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "${output_vsix}")"
 extension_dir="${repo_root}/tools/vscode/axsg-language-server"

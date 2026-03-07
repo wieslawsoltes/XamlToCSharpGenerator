@@ -6,8 +6,14 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 1
 fi
 
-version="$1"
-output_dir="${2:-./artifacts/nuget}"
+if [[ $# -eq 2 && ( "$1" == */* || "$1" == .* || "$1" == ~* ) ]]; then
+  # Backward-compatible form: <output-dir> <version>
+  output_dir="$1"
+  version="$2"
+else
+  version="$1"
+  output_dir="${2:-./artifacts/nuget}"
+fi
 
 mkdir -p "${output_dir}"
 
