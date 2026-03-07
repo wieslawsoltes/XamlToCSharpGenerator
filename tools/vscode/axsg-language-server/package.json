@@ -328,8 +328,42 @@
         {
           "command": "axsg.refactor.renameSymbol"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "axsg.refactor.renameSymbol",
+          "when": "resourceScheme == file && editorLangId == csharp",
+          "group": "1_modification@100"
+        },
+        {
+          "command": "axsg.refactor.renameSymbol",
+          "when": "resourceScheme == file && editorLangId == xaml",
+          "group": "1_modification@100"
+        },
+        {
+          "command": "axsg.refactor.renameSymbol",
+          "when": "resourceScheme == file && editorLangId == axaml",
+          "group": "1_modification@100"
+        }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "axsg.refactor.renameSymbol",
+        "key": "f2",
+        "when": "editorTextFocus && resourceScheme == file && editorLangId == csharp"
+      },
+      {
+        "command": "axsg.refactor.renameSymbol",
+        "key": "f2",
+        "when": "editorTextFocus && resourceScheme == file && editorLangId == xaml"
+      },
+      {
+        "command": "axsg.refactor.renameSymbol",
+        "key": "f2",
+        "when": "editorTextFocus && resourceScheme == file && editorLangId == axaml"
+      }
+    ]
   },
   "scripts": {
     "prepare:server": "node ./scripts/prepare-server.js",

@@ -17,6 +17,7 @@ let sourceLinkChangeEmitter;
 const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
 const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
 const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
+let suppressCSharpRenameProvider = false;
 
 function decodeQueryValue(value) {
   try {
@@ -371,6 +372,17 @@ async function applyProtocolWorkspaceEdit(edit) {
   }
 
   const workspaceEdit = new vscode.WorkspaceEdit();
+  appendProtocolWorkspaceEdit(workspaceEdit, edit);
+
+  return vscode.workspace.applyEdit(workspaceEdit);
+}
+
+function appendProtocolWorkspaceEdit(workspaceEdit, edit) {
+  if (!workspaceEdit || !edit || !edit.changes || typeof edit.changes !== 'object') {
+    return 0;
+  }
+
+  let count = 0;
   for (const [uri, edits] of Object.entries(edit.changes)) {
     if (!Array.isArray(edits)) {
       continue;
@@ -387,10 +399,19 @@ async function applyProtocolWorkspaceEdit(edit) {
         toVsCodeRange(editItem.range),
         typeof editItem.newText === 'string' ? editItem.newText : ''
       );
+      count++;
     }
   }
 
-  return vscode.workspace.applyEdit(workspaceEdit);
+  return count;
+}
+
+function isXamlDocument(document) {
+  return document?.languageId === 'xaml' || document?.languageId === 'axaml';
+}
+
+function isCSharpDocument(document) {
+  return document?.languageId === 'csharp';
 }
 
 function tryParseCommandPositionArgument(value) {
@@ -443,6 +464,18 @@ async function executeCrossLanguageRenameCommand(argument) {
 
   const position = tryParseCommandPositionArgument(argument) ?? argument ?? editor.selection.active;
   const document = editor.document;
+  if (isCSharpDocument(document)) {
+    await executeCSharpRename(editor, position);
+    return;
+  }
+
+  if (isXamlDocument(document)) {
+    await executeAxsgRename(editor, position);
+  }
+}
+
+async function executeAxsgRename(editor, position) {
+  const document = editor.document;
   const params = {
     textDocument: {
       uri: document.uri.toString()
@@ -474,6 +507,111 @@ async function executeCrossLanguageRenameCommand(argument) {
   if (!applied) {
     void vscode.window.showWarningMessage('AXSG could not apply the computed rename edits.');
   }
+}
+
+async function executeCSharpRename(editor, position) {
+  const document = editor.document;
+
+  let prepareResult;
+  try {
+    prepareResult = await executeNativeCSharpPrepareRename(document, position);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showWarningMessage(`AXSG could not prepare the C# rename: ${message}`);
+    return;
+  }
+
+  if (!prepareResult) {
+    void vscode.window.showInformationMessage('Rename is not available at the current C# position.');
+    return;
+  }
+
+  const placeholder = typeof prepareResult.placeholder === 'string'
+    ? prepareResult.placeholder
+    : document.getText(prepareResult.range);
+  const newName = await vscode.window.showInputBox({
+    title: 'AXSG Rename Symbol Across C# and XAML',
+    value: placeholder,
+    prompt: 'Enter the new symbol name.'
+  });
+  if (typeof newName !== 'string' || newName.length === 0 || newName === placeholder) {
+    return;
+  }
+
+  const nativeRenameEdit = await buildCombinedCSharpRenameEdit(document, position, newName, undefined, true);
+  if (!(nativeRenameEdit instanceof vscode.WorkspaceEdit)) {
+    void vscode.window.showWarningMessage('AXSG could not retrieve the C# rename edit from VS Code.');
+    return;
+  }
+
+  const applied = await vscode.workspace.applyEdit(nativeRenameEdit);
+  if (!applied) {
+    void vscode.window.showWarningMessage('AXSG could not apply the combined C# and XAML rename edits.');
+  }
+}
+
+async function executeNativeCSharpPrepareRename(document, position) {
+  suppressCSharpRenameProvider = true;
+  try {
+    return await vscode.commands.executeCommand('_executePrepareRename', document.uri, position);
+  } finally {
+    suppressCSharpRenameProvider = false;
+  }
+}
+
+async function executeNativeCSharpRename(document, position, newName) {
+  suppressCSharpRenameProvider = true;
+  try {
+    return await vscode.commands.executeCommand(
+      '_executeDocumentRenameProvider',
+      document.uri,
+      position,
+      newName);
+  } finally {
+    suppressCSharpRenameProvider = false;
+  }
+}
+
+async function buildCombinedCSharpRenameEdit(document, position, newName, token, showWarnings) {
+  let nativeRenameEdit;
+  try {
+    nativeRenameEdit = await executeNativeCSharpRename(document, position, newName);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (showWarnings) {
+      void vscode.window.showWarningMessage(`AXSG could not compute the C# rename edit: ${message}`);
+    }
+
+    throw error;
+  }
+
+  if (!(nativeRenameEdit instanceof vscode.WorkspaceEdit)) {
+    return undefined;
+  }
+
+  if (!client) {
+    return nativeRenameEdit;
+  }
+
+  try {
+    const xamlPropagationEdit = await client.sendRequest('axsg/csharp/renamePropagation', {
+      textDocument: {
+        uri: document.uri.toString()
+      },
+      position: toProtocolPosition(position),
+      documentText: document.getText(),
+      newName
+    }, token);
+
+    appendProtocolWorkspaceEdit(nativeRenameEdit, xamlPropagationEdit);
+  } catch (error) {
+    if (showWarnings) {
+      const message = error instanceof Error ? error.message : String(error);
+      void vscode.window.showWarningMessage(`AXSG could not compute XAML propagation edits: ${message}`);
+    }
+  }
+
+  return nativeRenameEdit;
 }
 
 function setStatusBarState(state, details, errorMessage) {
@@ -576,6 +714,26 @@ async function activate(context) {
     {
       async provideDeclaration(document, position, token) {
         return requestCrossLanguageLocations('axsg/csharp/declarations', document, position, token);
+      }
+    }));
+  context.subscriptions.push(vscode.languages.registerRenameProvider(
+    [
+      { scheme: 'file', language: 'csharp' }
+    ],
+    {
+      async prepareRename(document, position) {
+        if (suppressCSharpRenameProvider) {
+          return undefined;
+        }
+
+        return executeNativeCSharpPrepareRename(document, position);
+      },
+      async provideRenameEdits(document, position, newName, token) {
+        if (suppressCSharpRenameProvider) {
+          return undefined;
+        }
+
+        return buildCombinedCSharpRenameEdit(document, position, newName, token, false);
       }
     }));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async document => {
