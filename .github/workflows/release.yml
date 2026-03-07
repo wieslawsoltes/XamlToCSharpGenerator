@@ -147,14 +147,14 @@ jobs:
         env:
           AXSG_VERSION: ${{ needs.build.outputs.version }}
         run: |
-          bash eng/release/pack-nuget-artifacts.sh "${GITHUB_WORKSPACE}/artifacts/nuget" "${AXSG_VERSION}"
+          bash eng/release/pack-nuget-artifacts.sh "${AXSG_VERSION}" "${GITHUB_WORKSPACE}/artifacts/nuget"
 
       - name: Package VS Code extension
         shell: bash
         env:
           AXSG_VERSION: ${{ needs.build.outputs.version }}
         run: |
-          bash eng/release/package-vscode-extension.sh "${GITHUB_WORKSPACE}/artifacts/vsix/axsg-language-server-${AXSG_VERSION}.vsix" "${AXSG_VERSION}"
+          bash eng/release/package-vscode-extension.sh "${AXSG_VERSION}" "${GITHUB_WORKSPACE}/artifacts/vsix/axsg-language-server-${AXSG_VERSION}.vsix"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
