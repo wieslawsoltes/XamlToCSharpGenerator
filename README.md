@@ -193,8 +193,23 @@ The release workflow packs every shippable project under `src/` that is marked p
 To mirror the workflow artifact packaging locally:
 
 ```bash
-bash eng/release/pack-nuget-artifacts.sh ./artifacts/nuget 1.0.0-local
-bash eng/release/package-vscode-extension.sh ./artifacts/vsix/axsg-language-server-1.0.0-local.vsix 1.0.0-local
+bash eng/release/package-artifacts.sh 0.1.0-local
+```
+
+```powershell
+pwsh eng/release/package-artifacts.ps1 -Version 0.1.0-local
+```
+
+Lower-level helpers are also available when you want to pack only part of the release surface:
+
+```bash
+bash eng/release/pack-nuget-artifacts.sh 0.1.0-local
+bash eng/release/package-vscode-extension.sh 0.1.0-local
+```
+
+```powershell
+pwsh eng/release/pack-nuget-artifacts.ps1 -Version 0.1.0-local
+pwsh eng/release/package-vscode-extension.ps1 -Version 0.1.0-local
 ```
 
 ### Build the VS Code extension locally

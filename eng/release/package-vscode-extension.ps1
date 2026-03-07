@@ -1,0 +1,74 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true, Position = 0)]
+    [string]$Version,
+
+    [Parameter(Position = 1)]
+    [string]$OutputVsixPath = ''
+)
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$extensionDir = Join-Path $repoRoot 'tools/vscode/axsg-language-server'
+$packageJsonPath = Join-Path $extensionDir 'package.json'
+
+function Resolve-AbsolutePath([string]$PathValue) {
+    if ([System.IO.Path]::IsPathRooted($PathValue)) {
+        return [System.IO.Path]::GetFullPath($PathValue)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $PathValue))
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputVsixPath)) {
+    $OutputVsixPath = "./artifacts/vsix/axsg-language-server-$Version.vsix"
+}
+
+$resolvedOutputVsixPath = Resolve-AbsolutePath $OutputVsixPath
+
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+
+    if ($LASTEXITCODE -ne 0) {
+        throw ("Command failed with exit code {0}: {1} {2}" -f $LASTEXITCODE, $FilePath, ($Arguments -join ' '))
+    }
+}
+
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolvedOutputVsixPath) | Out-Null
+
+$backupPath = Join-Path ([System.IO.Path]::GetTempPath()) ("axsg-package-{0}.json" -f [guid]::NewGuid().ToString('N'))
+Copy-Item $packageJsonPath $backupPath -Force
+
+function Restore-PackageJson {
+    if (Test-Path $backupPath) {
+        Copy-Item $backupPath $packageJsonPath -Force
+        Remove-Item $backupPath -Force
+    }
+}
+
+try {
+    $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+    $packageJson.version = $Version
+    $packageJson | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath -Encoding UTF8
+
+    Push-Location $extensionDir
+    try {
+        Invoke-ExternalCommand npm ci
+        Invoke-ExternalCommand npx @vscode/vsce package --out $resolvedOutputVsixPath
+    }
+    finally {
+        Pop-Location
+    }
+}
+finally {
+    Restore-PackageJson
+}

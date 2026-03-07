@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <output-dir> <version>" >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 <version> [output-dir]" >&2
   exit 1
 fi
 
-output_dir="$1"
-version="$2"
+version="$1"
+output_dir="${2:-./artifacts/nuget}"
 
 mkdir -p "${output_dir}"
 
