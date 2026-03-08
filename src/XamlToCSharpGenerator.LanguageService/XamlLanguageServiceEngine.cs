@@ -31,6 +31,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlDocumentSymbolService _documentSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
     private readonly XamlRefactoringService _refactoringService;
+    private readonly ConcurrentDictionary<string, int> _uriGenerations =
+        new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<AnalysisCacheKey, (int Version, XamlAnalysisResult Result)> _analysisCache =
         new();
     private readonly ConcurrentDictionary<InflightAnalysisCacheKey, Lazy<Task<XamlAnalysisResult>>> _inflightAnalysisCache =
@@ -82,8 +84,9 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         options ??= XamlLanguageServiceOptions.Default;
         _documentStore.Open(uri, text, version);
         InvalidateUriCaches(uri);
+        var generation = GetCurrentUriGeneration(uri);
 
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? ImmutableArray<LanguageServiceDiagnostic>.Empty
             : FilterDiagnostics(analysis.Diagnostics, options);
@@ -106,8 +109,9 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         options ??= XamlLanguageServiceOptions.Default;
         _ = _documentStore.Update(uri, text, version) ?? _documentStore.Open(uri, text, version);
         InvalidateUriCaches(uri);
+        var generation = GetCurrentUriGeneration(uri);
 
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? ImmutableArray<LanguageServiceDiagnostic>.Empty
             : FilterDiagnostics(analysis.Diagnostics, options);
@@ -124,7 +128,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? ImmutableArray<LanguageServiceDiagnostic>.Empty
             : FilterDiagnostics(analysis.Diagnostics, options);
@@ -136,7 +141,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? ImmutableArray<XamlCompletionItem>.Empty
             : _completionService.GetCompletions(analysis, position);
@@ -148,7 +154,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? null
             : _hoverService.GetHover(analysis, position);
@@ -160,13 +167,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         if (analysis is null)
         {
             return ImmutableArray<XamlDefinitionLocation>.Empty;
         }
 
-        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, options, position);
+        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, generation, options, position);
         if (_definitionCache.TryGetValue(cacheKey, out var cached))
         {
             return cached;
@@ -183,13 +191,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         if (analysis is null)
         {
             return ImmutableArray<XamlReferenceLocation>.Empty;
         }
 
-        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, options, position);
+        var cacheKey = BuildPositionRequestCacheKey(uri, analysis.Document.Version, generation, options, position);
         if (_referenceCache.TryGetValue(cacheKey, out var cached))
         {
             return cached;
@@ -240,7 +249,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         options ??= XamlLanguageServiceOptions.Default;
         inlayHintOptions ??= XamlInlayHintOptions.Default;
 
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         if (analysis is null)
         {
             return ImmutableArray<XamlInlayHint>.Empty;
@@ -249,6 +259,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         var cacheKey = new InlayHintCacheKey(
             Uri: uri,
             Version: analysis.Document.Version,
+            Generation: generation,
             WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
             IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
             IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics,
@@ -269,7 +280,8 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         return analysis is null
             ? ImmutableArray<XamlDocumentSymbol>.Empty
             : _documentSymbolService.GetDocumentSymbols(analysis);
@@ -280,13 +292,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlLanguageServiceOptions options,
         CancellationToken cancellationToken)
     {
-        var analysis = await GetAnalysisAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
         if (analysis is null)
         {
             return ImmutableArray<XamlSemanticToken>.Empty;
         }
 
-        var cacheKey = new DocumentCacheKey(uri, analysis.Document.Version);
+        var cacheKey = new DocumentCacheKey(uri, analysis.Document.Version, generation);
         if (_semanticTokenCache.TryGetValue(cacheKey, out var cachedTokens))
         {
             return cachedTokens;
@@ -365,6 +378,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private async Task<XamlAnalysisResult?> GetAnalysisAsync(
         string uri,
         XamlLanguageServiceOptions options,
+        int generation,
         CancellationToken cancellationToken)
     {
         options ??= XamlLanguageServiceOptions.Default;
@@ -375,14 +389,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return null;
         }
 
-        var cacheKey = BuildAnalysisCacheKey(uri, options);
+        var cacheKey = BuildAnalysisCacheKey(uri, generation, options);
 
         if (_analysisCache.TryGetValue(cacheKey, out var cached) && cached.Version == document.Version)
         {
             return cached.Result;
         }
 
-        var inflightKey = new InflightAnalysisCacheKey(uri, cacheKey.WorkspaceRoot, document.Version);
+        var inflightKey = new InflightAnalysisCacheKey(uri, cacheKey.Generation, cacheKey.WorkspaceRoot, document.Version);
         var lazyAnalysis = _inflightAnalysisCache.GetOrAdd(
             inflightKey,
             _ => new Lazy<Task<XamlAnalysisResult>>(
@@ -422,50 +436,13 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     private void InvalidateUriCaches(string uri)
     {
-        foreach (var cacheKey in _analysisCache.Keys)
-        {
-            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
-            {
-                _analysisCache.TryRemove(cacheKey, out _);
-            }
-        }
-
-        foreach (var cacheKey in _semanticTokenCache.Keys)
-        {
-            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
-            {
-                _semanticTokenCache.TryRemove(cacheKey, out _);
-            }
-        }
-
-        foreach (var cacheKey in _definitionCache.Keys)
-        {
-            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
-            {
-                _definitionCache.TryRemove(cacheKey, out _);
-            }
-        }
-
-        foreach (var cacheKey in _referenceCache.Keys)
-        {
-            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
-            {
-                _referenceCache.TryRemove(cacheKey, out _);
-            }
-        }
-
-        foreach (var cacheKey in _inlayHintCache.Keys)
-        {
-            if (string.Equals(cacheKey.Uri, uri, StringComparison.Ordinal))
-            {
-                _inlayHintCache.TryRemove(cacheKey, out _);
-            }
-        }
+        _uriGenerations.AddOrUpdate(uri, 1, static (_, generation) => generation + 1);
     }
 
     private static PositionRequestCacheKey BuildPositionRequestCacheKey(
         string uri,
         int documentVersion,
+        int generation,
         XamlLanguageServiceOptions options,
         SourcePosition position)
     {
@@ -473,6 +450,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return new PositionRequestCacheKey(
             Uri: uri,
             Version: documentVersion,
+            Generation: generation,
             WorkspaceRoot: options.WorkspaceRoot ?? string.Empty,
             IncludeCompilationDiagnostics: options.IncludeCompilationDiagnostics,
             IncludeSemanticDiagnostics: options.IncludeSemanticDiagnostics,
@@ -482,12 +460,21 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     private static AnalysisCacheKey BuildAnalysisCacheKey(
         string uri,
+        int generation,
         XamlLanguageServiceOptions options)
     {
         options ??= XamlLanguageServiceOptions.Default;
         return new AnalysisCacheKey(
             Uri: uri,
+            Generation: generation,
             WorkspaceRoot: options.WorkspaceRoot ?? string.Empty);
+    }
+
+    private int GetCurrentUriGeneration(string uri)
+    {
+        return _uriGenerations.TryGetValue(uri, out var generation)
+            ? generation
+            : 0;
     }
 
     private static XamlLanguageServiceOptions CreateSharedAnalysisOptions(XamlLanguageServiceOptions options)
@@ -569,16 +556,19 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     private readonly record struct AnalysisCacheKey(
         string Uri,
+        int Generation,
         string WorkspaceRoot);
 
     private readonly record struct InflightAnalysisCacheKey(
         string Uri,
+        int Generation,
         string WorkspaceRoot,
         int Version);
 
     private readonly record struct PositionRequestCacheKey(
         string Uri,
         int Version,
+        int Generation,
         string WorkspaceRoot,
         bool IncludeCompilationDiagnostics,
         bool IncludeSemanticDiagnostics,
@@ -588,11 +578,12 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly record struct InlayHintCacheKey(
         string Uri,
         int Version,
+        int Generation,
         string WorkspaceRoot,
         bool IncludeCompilationDiagnostics,
         bool IncludeSemanticDiagnostics,
         bool EnableBindingTypeHints,
         XamlInlayHintTypeDisplayStyle DisplayStyle);
 
-    private readonly record struct DocumentCacheKey(string Uri, int Version);
+    private readonly record struct DocumentCacheKey(string Uri, int Version, int Generation);
 }
