@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -6,6 +7,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
@@ -64,23 +66,7 @@ public static class XamlSourceGeneratorCompilerHost
 
         var configurationFileSnapshot = configurationFileInputs
             .Collect()
-            .Select(static (inputs, _) =>
-            {
-                if (inputs.IsDefaultOrEmpty)
-                {
-                    return ImmutableArray<ConfigurationFileInput>.Empty;
-                }
-
-                var byPath = new Dictionary<string, ConfigurationFileInput>(StringComparer.OrdinalIgnoreCase);
-                foreach (var input in inputs.OrderBy(static value => value.Path, StringComparer.OrdinalIgnoreCase))
-                {
-                    byPath[NormalizeDedupePath(input.Path)] = input;
-                }
-
-                return byPath.Values
-                    .OrderBy(static value => value.Path, StringComparer.OrdinalIgnoreCase)
-                    .ToImmutableArray();
-            });
+            .Select(static (inputs, _) => BuildConfigurationFileSnapshot(inputs));
 
         var configurationProvider = context.CompilationProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
@@ -191,39 +177,7 @@ public static class XamlSourceGeneratorCompilerHost
 
         var uniqueXamlInputs = xamlInputs
             .Collect()
-            .Select(static (inputs, _) =>
-            {
-                if (inputs.IsDefaultOrEmpty)
-                {
-                    return ImmutableArray<XamlFileInput>.Empty;
-                }
-
-                var byPath = new Dictionary<string, XamlFileInput>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var input in inputs
-                             .OrderBy(static x => x.FilePath, StringComparer.OrdinalIgnoreCase)
-                             .ThenBy(static x => x.TargetPath, StringComparer.OrdinalIgnoreCase))
-                {
-                    var dedupeKey = NormalizeDedupePath(input.FilePath);
-                    if (!byPath.TryGetValue(dedupeKey, out var existing))
-                    {
-                        byPath[dedupeKey] = input;
-                        continue;
-                    }
-
-                    if (!ShouldPreferTargetPath(input.TargetPath, existing.TargetPath))
-                    {
-                        continue;
-                    }
-
-                    byPath[dedupeKey] = input;
-                }
-
-                return byPath.Values
-                    .OrderBy(static x => x.FilePath, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(static x => x.TargetPath, StringComparer.OrdinalIgnoreCase)
-                    .ToImmutableArray();
-            });
+            .Select(static (inputs, _) => BuildUniqueXamlInputSnapshot(inputs));
 
         var transformRuleInputs = context.AdditionalTextsProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
@@ -263,23 +217,7 @@ public static class XamlSourceGeneratorCompilerHost
 
         var uniqueTransformRuleInputs = transformRuleInputs
             .Collect()
-            .Select(static (inputs, _) =>
-            {
-                if (inputs.IsDefaultOrEmpty)
-                {
-                    return ImmutableArray<XamlFrameworkTransformRuleInput>.Empty;
-                }
-
-                var byPath = new Dictionary<string, XamlFrameworkTransformRuleInput>(StringComparer.OrdinalIgnoreCase);
-                foreach (var input in inputs.OrderBy(static value => value.FilePath, StringComparer.OrdinalIgnoreCase))
-                {
-                    byPath[NormalizeDedupePath(input.FilePath)] = input;
-                }
-
-                return byPath.Values
-                    .OrderBy(static value => value.FilePath, StringComparer.OrdinalIgnoreCase)
-                    .ToImmutableArray();
-            });
+            .Select(static (inputs, _) => BuildUniqueTransformRuleInputSnapshot(inputs));
 
         var legacyTransformRules = uniqueTransformRuleInputs
             .Select((inputs, _) =>
@@ -683,6 +621,75 @@ public static class XamlSourceGeneratorCompilerHost
         }
     }
 
+    internal static ImmutableArray<ConfigurationFileInput> BuildConfigurationFileSnapshot(
+        ImmutableArray<ConfigurationFileInput> inputs)
+    {
+        if (inputs.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<ConfigurationFileInput>.Empty;
+        }
+
+        var byPath = new Dictionary<string, ConfigurationFileInput>(inputs.Length, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < inputs.Length; index++)
+        {
+            var input = inputs[index];
+            var dedupeKey = NormalizeDedupePath(input.Path);
+            if (!byPath.TryGetValue(dedupeKey, out var existing) ||
+                ShouldReplaceConfigurationFile(input, existing))
+            {
+                byPath[dedupeKey] = input;
+            }
+        }
+
+        return SortConfigurationFileInputs(byPath.Values);
+    }
+
+    internal static ImmutableArray<XamlFileInput> BuildUniqueXamlInputSnapshot(
+        ImmutableArray<XamlFileInput> inputs)
+    {
+        if (inputs.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlFileInput>.Empty;
+        }
+
+        var byPath = new Dictionary<string, XamlFileInput>(inputs.Length, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < inputs.Length; index++)
+        {
+            var input = inputs[index];
+            var dedupeKey = NormalizeDedupePath(input.FilePath);
+            if (!byPath.TryGetValue(dedupeKey, out var existing) ||
+                ShouldReplaceXamlInput(input, existing))
+            {
+                byPath[dedupeKey] = input;
+            }
+        }
+
+        return SortXamlFileInputs(byPath.Values);
+    }
+
+    internal static ImmutableArray<XamlFrameworkTransformRuleInput> BuildUniqueTransformRuleInputSnapshot(
+        ImmutableArray<XamlFrameworkTransformRuleInput> inputs)
+    {
+        if (inputs.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlFrameworkTransformRuleInput>.Empty;
+        }
+
+        var byPath = new Dictionary<string, XamlFrameworkTransformRuleInput>(inputs.Length, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < inputs.Length; index++)
+        {
+            var input = inputs[index];
+            var dedupeKey = NormalizeDedupePath(input.FilePath);
+            if (!byPath.TryGetValue(dedupeKey, out var existing) ||
+                ShouldReplaceTransformRuleInput(input, existing))
+            {
+                byPath[dedupeKey] = input;
+            }
+        }
+
+        return SortTransformRuleInputs(byPath.Values);
+    }
+
     private static XamlFrameworkTransformRuleAggregateResult BuildEffectiveTransformRules(
         XamlFrameworkTransformRuleAggregateResult legacyTransformRules,
         XamlSourceGenConfiguration configuration,
@@ -716,7 +723,7 @@ public static class XamlSourceGeneratorCompilerHost
             diagnostics.ToImmutable());
     }
 
-    private static ImmutableArray<XamlFrameworkTransformRuleResult> ParseConfigurationTransformRuleInputs(
+    internal static ImmutableArray<XamlFrameworkTransformRuleResult> ParseConfigurationTransformRuleInputs(
         ImmutableDictionary<string, string> rawTransformDocuments,
         IXamlFrameworkTransformProvider transformProvider)
     {
@@ -725,15 +732,26 @@ public static class XamlSourceGeneratorCompilerHost
             return ImmutableArray<XamlFrameworkTransformRuleResult>.Empty;
         }
 
-        var results = ImmutableArray.CreateBuilder<XamlFrameworkTransformRuleResult>(rawTransformDocuments.Count);
-        foreach (var pair in rawTransformDocuments.OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+        var orderedDocuments = new KeyValuePair<string, string>[rawTransformDocuments.Count];
+        var orderedIndex = 0;
+        foreach (var pair in rawTransformDocuments)
         {
-            var filePath = BuildConfigurationTransformRuleDocumentPath(pair.Key);
-            var parsed = transformProvider.ParseTransformRule(new XamlFrameworkTransformRuleInput(filePath, pair.Value));
-            results.Add(parsed);
+            orderedDocuments[orderedIndex++] = pair;
         }
 
-        return results.ToImmutable();
+        Array.Sort(
+            orderedDocuments,
+            static (left, right) => string.Compare(left.Key, right.Key, StringComparison.OrdinalIgnoreCase));
+
+        var results = new XamlFrameworkTransformRuleResult[orderedDocuments.Length];
+        for (var index = 0; index < orderedDocuments.Length; index++)
+        {
+            var pair = orderedDocuments[index];
+            var filePath = BuildConfigurationTransformRuleDocumentPath(pair.Key);
+            results[index] = transformProvider.ParseTransformRule(new XamlFrameworkTransformRuleInput(filePath, pair.Value));
+        }
+
+        return ImmutableArray.Create(results);
     }
 
     private static string BuildConfigurationTransformRuleDocumentPath(string key)
@@ -746,7 +764,7 @@ public static class XamlSourceGeneratorCompilerHost
         return "xaml-sourcegen.config.json::transform.rawTransformDocuments[" + key.Trim() + "]";
     }
 
-    private static XamlTransformConfiguration MergeTransformConfigurations(
+    internal static XamlTransformConfiguration MergeTransformConfigurations(
         XamlTransformConfiguration baseConfiguration,
         TransformConfigurationSourceKind baseSourceKind,
         XamlTransformConfiguration overlayConfiguration,
@@ -759,7 +777,9 @@ public static class XamlSourceGeneratorCompilerHost
             return baseConfiguration;
         }
 
-        var typeAliases = new Dictionary<string, TransformTypeAliasEntry>(StringComparer.OrdinalIgnoreCase);
+        var typeAliases = new Dictionary<string, TransformTypeAliasEntry>(
+            baseConfiguration.TypeAliases.Length + overlayConfiguration.TypeAliases.Length,
+            StringComparer.OrdinalIgnoreCase);
         foreach (var alias in baseConfiguration.TypeAliases)
         {
             typeAliases[BuildTypeAliasKey(alias)] = new TransformTypeAliasEntry(alias, baseSourceKind);
@@ -787,7 +807,9 @@ public static class XamlSourceGeneratorCompilerHost
             typeAliases[key] = new TransformTypeAliasEntry(alias, overlaySourceKind);
         }
 
-        var propertyAliases = new Dictionary<string, TransformPropertyAliasEntry>(StringComparer.OrdinalIgnoreCase);
+        var propertyAliases = new Dictionary<string, TransformPropertyAliasEntry>(
+            baseConfiguration.PropertyAliases.Length + overlayConfiguration.PropertyAliases.Length,
+            StringComparer.OrdinalIgnoreCase);
         foreach (var alias in baseConfiguration.PropertyAliases)
         {
             propertyAliases[BuildPropertyAliasKey(alias)] = new TransformPropertyAliasEntry(alias, baseSourceKind);
@@ -816,24 +838,60 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         return new XamlTransformConfiguration(
-            typeAliases
-                .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(static entry => entry.Value.Alias)
-                .ToImmutableArray(),
-            propertyAliases
-                .OrderBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(static entry => entry.Value.Alias)
-                .ToImmutableArray());
+            SortTypeAliases(typeAliases),
+            SortPropertyAliases(propertyAliases));
     }
 
     private static string BuildTypeAliasKey(XamlTypeAliasRule alias)
     {
-        return alias.XmlNamespace + ":" + alias.XamlTypeName;
+        return string.Concat(alias.XmlNamespace, ":", alias.XamlTypeName);
     }
 
     private static string BuildPropertyAliasKey(XamlPropertyAliasRule alias)
     {
-        return alias.TargetTypeName + ":" + alias.XamlPropertyName;
+        return string.Concat(alias.TargetTypeName, ":", alias.XamlPropertyName);
+    }
+
+    private static ImmutableArray<XamlTypeAliasRule> SortTypeAliases(
+        Dictionary<string, TransformTypeAliasEntry> aliases)
+    {
+        if (aliases.Count == 0)
+        {
+            return ImmutableArray<XamlTypeAliasRule>.Empty;
+        }
+
+        var sorted = new KeyValuePair<string, TransformTypeAliasEntry>[aliases.Count];
+        ((ICollection<KeyValuePair<string, TransformTypeAliasEntry>>)aliases).CopyTo(sorted, 0);
+        Array.Sort(sorted, static (left, right) => string.Compare(left.Key, right.Key, StringComparison.OrdinalIgnoreCase));
+
+        var result = new XamlTypeAliasRule[sorted.Length];
+        for (var index = 0; index < sorted.Length; index++)
+        {
+            result[index] = sorted[index].Value.Alias;
+        }
+
+        return ImmutableArray.Create(result);
+    }
+
+    private static ImmutableArray<XamlPropertyAliasRule> SortPropertyAliases(
+        Dictionary<string, TransformPropertyAliasEntry> aliases)
+    {
+        if (aliases.Count == 0)
+        {
+            return ImmutableArray<XamlPropertyAliasRule>.Empty;
+        }
+
+        var sorted = new KeyValuePair<string, TransformPropertyAliasEntry>[aliases.Count];
+        ((ICollection<KeyValuePair<string, TransformPropertyAliasEntry>>)aliases).CopyTo(sorted, 0);
+        Array.Sort(sorted, static (left, right) => string.Compare(left.Key, right.Key, StringComparison.OrdinalIgnoreCase));
+
+        var result = new XamlPropertyAliasRule[sorted.Length];
+        for (var index = 0; index < sorted.Length; index++)
+        {
+            result[index] = sorted[index].Value.Alias;
+        }
+
+        return ImmutableArray.Create(result);
     }
 
     private static ImmutableArray<DiagnosticInfo> ApplyGlobalParityDiagnosticFilters(
@@ -1369,16 +1427,16 @@ public static class XamlSourceGeneratorCompilerHost
             return string.Empty;
         }
 
-        var normalized = filePath.Replace('\\', '/');
+        var normalized = filePath;
         try
         {
             if (Path.IsPathRooted(filePath))
             {
-                normalized = Path.GetFullPath(filePath).Replace('\\', '/');
+                normalized = Path.GetFullPath(filePath);
             }
             else if (!string.IsNullOrWhiteSpace(projectDirectory))
             {
-                normalized = Path.GetFullPath(Path.Combine(projectDirectory!, filePath)).Replace('\\', '/');
+                normalized = Path.GetFullPath(Path.Combine(projectDirectory!, filePath));
             }
         }
         catch
@@ -1396,7 +1454,7 @@ public static class XamlSourceGeneratorCompilerHost
             return string.Empty;
         }
 
-        return NormalizePathSegments(targetPath.Replace('\\', '/'));
+        return NormalizePathSegments(targetPath);
     }
 
     private static string ComputeStableHashHex(string text)
@@ -1482,7 +1540,7 @@ public static class XamlSourceGeneratorCompilerHost
                 ex.Message.Contains("unique", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static (
+    internal static (
         XamlDocumentModel? Document,
         ImmutableArray<DiagnosticInfo> Diagnostics) ApplyDocumentConventions(
         XamlFileInput input,
@@ -1542,10 +1600,10 @@ public static class XamlSourceGeneratorCompilerHost
         }
     }
 
-    private static string? TryInferClassNameFromTargetPath(string targetPath, GeneratorOptions options)
+    internal static string? TryInferClassNameFromTargetPath(string targetPath, GeneratorOptions options)
     {
         var rootNamespace = NormalizeRootNamespace(options.RootNamespace ?? options.AssemblyName);
-        if (string.IsNullOrWhiteSpace(rootNamespace))
+        if (rootNamespace.Length == 0)
         {
             return null;
         }
@@ -1556,73 +1614,73 @@ public static class XamlSourceGeneratorCompilerHost
             effectiveTargetPath = Path.GetFileName(effectiveTargetPath);
         }
 
-        effectiveTargetPath = effectiveTargetPath.Replace('\\', '/').Trim();
-        if (effectiveTargetPath.StartsWith("./", StringComparison.Ordinal))
+        var effectiveTargetPathSpan = effectiveTargetPath.AsSpan();
+        effectiveTargetPathSpan = TrimWhitespace(effectiveTargetPathSpan);
+        if (effectiveTargetPathSpan.Length >= 2 &&
+            effectiveTargetPathSpan[0] == '.' &&
+            effectiveTargetPathSpan[1] == '/')
         {
-            effectiveTargetPath = effectiveTargetPath.Substring(2);
+            effectiveTargetPathSpan = effectiveTargetPathSpan.Slice(2);
         }
 
-        if (effectiveTargetPath.StartsWith("/", StringComparison.Ordinal))
+        if (effectiveTargetPathSpan.Length > 0 &&
+            (effectiveTargetPathSpan[0] == '/' || effectiveTargetPathSpan[0] == '\\'))
         {
-            effectiveTargetPath = effectiveTargetPath.Substring(1);
+            effectiveTargetPathSpan = effectiveTargetPathSpan.Slice(1);
         }
 
-        var fileName = Path.GetFileNameWithoutExtension(effectiveTargetPath);
+        var lastSeparatorIndex = LastIndexOfPathSeparator(effectiveTargetPathSpan);
+        var fileName = lastSeparatorIndex >= 0
+            ? effectiveTargetPathSpan.Slice(lastSeparatorIndex + 1)
+            : effectiveTargetPathSpan;
+        var extensionIndex = fileName.LastIndexOf('.');
+        if (extensionIndex > 0)
+        {
+            fileName = fileName.Slice(0, extensionIndex);
+        }
+
         var normalizedClassName = NormalizeIdentifier(fileName, "GeneratedView");
         if (string.IsNullOrWhiteSpace(normalizedClassName))
         {
             return null;
         }
 
-        var namespaceSegments = NormalizeNamespaceSegments(rootNamespace).ToList();
-        var directory = Path.GetDirectoryName(effectiveTargetPath)?
-            .Replace('\\', '/');
-
-        if (directory is not null)
+        var normalizedClassNameValue = normalizedClassName!;
+        var builder = new StringBuilder(rootNamespace.Length + effectiveTargetPathSpan.Length + normalizedClassNameValue.Length + 8);
+        builder.Append(rootNamespace);
+        if (lastSeparatorIndex > 0)
         {
-            var directoryValue = directory.Trim();
-            if (directoryValue.Length > 0)
-            {
-                foreach (var rawSegment in directoryValue
-                             .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var segment = rawSegment.Trim();
-                    var normalizedSegment = NormalizeIdentifier(segment, null);
-                    if (normalizedSegment is null || normalizedSegment.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    namespaceSegments.Add(normalizedSegment);
-                }
-            }
+            AppendNormalizedPathSegments(builder, effectiveTargetPathSpan.Slice(0, lastSeparatorIndex));
         }
 
-        return namespaceSegments.Count == 0
-            ? normalizedClassName
-            : string.Join(".", namespaceSegments) + "." + normalizedClassName;
+        if (builder.Length > 0)
+        {
+            builder.Append('.');
+        }
+
+        builder.Append(normalizedClassNameValue);
+        return builder.ToString();
     }
 
-    private static string NormalizeRootNamespace(string? rootNamespace)
+    internal static string NormalizeRootNamespace(string? rootNamespace)
     {
         if (rootNamespace is null)
         {
             return string.Empty;
         }
 
-        var trimmedRootNamespace = rootNamespace.Trim();
+        var trimmedRootNamespace = TrimWhitespace(rootNamespace.AsSpan());
         if (trimmedRootNamespace.Length == 0)
         {
             return string.Empty;
         }
 
-        var segments = NormalizeNamespaceSegments(trimmedRootNamespace);
-        return segments.Length == 0
-            ? string.Empty
-            : string.Join(".", segments);
+        var builder = new StringBuilder(trimmedRootNamespace.Length);
+        AppendNormalizedNamespaceSegments(builder, trimmedRootNamespace);
+        return builder.ToString();
     }
 
-    private static ImmutableArray<string> NormalizeNamespaceSegments(string rawNamespace)
+    internal static ImmutableArray<string> NormalizeNamespaceSegments(string rawNamespace)
     {
         if (string.IsNullOrWhiteSpace(rawNamespace))
         {
@@ -1630,20 +1688,11 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         var segments = ImmutableArray.CreateBuilder<string>();
-        foreach (var rawSegment in rawNamespace
-                     .Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var segment = rawSegment.Trim();
-            var normalizedSegment = NormalizeIdentifier(segment, null);
-            if (normalizedSegment is null || normalizedSegment.Length == 0)
-            {
-                continue;
-            }
+        AppendNormalizedNamespaceSegments(segments, rawNamespace.AsSpan());
 
-            segments.Add(normalizedSegment);
-        }
-
-        return segments.ToImmutable();
+        return segments.Count == 0
+            ? ImmutableArray<string>.Empty
+            : segments.ToImmutable();
     }
 
     private static string? NormalizeIdentifier(string? token, string? fallback)
@@ -1683,13 +1732,164 @@ public static class XamlSourceGeneratorCompilerHost
         return normalized;
     }
 
+    private static string? NormalizeIdentifier(ReadOnlySpan<char> token, string? fallback)
+    {
+        var trimmedToken = TrimWhitespace(token);
+        if (trimmedToken.Length == 0)
+        {
+            return fallback;
+        }
+
+        Span<char> buffer = stackalloc char[trimmedToken.Length + 1];
+        var length = 0;
+        for (var index = 0; index < trimmedToken.Length; index++)
+        {
+            var ch = trimmedToken[index];
+            if (char.IsLetterOrDigit(ch) || ch == '_')
+            {
+                buffer[length++] = ch;
+            }
+        }
+
+        if (length == 0)
+        {
+            return fallback;
+        }
+
+        if (char.IsDigit(buffer[0]))
+        {
+            for (var index = length; index > 0; index--)
+            {
+                buffer[index] = buffer[index - 1];
+            }
+
+            buffer[0] = '_';
+            length++;
+        }
+
+        return new string(buffer.Slice(0, length).ToArray());
+    }
+
+    private static void AppendNormalizedNamespaceSegments(
+        ImmutableArray<string>.Builder segments,
+        ReadOnlySpan<char> rawNamespace)
+    {
+        var segmentStart = 0;
+        for (var index = 0; index <= rawNamespace.Length; index++)
+        {
+            if (index < rawNamespace.Length && rawNamespace[index] != '.')
+            {
+                continue;
+            }
+
+            var normalizedSegment = NormalizeIdentifier(rawNamespace.Slice(segmentStart, index - segmentStart), null);
+            if (normalizedSegment is { Length: > 0 })
+            {
+                segments.Add(normalizedSegment);
+            }
+
+            segmentStart = index + 1;
+        }
+    }
+
+    private static void AppendNormalizedNamespaceSegments(
+        StringBuilder builder,
+        ReadOnlySpan<char> rawNamespace)
+    {
+        var segmentStart = 0;
+        for (var index = 0; index <= rawNamespace.Length; index++)
+        {
+            if (index < rawNamespace.Length && rawNamespace[index] != '.')
+            {
+                continue;
+            }
+
+            var normalizedSegment = NormalizeIdentifier(rawNamespace.Slice(segmentStart, index - segmentStart), null);
+            if (!string.IsNullOrEmpty(normalizedSegment))
+            {
+                if (builder.Length > 0)
+                {
+                    builder.Append('.');
+                }
+
+                builder.Append(normalizedSegment);
+            }
+
+            segmentStart = index + 1;
+        }
+    }
+
+    private static void AppendNormalizedPathSegments(
+        StringBuilder builder,
+        ReadOnlySpan<char> rawPath)
+    {
+        var segmentStart = 0;
+        for (var index = 0; index <= rawPath.Length; index++)
+        {
+            if (index < rawPath.Length && !IsPathSeparator(rawPath[index]))
+            {
+                continue;
+            }
+
+            var normalizedSegment = NormalizeIdentifier(rawPath.Slice(segmentStart, index - segmentStart), null);
+            if (!string.IsNullOrEmpty(normalizedSegment))
+            {
+                if (builder.Length > 0)
+                {
+                    builder.Append('.');
+                }
+
+                builder.Append(normalizedSegment);
+            }
+
+            segmentStart = index + 1;
+        }
+    }
+
+    private static ReadOnlySpan<char> TrimWhitespace(ReadOnlySpan<char> value)
+    {
+        var start = 0;
+        var end = value.Length - 1;
+        while (start < value.Length && char.IsWhiteSpace(value[start]))
+        {
+            start++;
+        }
+
+        while (end >= start && char.IsWhiteSpace(value[end]))
+        {
+            end--;
+        }
+
+        return start > end
+            ? ReadOnlySpan<char>.Empty
+            : value.Slice(start, end - start + 1);
+    }
+
+    private static int LastIndexOfPathSeparator(ReadOnlySpan<char> value)
+    {
+        for (var index = value.Length - 1; index >= 0; index--)
+        {
+            if (IsPathSeparator(value[index]))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsPathSeparator(char ch)
+    {
+        return ch == '/' || ch == '\\';
+    }
+
     private static TimeSpan GetElapsedTimeSince(long startTimestamp)
     {
         var elapsedTimestamp = Stopwatch.GetTimestamp() - startTimestamp;
         return TimeSpan.FromSeconds((double)elapsedTimestamp / Stopwatch.Frequency);
     }
 
-    private static ImmutableArray<DiagnosticInfo> AnalyzeGlobalDocumentGraph(
+    internal static ImmutableArray<DiagnosticInfo> AnalyzeGlobalDocumentGraph(
         ImmutableArray<XamlDocumentModel> documents,
         GeneratorOptions options)
     {
@@ -1700,12 +1900,17 @@ public static class XamlSourceGeneratorCompilerHost
 
         var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
         var assemblyName = options.AssemblyName ?? "UnknownAssembly";
-        var entriesByUri = new Dictionary<string, DocumentGraphEntry>(StringComparer.OrdinalIgnoreCase);
-        var entriesByTargetPath = new Dictionary<string, DocumentGraphEntry>(StringComparer.OrdinalIgnoreCase);
-        var orderedEntries = new List<DocumentGraphEntry>(documents.Length);
+        var sortedDocuments = new XamlDocumentModel[documents.Length];
+        documents.CopyTo(sortedDocuments, 0);
+        Array.Sort(sortedDocuments, static (left, right) => string.Compare(left.FilePath, right.FilePath, StringComparison.OrdinalIgnoreCase));
 
-        foreach (var document in documents.OrderBy(static document => document.FilePath, StringComparer.OrdinalIgnoreCase))
+        var entriesByUri = new Dictionary<string, DocumentGraphEntry>(sortedDocuments.Length, StringComparer.OrdinalIgnoreCase);
+        var entriesByTargetPath = new Dictionary<string, DocumentGraphEntry>(sortedDocuments.Length, StringComparer.OrdinalIgnoreCase);
+        var orderedEntries = new List<DocumentGraphEntry>(sortedDocuments.Length);
+
+        for (var index = 0; index < sortedDocuments.Length; index++)
         {
+            var document = sortedDocuments[index];
             if (document.Precompile == false)
             {
                 continue;
@@ -1719,7 +1924,7 @@ public static class XamlSourceGeneratorCompilerHost
 
             var buildUri = BuildUri(assemblyName, normalizedTargetPath);
             var entry = new DocumentGraphEntry(document, buildUri, normalizedTargetPath);
-            if (entriesByTargetPath.ContainsKey(normalizedTargetPath))
+            if (entriesByTargetPath.TryGetValue(normalizedTargetPath, out _))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0601",
@@ -1734,7 +1939,7 @@ public static class XamlSourceGeneratorCompilerHost
                 entriesByTargetPath[normalizedTargetPath] = entry;
             }
 
-            if (entriesByUri.ContainsKey(buildUri))
+            if (entriesByUri.TryGetValue(buildUri, out _))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0601",
@@ -1751,11 +1956,19 @@ public static class XamlSourceGeneratorCompilerHost
             }
         }
 
-        var edgesBySource = new Dictionary<string, List<IncludeGraphEdge>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in orderedEntries)
+        var edgesBySource = new Dictionary<string, List<IncludeGraphEdge>>(orderedEntries.Count, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < orderedEntries.Count; index++)
         {
-            foreach (var include in entry.Document.Includes)
+            var entry = orderedEntries[index];
+            var includes = entry.Document.Includes;
+            if (includes.IsDefaultOrEmpty)
             {
+                continue;
+            }
+
+            for (var includeIndex = 0; includeIndex < includes.Length; includeIndex++)
+            {
+                var include = includes[includeIndex];
                 if (!TryResolveIncludeUri(
                         include.Source,
                         entry.NormalizedTargetPath,
@@ -1781,7 +1994,7 @@ public static class XamlSourceGeneratorCompilerHost
 
                 if (!edgesBySource.TryGetValue(entry.BuildUri, out var edges))
                 {
-                    edges = new List<IncludeGraphEdge>();
+                    edges = new List<IncludeGraphEdge>(Math.Min(includes.Length, 4));
                     edgesBySource[entry.BuildUri] = edges;
                 }
 
@@ -1794,37 +2007,48 @@ public static class XamlSourceGeneratorCompilerHost
             }
         }
 
-        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var cycleKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var uri in edgesBySource.Keys.OrderBy(static x => x, StringComparer.OrdinalIgnoreCase))
+        var sortedEdgesBySource = new Dictionary<string, IncludeGraphEdge[]>(edgesBySource.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in edgesBySource)
         {
-            DetectCycle(uri, new Stack<string>());
+            var edges = pair.Value;
+            var sortedEdges = edges.ToArray();
+            Array.Sort(sortedEdges, static (left, right) => string.Compare(left.TargetUri, right.TargetUri, StringComparison.OrdinalIgnoreCase));
+            sortedEdgesBySource[pair.Key] = sortedEdges;
+        }
+
+        var state = new Dictionary<string, byte>(sortedEdgesBySource.Count, StringComparer.OrdinalIgnoreCase);
+        var cycleKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (sortedEdgesBySource.Count == 0)
+        {
+            return diagnostics.ToImmutable();
+        }
+
+        var sortedSourceUris = new string[sortedEdgesBySource.Count];
+        sortedEdgesBySource.Keys.CopyTo(sortedSourceUris, 0);
+        Array.Sort(sortedSourceUris, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < sortedSourceUris.Length; index++)
+        {
+            DetectCycle(sortedSourceUris[index]);
         }
 
         return diagnostics.ToImmutable();
 
-        void DetectCycle(string sourceUri, Stack<string> path)
+        void DetectCycle(string sourceUri)
         {
             if (state.TryGetValue(sourceUri, out var currentState))
             {
-                if (currentState == 1)
-                {
-                    return;
-                }
-
-                if (currentState == 2)
+                if (currentState != 0)
                 {
                     return;
                 }
             }
 
             state[sourceUri] = 1;
-            path.Push(sourceUri);
-
-            if (edgesBySource.TryGetValue(sourceUri, out var edges))
+            if (sortedEdgesBySource.TryGetValue(sourceUri, out var edges))
             {
-                foreach (var edge in edges.OrderBy(static edge => edge.TargetUri, StringComparer.OrdinalIgnoreCase))
+                for (var edgeIndex = 0; edgeIndex < edges.Length; edgeIndex++)
                 {
+                    var edge = edges[edgeIndex];
                     if (state.TryGetValue(edge.TargetUri, out var targetState) && targetState == 1)
                     {
                         var cycleKey = edge.SourceUri + "->" + edge.TargetUri;
@@ -1846,12 +2070,11 @@ public static class XamlSourceGeneratorCompilerHost
 
                     if (!state.TryGetValue(edge.TargetUri, out targetState) || targetState == 0)
                     {
-                        DetectCycle(edge.TargetUri, path);
+                        DetectCycle(edge.TargetUri);
                     }
                 }
             }
 
-            path.Pop();
             state[sourceUri] = 2;
         }
     }
@@ -2161,37 +2384,112 @@ namespace XamlToCSharpGenerator.Generated
         return value;
     }
 
-    private static bool ShouldPreferTargetPath(string candidateTargetPath, string currentTargetPath)
+    private static bool ShouldReplaceConfigurationFile(ConfigurationFileInput candidate, ConfigurationFileInput current)
+    {
+        return string.Compare(candidate.Path, current.Path, StringComparison.OrdinalIgnoreCase) > 0;
+    }
+
+    private static bool ShouldReplaceTransformRuleInput(
+        XamlFrameworkTransformRuleInput candidate,
+        XamlFrameworkTransformRuleInput current)
+    {
+        return string.Compare(candidate.FilePath, current.FilePath, StringComparison.OrdinalIgnoreCase) > 0;
+    }
+
+    private static bool ShouldReplaceXamlInput(XamlFileInput candidate, XamlFileInput current)
+    {
+        var targetPathPreference = CompareTargetPathPreference(candidate.TargetPath, current.TargetPath);
+        if (targetPathPreference != 0)
+        {
+            return targetPathPreference < 0;
+        }
+
+        return string.Compare(candidate.FilePath, current.FilePath, StringComparison.OrdinalIgnoreCase) < 0;
+    }
+
+    private static int CompareTargetPathPreference(string candidateTargetPath, string currentTargetPath)
     {
         var candidateRooted = Path.IsPathRooted(candidateTargetPath);
         var currentRooted = Path.IsPathRooted(currentTargetPath);
         if (candidateRooted != currentRooted)
         {
-            return !candidateRooted;
+            return candidateRooted ? 1 : -1;
         }
 
         if (candidateTargetPath.Length != currentTargetPath.Length)
         {
-            return candidateTargetPath.Length < currentTargetPath.Length;
+            return candidateTargetPath.Length < currentTargetPath.Length ? -1 : 1;
         }
 
-        return string.Compare(candidateTargetPath, currentTargetPath, StringComparison.OrdinalIgnoreCase) < 0;
+        return string.Compare(candidateTargetPath, currentTargetPath, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string NormalizeDedupePath(string path)
+    private static ImmutableArray<ConfigurationFileInput> SortConfigurationFileInputs(
+        Dictionary<string, ConfigurationFileInput>.ValueCollection values)
+    {
+        if (values.Count == 0)
+        {
+            return ImmutableArray<ConfigurationFileInput>.Empty;
+        }
+
+        var sorted = new ConfigurationFileInput[values.Count];
+        values.CopyTo(sorted, 0);
+        Array.Sort(sorted, static (left, right) => string.Compare(left.Path, right.Path, StringComparison.OrdinalIgnoreCase));
+        return ImmutableArray.Create(sorted);
+    }
+
+    private static ImmutableArray<XamlFileInput> SortXamlFileInputs(
+        Dictionary<string, XamlFileInput>.ValueCollection values)
+    {
+        if (values.Count == 0)
+        {
+            return ImmutableArray<XamlFileInput>.Empty;
+        }
+
+        var sorted = new XamlFileInput[values.Count];
+        values.CopyTo(sorted, 0);
+        Array.Sort(sorted, static (left, right) =>
+        {
+            var filePathComparison = string.Compare(left.FilePath, right.FilePath, StringComparison.OrdinalIgnoreCase);
+            if (filePathComparison != 0)
+            {
+                return filePathComparison;
+            }
+
+            return string.Compare(left.TargetPath, right.TargetPath, StringComparison.OrdinalIgnoreCase);
+        });
+        return ImmutableArray.Create(sorted);
+    }
+
+    private static ImmutableArray<XamlFrameworkTransformRuleInput> SortTransformRuleInputs(
+        Dictionary<string, XamlFrameworkTransformRuleInput>.ValueCollection values)
+    {
+        if (values.Count == 0)
+        {
+            return ImmutableArray<XamlFrameworkTransformRuleInput>.Empty;
+        }
+
+        var sorted = new XamlFrameworkTransformRuleInput[values.Count];
+        values.CopyTo(sorted, 0);
+        Array.Sort(sorted, static (left, right) => string.Compare(left.FilePath, right.FilePath, StringComparison.OrdinalIgnoreCase));
+        return ImmutableArray.Create(sorted);
+    }
+
+    internal static string NormalizeDedupePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return string.Empty;
         }
 
-        var normalized = path.Replace('\\', '/');
+        var normalized = path;
+        var hasUncPrefix = path.Length >= 2 && IsDirectorySeparator(path[0]) && IsDirectorySeparator(path[1]);
 
         try
         {
-            if (Path.IsPathRooted(path))
+            if (!hasUncPrefix && Path.IsPathRooted(path))
             {
-                normalized = Path.GetFullPath(path).Replace('\\', '/');
+                normalized = Path.GetFullPath(path);
             }
         }
         catch
@@ -2202,60 +2500,122 @@ namespace XamlToCSharpGenerator.Generated
         return NormalizePathSegments(normalized);
     }
 
-    private static string NormalizePathSegments(string path)
+    internal static string NormalizePathSegments(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return string.Empty;
         }
 
-        var normalized = path.Replace('\\', '/');
-        var hasUncPrefix = normalized.StartsWith("//", StringComparison.Ordinal);
-        var hasUnixRoot = !hasUncPrefix && normalized.StartsWith("/", StringComparison.Ordinal);
-        var isRooted = Path.IsPathRooted(normalized) || hasUncPrefix || hasUnixRoot;
-        var parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        var stack = new List<string>(parts.Length);
+        var hasUncPrefix = path.Length >= 2 && IsDirectorySeparator(path[0]) && IsDirectorySeparator(path[1]);
+        var hasUnixRoot = !hasUncPrefix && path.Length >= 1 && IsDirectorySeparator(path[0]);
+        var isRooted = hasUncPrefix || hasUnixRoot || LooksLikeDriveRoot(path);
 
-        foreach (var part in parts)
+        var estimatedSegmentCount = CountSegments(path);
+        if (estimatedSegmentCount == 0)
         {
-            if (part == ".")
+            if (hasUncPrefix)
             {
-                continue;
+                return "//";
             }
 
-            if (part == "..")
+            if (hasUnixRoot)
             {
-                if (stack.Count > 0 &&
-                    !string.Equals(stack[stack.Count - 1], "..", StringComparison.Ordinal) &&
-                    !IsDriveSegment(stack[stack.Count - 1]))
+                return "/";
+            }
+
+            return string.Empty;
+        }
+
+        var rentedSegments = ArrayPool<PathSegment>.Shared.Rent(estimatedSegmentCount);
+        var segmentCount = 0;
+
+        try
+        {
+            var segmentStart = -1;
+            for (var index = 0; index <= path.Length; index++)
+            {
+                var isSeparator = index == path.Length || IsDirectorySeparator(path[index]);
+                if (!isSeparator)
                 {
-                    stack.RemoveAt(stack.Count - 1);
+                    if (segmentStart < 0)
+                    {
+                        segmentStart = index;
+                    }
+
                     continue;
                 }
 
-                if (!isRooted)
+                if (segmentStart < 0)
                 {
-                    stack.Add(part);
+                    continue;
                 }
 
-                continue;
+                var segmentLength = index - segmentStart;
+                ProcessPathSegment(path, segmentStart, segmentLength, isRooted, rentedSegments, ref segmentCount);
+                segmentStart = -1;
             }
 
-            stack.Add(part);
-        }
+            if (segmentCount == 0)
+            {
+                if (hasUncPrefix)
+                {
+                    return "//";
+                }
 
-        var collapsed = string.Join("/", stack);
-        if (hasUncPrefix)
+                if (hasUnixRoot)
+                {
+                    return "/";
+                }
+
+                return string.Empty;
+            }
+
+            var prefixLength = hasUncPrefix ? 2 : hasUnixRoot ? 1 : 0;
+            var resultLength = prefixLength + Math.Max(segmentCount - 1, 0);
+            for (var index = 0; index < segmentCount; index++)
+            {
+                resultLength += rentedSegments[index].Length;
+            }
+
+            var rentedChars = ArrayPool<char>.Shared.Rent(resultLength);
+            try
+            {
+                var position = 0;
+                if (hasUncPrefix)
+                {
+                    rentedChars[position++] = '/';
+                    rentedChars[position++] = '/';
+                }
+                else if (hasUnixRoot)
+                {
+                    rentedChars[position++] = '/';
+                }
+
+                for (var index = 0; index < segmentCount; index++)
+                {
+                    if (index > 0)
+                    {
+                        rentedChars[position++] = '/';
+                    }
+
+                    var segment = rentedSegments[index];
+                    path.CopyTo(segment.Start, rentedChars, position, segment.Length);
+                    position += segment.Length;
+                }
+
+                return new string(rentedChars, 0, position);
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(rentedChars);
+            }
+        }
+        finally
         {
-            return "//" + collapsed;
+            Array.Clear(rentedSegments, 0, estimatedSegmentCount);
+            ArrayPool<PathSegment>.Shared.Return(rentedSegments);
         }
-
-        if (hasUnixRoot)
-        {
-            return "/" + collapsed;
-        }
-
-        return collapsed;
     }
 
     private static bool IsDriveSegment(string value)
@@ -2263,6 +2623,107 @@ namespace XamlToCSharpGenerator.Generated
         return value.Length == 2 &&
                value[1] == ':' &&
                char.IsLetter(value[0]);
+    }
+
+    private static int CountSegments(string path)
+    {
+        var count = 0;
+        var inSegment = false;
+        for (var index = 0; index < path.Length; index++)
+        {
+            if (IsDirectorySeparator(path[index]))
+            {
+                if (inSegment)
+                {
+                    count++;
+                    inSegment = false;
+                }
+
+                continue;
+            }
+
+            inSegment = true;
+        }
+
+        if (inSegment)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static void ProcessPathSegment(
+        string path,
+        int start,
+        int length,
+        bool isRooted,
+        PathSegment[] segments,
+        ref int segmentCount)
+    {
+        if (length == 1 && path[start] == '.')
+        {
+            return;
+        }
+
+        if (length == 2 && path[start] == '.' && path[start + 1] == '.')
+        {
+            if (segmentCount > 0 &&
+                !IsDotDotSegment(path, segments[segmentCount - 1]) &&
+                !IsDriveSegment(path, segments[segmentCount - 1]))
+            {
+                segmentCount--;
+                return;
+            }
+
+            if (!isRooted)
+            {
+                segments[segmentCount++] = new PathSegment(start, length);
+            }
+
+            return;
+        }
+
+        segments[segmentCount++] = new PathSegment(start, length);
+    }
+
+    private static bool IsDirectorySeparator(char value)
+    {
+        return value == '/' || value == '\\';
+    }
+
+    private static bool LooksLikeDriveRoot(string path)
+    {
+        return path.Length >= 2 &&
+               path[1] == ':' &&
+               char.IsLetter(path[0]);
+    }
+
+    private static bool IsDotDotSegment(string path, PathSegment segment)
+    {
+        return segment.Length == 2 &&
+               path[segment.Start] == '.' &&
+               path[segment.Start + 1] == '.';
+    }
+
+    private static bool IsDriveSegment(string path, PathSegment segment)
+    {
+        return segment.Length == 2 &&
+               path[segment.Start + 1] == ':' &&
+               char.IsLetter(path[segment.Start]);
+    }
+
+    private readonly struct PathSegment
+    {
+        public PathSegment(int start, int length)
+        {
+            Start = start;
+            Length = length;
+        }
+
+        public int Start { get; }
+
+        public int Length { get; }
     }
 
     private static string GetIncludeDirectory(string path)
@@ -2429,7 +2890,7 @@ namespace XamlToCSharpGenerator.Generated
         public static ConfigurationSourcePrecedence Default { get; } = new(90, 100, 200, 300);
     }
 
-    private enum TransformConfigurationSourceKind
+    internal enum TransformConfigurationSourceKind
     {
         LegacyRuleFiles = 0,
         UnifiedConfigurationRawDocuments = 1,
@@ -2462,7 +2923,7 @@ namespace XamlToCSharpGenerator.Generated
         public TransformConfigurationSourceKind SourceKind { get; }
     }
 
-    private sealed class ConfigurationFileInput
+    internal sealed class ConfigurationFileInput
     {
         public ConfigurationFileInput(string path, string text)
         {
