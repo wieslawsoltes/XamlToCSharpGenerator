@@ -20,13 +20,27 @@ public sealed class XamlReferenceService
 {
     private static readonly TimeSpan ProjectDiscoveryCacheTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SourceValidationCacheTtl = TimeSpan.FromSeconds(1);
+    private static readonly XmlReaderSettings ProjectFileReaderSettings = new()
+    {
+        CloseInput = true,
+        DtdProcessing = DtdProcessing.Prohibit,
+        IgnoreComments = true,
+        IgnoreProcessingInstructions = true,
+        IgnoreWhitespace = true
+    };
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
     private static readonly ConcurrentDictionary<string, CachedProjectFileList> ProjectFileListCache =
         new(PathComparer);
+    private static readonly ConcurrentDictionary<string, CachedProjectIncludePatterns> ProjectIncludePatternCache =
+        new(PathComparer);
+    private static readonly ConcurrentDictionary<string, CachedProjectSourceSnapshot> ProjectSourceSnapshotCache =
+        new(PathComparer);
     private static readonly ConcurrentDictionary<string, CachedXamlSourceFile> SourceFileCache =
         new(PathComparer);
+    private static readonly ConcurrentDictionary<string, Regex> GlobRegexCache =
+        new(StringComparer.Ordinal);
     private static readonly SourceRange MetadataDeclarationRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
@@ -146,11 +160,7 @@ public sealed class XamlReferenceService
             AddReference(builder, seen, reference.Uri, reference.Range, reference.IsDeclaration);
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectNamedOrResourceReferences(
@@ -433,7 +443,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             selectorRange,
                             isDeclaration: true);
                     }
@@ -447,7 +457,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             classesValueRange,
                             isDeclaration: false);
                     }
@@ -461,7 +471,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             classesPropertyRange,
                             isDeclaration: false);
                     }
@@ -469,11 +479,7 @@ public sealed class XamlReferenceService
             }
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectPseudoClassReferences(
@@ -528,7 +534,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             pseudoClassRange,
                             isDeclaration: false);
                     }
@@ -536,11 +542,7 @@ public sealed class XamlReferenceService
             }
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectExpressionSymbolReferences(
@@ -568,11 +570,7 @@ public sealed class XamlReferenceService
 
         AddExpressionReferences(builder, seen, analysis, targetSymbol);
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectTypeReferences(
@@ -634,7 +632,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             elementNameRange,
                             isDeclaration: false);
                     }
@@ -667,7 +665,7 @@ public sealed class XamlReferenceService
                             AddReference(
                                 builder,
                                 seen,
-                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                source.DocumentUri,
                                 selectorRange,
                                 isDeclaration: false);
                         }
@@ -685,7 +683,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             markupRange,
                             isDeclaration: false);
                     }
@@ -702,7 +700,7 @@ public sealed class XamlReferenceService
                             AddReference(
                                 builder,
                                 seen,
-                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                source.DocumentUri,
                                 bindingRange,
                                 isDeclaration: false);
                         }
@@ -717,11 +715,7 @@ public sealed class XamlReferenceService
             AddExpressionReferences(builder, seen, analysis, typeSymbol);
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectTypeAttributeValueReferences(
@@ -806,7 +800,7 @@ public sealed class XamlReferenceService
                     AddReference(
                         builder,
                         seen,
-                        UriPathHelper.ToDocumentUri(source.FilePath),
+                        source.DocumentUri,
                         range,
                         isDeclaration: false);
                 }
@@ -819,11 +813,7 @@ public sealed class XamlReferenceService
             AddExpressionReferences(builder, seen, analysis, typeSymbol);
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectPropertyReferences(
@@ -921,7 +911,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             setterValueRange,
                             isDeclaration: false);
                     }
@@ -939,7 +929,7 @@ public sealed class XamlReferenceService
                             AddReference(
                                 builder,
                                 seen,
-                                UriPathHelper.ToDocumentUri(source.FilePath),
+                                source.DocumentUri,
                                 bindingRange,
                                 isDeclaration: false);
                         }
@@ -964,7 +954,7 @@ public sealed class XamlReferenceService
                     AddReference(
                         builder,
                         seen,
-                        UriPathHelper.ToDocumentUri(source.FilePath),
+                        source.DocumentUri,
                         range,
                         isDeclaration: false);
                 }
@@ -977,11 +967,7 @@ public sealed class XamlReferenceService
             AddExpressionReferences(builder, seen, analysis, propertySymbol);
         }
 
-        return builder
-            .OrderBy(static item => item.Uri, StringComparer.Ordinal)
-            .ThenBy(static item => item.Range.Start.Line)
-            .ThenBy(static item => item.Range.Start.Character)
-            .ToImmutableArray();
+        return SortReferencesDeterministically(builder);
     }
 
     private static void AddExpressionReferences(
@@ -1028,7 +1014,7 @@ public sealed class XamlReferenceService
                         AddReference(
                             builder,
                             seen,
-                            UriPathHelper.ToDocumentUri(source.FilePath),
+                            source.DocumentUri,
                             range,
                             isDeclaration: false);
                     }
@@ -1696,21 +1682,22 @@ public sealed class XamlReferenceService
     private static IEnumerable<XamlProjectSourceFile> EnumerateProjectXamlSources(XamlAnalysisResult analysis)
     {
         var currentFilePath = NormalizePath(analysis.Document.FilePath);
-        var seen = new HashSet<string>(PathComparer) { currentFilePath };
         yield return new XamlProjectSourceFile(
             currentFilePath,
+            UriPathHelper.ToDocumentUri(currentFilePath),
             analysis.Document.Text,
             analysis.XmlDocument,
             XmlParsed: true);
 
-        foreach (var candidatePath in DiscoverProjectXamlFilePaths(analysis.ProjectPath, currentFilePath))
+        var resolvedProjectPath = ResolveProjectPath(analysis.ProjectPath, currentFilePath);
+        if (resolvedProjectPath is null)
         {
-            if (!seen.Add(candidatePath))
-            {
-                continue;
-            }
+            yield break;
+        }
 
-            if (!TryLoadCachedSourceFile(candidatePath, out var sourceFile))
+        foreach (var sourceFile in GetCachedProjectSourceSnapshot(resolvedProjectPath))
+        {
+            if (PathComparer.Equals(sourceFile.FilePath, currentFilePath))
             {
                 continue;
             }
@@ -1754,6 +1741,43 @@ public sealed class XamlReferenceService
         return paths;
     }
 
+    private static ImmutableArray<XamlProjectSourceFile> GetCachedProjectSourceSnapshot(string projectFilePath)
+    {
+        var normalizedProjectPath = NormalizePath(projectFilePath);
+        var now = DateTimeOffset.UtcNow;
+        if (ProjectSourceSnapshotCache.TryGetValue(normalizedProjectPath, out var cached) &&
+            now - cached.ValidatedAtUtc <= SourceValidationCacheTtl)
+        {
+            return cached.Sources;
+        }
+
+        var sources = BuildProjectSourceSnapshot(normalizedProjectPath);
+        ProjectSourceSnapshotCache[normalizedProjectPath] = new CachedProjectSourceSnapshot(now, sources);
+        return sources;
+    }
+
+    private static ImmutableArray<XamlProjectSourceFile> BuildProjectSourceSnapshot(string projectFilePath)
+    {
+        var filePaths = GetCachedProjectXamlFileList(projectFilePath);
+        if (filePaths.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlProjectSourceFile>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlProjectSourceFile>(filePaths.Length);
+        foreach (var filePath in filePaths)
+        {
+            if (TryLoadCachedSourceFile(filePath, out var sourceFile))
+            {
+                builder.Add(sourceFile);
+            }
+        }
+
+        return builder.Count == 0
+            ? ImmutableArray<XamlProjectSourceFile>.Empty
+            : builder.MoveToImmutable();
+    }
+
     private static ImmutableArray<string> BuildProjectXamlFileList(string projectFilePath)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
@@ -1788,6 +1812,7 @@ public sealed class XamlReferenceService
         {
             sourceFile = new XamlProjectSourceFile(
                 normalizedPath,
+                cachedEntry.DocumentUri,
                 cachedEntry.Text,
                 cachedEntry.XmlDocument,
                 cachedEntry.XmlParsed);
@@ -1822,6 +1847,7 @@ public sealed class XamlReferenceService
             };
             sourceFile = new XamlProjectSourceFile(
                 normalizedPath,
+                cached.DocumentUri,
                 cached.Text,
                 cached.XmlDocument,
                 cached.XmlParsed);
@@ -1842,11 +1868,13 @@ public sealed class XamlReferenceService
             lastWriteTicks,
             fileLength,
             now,
+            UriPathHelper.ToDocumentUri(normalizedPath),
             text,
             XmlDocument: null,
             XmlParsed: false);
         sourceFile = new XamlProjectSourceFile(
             normalizedPath,
+            UriPathHelper.ToDocumentUri(normalizedPath),
             text,
             XmlDocument: null,
             XmlParsed: false);
@@ -1889,6 +1917,28 @@ public sealed class XamlReferenceService
 
     private static IEnumerable<string> EnumerateXamlFilesUnder(string rootDirectory)
     {
+        return EnumerateCandidateXamlFiles(rootDirectory, excludeBuildOutputDirectories: true);
+    }
+
+    private static IEnumerable<string> EnumerateCandidateXamlFiles(
+        string rootDirectory,
+        bool excludeBuildOutputDirectories)
+    {
+        if (ReferenceEquals(PathComparer, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var filePath in EnumerateCandidateXamlFilesCore(rootDirectory, "*.axaml", excludeBuildOutputDirectories))
+            {
+                yield return filePath;
+            }
+
+            foreach (var filePath in EnumerateCandidateXamlFilesCore(rootDirectory, "*.xaml", excludeBuildOutputDirectories))
+            {
+                yield return filePath;
+            }
+
+            yield break;
+        }
+
         IEnumerable<string> files;
         try
         {
@@ -1918,7 +1968,50 @@ public sealed class XamlReferenceService
                 yield break;
             }
 
-            if (!IsXamlFile(filePath) || IsUnderBuildOutputDirectory(filePath))
+            if (!IsXamlFile(filePath) ||
+                (excludeBuildOutputDirectories && IsUnderBuildOutputDirectory(filePath)))
+            {
+                continue;
+            }
+
+            yield return filePath;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateCandidateXamlFilesCore(
+        string rootDirectory,
+        string searchPattern,
+        bool excludeBuildOutputDirectories)
+    {
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(rootDirectory, searchPattern, SearchOption.AllDirectories);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        using var enumerator = files.GetEnumerator();
+        while (true)
+        {
+            string filePath;
+            try
+            {
+                if (!enumerator.MoveNext())
+                {
+                    yield break;
+                }
+
+                filePath = enumerator.Current;
+            }
+            catch
+            {
+                yield break;
+            }
+
+            if (excludeBuildOutputDirectories && IsUnderBuildOutputDirectory(filePath))
             {
                 continue;
             }
@@ -1929,35 +2022,84 @@ public sealed class XamlReferenceService
 
     private static IEnumerable<string> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
     {
-        XDocument projectDocument;
-        try
+        foreach (var includeValue in GetCachedProjectIncludePatterns(projectFilePath))
         {
-            projectDocument = XDocument.Load(projectFilePath, LoadOptions.PreserveWhitespace);
-        }
-        catch
-        {
-            yield break;
-        }
-
-        foreach (var itemElement in projectDocument.Descendants())
-        {
-            if (!IsXamlItemElement(itemElement.Name.LocalName))
-            {
-                continue;
-            }
-
-            var includeValue = itemElement.Attribute("Include")?.Value
-                ?? itemElement.Attribute("Update")?.Value;
-            if (string.IsNullOrWhiteSpace(includeValue))
-            {
-                continue;
-            }
-
             foreach (var includePath in ExpandProjectIncludePattern(projectDirectory, includeValue))
             {
                 yield return includePath;
             }
         }
+    }
+
+    private static ImmutableArray<string> GetCachedProjectIncludePatterns(string projectFilePath)
+    {
+        var normalizedProjectPath = NormalizePath(projectFilePath);
+
+        long lastWriteTicks;
+        long length;
+        try
+        {
+            var info = new FileInfo(normalizedProjectPath);
+            if (!info.Exists)
+            {
+                return ImmutableArray<string>.Empty;
+            }
+
+            lastWriteTicks = info.LastWriteTimeUtc.Ticks;
+            length = info.Length;
+        }
+        catch
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        if (ProjectIncludePatternCache.TryGetValue(normalizedProjectPath, out var cached) &&
+            cached.LastWriteUtcTicks == lastWriteTicks &&
+            cached.Length == length)
+        {
+            return cached.Patterns;
+        }
+
+        var patterns = BuildProjectIncludePatterns(normalizedProjectPath);
+        ProjectIncludePatternCache[normalizedProjectPath] = new CachedProjectIncludePatterns(
+            lastWriteTicks,
+            length,
+            patterns);
+        return patterns;
+    }
+
+    private static ImmutableArray<string> BuildProjectIncludePatterns(string projectFilePath)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        try
+        {
+            using var reader = XmlReader.Create(projectFilePath, ProjectFileReaderSettings);
+            while (reader.Read())
+            {
+                if (reader.NodeType != XmlNodeType.Element || !IsXamlItemElement(reader.LocalName))
+                {
+                    continue;
+                }
+
+                var includeValue = reader.GetAttribute("Include") ?? reader.GetAttribute("Update");
+                if (string.IsNullOrWhiteSpace(includeValue) || !seen.Add(includeValue))
+                {
+                    continue;
+                }
+
+                builder.Add(includeValue);
+            }
+        }
+        catch
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        return builder.Count == 0
+            ? ImmutableArray<string>.Empty
+            : builder.ToImmutable();
     }
 
     private static IEnumerable<string> ExpandProjectIncludePattern(string projectDirectory, string includeValue)
@@ -1988,41 +2130,9 @@ public sealed class XamlReferenceService
             yield break;
         }
 
-        var patternRegex = BuildGlobRegex(normalizedPattern);
-        IEnumerable<string> files;
-        try
+        var patternRegex = GetCachedGlobRegex(normalizedPattern);
+        foreach (var filePath in EnumerateCandidateXamlFiles(searchRoot, excludeBuildOutputDirectories: false))
         {
-            files = Directory.EnumerateFiles(searchRoot, "*.*", SearchOption.AllDirectories);
-        }
-        catch
-        {
-            yield break;
-        }
-
-        using var enumerator = files.GetEnumerator();
-        while (true)
-        {
-            string filePath;
-            try
-            {
-                if (!enumerator.MoveNext())
-                {
-                    yield break;
-                }
-
-                filePath = enumerator.Current;
-            }
-            catch
-            {
-                // Ignore inaccessible directories/files while traversing.
-                yield break;
-            }
-
-            if (!IsXamlFile(filePath))
-            {
-                continue;
-            }
-
             var relativePath = Path.GetRelativePath(projectDirectory, filePath).Replace('\\', '/');
             if (patternRegex.IsMatch(relativePath))
             {
@@ -2055,6 +2165,11 @@ public sealed class XamlReferenceService
         return Path.GetDirectoryName(combined);
     }
 
+    private static Regex GetCachedGlobRegex(string pattern)
+    {
+        return GlobRegexCache.GetOrAdd(pattern, BuildGlobRegex);
+    }
+
     private static Regex BuildGlobRegex(string pattern)
     {
         var escaped = Regex.Escape(pattern.Replace('\\', '/'))
@@ -2062,7 +2177,9 @@ public sealed class XamlReferenceService
             .Replace(@"\*", @"[^/]*", StringComparison.Ordinal)
             .Replace(@"\?", ".", StringComparison.Ordinal);
 
-        return new Regex("^" + escaped + "$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        return new Regex(
+            "^" + escaped + "$",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     }
 
     private static string? ResolveProjectPath(string? projectPath, string currentFilePath)
@@ -2079,13 +2196,10 @@ public sealed class XamlReferenceService
             {
                 try
                 {
-                    var directoryProject = Directory
-                        .EnumerateFiles(normalizedProjectPath, "*.csproj", SearchOption.TopDirectoryOnly)
-                        .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
-                        .FirstOrDefault();
+                    var directoryProject = TryFindFirstProjectFile(normalizedProjectPath);
                     if (directoryProject is not null)
                     {
-                        return NormalizePath(directoryProject);
+                        return directoryProject;
                     }
                 }
                 catch
@@ -2100,13 +2214,10 @@ public sealed class XamlReferenceService
         {
             try
             {
-                var projectFile = Directory
-                    .EnumerateFiles(currentDirectory, "*.csproj", SearchOption.TopDirectoryOnly)
-                    .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
-                    .FirstOrDefault();
+                var projectFile = TryFindFirstProjectFile(currentDirectory);
                 if (projectFile is not null)
                 {
-                    return NormalizePath(projectFile);
+                    return projectFile;
                 }
             }
             catch
@@ -2118,6 +2229,23 @@ public sealed class XamlReferenceService
         }
 
         return null;
+    }
+
+    private static string? TryFindFirstProjectFile(string directoryPath)
+    {
+        string? bestMatch = null;
+        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*.csproj", SearchOption.TopDirectoryOnly))
+        {
+            if (bestMatch is null ||
+                StringComparer.OrdinalIgnoreCase.Compare(filePath, bestMatch) < 0)
+            {
+                bestMatch = filePath;
+            }
+        }
+
+        return bestMatch is null
+            ? null
+            : NormalizePath(bestMatch);
     }
 
     private static bool TryParseXml(string text, out XDocument document)
@@ -2182,6 +2310,69 @@ public sealed class XamlReferenceService
         }
 
         builder.Add(new XamlReferenceLocation(uri, range, isDeclaration));
+    }
+
+    internal static ImmutableArray<XamlReferenceLocation> SortReferencesDeterministically(
+        ImmutableArray<XamlReferenceLocation>.Builder builder)
+    {
+        if (builder.Count == 0)
+        {
+            return ImmutableArray<XamlReferenceLocation>.Empty;
+        }
+
+        if (builder.Count == 1)
+        {
+            return ImmutableArray.Create(builder[0]);
+        }
+
+        var references = new XamlReferenceLocation[builder.Count];
+        for (var index = 0; index < builder.Count; index++)
+        {
+            references[index] = builder[index];
+        }
+
+        Array.Sort(references, CompareReferences);
+        return ImmutableArray.Create(references);
+    }
+
+    private static int CompareReferences(XamlReferenceLocation left, XamlReferenceLocation right)
+    {
+        var uriComparison = StringComparer.Ordinal.Compare(left.Uri, right.Uri);
+        if (uriComparison != 0)
+        {
+            return uriComparison;
+        }
+
+        var startLineComparison = left.Range.Start.Line.CompareTo(right.Range.Start.Line);
+        if (startLineComparison != 0)
+        {
+            return startLineComparison;
+        }
+
+        var startCharacterComparison = left.Range.Start.Character.CompareTo(right.Range.Start.Character);
+        if (startCharacterComparison != 0)
+        {
+            return startCharacterComparison;
+        }
+
+        var endLineComparison = left.Range.End.Line.CompareTo(right.Range.End.Line);
+        if (endLineComparison != 0)
+        {
+            return endLineComparison;
+        }
+
+        var endCharacterComparison = left.Range.End.Character.CompareTo(right.Range.End.Character);
+        if (endCharacterComparison != 0)
+        {
+            return endCharacterComparison;
+        }
+
+        if (left.IsDeclaration == right.IsDeclaration)
+        {
+            return 0;
+        }
+
+        return left.IsDeclaration ? -1 : 1;
     }
 
     private static string CreateReferenceIdentity(string uri, SourceRange range)
@@ -2577,6 +2768,7 @@ public sealed class XamlReferenceService
 
     private readonly record struct XamlProjectSourceFile(
         string FilePath,
+        string DocumentUri,
         string Text,
         XDocument? XmlDocument,
         bool XmlParsed);
@@ -2585,10 +2777,20 @@ public sealed class XamlReferenceService
         DateTimeOffset CachedAtUtc,
         ImmutableArray<string> Paths);
 
+    private readonly record struct CachedProjectIncludePatterns(
+        long LastWriteUtcTicks,
+        long Length,
+        ImmutableArray<string> Patterns);
+
+    private readonly record struct CachedProjectSourceSnapshot(
+        DateTimeOffset ValidatedAtUtc,
+        ImmutableArray<XamlProjectSourceFile> Sources);
+
     private readonly record struct CachedXamlSourceFile(
         long LastWriteUtcTicks,
         long Length,
         DateTimeOffset ValidatedAtUtc,
+        string DocumentUri,
         string Text,
         XDocument? XmlDocument,
         bool XmlParsed);
