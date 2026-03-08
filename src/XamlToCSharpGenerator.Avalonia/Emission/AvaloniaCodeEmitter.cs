@@ -93,9 +93,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             $"            global::XamlToCSharpGenerator.Runtime.SourceGenArtifactRegistryRuntime.ResetDocumentRegistries(\"{escapedUri}\");");
         if (knownTypeNames.Length > 0)
         {
-            var knownTypeExpressions = string.Join(", ", knownTypeNames.Select(static typeName => "typeof(" + typeName + ")"));
             sourceBuilder.AppendLine(
-                $"            global::XamlToCSharpGenerator.Runtime.SourceGenKnownTypeRegistry.RegisterTypes({knownTypeExpressions});");
+                $"            global::XamlToCSharpGenerator.Runtime.SourceGenKnownTypeRegistry.RegisterTypes({BuildTypeofArgumentListExpression(knownTypeNames)});");
         }
         sourceBuilder.AppendLine(
             $"            global::XamlToCSharpGenerator.Runtime.XamlSourceGenTypeUriRegistry.Register(typeof({className}), \"{escapedUri}\");");
@@ -2362,7 +2361,63 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             return "global::System.Array.Empty<object>()";
         }
 
-        return "new object[] { " + string.Join(", ", parentStackReferences) + " }";
+        var builder = new StringBuilder(24 + EstimateDelimitedListCapacity(parentStackReferences));
+        builder.Append("new object[] { ");
+        AppendDelimitedList(builder, parentStackReferences);
+        builder.Append(" }");
+        return builder.ToString();
+    }
+
+    private static string BuildTypeofArgumentListExpression(ImmutableArray<string> typeNames)
+    {
+        var builder = new StringBuilder(EstimateDelimitedListCapacity(typeNames, 8));
+        for (var index = 0; index < typeNames.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("typeof(");
+            builder.Append(typeNames[index]);
+            builder.Append(')');
+        }
+
+        return builder.ToString();
+    }
+
+    private static int EstimateDelimitedListCapacity(ImmutableArray<string> values, int itemWrapperLength = 0)
+    {
+        if (values.IsDefaultOrEmpty)
+        {
+            return 0;
+        }
+
+        var capacity = 0;
+        for (var index = 0; index < values.Length; index++)
+        {
+            capacity += values[index]?.Length ?? 0;
+            capacity += itemWrapperLength;
+            if (index > 0)
+            {
+                capacity += 2;
+            }
+        }
+
+        return capacity;
+    }
+
+    private static void AppendDelimitedList(StringBuilder builder, ImmutableArray<string> values)
+    {
+        for (var index = 0; index < values.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(values[index]);
+        }
     }
 
     private static string ExpandMarkupContextExpression(
@@ -3376,7 +3431,18 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
         }
 
-        var argumentExpressions = new List<string>();
+        var argumentCount = methodCallPlan.Arguments.IsDefaultOrEmpty
+            ? 0
+            : methodCallPlan.Arguments.Length;
+        var builder = new StringBuilder(
+            targetExpression.Length +
+            methodCallPlan.MethodName.Length +
+            3 +
+            (argumentCount * 24));
+        builder.Append(targetExpression);
+        builder.Append('.');
+        builder.Append(methodCallPlan.MethodName);
+        builder.Append('(');
         if (!methodCallPlan.Arguments.IsDefaultOrEmpty)
         {
             for (var index = 0; index < methodCallPlan.Arguments.Length; index++)
@@ -3394,11 +3460,21 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 var targetTypeName = string.IsNullOrWhiteSpace(argument.TypeName)
                     ? "object?"
                     : argument.TypeName;
-                argumentExpressions.Add("((" + targetTypeName + ")(" + sourceArgumentExpression + "))");
+                if (index > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                builder.Append("((");
+                builder.Append(targetTypeName);
+                builder.Append(")(");
+                builder.Append(sourceArgumentExpression);
+                builder.Append("))");
             }
         }
 
-        invocationExpression = targetExpression + "." + methodCallPlan.MethodName + "(" + string.Join(", ", argumentExpressions) + ")";
+        builder.Append(')');
+        invocationExpression = builder.ToString();
         return true;
     }
 
@@ -3429,27 +3505,28 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
     private static bool IsSimpleEventBindingMemberPath(string path)
     {
-        var rawSegments = path.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
-        var segments = new string[rawSegments.Length];
-        for (var index = 0; index < rawSegments.Length; index++)
+        var segmentStart = -1;
+        for (var index = 0; index < path.Length; index++)
         {
-            segments[index] = rawSegments[index].Trim();
-        }
-
-        if (segments.Length == 0)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < segments.Length; index++)
-        {
-            if (!IsSimpleEventBindingIdentifier(segments[index]))
+            var current = path[index];
+            if (current == '.')
             {
-                return false;
+                if (!TryValidateSimpleEventBindingPathSegment(path, segmentStart, index))
+                {
+                    return false;
+                }
+
+                segmentStart = -1;
+                continue;
+            }
+
+            if (segmentStart < 0)
+            {
+                segmentStart = index;
             }
         }
 
-        return true;
+        return TryValidateSimpleEventBindingPathSegment(path, segmentStart, path.Length);
     }
 
     private static bool ShouldClearRootSelfCollection(ResolvedObjectNode rootNode)
@@ -3493,7 +3570,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         ImmutableArray<string> members,
         string rootTypeName)
     {
-        var descriptors = new List<string>();
+        var builder = new StringBuilder();
+        var hasDescriptors = false;
         foreach (var member in members)
         {
             var memberName = member.Trim();
@@ -3502,26 +3580,40 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            descriptors.Add(
-                "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(" +
-                "\"" + Escape(memberName) + "\", " +
-                "static __instance => { if (__instance is " + rootTypeName + " __typed) { global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadStateTracker.TryClearCollection(__typed." + memberName + "); } })");
+            if (!hasDescriptors)
+            {
+                builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { ");
+                hasDescriptors = true;
+            }
+            else
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"");
+            builder.Append(Escape(memberName));
+            builder.Append("\", static __instance => { if (__instance is ");
+            builder.Append(rootTypeName);
+            builder.Append(" __typed) { global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadStateTracker.TryClearCollection(__typed.");
+            builder.Append(memberName);
+            builder.Append("); } })");
         }
 
-        if (descriptors.Count == 0)
+        if (!hasDescriptors)
         {
             return "global::System.Array.Empty<global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor>()";
         }
 
-        return "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { " +
-               string.Join(", ", descriptors) + " }";
+        builder.Append(" }");
+        return builder.ToString();
     }
 
     private static string BuildHotReloadClrPropertyCleanupDescriptorArrayExpression(
         ImmutableArray<string> members,
         string rootTypeName)
     {
-        var descriptors = new List<string>();
+        var builder = new StringBuilder();
+        var hasDescriptors = false;
         foreach (var member in members)
         {
             var memberName = member.Trim();
@@ -3530,24 +3622,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            descriptors.Add(
-                "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(" +
-                "\"" + Escape(memberName) + "\", " +
-                "static __instance => { if (__instance is " + rootTypeName + " __typed) { __typed." + memberName + " = default!; } })");
+            if (!hasDescriptors)
+            {
+                builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { ");
+                hasDescriptors = true;
+            }
+            else
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"");
+            builder.Append(Escape(memberName));
+            builder.Append("\", static __instance => { if (__instance is ");
+            builder.Append(rootTypeName);
+            builder.Append(" __typed) { __typed.");
+            builder.Append(memberName);
+            builder.Append(" = default!; } })");
         }
 
-        if (descriptors.Count == 0)
+        if (!hasDescriptors)
         {
             return "global::System.Array.Empty<global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor>()";
         }
 
-        return "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { " +
-               string.Join(", ", descriptors) + " }";
+        builder.Append(" }");
+        return builder.ToString();
     }
 
     private static string BuildHotReloadAvaloniaPropertyCleanupDescriptorArrayExpression(ImmutableArray<string> propertyExpressions)
     {
-        var descriptors = new List<string>();
+        var builder = new StringBuilder();
+        var hasDescriptors = false;
         foreach (var propertyExpression in propertyExpressions)
         {
             if (string.IsNullOrWhiteSpace(propertyExpression))
@@ -3556,27 +3662,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
 
             var token = propertyExpression.Trim();
-            descriptors.Add(
-                "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(" +
-                "\"" + Escape(token) + "\", " +
-                "static __instance => { if (__instance is global::Avalonia.AvaloniaObject __avaloniaObject) { __avaloniaObject.ClearValue(" +
-                token + "); } })");
+            if (!hasDescriptors)
+            {
+                builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { ");
+                hasDescriptors = true;
+            }
+            else
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"");
+            builder.Append(Escape(token));
+            builder.Append("\", static __instance => { if (__instance is global::Avalonia.AvaloniaObject __avaloniaObject) { __avaloniaObject.ClearValue(");
+            builder.Append(token);
+            builder.Append("); } })");
         }
 
-        if (descriptors.Count == 0)
+        if (!hasDescriptors)
         {
             return "global::System.Array.Empty<global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor>()";
         }
 
-        return "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { " +
-               string.Join(", ", descriptors) + " }";
+        builder.Append(" }");
+        return builder.ToString();
     }
 
     private static string BuildHotReloadEventCleanupDescriptorArrayExpression(
         ImmutableArray<ResolvedEventSubscription> eventSubscriptions,
         string rootTypeName)
     {
-        var descriptors = new List<string>();
+        var builder = new StringBuilder();
+        var hasDescriptors = false;
 
         foreach (var eventSubscription in eventSubscriptions)
         {
@@ -3595,11 +3712,16 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     continue;
                 }
 
-                descriptors.Add(
-                    "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(" +
-                    "\"" + Escape(token) + "\", " +
-                    "static __instance => { if (__instance is " + rootTypeName + " __typed) { __typed." +
-                    eventSubscription.EventName + " -= __typed." + eventSubscription.HandlerMethodName + "; } })");
+                AppendCleanupDescriptorArraySeparator(builder, ref hasDescriptors);
+                builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"");
+                builder.Append(Escape(token));
+                builder.Append("\", static __instance => { if (__instance is ");
+                builder.Append(rootTypeName);
+                builder.Append(" __typed) { __typed.");
+                builder.Append(eventSubscription.EventName);
+                builder.Append(" -= __typed.");
+                builder.Append(eventSubscription.HandlerMethodName);
+                builder.Append("; } })");
                 continue;
             }
 
@@ -3622,21 +3744,29 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            descriptors.Add(
-                "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(" +
-                "\"" + Escape(token) + "\", " +
-                "static __instance => { if (__instance is " + rootTypeName + " __typed) { __typed.RemoveHandler(" +
-                eventSubscription.RoutedEventOwnerTypeName + "." + routedEventFieldName + ", (" +
-                eventSubscription.RoutedEventHandlerTypeName + ")__typed." + eventSubscription.HandlerMethodName + "); } })");
+            AppendCleanupDescriptorArraySeparator(builder, ref hasDescriptors);
+            builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"");
+            builder.Append(Escape(token));
+            builder.Append("\", static __instance => { if (__instance is ");
+            builder.Append(rootTypeName);
+            builder.Append(" __typed) { __typed.RemoveHandler(");
+            builder.Append(eventSubscription.RoutedEventOwnerTypeName);
+            builder.Append('.');
+            builder.Append(routedEventFieldName);
+            builder.Append(", (");
+            builder.Append(eventSubscription.RoutedEventHandlerTypeName);
+            builder.Append(")__typed.");
+            builder.Append(eventSubscription.HandlerMethodName);
+            builder.Append("); } })");
         }
 
-        if (descriptors.Count == 0)
+        if (!hasDescriptors)
         {
             return "global::System.Array.Empty<global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor>()";
         }
 
-        return "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { " +
-               string.Join(", ", descriptors) + " }";
+        builder.Append(" }");
+        return builder.ToString();
     }
 
     private static string BuildHotReloadEventToken(ResolvedEventSubscription eventSubscription)
@@ -3674,6 +3804,58 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return true;
+    }
+
+    private static bool TryValidateSimpleEventBindingPathSegment(string path, int segmentStart, int segmentEndExclusive)
+    {
+        if (segmentStart < 0)
+        {
+            return false;
+        }
+
+        while (segmentStart < segmentEndExclusive && char.IsWhiteSpace(path[segmentStart]))
+        {
+            segmentStart++;
+        }
+
+        while (segmentEndExclusive > segmentStart && char.IsWhiteSpace(path[segmentEndExclusive - 1]))
+        {
+            segmentEndExclusive--;
+        }
+
+        if (segmentStart >= segmentEndExclusive)
+        {
+            return false;
+        }
+
+        var first = path[segmentStart];
+        if (!(first == '_' || char.IsLetter(first)))
+        {
+            return false;
+        }
+
+        for (var index = segmentStart + 1; index < segmentEndExclusive; index++)
+        {
+            var current = path[index];
+            if (!(current == '_' || char.IsLetterOrDigit(current)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void AppendCleanupDescriptorArraySeparator(StringBuilder builder, ref bool hasDescriptors)
+    {
+        if (!hasDescriptors)
+        {
+            builder.Append("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] { ");
+            hasDescriptors = true;
+            return;
+        }
+
+        builder.Append(", ");
     }
 
     private static string Escape(string value)

@@ -398,7 +398,7 @@ internal static class XamlBindingCompletionService
 
             if (segment.IsMethodCall)
             {
-                var method = ResolveParameterlessMethod(currentNamedType, segment.MemberName);
+                var method = XamlClrMemberSymbolResolver.ResolveParameterlessMethod(currentNamedType, segment.MemberName);
                 if (method is null)
                 {
                     return false;
@@ -408,14 +408,14 @@ internal static class XamlBindingCompletionService
                 continue;
             }
 
-            var resolvedProperty = ResolveInstanceProperty(currentNamedType, segment.MemberName);
+            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentNamedType, segment.MemberName);
             if (resolvedProperty is null)
             {
                 return false;
             }
 
             currentType = segment.HasIndexers
-                ? ResolveIndexedElementType(resolvedProperty.Type) ?? resolvedProperty.Type
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(resolvedProperty.Type) ?? resolvedProperty.Type
                 : resolvedProperty.Type;
         }
 
@@ -465,96 +465,6 @@ internal static class XamlBindingCompletionService
 
         typeSymbol = XamlSemanticSourceTypeResolver.ResolveTypeSymbol(analysis, prefixMap, propertyInfo.TypeName);
         return typeSymbol is not null;
-    }
-
-    private static IPropertySymbol? ResolveInstanceProperty(INamedTypeSymbol typeSymbol, string propertyName)
-    {
-        for (var current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            var exact = current.GetMembers(propertyName)
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(static property => !property.IsStatic && !property.IsIndexer && property.GetMethod is not null);
-            if (exact is not null)
-            {
-                return exact;
-            }
-
-            var fallback = current.GetMembers()
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(property =>
-                    !property.IsStatic &&
-                    !property.IsIndexer &&
-                    property.GetMethod is not null &&
-                    string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
-            if (fallback is not null)
-            {
-                return fallback;
-            }
-        }
-
-        return null;
-    }
-
-    private static IMethodSymbol? ResolveParameterlessMethod(INamedTypeSymbol typeSymbol, string methodName)
-    {
-        for (var current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            var exact = current.GetMembers(methodName)
-                .OfType<IMethodSymbol>()
-                .FirstOrDefault(static method =>
-                    !method.IsStatic &&
-                    !method.IsImplicitlyDeclared &&
-                    method.MethodKind == MethodKind.Ordinary &&
-                    method.Parameters.Length == 0 &&
-                    !method.ReturnsVoid);
-            if (exact is not null)
-            {
-                return exact;
-            }
-
-            var fallback = current.GetMembers()
-                .OfType<IMethodSymbol>()
-                .FirstOrDefault(method =>
-                    !method.IsStatic &&
-                    !method.IsImplicitlyDeclared &&
-                    method.MethodKind == MethodKind.Ordinary &&
-                    method.Parameters.Length == 0 &&
-                    !method.ReturnsVoid &&
-                    string.Equals(method.Name, methodName, StringComparison.OrdinalIgnoreCase));
-            if (fallback is not null)
-            {
-                return fallback;
-            }
-        }
-
-        return null;
-    }
-
-    private static ITypeSymbol? ResolveIndexedElementType(ITypeSymbol typeSymbol)
-    {
-        if (typeSymbol is IArrayTypeSymbol arrayType)
-        {
-            return arrayType.ElementType;
-        }
-
-        if (typeSymbol is not INamedTypeSymbol namedType)
-        {
-            return null;
-        }
-
-        var indexer = namedType.GetMembers().OfType<IPropertySymbol>()
-            .FirstOrDefault(static property => property.IsIndexer && property.Parameters.Length > 0);
-        if (indexer?.Type is not null)
-        {
-            return indexer.Type;
-        }
-
-        var listInterface = namedType.AllInterfaces
-            .FirstOrDefault(static candidate =>
-                candidate is { Name: "IList", TypeArguments.Length: 1 } ||
-                candidate is { Name: "IReadOnlyList", TypeArguments.Length: 1 } ||
-                candidate is { Name: "IEnumerable", TypeArguments.Length: 1 });
-        return listInterface?.TypeArguments.FirstOrDefault();
     }
 
     private static void SplitPathForCompletion(string pathPrefix, out string completedPath, out string memberPrefix)

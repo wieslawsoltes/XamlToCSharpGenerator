@@ -585,6 +585,34 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task InlayHints_FilterToRequestedRange_ReturnOnlyHintsInsideRange()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/InlayRangeFilterView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding FirstName}\"/>\n" +
+                            "  <TextBlock Text=\"{= Count + 1}\"/>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp");
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var hints = await engine.GetInlayHintsAsync(
+            uri,
+            new SourceRange(new SourcePosition(2, 0), new SourcePosition(2, 40)),
+            options,
+            new XamlInlayHintOptions(),
+            CancellationToken.None);
+
+        var hint = Assert.Single(hints);
+        Assert.Equal(2, hint.Position.Line);
+        Assert.Contains("Expression Binding", hint.Tooltip, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Definition_ForElementName_ResolvesNamedElement()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -1659,6 +1687,57 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task References_ForElementType_ResolveProjectFromWorkspaceDirectory()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-ls-refs-dirroot-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var projectPath = Path.Combine(tempRoot, "TestApp.csproj");
+        var openFilePath = Path.Combine(tempRoot, "MainView.axaml");
+        var secondaryFilePath = Path.Combine(tempRoot, "SecondaryView.axaml");
+        var openUri = new Uri(openFilePath).AbsoluteUri;
+        var secondaryUri = new Uri(secondaryFilePath).AbsoluteUri;
+        const string xaml = "<Path xmlns=\"https://github.com/avaloniaui\" />";
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "    <AvaloniaXaml Include=\"SecondaryView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(openFilePath, xaml);
+        await File.WriteAllTextAsync(secondaryFilePath, xaml);
+
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(
+                new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+
+            var options = new XamlLanguageServiceOptions(tempRoot, IncludeSemanticDiagnostics: false);
+            await engine.OpenDocumentAsync(openUri, xaml, version: 1, options, CancellationToken.None);
+            var references = await engine.GetReferencesAsync(
+                openUri,
+                new SourcePosition(0, 2),
+                options,
+                CancellationToken.None);
+
+            Assert.Contains(references, item => item.IsDeclaration &&
+                                                item.Uri.Contains(
+                                                    LanguageServiceTestCompilationFactory.SymbolSourceFilePath,
+                                                    StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(references, item => !item.IsDeclaration &&
+                                                string.Equals(item.Uri, openUri, StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(references, item => !item.IsDeclaration &&
+                                                string.Equals(item.Uri, secondaryUri, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task References_ForUsingNamespacePrefixedElementType_IncludeLinkedXamlSources()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-ls-refs-using-" + Guid.NewGuid().ToString("N"));
@@ -1694,6 +1773,60 @@ public sealed class XamlLanguageServiceEngineTests
             var references = await engine.GetReferencesAsync(
                 openUri,
                 new SourcePosition(0, 8),
+                options,
+                CancellationToken.None);
+
+            Assert.Contains(references, item => item.IsDeclaration &&
+                                                item.Uri.Contains(
+                                                    LanguageServiceTestCompilationFactory.SymbolSourceFilePath,
+                                                    StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(references, item => !item.IsDeclaration &&
+                                                string.Equals(item.Uri, openUri, StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(references, item => !item.IsDeclaration &&
+                                                string.Equals(item.Uri, linkedUri, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task References_ForElementType_IncludeWildcardLinkedXamlSources()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-ls-refs-wildcard-" + Guid.NewGuid().ToString("N"));
+        var projectDir = Path.Combine(tempRoot, "project");
+        var linkedDir = Path.Combine(tempRoot, "linked", "nested");
+        Directory.CreateDirectory(projectDir);
+        Directory.CreateDirectory(linkedDir);
+
+        var projectPath = Path.Combine(projectDir, "TestApp.csproj");
+        var openFilePath = Path.Combine(projectDir, "MainView.axaml");
+        var linkedFilePath = Path.Combine(linkedDir, "SharedView.axaml");
+        var openUri = new Uri(openFilePath).AbsoluteUri;
+        var linkedUri = new Uri(linkedFilePath).AbsoluteUri;
+        const string xaml = "<Path xmlns=\"https://github.com/avaloniaui\" />";
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "    <AvaloniaXaml Include=\"../linked/**/*.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(openFilePath, xaml);
+        await File.WriteAllTextAsync(linkedFilePath, xaml);
+
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(
+                new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+
+            var options = new XamlLanguageServiceOptions(projectPath, IncludeSemanticDiagnostics: false);
+            await engine.OpenDocumentAsync(openUri, xaml, version: 1, options, CancellationToken.None);
+            var references = await engine.GetReferencesAsync(
+                openUri,
+                new SourcePosition(0, 2),
                 options,
                 CancellationToken.None);
 

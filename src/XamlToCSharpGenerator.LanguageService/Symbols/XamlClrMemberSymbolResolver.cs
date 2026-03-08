@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 
 namespace XamlToCSharpGenerator.LanguageService.Symbols;
@@ -10,24 +9,27 @@ internal static class XamlClrMemberSymbolResolver
     {
         for (var current = typeSymbol; current is not null; current = current.BaseType)
         {
-            var exact = current.GetMembers(propertyName)
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(static property => !property.IsStatic && !property.IsIndexer && property.GetMethod is not null);
-            if (exact is not null)
+            foreach (var member in current.GetMembers(propertyName))
             {
-                return exact;
+                if (member is IPropertySymbol property &&
+                    !property.IsStatic &&
+                    !property.IsIndexer &&
+                    property.GetMethod is not null)
+                {
+                    return property;
+                }
             }
 
-            var fallback = current.GetMembers()
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault(property =>
+            foreach (var member in current.GetMembers())
+            {
+                if (member is IPropertySymbol property &&
                     !property.IsStatic &&
                     !property.IsIndexer &&
                     property.GetMethod is not null &&
-                    string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
-            if (fallback is not null)
-            {
-                return fallback;
+                    string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return property;
+                }
             }
         }
 
@@ -38,31 +40,31 @@ internal static class XamlClrMemberSymbolResolver
     {
         for (var current = typeSymbol; current is not null; current = current.BaseType)
         {
-            var exact = current.GetMembers(methodName)
-                .OfType<IMethodSymbol>()
-                .FirstOrDefault(static method =>
+            foreach (var member in current.GetMembers(methodName))
+            {
+                if (member is IMethodSymbol method &&
                     !method.IsStatic &&
                     !method.IsImplicitlyDeclared &&
                     method.MethodKind == MethodKind.Ordinary &&
                     method.Parameters.Length == 0 &&
-                    !method.ReturnsVoid);
-            if (exact is not null)
-            {
-                return exact;
+                    !method.ReturnsVoid)
+                {
+                    return method;
+                }
             }
 
-            var fallback = current.GetMembers()
-                .OfType<IMethodSymbol>()
-                .FirstOrDefault(method =>
+            foreach (var member in current.GetMembers())
+            {
+                if (member is IMethodSymbol method &&
                     !method.IsStatic &&
                     !method.IsImplicitlyDeclared &&
                     method.MethodKind == MethodKind.Ordinary &&
                     method.Parameters.Length == 0 &&
                     !method.ReturnsVoid &&
-                    string.Equals(method.Name, methodName, StringComparison.OrdinalIgnoreCase));
-            if (fallback is not null)
-            {
-                return fallback;
+                    string.Equals(method.Name, methodName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return method;
+                }
             }
         }
 
@@ -81,18 +83,27 @@ internal static class XamlClrMemberSymbolResolver
             return null;
         }
 
-        var indexer = namedType.GetMembers().OfType<IPropertySymbol>()
-            .FirstOrDefault(static property => property.IsIndexer && property.Parameters.Length > 0);
-        if (indexer?.Type is not null)
+        foreach (var member in namedType.GetMembers())
         {
-            return indexer.Type;
+            if (member is IPropertySymbol property &&
+                property.IsIndexer &&
+                property.Parameters.Length > 0 &&
+                property.Type is not null)
+            {
+                return property.Type;
+            }
         }
 
-        var listInterface = namedType.AllInterfaces
-            .FirstOrDefault(static candidate =>
-                candidate is { Name: "IList", TypeArguments.Length: 1 } ||
+        foreach (var candidate in namedType.AllInterfaces)
+        {
+            if (candidate is { Name: "IList", TypeArguments.Length: 1 } ||
                 candidate is { Name: "IReadOnlyList", TypeArguments.Length: 1 } ||
-                candidate is { Name: "IEnumerable", TypeArguments.Length: 1 });
-        return listInterface?.TypeArguments.FirstOrDefault();
+                candidate is { Name: "IEnumerable", TypeArguments.Length: 1 })
+            {
+                return candidate.TypeArguments[0];
+            }
+        }
+
+        return null;
     }
 }

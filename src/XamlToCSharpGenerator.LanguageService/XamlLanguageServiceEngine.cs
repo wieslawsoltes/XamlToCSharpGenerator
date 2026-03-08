@@ -19,6 +19,9 @@ namespace XamlToCSharpGenerator.LanguageService;
 
 public sealed class XamlLanguageServiceEngine : IDisposable
 {
+    private static readonly ConcurrentDictionary<string, XamlLanguageServiceOptions> SharedAnalysisOptionsCache =
+        new(StringComparer.Ordinal);
+
     private readonly XamlDocumentStore _documentStore;
     private readonly ICompilationProvider _compilationProvider;
     private readonly XamlCompilerAnalysisService _analysisService;
@@ -400,7 +403,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         var lazyAnalysis = _inflightAnalysisCache.GetOrAdd(
             inflightKey,
             _ => new Lazy<Task<XamlAnalysisResult>>(
-                () => AnalyzeAsync(document, CreateSharedAnalysisOptions(options), CancellationToken.None),
+                () => AnalyzeAsync(document, GetSharedAnalysisOptions(options), CancellationToken.None),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
         XamlAnalysisResult analysis;
@@ -477,14 +480,21 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             : 0;
     }
 
-    private static XamlLanguageServiceOptions CreateSharedAnalysisOptions(XamlLanguageServiceOptions options)
+    private static XamlLanguageServiceOptions GetSharedAnalysisOptions(XamlLanguageServiceOptions options)
     {
         options ??= XamlLanguageServiceOptions.Default;
-        return options with
+        if (options.IncludeCompilationDiagnostics && options.IncludeSemanticDiagnostics)
         {
-            IncludeCompilationDiagnostics = true,
-            IncludeSemanticDiagnostics = true
-        };
+            return options;
+        }
+
+        var workspaceRoot = options.WorkspaceRoot ?? string.Empty;
+        return SharedAnalysisOptionsCache.GetOrAdd(
+            workspaceRoot,
+            static root => new XamlLanguageServiceOptions(
+                WorkspaceRoot: root.Length == 0 ? null : root,
+                IncludeCompilationDiagnostics: true,
+                IncludeSemanticDiagnostics: true));
     }
 
     private static ImmutableArray<LanguageServiceDiagnostic> FilterDiagnostics(
@@ -498,25 +508,44 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return diagnostics;
         }
 
-        var builder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>(diagnostics.Length);
-        foreach (var diagnostic in diagnostics)
+        ImmutableArray<LanguageServiceDiagnostic>.Builder? builder = null;
+        for (var index = 0; index < diagnostics.Length; index++)
         {
+            var diagnostic = diagnostics[index];
             if (!options.IncludeCompilationDiagnostics &&
                 string.Equals(diagnostic.Source, "MSBuildWorkspace", StringComparison.Ordinal))
             {
+                if (builder is null)
+                {
+                    builder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>(diagnostics.Length - 1);
+                    for (var preservedIndex = 0; preservedIndex < index; preservedIndex++)
+                    {
+                        builder.Add(diagnostics[preservedIndex]);
+                    }
+                }
+
                 continue;
             }
 
             if (!options.IncludeSemanticDiagnostics &&
                 string.Equals(diagnostic.Source, "AXSG.Semantic", StringComparison.Ordinal))
             {
+                if (builder is null)
+                {
+                    builder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>(diagnostics.Length - 1);
+                    for (var preservedIndex = 0; preservedIndex < index; preservedIndex++)
+                    {
+                        builder.Add(diagnostics[preservedIndex]);
+                    }
+                }
+
                 continue;
             }
 
-            builder.Add(diagnostic);
+            builder?.Add(diagnostic);
         }
 
-        return builder.ToImmutable();
+        return builder?.ToImmutable() ?? diagnostics;
     }
 
     private static ImmutableArray<XamlInlayHint> FilterInlayHints(
@@ -528,19 +557,29 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return ImmutableArray<XamlInlayHint>.Empty;
         }
 
-        var builder = ImmutableArray.CreateBuilder<XamlInlayHint>();
-        foreach (var hint in hints)
+        ImmutableArray<XamlInlayHint>.Builder? builder = null;
+        for (var index = 0; index < hints.Length; index++)
         {
+            var hint = hints[index];
             if (ComparePositions(hint.Position, requestedRange.Start) < 0 ||
                 ComparePositions(hint.Position, requestedRange.End) > 0)
             {
+                if (builder is null)
+                {
+                    builder = ImmutableArray.CreateBuilder<XamlInlayHint>(hints.Length - 1);
+                    for (var preservedIndex = 0; preservedIndex < index; preservedIndex++)
+                    {
+                        builder.Add(hints[preservedIndex]);
+                    }
+                }
+
                 continue;
             }
 
-            builder.Add(hint);
+            builder?.Add(hint);
         }
 
-        return builder.ToImmutable();
+        return builder?.ToImmutable() ?? hints;
     }
 
     private static int ComparePositions(SourcePosition left, SourcePosition right)
