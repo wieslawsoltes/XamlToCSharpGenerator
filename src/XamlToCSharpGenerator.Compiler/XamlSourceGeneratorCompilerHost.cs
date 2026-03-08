@@ -37,6 +37,7 @@ public static class XamlSourceGeneratorCompilerHost
         IncrementalGeneratorInitializationContext context,
         IXamlFrameworkProfile frameworkProfile)
     {
+        var transformProvider = frameworkProfile.TransformProvider;
         var configurationFileInputs = context.AdditionalTextsProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
             .Select((pair, cancellationToken) =>
@@ -128,6 +129,8 @@ public static class XamlSourceGeneratorCompilerHost
 
         var optionsProvider = configurationProvider
             .Select(static (snapshot, _) => snapshot.Options);
+        var semanticBinder = frameworkProfile.CreateSemanticBinder();
+        var emitter = frameworkProfile.CreateEmitter();
 
         var xamlInputs = context.AdditionalTextsProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
@@ -230,9 +233,9 @@ public static class XamlSourceGeneratorCompilerHost
                 }
 
                 var parsed = inputs
-                    .Select(frameworkProfile.TransformProvider.ParseTransformRule)
+                    .Select(transformProvider.ParseTransformRule)
                     .ToImmutableArray();
-                return frameworkProfile.TransformProvider.MergeTransformRules(parsed);
+                return transformProvider.MergeTransformRules(parsed);
             });
 
         var transformRules = legacyTransformRules
@@ -244,7 +247,7 @@ public static class XamlSourceGeneratorCompilerHost
                 return BuildEffectiveTransformRules(
                     legacy,
                     configuration,
-                    frameworkProfile.TransformProvider);
+                    transformProvider);
             });
 
         context.RegisterSourceOutput(
@@ -420,8 +423,7 @@ public static class XamlSourceGeneratorCompilerHost
 
                     status = "bind";
                     var bindStart = Stopwatch.GetTimestamp();
-                    IXamlFrameworkSemanticBinder binder = frameworkProfile.CreateSemanticBinder();
-                    var (viewModel, semanticDiagnostics) = binder.Bind(parseResult, compilation, options, transformRules.Configuration);
+                    var (viewModel, semanticDiagnostics) = semanticBinder.Bind(parseResult, compilation, options, transformRules.Configuration);
                     bindElapsed = GetElapsedTimeSince(bindStart);
                     semanticDiagnostics = ApplyGlobalParityDiagnosticFilters(
                         semanticDiagnostics,
@@ -447,7 +449,6 @@ public static class XamlSourceGeneratorCompilerHost
                     var emitStart = Stopwatch.GetTimestamp();
                     try
                     {
-                        IXamlFrameworkEmitter emitter = frameworkProfile.CreateEmitter();
                         var (hintName, source) = emitter.Emit(viewModel);
                         hintName = NormalizeFrameworkHintName(frameworkProfile.Id, hintName);
                         if (TryAddSource(sourceContext, hintName, source))
@@ -2079,7 +2080,7 @@ public static class XamlSourceGeneratorCompilerHost
         }
     }
 
-    private static bool TryResolveIncludeUri(
+    internal static bool TryResolveIncludeUri(
         string includeSource,
         string currentTargetPath,
         string assemblyName,
@@ -2094,6 +2095,12 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         var trimmedSource = NormalizeIncludeSource(includeSource);
+        var trimmedSourceSpan = trimmedSource.AsSpan();
+        if (trimmedSourceSpan.Length == 0)
+        {
+            return false;
+        }
+
         if (trimmedSource.StartsWith("/", StringComparison.Ordinal))
         {
             var rootedPath = NormalizeIncludePath(trimmedSource.TrimStart('/'));
@@ -2107,7 +2114,13 @@ public static class XamlSourceGeneratorCompilerHost
             return true;
         }
 
-        if (Uri.TryCreate(trimmedSource, UriKind.Absolute, out var absoluteSource))
+        if (TryResolveAvaresIncludeUri(trimmedSource, trimmedSourceSpan, assemblyName, out resolvedUri, out isProjectLocal))
+        {
+            return true;
+        }
+
+        if (LooksLikeAbsoluteUri(trimmedSourceSpan) &&
+            Uri.TryCreate(trimmedSource, UriKind.Absolute, out var absoluteSource))
         {
             if (!absoluteSource.Scheme.Equals("avares", StringComparison.OrdinalIgnoreCase))
             {
@@ -2144,75 +2157,170 @@ public static class XamlSourceGeneratorCompilerHost
         return true;
     }
 
-    private static string NormalizeIncludeSource(string includeSource)
+    private static bool TryResolveAvaresIncludeUri(
+        string includeSourceText,
+        ReadOnlySpan<char> includeSource,
+        string assemblyName,
+        out string resolvedUri,
+        out bool isProjectLocal)
     {
-        var trimmed = includeSource.Trim();
-        if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
-            !trimmed.EndsWith("}", StringComparison.Ordinal))
+        resolvedUri = string.Empty;
+        isProjectLocal = false;
+
+        if (!includeSource.StartsWith("avares://".AsSpan(), StringComparison.OrdinalIgnoreCase))
         {
-            return trimmed;
+            return false;
         }
 
-        var inner = trimmed.Substring(1, trimmed.Length - 2).Trim();
+        var hostAndPath = includeSource.Slice("avares://".Length);
+        var pathSeparatorIndex = hostAndPath.IndexOf('/');
+        if (pathSeparatorIndex <= 0)
+        {
+            return false;
+        }
+
+        var host = hostAndPath.Slice(0, pathSeparatorIndex);
+        var path = hostAndPath.Slice(pathSeparatorIndex + 1);
+        if (!host.Equals(assemblyName.AsSpan(), StringComparison.OrdinalIgnoreCase))
+        {
+            resolvedUri = includeSourceText;
+            return true;
+        }
+
+        var normalizedPath = NormalizeIncludePath(path);
+        if (normalizedPath.Length == 0)
+        {
+            return false;
+        }
+
+        resolvedUri = BuildUri(assemblyName, normalizedPath);
+        isProjectLocal = true;
+        return true;
+    }
+
+    private static bool LooksLikeAbsoluteUri(ReadOnlySpan<char> source)
+    {
+        if (source.Length < 3 || !char.IsLetter(source[0]))
+        {
+            return false;
+        }
+
+        for (var index = 1; index < source.Length; index++)
+        {
+            var ch = source[index];
+            if (ch == ':')
+            {
+                return true;
+            }
+
+            if (IsDirectorySeparator(ch) || char.IsWhiteSpace(ch))
+            {
+                return false;
+            }
+
+            if (!char.IsLetterOrDigit(ch) &&
+                ch != '+' &&
+                ch != '-' &&
+                ch != '.')
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    internal static string NormalizeIncludeSource(string includeSource)
+    {
+        var trimmed = TrimWhitespace(includeSource.AsSpan());
+        if (trimmed.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (trimmed[0] != '{' || trimmed[trimmed.Length - 1] != '}')
+        {
+            return SliceToString(trimmed, includeSource);
+        }
+
+        var inner = TrimWhitespace(trimmed.Slice(1, trimmed.Length - 2));
         if (inner.Length == 0)
         {
-            return trimmed;
+            return SliceToString(trimmed, includeSource);
         }
 
-        var separatorIndex = inner.IndexOfAny(new[] { ' ', ',' });
+        var separatorIndex = IndexOfWhitespaceOrComma(inner);
         var markupName = separatorIndex >= 0
-            ? inner.Substring(0, separatorIndex)
+            ? inner.Slice(0, separatorIndex)
             : inner;
-        if (!markupName.Equals("x:Uri", StringComparison.OrdinalIgnoreCase) &&
-            !markupName.Equals("Uri", StringComparison.OrdinalIgnoreCase))
+        if (!markupName.Equals("x:Uri".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
+            !markupName.Equals("Uri".AsSpan(), StringComparison.OrdinalIgnoreCase))
         {
-            return trimmed;
+            return SliceToString(trimmed, includeSource);
         }
 
         var arguments = separatorIndex >= 0
-            ? inner.Substring(separatorIndex + 1).Trim()
-            : string.Empty;
+            ? TrimWhitespace(inner.Slice(separatorIndex + 1))
+            : ReadOnlySpan<char>.Empty;
         if (arguments.Length == 0)
         {
-            return trimmed;
+            return SliceToString(trimmed, includeSource);
         }
 
         var argumentSegment = arguments;
         var commaIndex = argumentSegment.IndexOf(',');
         if (commaIndex >= 0)
         {
-            argumentSegment = argumentSegment.Substring(0, commaIndex).Trim();
+            argumentSegment = TrimWhitespace(argumentSegment.Slice(0, commaIndex));
         }
 
         var equalsIndex = argumentSegment.IndexOf('=');
         if (equalsIndex > 0)
         {
-            var key = argumentSegment.Substring(0, equalsIndex).Trim();
-            var value = argumentSegment.Substring(equalsIndex + 1).Trim();
-            if (key.Equals("Uri", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("Value", StringComparison.OrdinalIgnoreCase))
+            var key = TrimWhitespace(argumentSegment.Slice(0, equalsIndex));
+            var value = TrimWhitespace(argumentSegment.Slice(equalsIndex + 1));
+            if (key.Equals("Uri".AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Value".AsSpan(), StringComparison.OrdinalIgnoreCase))
             {
                 return UnquoteIncludeSource(value);
             }
 
-            return trimmed;
+            return SliceToString(trimmed, includeSource);
         }
 
         return UnquoteIncludeSource(argumentSegment);
     }
 
-    private static string UnquoteIncludeSource(string value)
+    private static string UnquoteIncludeSource(ReadOnlySpan<char> value)
     {
         if (value.Length >= 2)
         {
             if ((value[0] == '"' && value[value.Length - 1] == '"') ||
                 (value[0] == '\'' && value[value.Length - 1] == '\''))
             {
-                return value.Substring(1, value.Length - 2);
+                return value.Slice(1, value.Length - 2).ToString();
             }
         }
 
-        return value;
+        return value.ToString();
+    }
+
+    private static int IndexOfWhitespaceOrComma(ReadOnlySpan<char> value)
+    {
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (value[index] == ',' || char.IsWhiteSpace(value[index]))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string SliceToString(ReadOnlySpan<char> value, string original)
+    {
+        return value.Length == original.Length ? original : value.ToString();
     }
 
     private static string BuildUri(string assemblyName, string normalizedTargetPath)
@@ -2266,17 +2374,45 @@ namespace XamlToCSharpGenerator.Generated
     {
         var rawValue = GetNullableAnalyzerOption(options, "build_property.XamlSourceGenConfigurationPrecedence") ??
                        GetNullableAnalyzerOption(options, "build_property.AvaloniaSourceGenConfigurationPrecedence");
+        return ResolveConfigurationSourcePrecedence(rawValue, issues);
+    }
+
+    internal static ConfigurationSourcePrecedence ResolveConfigurationSourcePrecedence(
+        string? rawValue,
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
+    {
         if (string.IsNullOrWhiteSpace(rawValue))
         {
             return ConfigurationSourcePrecedence.Default;
         }
 
         var result = ConfigurationSourcePrecedence.Default;
-        var precedenceText = rawValue!;
-        var segments = precedenceText.Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var rawSegment in segments)
+        var precedenceText = rawValue.AsSpan();
+        var segmentStart = -1;
+        for (var index = 0; index <= precedenceText.Length; index++)
         {
-            var segment = rawSegment.Trim();
+            var isSeparator = index == precedenceText.Length ||
+                              precedenceText[index] == ';' ||
+                              precedenceText[index] == ',' ||
+                              precedenceText[index] == '\r' ||
+                              precedenceText[index] == '\n';
+            if (!isSeparator)
+            {
+                if (segmentStart < 0)
+                {
+                    segmentStart = index;
+                }
+
+                continue;
+            }
+
+            if (segmentStart < 0)
+            {
+                continue;
+            }
+
+            var segment = TrimWhitespace(precedenceText.Slice(segmentStart, index - segmentStart));
+            segmentStart = -1;
             if (segment.Length == 0)
             {
                 continue;
@@ -2287,18 +2423,18 @@ namespace XamlToCSharpGenerator.Generated
             {
                 AddConfigurationPrecedenceIssue(
                     issues,
-                    "Invalid configuration precedence segment '" + segment +
+                    "Invalid configuration precedence segment '" + segment.ToString() +
                     "'. Expected 'ProjectDefaultFile=90;File=100;MsBuild=200;Code=300'.");
                 continue;
             }
 
-            var key = segment.Substring(0, separatorIndex).Trim();
-            var valueText = segment.Substring(separatorIndex + 1).Trim();
-            if (!int.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var precedence))
+            var key = TrimWhitespace(segment.Slice(0, separatorIndex));
+            var valueText = TrimWhitespace(segment.Slice(separatorIndex + 1));
+            if (!TryParseInvariantInt32(valueText, out var precedence))
             {
                 AddConfigurationPrecedenceIssue(
                     issues,
-                    "Invalid precedence value '" + valueText + "' for key '" + key +
+                    "Invalid precedence value '" + valueText.ToString() + "' for key '" + key.ToString() +
                     "'. Expected an integer.");
                 continue;
             }
@@ -2320,7 +2456,7 @@ namespace XamlToCSharpGenerator.Generated
                 default:
                     AddConfigurationPrecedenceIssue(
                         issues,
-                        "Unknown configuration precedence key '" + key +
+                        "Unknown configuration precedence key '" + key.ToString() +
                         "'. Supported keys: ProjectDefaultFile, File, MsBuild, Code.");
                     break;
             }
@@ -2329,37 +2465,107 @@ namespace XamlToCSharpGenerator.Generated
         return result;
     }
 
-    private static ConfigurationPrecedenceKey NormalizeConfigurationPrecedenceKey(string key)
+    private static ConfigurationPrecedenceKey NormalizeConfigurationPrecedenceKey(ReadOnlySpan<char> key)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        key = TrimWhitespace(key);
+        if (key.Length == 0)
         {
             return ConfigurationPrecedenceKey.Unknown;
         }
 
-        var normalized = key.Trim().Replace("_", string.Empty).Replace("-", string.Empty);
-        if (normalized.Equals("projectdefaultfile", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("projectdefault", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("defaultfile", StringComparison.OrdinalIgnoreCase))
+        Span<char> stackBuffer = stackalloc char[32];
+        char[]? rentedBuffer = null;
+        var destination = key.Length <= stackBuffer.Length
+            ? stackBuffer
+            : (rentedBuffer = ArrayPool<char>.Shared.Rent(key.Length));
+
+        try
         {
-            return ConfigurationPrecedenceKey.ProjectDefaultFile;
+            var length = 0;
+            for (var index = 0; index < key.Length; index++)
+            {
+                var value = key[index];
+                if (value == '_' || value == '-' || char.IsWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                destination[length++] = char.ToLowerInvariant(value);
+            }
+
+            var normalized = destination.Slice(0, length);
+            if (normalized.SequenceEqual("projectdefaultfile".AsSpan()) ||
+                normalized.SequenceEqual("projectdefault".AsSpan()) ||
+                normalized.SequenceEqual("defaultfile".AsSpan()))
+            {
+                return ConfigurationPrecedenceKey.ProjectDefaultFile;
+            }
+
+            if (normalized.SequenceEqual("file".AsSpan()))
+            {
+                return ConfigurationPrecedenceKey.File;
+            }
+
+            if (normalized.SequenceEqual("msbuild".AsSpan()))
+            {
+                return ConfigurationPrecedenceKey.MsBuild;
+            }
+
+            if (normalized.SequenceEqual("code".AsSpan()))
+            {
+                return ConfigurationPrecedenceKey.Code;
+            }
+
+            return ConfigurationPrecedenceKey.Unknown;
+        }
+        finally
+        {
+            if (rentedBuffer is not null)
+            {
+                ArrayPool<char>.Shared.Return(rentedBuffer);
+            }
+        }
+    }
+
+    private static bool TryParseInvariantInt32(ReadOnlySpan<char> value, out int parsed)
+    {
+        parsed = 0;
+        if (value.Length == 0)
+        {
+            return false;
         }
 
-        if (normalized.Equals("file", StringComparison.OrdinalIgnoreCase))
+        var index = 0;
+        var negative = false;
+        if (value[index] == '+' || value[index] == '-')
         {
-            return ConfigurationPrecedenceKey.File;
+            negative = value[index] == '-';
+            index++;
+            if (index == value.Length)
+            {
+                return false;
+            }
         }
 
-        if (normalized.Equals("msbuild", StringComparison.OrdinalIgnoreCase))
+        long accumulator = 0;
+        for (; index < value.Length; index++)
         {
-            return ConfigurationPrecedenceKey.MsBuild;
+            var digit = value[index] - '0';
+            if ((uint)digit > 9u)
+            {
+                return false;
+            }
+
+            accumulator = (accumulator * 10) + digit;
+            if ((!negative && accumulator > int.MaxValue) ||
+                (negative && accumulator > (long)int.MaxValue + 1))
+            {
+                return false;
+            }
         }
 
-        if (normalized.Equals("code", StringComparison.OrdinalIgnoreCase))
-        {
-            return ConfigurationPrecedenceKey.Code;
-        }
-
-        return ConfigurationPrecedenceKey.Unknown;
+        parsed = negative ? unchecked((int)-accumulator) : (int)accumulator;
+        return true;
     }
 
     private static void AddConfigurationPrecedenceIssue(
@@ -2653,6 +2859,34 @@ namespace XamlToCSharpGenerator.Generated
         return count;
     }
 
+    private static int CountSegments(ReadOnlySpan<char> path)
+    {
+        var count = 0;
+        var inSegment = false;
+        for (var index = 0; index < path.Length; index++)
+        {
+            if (IsDirectorySeparator(path[index]))
+            {
+                if (inSegment)
+                {
+                    count++;
+                    inSegment = false;
+                }
+
+                continue;
+            }
+
+            inSegment = true;
+        }
+
+        if (inSegment)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     private static void ProcessPathSegment(
         string path,
         int start,
@@ -2747,37 +2981,111 @@ namespace XamlToCSharpGenerator.Generated
         return baseDirectory + "/" + relativePath;
     }
 
-    private static string NormalizeIncludePath(string path)
+    internal static string NormalizeIncludePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
+        return NormalizeIncludePath(path.AsSpan());
+    }
+
+    private static string NormalizeIncludePath(ReadOnlySpan<char> pathSpan)
+    {
+        if (pathSpan.IsEmpty)
         {
             return string.Empty;
         }
 
-        var normalizedSeparators = path.Replace('\\', '/');
-        var parts = normalizedSeparators.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        var stack = new List<string>(parts.Length);
-        foreach (var part in parts)
+        var estimatedSegmentCount = CountSegments(pathSpan);
+        if (estimatedSegmentCount == 0)
         {
-            if (part == ".")
-            {
-                continue;
-            }
-
-            if (part == "..")
-            {
-                if (stack.Count > 0)
-                {
-                    stack.RemoveAt(stack.Count - 1);
-                }
-
-                continue;
-            }
-
-            stack.Add(part);
+            return string.Empty;
         }
 
-        return string.Join("/", stack);
+        var rentedSegments = ArrayPool<PathSegment>.Shared.Rent(estimatedSegmentCount);
+        var segmentCount = 0;
+
+        try
+        {
+            var segmentStart = -1;
+            for (var index = 0; index <= pathSpan.Length; index++)
+            {
+                var isSeparator = index == pathSpan.Length || IsDirectorySeparator(pathSpan[index]);
+                if (!isSeparator)
+                {
+                    if (segmentStart < 0)
+                    {
+                        segmentStart = index;
+                    }
+
+                    continue;
+                }
+
+                if (segmentStart < 0)
+                {
+                    continue;
+                }
+
+                var segmentLength = index - segmentStart;
+                if (segmentLength == 1 && pathSpan[segmentStart] == '.')
+                {
+                    segmentStart = -1;
+                    continue;
+                }
+
+                if (segmentLength == 2 &&
+                    pathSpan[segmentStart] == '.' &&
+                    pathSpan[segmentStart + 1] == '.')
+                {
+                    if (segmentCount > 0)
+                    {
+                        segmentCount--;
+                    }
+
+                    segmentStart = -1;
+                    continue;
+                }
+
+                rentedSegments[segmentCount++] = new PathSegment(segmentStart, segmentLength);
+                segmentStart = -1;
+            }
+
+            if (segmentCount == 0)
+            {
+                return string.Empty;
+            }
+
+            var resultLength = Math.Max(segmentCount - 1, 0);
+            for (var index = 0; index < segmentCount; index++)
+            {
+                resultLength += rentedSegments[index].Length;
+            }
+
+            var rentedChars = ArrayPool<char>.Shared.Rent(resultLength);
+            try
+            {
+                var position = 0;
+                for (var index = 0; index < segmentCount; index++)
+                {
+                    if (index > 0)
+                    {
+                        rentedChars[position++] = '/';
+                    }
+
+                    var segment = rentedSegments[index];
+                    pathSpan.Slice(segment.Start, segment.Length).CopyTo(rentedChars.AsSpan(position));
+                    position += segment.Length;
+                }
+
+                return new string(rentedChars, 0, position);
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(rentedChars);
+            }
+        }
+        finally
+        {
+            Array.Clear(rentedSegments, 0, estimatedSegmentCount);
+            ArrayPool<PathSegment>.Shared.Return(rentedSegments);
+        }
     }
 
     private sealed class DocumentGraphEntry
@@ -2872,7 +3180,7 @@ namespace XamlToCSharpGenerator.Generated
         public TimeSpan Elapsed { get; }
     }
 
-    private enum ConfigurationPrecedenceKey
+    internal enum ConfigurationPrecedenceKey
     {
         Unknown = 0,
         ProjectDefaultFile = 1,
@@ -2881,7 +3189,7 @@ namespace XamlToCSharpGenerator.Generated
         Code = 4
     }
 
-    private readonly record struct ConfigurationSourcePrecedence(
+    internal readonly record struct ConfigurationSourcePrecedence(
         int ProjectDefaultFile,
         int File,
         int MsBuild,
