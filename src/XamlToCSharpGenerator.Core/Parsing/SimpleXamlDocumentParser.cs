@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using XamlToCSharpGenerator.Core.Abstractions;
@@ -194,19 +195,74 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         var elementCondition = XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
             element.Name.NamespaceName,
             conditionalNamespacesByRawUri);
-
-        var key = TryGetDirectiveValue(element, "Key");
-        var name = TryGetName(element);
-        var fieldModifier = TryGetFieldModifier(element);
-        var dataType = TryGetDirectiveValue(element, "DataType");
-        var compileBindings = TryGetBoolDirectiveValue(element, "CompileBindings");
-        var factoryMethod = TryGetDirectiveValue(element, "FactoryMethod");
-        var typeArguments = XamlTypeArgumentListSemantics.Parse(TryGetDirectiveValue(element, "TypeArguments"));
-        var arrayItemType = TryGetArrayItemType(element);
+        var isArrayDirective = IsXamlDirectiveElement(element, "Array");
+        string? key = null;
+        string? xName = null;
+        string? plainName = null;
+        string? fieldModifier = null;
+        string? dataType = null;
+        bool? compileBindings = null;
+        string? factoryMethod = null;
+        string? typeArgumentsValue = null;
+        string? xamlArrayItemType = null;
+        string? plainArrayItemType = null;
         var textContent = TryGetInlineTextContent(element);
 
         foreach (var attribute in element.Attributes())
         {
+            if (!attribute.IsNamespaceDeclaration)
+            {
+                if (attribute.Name.Namespace == Xaml2006)
+                {
+                    if (attribute.Name.LocalName == "Key")
+                    {
+                        key = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "Name")
+                    {
+                        xName = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "FieldModifier")
+                    {
+                        fieldModifier = XamlAccessibilityModifierSemantics.NormalizeFieldModifier(attribute.Value);
+                    }
+                    else if (attribute.Name.LocalName == "DataType")
+                    {
+                        dataType = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "CompileBindings")
+                    {
+                        compileBindings = bool.TryParse(attribute.Value, out var parsedCompileBindings)
+                            ? parsedCompileBindings
+                            : (bool?)null;
+                    }
+                    else if (attribute.Name.LocalName == "FactoryMethod")
+                    {
+                        factoryMethod = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "TypeArguments")
+                    {
+                        typeArgumentsValue = attribute.Value;
+                    }
+                    else if (isArrayDirective && attribute.Name.LocalName == "Type")
+                    {
+                        xamlArrayItemType = attribute.Value;
+                    }
+                }
+                else if (attribute.Name.NamespaceName.Length == 0)
+                {
+                    if (attribute.Name.LocalName == "Name")
+                    {
+                        plainName = attribute.Value;
+                    }
+                    else if (isArrayDirective &&
+                             attribute.Name.LocalName.Equals("Type", StringComparison.Ordinal))
+                    {
+                        plainArrayItemType = attribute.Value;
+                    }
+                }
+            }
+
             if (attribute.IsNamespaceDeclaration || IsIgnoredDirective(attribute) || ShouldIgnoreAttribute(attribute, ignoredNamespaces))
             {
                 continue;
@@ -227,6 +283,14 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
                 Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
         }
+
+        var name = xName ?? plainName;
+        var typeArguments = XamlTypeArgumentListSemantics.Parse(typeArgumentsValue);
+        var arrayItemType = !string.IsNullOrWhiteSpace(xamlArrayItemType)
+            ? xamlArrayItemType
+            : !string.IsNullOrWhiteSpace(plainArrayItemType)
+                ? plainArrayItemType
+                : null;
 
         foreach (var child in element.Elements())
         {
@@ -343,19 +407,35 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
 
     private string? TryGetInlineTextContent(XElement element)
     {
-        var inlineTextFragments = element.Nodes()
-            .OfType<XText>()
-            .Select(static node => node.Value)
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Select(static value => value.Trim())
-            .ToArray();
+        StringBuilder? builder = null;
 
-        if (inlineTextFragments.Length == 0)
+        foreach (var node in element.Nodes())
         {
-            return null;
+            var textNode = node as XText;
+            if (textNode is null)
+            {
+                continue;
+            }
+
+            var trimmedValue = textNode.Value.Trim();
+            if (trimmedValue.Length == 0)
+            {
+                continue;
+            }
+
+            if (builder is null)
+            {
+                builder = new StringBuilder(trimmedValue.Length);
+            }
+            else if (builder!.Length > 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder!.Append(trimmedValue);
         }
 
-        return string.Join(" ", inlineTextFragments);
+        return builder?.ToString();
     }
 
     private ImmutableDictionary<string, string> CollectNamespaceMappings(
@@ -486,15 +566,16 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
     {
         var ignoredNamespaces = DefaultIgnoredNamespaces.ToBuilder();
 
-        var ignorablePrefixesValue = root.Attributes()
-            .FirstOrDefault(attribute =>
-                attribute.Name.Namespace == MarkupCompatibility &&
-                attribute.Name.LocalName == "Ignorable")
-            ?.Value;
-
-        if (!string.IsNullOrWhiteSpace(ignorablePrefixesValue))
+        foreach (var attribute in root.Attributes())
         {
-            var prefixes = XamlWhitespaceTokenSemantics.SplitTokens(ignorablePrefixesValue);
+            if (attribute.Name.Namespace != MarkupCompatibility ||
+                !attribute.Name.LocalName.Equals("Ignorable", StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(attribute.Value))
+            {
+                continue;
+            }
+
+            var prefixes = XamlWhitespaceTokenSemantics.SplitTokens(attribute.Value);
 
             foreach (var prefix in prefixes)
             {
@@ -504,6 +585,8 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                     ignoredNamespaces.Add(namespaceUri);
                 }
             }
+
+            break;
         }
 
         return ignoredNamespaces.ToImmutable();
@@ -615,46 +698,10 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         return normalized;
     }
 
-    private static string? TryGetName(XElement element)
-    {
-        var xName = element.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.Namespace == Xaml2006 && attribute.Name.LocalName == "Name");
-        if (xName is not null)
-        {
-            return xName.Value;
-        }
-
-        var name = element.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Name");
-        return name?.Value;
-    }
-
     private static XAttribute? TryGetDirectiveAttribute(XElement element, string directiveName)
     {
         return element.Attributes().FirstOrDefault(attribute =>
             attribute.Name.Namespace == Xaml2006 && attribute.Name.LocalName == directiveName);
-    }
-
-    private static string? TryGetDirectiveValue(XElement element, string directiveName)
-    {
-        return TryGetDirectiveAttribute(element, directiveName)?.Value;
-    }
-
-    private static bool? TryGetBoolDirectiveValue(XElement element, string directiveName)
-    {
-        var value = TryGetDirectiveValue(element, directiveName);
-        if (value is null)
-        {
-            return null;
-        }
-
-        return bool.TryParse(value, out var result) ? result : null;
-    }
-
-    private static string? TryGetFieldModifier(XElement element)
-    {
-        var fieldModifier = TryGetDirectiveValue(element, "FieldModifier");
-        return XamlAccessibilityModifierSemantics.NormalizeFieldModifier(fieldModifier);
     }
 
     private static bool IsIgnoredDirective(XAttribute attribute)
@@ -694,29 +741,4 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                element.Name.LocalName.Equals(localName, StringComparison.Ordinal);
     }
 
-    private static string? TryGetArrayItemType(XElement element)
-    {
-        if (!IsXamlDirectiveElement(element, "Array"))
-        {
-            return null;
-        }
-
-        var directiveType = TryGetDirectiveValue(element, "Type");
-        if (!string.IsNullOrWhiteSpace(directiveType))
-        {
-            return directiveType;
-        }
-
-        var plainType = element.Attributes()
-            .FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 &&
-                attribute.Name.LocalName.Equals("Type", StringComparison.Ordinal))
-            ?.Value;
-        if (!string.IsNullOrWhiteSpace(plainType))
-        {
-            return plainType;
-        }
-
-        return null;
-    }
 }

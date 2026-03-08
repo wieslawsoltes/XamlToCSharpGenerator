@@ -847,28 +847,29 @@ public static class XamlSourceGeneratorCompilerHost
         }
 
         ImmutableArray<DiagnosticInfo>.Builder? filtered = null;
-        var suppressedAny = false;
         for (var index = 0; index < diagnostics.Length; index++)
         {
             var diagnostic = diagnostics[index];
             if (ShouldSuppressControlThemeBasedOnDiagnostic(diagnostic, globalControlThemeKeys))
             {
-                suppressedAny = true;
+                if (filtered is null)
+                {
+                    filtered = ImmutableArray.CreateBuilder<DiagnosticInfo>(diagnostics.Length - 1);
+                    for (var preservedIndex = 0; preservedIndex < index; preservedIndex++)
+                    {
+                        filtered.Add(diagnostics[preservedIndex]);
+                    }
+                }
+
                 continue;
             }
 
-            filtered ??= ImmutableArray.CreateBuilder<DiagnosticInfo>(diagnostics.Length);
-            filtered.Add(diagnostic);
-        }
-
-        if (!suppressedAny)
-        {
-            return diagnostics;
+            filtered?.Add(diagnostic);
         }
 
         if (filtered is null)
         {
-            return ImmutableArray<DiagnosticInfo>.Empty;
+            return diagnostics;
         }
 
         return filtered.ToImmutable();
@@ -1701,6 +1702,7 @@ public static class XamlSourceGeneratorCompilerHost
         var assemblyName = options.AssemblyName ?? "UnknownAssembly";
         var entriesByUri = new Dictionary<string, DocumentGraphEntry>(StringComparer.OrdinalIgnoreCase);
         var entriesByTargetPath = new Dictionary<string, DocumentGraphEntry>(StringComparer.OrdinalIgnoreCase);
+        var orderedEntries = new List<DocumentGraphEntry>(documents.Length);
 
         foreach (var document in documents.OrderBy(static document => document.FilePath, StringComparer.OrdinalIgnoreCase))
         {
@@ -1745,11 +1747,12 @@ public static class XamlSourceGeneratorCompilerHost
             else
             {
                 entriesByUri[buildUri] = entry;
+                orderedEntries.Add(entry);
             }
         }
 
         var edgesBySource = new Dictionary<string, List<IncludeGraphEdge>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in entriesByUri.Values.OrderBy(static x => x.Document.FilePath, StringComparer.OrdinalIgnoreCase))
+        foreach (var entry in orderedEntries)
         {
             foreach (var include in entry.Document.Includes)
             {
