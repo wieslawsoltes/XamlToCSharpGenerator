@@ -63,6 +63,87 @@ public class CompilerHostGlobalGraphTests
         Assert.All(diagnostics, diagnostic => Assert.Equal("AXSG0601", diagnostic.Id));
     }
 
+    [Fact]
+    public void NormalizeIncludePath_Removes_Dot_Segments_And_Normalizes_Separators()
+    {
+        var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludePath(
+            @"./Views\Shared/../Cards//CardView.axaml");
+
+        Assert.Equal("Views/Cards/CardView.axaml", normalized);
+    }
+
+    [Fact]
+    public void NormalizeIncludeSource_Extracts_Unquoted_Uri_From_XUri_Markup()
+    {
+        var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(
+            "{x:Uri /Assets/Theme.axaml}");
+
+        Assert.Equal("/Assets/Theme.axaml", normalized);
+    }
+
+    [Fact]
+    public void NormalizeIncludeSource_Extracts_Quoted_Uri_Argument()
+    {
+        var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(
+            "{x:Uri Uri='/Assets/Theme.axaml', Relative=true}");
+
+        Assert.Equal("/Assets/Theme.axaml", normalized);
+    }
+
+    [Fact]
+    public void NormalizeIncludeSource_Preserves_NonUri_Markup_Extension_Text()
+    {
+        var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(
+            " {Binding ThemeSource} ");
+
+        Assert.Equal("{Binding ThemeSource}", normalized);
+    }
+
+    [Fact]
+    public void TryResolveIncludeUri_Resolves_Project_Local_Relative_Include()
+    {
+        var resolved = XamlSourceGeneratorCompilerHost.TryResolveIncludeUri(
+            "../Shared/Theme.axaml",
+            "Views/Pages/MainView.axaml",
+            "DemoAssembly",
+            out var resolvedUri,
+            out var isProjectLocal);
+
+        Assert.True(resolved);
+        Assert.True(isProjectLocal);
+        Assert.Equal("avares://DemoAssembly/Views/Shared/Theme.axaml", resolvedUri);
+    }
+
+    [Fact]
+    public void TryResolveIncludeUri_Resolves_Project_Local_Avares_Uri()
+    {
+        var resolved = XamlSourceGeneratorCompilerHost.TryResolveIncludeUri(
+            "avares://DemoAssembly/Styles/../Themes/Fluent.axaml",
+            "Views/MainView.axaml",
+            "DemoAssembly",
+            out var resolvedUri,
+            out var isProjectLocal);
+
+        Assert.True(resolved);
+        Assert.True(isProjectLocal);
+        Assert.Equal("avares://DemoAssembly/Themes/Fluent.axaml", resolvedUri);
+    }
+
+    [Fact]
+    public void TryResolveIncludeUri_Preserves_External_Avares_Uri()
+    {
+        var resolved = XamlSourceGeneratorCompilerHost.TryResolveIncludeUri(
+            "avares://External.Library/Themes/Fluent.axaml",
+            "Views/MainView.axaml",
+            "DemoAssembly",
+            out var resolvedUri,
+            out var isProjectLocal);
+
+        Assert.True(resolved);
+        Assert.False(isProjectLocal);
+        Assert.Equal("avares://External.Library/Themes/Fluent.axaml", resolvedUri);
+    }
+
     private static GeneratorOptions CreateOptions()
     {
         return new GeneratorOptions(

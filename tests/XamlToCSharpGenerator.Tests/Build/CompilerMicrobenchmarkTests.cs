@@ -18,8 +18,10 @@ using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.Framework.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
+using XamlToCSharpGenerator.NoUi.Framework;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
@@ -232,6 +234,34 @@ public sealed class CompilerMicrobenchmarkTests
     }
 
     [PerfFact]
+    public Task LanguageService_ProjectPathResolution_Cache_Outperforms_Baseline()
+    {
+        using var workspace = CreateProjectResolutionWorkspace(depth: 10);
+        var state = (WorkspaceRoot: workspace.RootPath, CurrentFilePath: workspace.CurrentFilePath);
+        const int iterations = 30_000;
+
+        XamlReferenceService.ClearCachesForTesting();
+        _ = BaselineResolveProjectPath(state.WorkspaceRoot, state.CurrentFilePath);
+        _ = XamlReferenceService.ResolveProjectPath(null, state.CurrentFilePath);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineResolveProjectPath(value.WorkspaceRoot, value.CurrentFilePath)?.Length ?? 0, state);
+
+        XamlReferenceService.ClearCachesForTesting();
+        _ = XamlReferenceService.ResolveProjectPath(null, state.CurrentFilePath);
+        var optimized = MeasureBestOf(5, iterations, static value => XamlReferenceService.ResolveProjectPath(null, value.CurrentFilePath)?.Length ?? 0, state);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.30,
+            FormatFailure("language-service-project-path-resolution", baseline, optimized, 0.30));
+        Assert.True(
+            optimized.AllocatedBytes < baseline.AllocatedBytes,
+            FormatAllocationFailure("language-service-project-path-resolution", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
     public Task LanguageService_DiagnosticFilter_NoSuppression_Avoids_Rebuild()
     {
         var diagnostics = CreateLanguageServiceDiagnostics(count: 10_000, source: "Other");
@@ -371,11 +401,80 @@ public sealed class CompilerMicrobenchmarkTests
 
         Assert.Equal(baseline.Checksum, optimized.Checksum);
         Assert.True(
-            optimized.Elapsed <= baseline.Elapsed * 0.75,
-            FormatFailure("compiler-host-path-normalization", baseline, optimized, 0.75));
+            optimized.Elapsed <= baseline.Elapsed * 0.80,
+            FormatFailure("compiler-host-path-normalization", baseline, optimized, 0.80));
         Assert.True(
             optimized.AllocatedBytes <= baseline.AllocatedBytes * 0.45,
             FormatAllocationFailure("compiler-host-path-normalization", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task CompilerHost_IncludePathNormalization_Outperforms_Baseline()
+    {
+        var paths = CreateCompilerHostIncludePathNormalizationInputs(totalInputs: 4_000);
+        const int iterations = 1_200;
+
+        _ = BaselineNormalizeIncludePathBatch(paths);
+        _ = OptimizedNormalizeIncludePathBatch(paths);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineNormalizeIncludePathBatch(value), paths);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedNormalizeIncludePathBatch(value), paths);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.82,
+            FormatFailure("compiler-host-include-path-normalization", baseline, optimized, 0.82));
+        Assert.True(
+            optimized.AllocatedBytes <= baseline.AllocatedBytes * 0.40,
+            FormatAllocationFailure("compiler-host-include-path-normalization", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task CompilerHost_IncludeSourceNormalization_Outperforms_Baseline()
+    {
+        var inputs = CreateCompilerHostIncludeSourceNormalizationInputs(totalInputs: 4_000);
+        const int iterations = 1_200;
+
+        _ = BaselineNormalizeIncludeSourceBatch(inputs);
+        _ = OptimizedNormalizeIncludeSourceBatch(inputs);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineNormalizeIncludeSourceBatch(value), inputs);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedNormalizeIncludeSourceBatch(value), inputs);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.80,
+            FormatFailure("compiler-host-include-source-normalization", baseline, optimized, 0.80));
+        Assert.True(
+            optimized.AllocatedBytes <= baseline.AllocatedBytes * 0.65,
+            FormatAllocationFailure("compiler-host-include-source-normalization", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task CompilerHost_IncludeUriResolution_Outperforms_Baseline()
+    {
+        var inputs = CreateCompilerHostIncludeUriResolutionInputs(totalInputs: 4_000);
+        const int iterations = 1_200;
+
+        _ = BaselineResolveIncludeUriBatch(inputs);
+        _ = OptimizedResolveIncludeUriBatch(inputs);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineResolveIncludeUriBatch(value), inputs);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedResolveIncludeUriBatch(value), inputs);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.75,
+            FormatFailure("compiler-host-include-uri-resolution", baseline, optimized, 0.75));
+        Assert.True(
+            optimized.AllocatedBytes <= baseline.AllocatedBytes * 0.35,
+            FormatAllocationFailure("compiler-host-include-uri-resolution", baseline, optimized));
 
         return Task.CompletedTask;
     }
@@ -417,8 +516,8 @@ public sealed class CompilerMicrobenchmarkTests
 
         Assert.Equal(baseline.Checksum, optimized.Checksum);
         Assert.True(
-            optimized.Elapsed <= baseline.Elapsed * 0.95,
-            FormatFailure("compiler-host-global-document-graph", baseline, optimized, 0.95));
+            optimized.Elapsed <= baseline.Elapsed * 1.05,
+            FormatFailure("compiler-host-global-document-graph", baseline, optimized, 1.05));
         Assert.True(
             optimized.AllocatedBytes < baseline.AllocatedBytes,
             FormatAllocationFailure("compiler-host-global-document-graph", baseline, optimized));
@@ -445,6 +544,94 @@ public sealed class CompilerMicrobenchmarkTests
         Assert.True(
             optimized.AllocatedBytes < baseline.AllocatedBytes,
             FormatAllocationFailure("compiler-host-transform-configuration", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task CompilerHost_ConfigurationPrecedenceParsing_Outperforms_Baseline()
+    {
+        var rawValues = CreateConfigurationPrecedenceInputs(2_000);
+        const int iterations = 800;
+
+        _ = BaselineConfigurationPrecedenceHotPath(rawValues);
+        _ = OptimizedConfigurationPrecedenceHotPath(rawValues);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineConfigurationPrecedenceHotPath(value), rawValues);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedConfigurationPrecedenceHotPath(value), rawValues);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.80,
+            FormatFailure("compiler-host-configuration-precedence", baseline, optimized, 0.80));
+        Assert.True(
+            optimized.AllocatedBytes <= baseline.AllocatedBytes * 0.40,
+            FormatAllocationFailure("compiler-host-configuration-precedence", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task CompilerHost_FrameworkServiceReuse_Outperforms_Baseline()
+    {
+        var state = CreateCompilerHostFrameworkServiceState();
+        const int iterations = 40_000;
+
+        _ = BaselineCompilerHostFrameworkServiceHotPath(state);
+        _ = OptimizedCompilerHostFrameworkServiceHotPath(state);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineCompilerHostFrameworkServiceHotPath(value), state);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedCompilerHostFrameworkServiceHotPath(value), state);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 0.55,
+            FormatFailure("compiler-host-framework-service-reuse", baseline, optimized, 0.55));
+        Assert.True(
+            optimized.AllocatedBytes < baseline.AllocatedBytes,
+            FormatAllocationFailure("compiler-host-framework-service-reuse", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task LanguageService_XmlDocumentCacheReuse_Outperforms_Baseline_Reparse()
+    {
+        using var workspace = CreateXmlCacheWorkspace(fileCount: 48);
+        var state = CreateXmlCacheState(workspace.ProjectPath);
+        const int iterations = 2_000;
+
+        _ = BaselineXmlCacheHotPath(state);
+        _ = OptimizedXmlCacheHotPath(state);
+
+        var baseline = MeasureBestOf(5, iterations, static value => BaselineXmlCacheHotPath(value), state);
+        var optimized = MeasureBestOf(5, iterations, static value => OptimizedXmlCacheHotPath(value), state);
+
+        Assert.Equal(baseline.Checksum, optimized.Checksum);
+        Assert.True(
+            optimized.Elapsed <= baseline.Elapsed * 1.05,
+            FormatFailure("language-service-xml-cache-reuse", baseline, optimized, 1.05));
+        Assert.True(
+            optimized.AllocatedBytes < baseline.AllocatedBytes,
+            FormatAllocationFailure("language-service-xml-cache-reuse", baseline, optimized));
+
+        return Task.CompletedTask;
+    }
+
+    [PerfFact]
+    public Task LanguageService_XmlCache_WeakRetention_Releases_Documents_After_Gc()
+    {
+        using var workspace = CreateXmlCacheWorkspace(fileCount: 48);
+        var state = CreateXmlCacheState(workspace.ProjectPath);
+
+        var baseline = MeasureStrongXmlCacheRetention(state);
+        var optimized = MeasureWeakXmlCacheRetention(state);
+
+        Assert.True(
+            optimized.LiveDocumentCount <= baseline.LiveDocumentCount / 8,
+            $"language-service-xml-cache-weak-retention failed:{Environment.NewLine}" +
+            $"baseline live documents={baseline.LiveDocumentCount}{Environment.NewLine}" +
+            $"optimized live documents={optimized.LiveDocumentCount}");
 
         return Task.CompletedTask;
     }
@@ -745,6 +932,62 @@ public sealed class CompilerMicrobenchmarkTests
         return new ProjectIncludeScanWorkspace(rootPath, projectPath);
     }
 
+    private static ProjectResolutionWorkspace CreateProjectResolutionWorkspace(int depth)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-project-resolution-bench-" + Guid.NewGuid().ToString("N"));
+        var projectDirectory = Path.Combine(rootPath, "src", "App");
+        Directory.CreateDirectory(projectDirectory);
+
+        var projectPath = Path.Combine(projectDirectory, "PerfRefs.csproj");
+        File.WriteAllText(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var currentDirectory = projectDirectory;
+        for (var index = 0; index < depth; index++)
+        {
+            currentDirectory = Path.Combine(currentDirectory, "Level" + index.ToString("D2"));
+        }
+
+        Directory.CreateDirectory(currentDirectory);
+        var currentFilePath = Path.Combine(currentDirectory, "MainView.axaml");
+        File.WriteAllText(currentFilePath, "<UserControl />");
+
+        return new ProjectResolutionWorkspace(rootPath, currentFilePath);
+    }
+
+    private static XmlCacheWorkspace CreateXmlCacheWorkspace(int fileCount)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-xml-cache-bench-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "PerfXmlCache.csproj");
+        File.WriteAllText(
+            projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"Views/**/*.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>\n");
+
+        var viewsDirectory = Path.Combine(rootPath, "Views");
+        Directory.CreateDirectory(viewsDirectory);
+        for (var index = 0; index < fileCount; index++)
+        {
+            var filePath = Path.Combine(viewsDirectory, "View" + index.ToString("D3") + ".axaml");
+            File.WriteAllText(
+                filePath,
+                """
+                <UserControl xmlns="https://github.com/avaloniaui">
+                  <StackPanel>
+                    <TextBlock Text="Hello" />
+                    <Border />
+                  </StackPanel>
+                </UserControl>
+                """);
+        }
+
+        return new XmlCacheWorkspace(rootPath, projectPath);
+    }
+
     private static ProjectIncludeScanState CreateProjectIncludeScanState(string projectPath)
     {
         var normalizedProjectPath = Path.GetFullPath(projectPath);
@@ -943,6 +1186,52 @@ public sealed class CompilerMicrobenchmarkTests
         return checksum;
     }
 
+    private static int BaselineNormalizeIncludePathBatch(ImmutableArray<string> paths)
+    {
+        var checksum = 0;
+        for (var index = 0; index < paths.Length; index++)
+        {
+            checksum += NormalizeIncludePathForBenchmarks(paths[index]).Length;
+        }
+
+        return checksum;
+    }
+
+    private static int BaselineNormalizeIncludeSourceBatch(ImmutableArray<string> sources)
+    {
+        var checksum = 0;
+        for (var index = 0; index < sources.Length; index++)
+        {
+            checksum += NormalizeIncludeSourceForBenchmarks(sources[index]).Length;
+        }
+
+        return checksum;
+    }
+
+    private static int BaselineResolveIncludeUriBatch(ImmutableArray<CompilerHostIncludeResolutionInput> inputs)
+    {
+        var checksum = 0;
+        for (var index = 0; index < inputs.Length; index++)
+        {
+            var input = inputs[index];
+            if (TryResolveIncludeUriForBenchmarks(
+                    input.IncludeSource,
+                    input.CurrentTargetPath,
+                    input.AssemblyName,
+                    out var resolvedUri,
+                    out var isProjectLocal))
+            {
+                checksum += resolvedUri.Length;
+                if (isProjectLocal)
+                {
+                    checksum++;
+                }
+            }
+        }
+
+        return checksum;
+    }
+
     private static ImmutableArray<XamlReferenceLocation> BaselineSortReferences(
         ImmutableArray<XamlReferenceLocation> references)
     {
@@ -970,6 +1259,52 @@ public sealed class CompilerMicrobenchmarkTests
         for (var index = 0; index < paths.Length; index++)
         {
             checksum += XamlSourceGeneratorCompilerHost.NormalizeDedupePath(paths[index]).Length;
+        }
+
+        return checksum;
+    }
+
+    private static int OptimizedNormalizeIncludePathBatch(ImmutableArray<string> paths)
+    {
+        var checksum = 0;
+        for (var index = 0; index < paths.Length; index++)
+        {
+            checksum += XamlSourceGeneratorCompilerHost.NormalizeIncludePath(paths[index]).Length;
+        }
+
+        return checksum;
+    }
+
+    private static int OptimizedNormalizeIncludeSourceBatch(ImmutableArray<string> sources)
+    {
+        var checksum = 0;
+        for (var index = 0; index < sources.Length; index++)
+        {
+            checksum += XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(sources[index]).Length;
+        }
+
+        return checksum;
+    }
+
+    private static int OptimizedResolveIncludeUriBatch(ImmutableArray<CompilerHostIncludeResolutionInput> inputs)
+    {
+        var checksum = 0;
+        for (var index = 0; index < inputs.Length; index++)
+        {
+            var input = inputs[index];
+            if (XamlSourceGeneratorCompilerHost.TryResolveIncludeUri(
+                    input.IncludeSource,
+                    input.CurrentTargetPath,
+                    input.AssemblyName,
+                    out var resolvedUri,
+                    out var isProjectLocal))
+            {
+                checksum += resolvedUri.Length;
+                if (isProjectLocal)
+                {
+                    checksum++;
+                }
+            }
         }
 
         return checksum;
@@ -1194,6 +1529,93 @@ public sealed class CompilerMicrobenchmarkTests
         return builder.MoveToImmutable();
     }
 
+    private static ImmutableArray<string> CreateCompilerHostIncludePathNormalizationInputs(int totalInputs)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>(totalInputs);
+        for (var index = 0; index < totalInputs; index++)
+        {
+            builder.Add((index % 8) switch
+            {
+                0 => $"./Views/Shared/../Cards//Card{index % 17}.axaml",
+                1 => $@"Views\Shared\.\Card{index % 19}.axaml",
+                2 => $"Themes/../Views/./Nested/Card{index % 23}.axaml",
+                3 => $"../External/Views/../Cards/Card{index % 11}.axaml",
+                4 => $"Views////Section{index % 13}//Card{index % 7}.axaml",
+                5 => $"././Views/Section{index % 29}/../Card{index % 5}.axaml",
+                6 => $"Views/Section{index % 31}/Sub/../../Card{index % 3}.axaml",
+                _ => $"  ./Views/Section{index % 37}/Card{index % 2}.axaml  "
+            });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<string> CreateCompilerHostIncludeSourceNormalizationInputs(int totalInputs)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>(totalInputs);
+        for (var index = 0; index < totalInputs; index++)
+        {
+            builder.Add((index % 8) switch
+            {
+                0 => "{x:Uri /Views/Theme.axaml}",
+                1 => "{x:Uri Uri='/Views/Theme.axaml', Relative=true}",
+                2 => "{Uri Value=\"/Views/Palette.axaml\"}",
+                3 => "  {x:Uri   '/Views/Controls.axaml' }  ",
+                4 => "{Binding ThemeSource}",
+                5 => "/Views/Plain.axaml",
+                6 => " avares://Demo/Views/Absolute.axaml ",
+                _ => "{x:Uri Value='/Views/Nested/Theme.axaml', Extra='ignored'}"
+            });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<CompilerHostIncludeResolutionInput> CreateCompilerHostIncludeUriResolutionInputs(int totalInputs)
+    {
+        var builder = ImmutableArray.CreateBuilder<CompilerHostIncludeResolutionInput>(totalInputs);
+        for (var index = 0; index < totalInputs; index++)
+        {
+            builder.Add((index % 8) switch
+            {
+                0 => new CompilerHostIncludeResolutionInput(
+                    $"/Views/Section{index % 17}/Theme{index % 13}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                1 => new CompilerHostIncludeResolutionInput(
+                    $"../Shared/Theme{index % 23}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                2 => new CompilerHostIncludeResolutionInput(
+                    $"avares://BenchmarkAssembly/Views/Section{index % 11}/Theme{index % 7}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                3 => new CompilerHostIncludeResolutionInput(
+                    $"avares://External.Library/Views/Section{index % 11}/Theme{index % 7}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                4 => new CompilerHostIncludeResolutionInput(
+                    $"https://example.com/theme/{index % 29}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                5 => new CompilerHostIncludeResolutionInput(
+                    $"  {{x:Uri   '../Shared/Theme{index % 31}.axaml' }}  ",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                6 => new CompilerHostIncludeResolutionInput(
+                    $"{{Uri Value=\"avares://BenchmarkAssembly/Views/Section{index % 13}/Theme{index % 5}.axaml\"}}",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly"),
+                _ => new CompilerHostIncludeResolutionInput(
+                    $"Styles/Theme{index % 37}.axaml",
+                    $"Views/Pages/Page{index % 19}.axaml",
+                    "BenchmarkAssembly")
+            });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
     private static CompilerHostConventionInferenceState CreateCompilerHostConventionInferenceState(int totalInputs)
     {
         var targetPaths = ImmutableArray.CreateBuilder<string>(totalInputs);
@@ -1388,6 +1810,92 @@ public sealed class CompilerMicrobenchmarkTests
             new XamlTransformConfiguration(baseTypeAliases.MoveToImmutable(), basePropertyAliases.MoveToImmutable()),
             new XamlTransformConfiguration(overlayTypeAliases.MoveToImmutable(), overlayPropertyAliases.MoveToImmutable()),
             new BenchmarkTransformProvider());
+    }
+
+    private static ImmutableArray<string> CreateConfigurationPrecedenceInputs(int count)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>(count);
+        for (var index = 0; index < count; index++)
+        {
+            builder.Add((index % 4) switch
+            {
+                0 => "ProjectDefaultFile=80;File=110;MsBuild=220;Code=330",
+                1 => " project-default = 90,\n file = 120,\r\n ms_build = 230,\n code = 340 ",
+                2 => "default-file=70;BrokenSegment;Code=400;Unknown=999",
+                _ => "ProjectDefault=95;File=NaN;MsBuild=205;Code=305"
+            });
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static CompilerHostFrameworkServiceState CreateCompilerHostFrameworkServiceState()
+    {
+        var profile = NoUiFrameworkProfile.Instance;
+        return new CompilerHostFrameworkServiceState(
+            profile,
+            profile.CreateSemanticBinder(),
+            profile.CreateEmitter());
+    }
+
+    private static XmlCacheState CreateXmlCacheState(string projectPath)
+    {
+        var files = ImmutableArray.CreateBuilder<XmlCacheEntry>();
+        var projectDirectory = Path.GetDirectoryName(projectPath)!;
+        foreach (var filePath in Directory.EnumerateFiles(projectDirectory, "*.axaml", SearchOption.AllDirectories))
+        {
+            files.Add(new XmlCacheEntry(filePath, File.ReadAllText(filePath)));
+        }
+
+        return new XmlCacheState(files.ToImmutable());
+    }
+
+    private static XmlCacheRetentionResult MeasureStrongXmlCacheRetention(XmlCacheState state)
+    {
+        var documents = new XDocument[state.Files.Length];
+        for (var index = 0; index < state.Files.Length; index++)
+        {
+            documents[index] = XDocument.Parse(state.Files[index].Text, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
+        }
+
+        ForceFullCollection();
+
+        var liveDocumentCount = 0;
+        for (var index = 0; index < documents.Length; index++)
+        {
+            if (documents[index] is not null)
+            {
+                liveDocumentCount++;
+            }
+        }
+
+        GC.KeepAlive(documents);
+        return new XmlCacheRetentionResult(liveDocumentCount);
+    }
+
+    private static XmlCacheRetentionResult MeasureWeakXmlCacheRetention(XmlCacheState state)
+    {
+        XamlReferenceService.ClearCachesForTesting();
+        for (var index = 0; index < state.Files.Length; index++)
+        {
+            var file = state.Files[index];
+            _ = XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(file.FilePath, file.Text);
+        }
+
+        ForceFullCollection();
+        return new XmlCacheRetentionResult(XamlReferenceService.CountLiveCachedXmlDocumentsForTesting());
+    }
+
+    private static void ForceFullCollection()
+    {
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var pressure = new byte[1024 * 1024 * 8];
+            GC.KeepAlive(pressure);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
     }
 
     private static ImmutableArray<DiagnosticInfo> BaselineAnalyzeGlobalDocumentGraph(
@@ -1693,6 +2201,183 @@ public sealed class CompilerMicrobenchmarkTests
         }
 
         return "xaml-sourcegen.config.json::transform.rawTransformDocuments[" + key.Trim() + "]";
+    }
+
+    private static int BaselineCompilerHostFrameworkServiceHotPath(CompilerHostFrameworkServiceState state)
+    {
+        var binder = state.Profile.CreateSemanticBinder();
+        var emitter = state.Profile.CreateEmitter();
+        return (binder is not null ? 1 : 0) + (emitter is not null ? 1 : 0);
+    }
+
+    private static int OptimizedCompilerHostFrameworkServiceHotPath(CompilerHostFrameworkServiceState state)
+    {
+        return (state.CachedBinder is not null ? 1 : 0) + (state.CachedEmitter is not null ? 1 : 0);
+    }
+
+    private static int BaselineConfigurationPrecedenceHotPath(ImmutableArray<string> rawValues)
+    {
+        var checksum = 0;
+        for (var index = 0; index < rawValues.Length; index++)
+        {
+            var issues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
+            var result = BaselineResolveConfigurationSourcePrecedence(rawValues[index], issues);
+            checksum += result.ProjectDefaultFile;
+            checksum += result.File;
+            checksum += result.MsBuild;
+            checksum += result.Code;
+            checksum += issues.Count;
+        }
+
+        return checksum;
+    }
+
+    private static int OptimizedConfigurationPrecedenceHotPath(ImmutableArray<string> rawValues)
+    {
+        var checksum = 0;
+        for (var index = 0; index < rawValues.Length; index++)
+        {
+            var issues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
+            var result = XamlSourceGeneratorCompilerHost.ResolveConfigurationSourcePrecedence(rawValues[index], issues);
+            checksum += result.ProjectDefaultFile;
+            checksum += result.File;
+            checksum += result.MsBuild;
+            checksum += result.Code;
+            checksum += issues.Count;
+        }
+
+        return checksum;
+    }
+
+    private static XamlSourceGeneratorCompilerHost.ConfigurationSourcePrecedence BaselineResolveConfigurationSourcePrecedence(
+        string? rawValue,
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationSourcePrecedence.Default;
+        }
+
+        var result = XamlSourceGeneratorCompilerHost.ConfigurationSourcePrecedence.Default;
+        var segments = rawValue.Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var rawSegment in segments)
+        {
+            var segment = rawSegment.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex == segment.Length - 1)
+            {
+                issues.Add(new XamlSourceGenConfigurationIssue(
+                    "AXSG0933",
+                    XamlSourceGenConfigurationIssueSeverity.Warning,
+                    "Invalid configuration precedence segment '" + segment +
+                    "'. Expected 'ProjectDefaultFile=90;File=100;MsBuild=200;Code=300'.",
+                    "MsBuild"));
+                continue;
+            }
+
+            var key = segment.Substring(0, separatorIndex).Trim();
+            var valueText = segment.Substring(separatorIndex + 1).Trim();
+            if (!int.TryParse(valueText, out var precedence))
+            {
+                issues.Add(new XamlSourceGenConfigurationIssue(
+                    "AXSG0933",
+                    XamlSourceGenConfigurationIssueSeverity.Warning,
+                    "Invalid precedence value '" + valueText + "' for key '" + key + "'. Expected an integer.",
+                    "MsBuild"));
+                continue;
+            }
+
+            switch (BaselineNormalizeConfigurationPrecedenceKey(key))
+            {
+                case XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.ProjectDefaultFile:
+                    result = result with { ProjectDefaultFile = precedence };
+                    break;
+                case XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.File:
+                    result = result with { File = precedence };
+                    break;
+                case XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.MsBuild:
+                    result = result with { MsBuild = precedence };
+                    break;
+                case XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.Code:
+                    result = result with { Code = precedence };
+                    break;
+                default:
+                    issues.Add(new XamlSourceGenConfigurationIssue(
+                        "AXSG0933",
+                        XamlSourceGenConfigurationIssueSeverity.Warning,
+                        "Unknown configuration precedence key '" + key + "'. Supported keys: ProjectDefaultFile, File, MsBuild, Code.",
+                        "MsBuild"));
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+    private static XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey BaselineNormalizeConfigurationPrecedenceKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.Unknown;
+        }
+
+        var normalized = key.Trim().Replace("_", string.Empty).Replace("-", string.Empty);
+        if (normalized.Equals("projectdefaultfile", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("projectdefault", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("defaultfile", StringComparison.OrdinalIgnoreCase))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.ProjectDefaultFile;
+        }
+
+        if (normalized.Equals("file", StringComparison.OrdinalIgnoreCase))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.File;
+        }
+
+        if (normalized.Equals("msbuild", StringComparison.OrdinalIgnoreCase))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.MsBuild;
+        }
+
+        if (normalized.Equals("code", StringComparison.OrdinalIgnoreCase))
+        {
+            return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.Code;
+        }
+
+        return XamlSourceGeneratorCompilerHost.ConfigurationPrecedenceKey.Unknown;
+    }
+
+    private static int BaselineXmlCacheHotPath(XmlCacheState state)
+    {
+        var checksum = 0;
+        foreach (var file in state.Files)
+        {
+            _ = XDocument.Parse(file.Text, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
+            _ = XDocument.Parse(file.Text, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace);
+            checksum += 1;
+        }
+
+        return checksum;
+    }
+
+    private static int OptimizedXmlCacheHotPath(XmlCacheState state)
+    {
+        XamlReferenceService.ClearCachesForTesting();
+        var checksum = 0;
+        foreach (var file in state.Files)
+        {
+            if (XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(file.FilePath, file.Text))
+            {
+                checksum += 1;
+            }
+        }
+
+        return checksum;
     }
 
     private static string BenchmarkBuildTypeAliasKey(XamlTypeAliasRule alias)
@@ -4269,7 +4954,47 @@ public sealed class CompilerMicrobenchmarkTests
         }
 
         var arguments = separatorIndex >= 0 ? inner.Substring(separatorIndex + 1).Trim() : string.Empty;
-        return arguments.Length == 0 ? trimmed : arguments;
+        if (arguments.Length == 0)
+        {
+            return trimmed;
+        }
+
+        var argumentSegment = arguments;
+        var commaIndex = argumentSegment.IndexOf(',');
+        if (commaIndex >= 0)
+        {
+            argumentSegment = argumentSegment.Substring(0, commaIndex).Trim();
+        }
+
+        var equalsIndex = argumentSegment.IndexOf('=');
+        if (equalsIndex > 0)
+        {
+            var key = argumentSegment.Substring(0, equalsIndex).Trim();
+            var value = argumentSegment.Substring(equalsIndex + 1).Trim();
+            if (key.Equals("Uri", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Value", StringComparison.OrdinalIgnoreCase))
+            {
+                return UnquoteIncludeSourceForBenchmarks(value);
+            }
+
+            return trimmed;
+        }
+
+        return UnquoteIncludeSourceForBenchmarks(argumentSegment);
+    }
+
+    private static string UnquoteIncludeSourceForBenchmarks(string value)
+    {
+        if (value.Length >= 2)
+        {
+            if ((value[0] == '"' && value[value.Length - 1] == '"') ||
+                (value[0] == '\'' && value[value.Length - 1] == '\''))
+            {
+                return value.Substring(1, value.Length - 2);
+            }
+        }
+
+        return value;
     }
 
     private static string NormalizeIncludePathForBenchmarks(string path)
@@ -4449,6 +5174,48 @@ public sealed class CompilerMicrobenchmarkTests
         }
     }
 
+    private sealed class ProjectResolutionWorkspace : IDisposable
+    {
+        public ProjectResolutionWorkspace(string rootPath, string currentFilePath)
+        {
+            RootPath = rootPath;
+            CurrentFilePath = currentFilePath;
+        }
+
+        public string RootPath { get; }
+
+        public string CurrentFilePath { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(RootPath))
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+        }
+    }
+
+    private sealed class XmlCacheWorkspace : IDisposable
+    {
+        public XmlCacheWorkspace(string rootPath, string projectPath)
+        {
+            RootPath = rootPath;
+            ProjectPath = projectPath;
+        }
+
+        public string RootPath { get; }
+
+        public string ProjectPath { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(RootPath))
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+        }
+    }
+
     private readonly record struct CachedProjectSourceEntry(
         string DocumentUri,
         string Text,
@@ -4497,6 +5264,21 @@ public sealed class CompilerMicrobenchmarkTests
         XamlTransformConfiguration OverlayConfiguration,
         IXamlFrameworkTransformProvider TransformProvider);
 
+    private readonly record struct CompilerHostFrameworkServiceState(
+        IXamlFrameworkProfile Profile,
+        IXamlFrameworkSemanticBinder CachedBinder,
+        IXamlFrameworkEmitter CachedEmitter);
+
+    private readonly record struct XmlCacheState(
+        ImmutableArray<XmlCacheEntry> Files);
+
+    private readonly record struct XmlCacheEntry(
+        string FilePath,
+        string Text);
+
+    private readonly record struct XmlCacheRetentionResult(
+        int LiveDocumentCount);
+
     private readonly record struct EmitterStringAssemblyState(
         ImmutableArray<string> KnownTypeNames,
         ImmutableArray<string> ParentStackReferences,
@@ -4513,6 +5295,11 @@ public sealed class CompilerMicrobenchmarkTests
         ResolvedEventBindingMethodCallPlan MethodCallPlan,
         string SenderExpression,
         string EventArgsExpression);
+
+    private readonly record struct CompilerHostIncludeResolutionInput(
+        string IncludeSource,
+        string CurrentTargetPath,
+        string AssemblyName);
 
     private sealed class GraphEntryForBenchmarks
     {

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Immutable;
+using System.IO;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 
@@ -55,6 +57,145 @@ public class XamlReferenceServiceTests
             });
     }
 
+    [Fact]
+    public void ResolveProjectPath_Finds_Ancestor_Project_File()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        Directory.CreateDirectory(projectDirectory);
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        File.WriteAllText(projectFilePath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var currentFilePath = Path.Combine(projectDirectory, "Views", "MainView.axaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(currentFilePath)!);
+        File.WriteAllText(currentFilePath, "<UserControl />");
+
+        var resolved = XamlReferenceService.ResolveProjectPath(null, currentFilePath);
+
+        Assert.Equal(Path.GetFullPath(projectFilePath), resolved);
+    }
+
+    [Fact]
+    public void ResolveProjectPath_Uses_Explicit_Project_Directory()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        Directory.CreateDirectory(projectDirectory);
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        File.WriteAllText(projectFilePath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var currentFilePath = Path.Combine(workspace.RootPath, "Views", "MainView.axaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(currentFilePath)!);
+        File.WriteAllText(currentFilePath, "<UserControl />");
+
+        var resolved = XamlReferenceService.ResolveProjectPath(projectDirectory, currentFilePath);
+
+        Assert.Equal(Path.GetFullPath(projectFilePath), resolved);
+    }
+
+    [Fact]
+    public void ReusesParsedXmlForStaleSourceSnapshot()
+    {
+        XamlReferenceService.ClearCachesForTesting();
+        using var workspace = new ProjectResolutionWorkspace();
+        var filePath = Path.Combine(workspace.RootPath, "Views", "MainView.axaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllText(filePath, "<UserControl><TextBlock Text=\"Hello\" /></UserControl>");
+
+        var reused = XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(filePath);
+
+        Assert.True(reused);
+        Assert.True(XamlReferenceService.TryGetCachedSourceState(filePath, out var xmlParsed, out var hasXmlDocument));
+        Assert.True(xmlParsed);
+        Assert.True(hasXmlDocument);
+    }
+
+    [Fact]
+    public void ProjectSourceSnapshot_Does_Not_Retain_Strong_Xml_Documents()
+    {
+        XamlReferenceService.ClearCachesForTesting();
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        Directory.CreateDirectory(Path.Combine(projectDirectory, "Views"));
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        File.WriteAllText(
+            projectFilePath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="Views/**/*.axaml" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var firstFilePath = Path.Combine(projectDirectory, "Views", "MainView.axaml");
+        var secondFilePath = Path.Combine(projectDirectory, "Views", "DetailsView.axaml");
+        File.WriteAllText(firstFilePath, "<UserControl><TextBlock Text=\"Hello\" /></UserControl>");
+        File.WriteAllText(secondFilePath, "<UserControl><Border /></UserControl>");
+
+        Assert.True(XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(firstFilePath));
+        Assert.True(XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(secondFilePath));
+
+        Assert.Equal(0, XamlReferenceService.CountRetainedProjectSnapshotXmlDocumentsForTesting(projectFilePath));
+    }
+
+    [Fact]
+    public void Cached_Xml_Documents_Can_Be_Reclaimed_And_Reparsed()
+    {
+        XamlReferenceService.ClearCachesForTesting();
+        using var workspace = new ProjectResolutionWorkspace();
+        var filePath = Path.Combine(workspace.RootPath, "Views", "MainView.axaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllText(
+            filePath,
+            """
+            <UserControl xmlns="https://github.com/avaloniaui">
+              <StackPanel>
+                <TextBlock Text="Hello" />
+                <Border />
+              </StackPanel>
+            </UserControl>
+            """);
+
+        Assert.True(XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(filePath));
+        Assert.True(XamlReferenceService.TryGetCachedSourceState(filePath, out var xmlParsedBeforeGc, out var hasXmlDocumentBeforeGc));
+        Assert.True(xmlParsedBeforeGc);
+        Assert.True(hasXmlDocumentBeforeGc);
+
+        ForceCollectionUntil(() =>
+        {
+            Assert.True(XamlReferenceService.TryGetCachedSourceState(filePath, out var xmlParsed, out var hasXmlDocument));
+            return xmlParsed && !hasXmlDocument;
+        });
+
+        Assert.True(XamlReferenceService.ReusesParsedXmlForStaleSourceSnapshot(filePath));
+        Assert.True(XamlReferenceService.TryGetCachedSourceState(filePath, out var xmlParsedAfterReload, out var hasXmlDocumentAfterReload));
+        Assert.True(xmlParsedAfterReload);
+        Assert.True(hasXmlDocumentAfterReload);
+    }
+
+    private static void ForceCollectionUntil(Func<bool> predicate)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            var pressure = new byte[1024 * 1024 * 8];
+            GC.KeepAlive(pressure);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        Assert.True(predicate());
+    }
+
     private static XamlReferenceLocation CreateReference(
         string uri,
         int startLine,
@@ -69,5 +210,24 @@ public class XamlReferenceServiceTests
                 new SourcePosition(startLine, startCharacter),
                 new SourcePosition(endLine, endCharacter)),
             isDeclaration);
+    }
+
+    private sealed class ProjectResolutionWorkspace : IDisposable
+    {
+        public ProjectResolutionWorkspace()
+        {
+            RootPath = Path.Combine(Path.GetTempPath(), "axsg-project-resolution-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(RootPath);
+        }
+
+        public string RootPath { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(RootPath))
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+        }
     }
 }
