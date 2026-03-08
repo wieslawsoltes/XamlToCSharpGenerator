@@ -128,6 +128,56 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Completion_InImplicitExpressionContext_ReturnsSourceMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ImplicitExpressionCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Prod}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var expressionCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Prod", StringComparison.Ordinal) + 4);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(expressionCaret.Line, expressionCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "ProductName", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_InEventLambdaContext_ReturnsParametersAndSourceMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/EventLambdaCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <Button Click=\"{(s, e) => Cli}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var lambdaBodyOffset = xaml.LastIndexOf("Cli", StringComparison.Ordinal);
+        Assert.True(lambdaBodyOffset >= 0, "Expected lambda body token not found.");
+        var expressionCaret = SourceText.From(xaml).Lines.GetLinePosition(lambdaBodyOffset + 3);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(expressionCaret.Line, expressionCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "ClickCount", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "s", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "e", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_InNestedExpressionBindingContext_ReturnsNestedProperties()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -276,6 +326,28 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.NotNull(hover);
         Assert.Contains("Method", hover!.Markdown, StringComparison.Ordinal);
         Assert.Contains("FormatSummary", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForImplicitExpressionProperty_ReturnsPropertyDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverImplicitExpressionProperty.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{ProductName}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ProductName", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("MainWindowViewModel.ProductName", hover.Markdown, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1003,6 +1075,28 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_ForEventLambdaProperty_ResolvesPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/EventLambdaPropertyDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <Button Click=\"{(s, e) => ClickCount++}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var offset = xaml.IndexOf("ClickCount", StringComparison.Ordinal);
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, offset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Definition_ForBindingPathProperty_WithElementNameSource_ResolvesPropertySource()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -1202,6 +1296,31 @@ public sealed class XamlLanguageServiceEngineTests
         var references = await engine.GetReferencesAsync(
             uri,
             GetPosition(xaml, firstNameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 3);
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 1);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+    }
+
+    [Fact]
+    public async Task References_ForImplicitExpressionProperty_ReturnDeclarationAndUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ImplicitExpressionReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{ProductName}\"/>\n" +
+                            "  <TextBlock Text=\"{$'{Quantity}x {ProductName}'}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var productNameOffset = xaml.IndexOf("ProductName", StringComparison.Ordinal);
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, productNameOffset + 2),
             new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
             CancellationToken.None);
 
@@ -1611,6 +1730,28 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Contains(tokens, token => token.TokenType == "xamlMarkupExtensionClass");
         Assert.Contains(tokens, token => token.TokenType == "xamlMarkupExtensionParameterName");
         Assert.Contains(tokens, token => token.TokenType == "xamlMarkupExtensionParameterValue");
+    }
+
+    [Fact]
+    public async Task SemanticTokens_ClassifyImplicitExpressions_And_EventLambdas()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ExpressionSemanticTokens.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{$'Total: ${Price * Quantity:F2}'}\"/>\n" +
+                            "  <Button Click=\"{(s, e) => ClickCount++}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var tokens = await engine.GetSemanticTokensAsync(
+            uri,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.Contains(tokens, token => token.TokenType == "property");
+        Assert.Contains(tokens, token => token.TokenType == "parameter");
+        Assert.Contains(tokens, token => token.TokenType == "operator");
     }
 
     [Fact]

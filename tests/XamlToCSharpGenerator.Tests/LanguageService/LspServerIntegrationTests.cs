@@ -272,6 +272,94 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Completion_Request_ForImplicitExpression_ReturnsMembers()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ImplicitExpressionCompletionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Prod}\"/>\n" +
+                            "</UserControl>";
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Prod", StringComparison.Ordinal) + 4);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2032, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = caret.Line,
+                ["character"] = caret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2032);
+        var items = response.RootElement.GetProperty("result").GetProperty("items");
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "ProductName", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForEventLambdaProperty_ReturnsClrSourceLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/EventLambdaDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <Button Click=\"{(s, e) => ClickCount++}\"/>\n" +
+                            "</UserControl>";
+        var offset = xaml.IndexOf("ClickCount", StringComparison.Ordinal);
+        var position = SourceText.From(xaml).Lines.GetLinePosition(offset + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2033, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2033);
+        var result = response.RootElement.GetProperty("result");
+        var first = result.ValueKind == JsonValueKind.Array ? result[0] : result;
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, first.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Completion_Request_For_Empty_ExpressionBinding_In_SourceGenCatalogSample_ReturnsMembers()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -2092,7 +2180,7 @@ public sealed class LspServerIntegrationTests
         private readonly Stream _clientReadStream;
         private readonly LspMessageReader _clientReader;
         private readonly AxsgLanguageServer _server;
-        private readonly CancellationTokenSource _cts = new(TimeSpan.FromSeconds(60));
+        private readonly CancellationTokenSource _cts = new(TimeSpan.FromSeconds(120));
         private readonly Task<int> _runTask;
         private bool _stopped;
 

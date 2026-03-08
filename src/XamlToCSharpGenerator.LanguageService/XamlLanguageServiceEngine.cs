@@ -308,7 +308,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return cachedTokens;
         }
 
-        var tokens = _semanticTokenService.GetTokens(analysis.Document.Text);
+        var tokens = _semanticTokenService.GetTokens(analysis);
         _semanticTokenCache[cacheKey] = tokens;
         return tokens;
     }

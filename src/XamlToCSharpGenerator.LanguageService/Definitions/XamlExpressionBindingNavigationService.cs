@@ -7,10 +7,11 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Parsing;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
-using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.LanguageService.Definitions;
 
@@ -30,11 +31,26 @@ internal readonly record struct XamlExpressionInlayHintTarget(
     string ResultTypeName,
     AvaloniaSymbolSourceLocation? ResultTypeLocation);
 
+internal readonly record struct XamlMarkupExpressionContext(
+    XamlAnalysisResult Analysis,
+    string SourceText,
+    XElement Element,
+    XAttribute Attribute,
+    SourceRange AttributeValueRange,
+    INamedTypeSymbol SourceType,
+    string RawExpression,
+    string NormalizedExpression,
+    bool IsLambda,
+    int ExpressionStartOffset,
+    int ExpressionLength,
+    ImmutableArray<MappedExpressionSymbolReference> SymbolReferences,
+    ITypeSymbol? ResultTypeSymbol);
+
 internal static class XamlExpressionBindingNavigationService
 {
-    public static bool IsExplicitExpressionMarkup(string attributeValue)
+    public static bool IsCSharpMarkupExpression(string attributeValue)
     {
-        return TryParseExplicitExpressionMarkup(attributeValue, 0, out _, out _, out _);
+        return XamlCSharpMarkupExpressionService.IsCSharpMarkupExpression(attributeValue);
     }
 
     public static bool TryResolveNavigationTarget(
@@ -44,8 +60,15 @@ internal static class XamlExpressionBindingNavigationService
     {
         target = default;
         var documentOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
-        if (!TryFindExpressionAttributeAtPosition(analysis, position, out var element, out var attribute, out var attributeValueRange) ||
-            !TryCreateExpressionContext(analysis, analysis.Document.Text, element, attribute, attributeValueRange, out var context))
+        if (!XamlCSharpMarkupExpressionService.TryFindMarkupExpressionAttributeContext(
+                analysis,
+                position,
+                out var element,
+                out var attribute,
+                out var attributeValueRange,
+                out var expressionInfo,
+                out _) ||
+            !TryResolveExpressionContext(analysis, analysis.Document.Text, element, attribute, attributeValueRange, expressionInfo, out var context))
         {
             return false;
         }
@@ -75,7 +98,7 @@ internal static class XamlExpressionBindingNavigationService
         XAttribute attribute,
         ISymbol targetSymbol)
     {
-        if (!TryCreateExpressionContext(analysis, sourceText, element, attribute, out var context))
+        if (!TryResolveExpressionContext(analysis, sourceText, element, attribute, out var context))
         {
             return ImmutableArray<SourceRange>.Empty;
         }
@@ -106,8 +129,9 @@ internal static class XamlExpressionBindingNavigationService
         out XamlExpressionInlayHintTarget target)
     {
         target = default;
-        if (!TryCreateExpressionContext(analysis, sourceText, element, attribute, out var context) ||
-            context.ExpressionAnalysis.ResultTypeSymbol is null)
+        if (!TryResolveExpressionContext(analysis, sourceText, element, attribute, out var context) ||
+            context.IsLambda ||
+            context.ResultTypeSymbol is null)
         {
             return false;
         }
@@ -116,65 +140,17 @@ internal static class XamlExpressionBindingNavigationService
             context.AttributeValueRange,
             context.RawExpression,
             context.SourceType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
-            context.ExpressionAnalysis.ResultTypeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
-            XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, context.ExpressionAnalysis.ResultTypeSymbol));
+            context.ResultTypeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            XamlClrNavigationLocationResolver.ResolveTypeLocation(analysis, context.ResultTypeSymbol));
         return true;
     }
 
-    private static bool TryFindExpressionAttributeAtPosition(
-        XamlAnalysisResult analysis,
-        SourcePosition position,
-        out XElement element,
-        out XAttribute attribute,
-        out SourceRange attributeValueRange)
-    {
-        element = null!;
-        attribute = null!;
-        attributeValueRange = default;
-        if (analysis.XmlDocument?.Root is null)
-        {
-            return false;
-        }
-
-        foreach (var candidateElement in analysis.XmlDocument.Root.DescendantsAndSelf())
-        {
-            foreach (var candidateAttribute in candidateElement.Attributes())
-            {
-                if (!XamlXmlSourceRangeService.TryCreateAttributeValueRange(
-                        analysis.Document.Text,
-                        candidateAttribute,
-                        out var candidateValueRange) ||
-                    !ContainsPosition(analysis.Document.Text, candidateValueRange, position))
-                {
-                    continue;
-                }
-
-                if (!TryParseExplicitExpressionMarkup(
-                        candidateAttribute.Value,
-                        TextCoordinateHelper.GetOffset(analysis.Document.Text, candidateValueRange.Start),
-                        out _,
-                        out _,
-                        out _))
-                {
-                    continue;
-                }
-
-                element = candidateElement;
-                attribute = candidateAttribute;
-                attributeValueRange = candidateValueRange;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryCreateExpressionContext(
+    internal static bool TryResolveExpressionContext(
         XamlAnalysisResult analysis,
         string sourceText,
         XElement element,
         XAttribute attribute,
-        out ExpressionContext context)
+        out XamlMarkupExpressionContext context)
     {
         context = default;
         if (!XamlXmlSourceRangeService.TryCreateAttributeValueRange(sourceText, attribute, out var attributeValueRange))
@@ -182,60 +158,130 @@ internal static class XamlExpressionBindingNavigationService
             return false;
         }
 
-        return TryCreateExpressionContext(analysis, sourceText, element, attribute, attributeValueRange, out context);
+        if (!XamlCSharpMarkupExpressionService.TryParseMarkupExpression(
+                analysis,
+                element,
+                attribute,
+                TextCoordinateHelper.GetOffset(sourceText, attributeValueRange.Start),
+                out var expressionInfo))
+        {
+            return false;
+        }
+
+        return TryResolveExpressionContext(analysis, sourceText, element, attribute, attributeValueRange, expressionInfo, out context);
     }
 
-    private static bool TryCreateExpressionContext(
+    internal static bool TryResolveExpressionContext(
         XamlAnalysisResult analysis,
         string sourceText,
         XElement element,
         XAttribute attribute,
         SourceRange attributeValueRange,
-        out ExpressionContext context)
+        XamlCSharpMarkupExpressionInfo expressionInfo,
+        out XamlMarkupExpressionContext context)
     {
         context = default;
-        if (analysis.Compilation is null ||
-            !TryResolveAmbientDataType(analysis, element, out var sourceType) ||
-            !TryParseExplicitExpressionMarkup(
-                attribute.Value,
-                TextCoordinateHelper.GetOffset(sourceText, attributeValueRange.Start),
-                out var expressionStartOffset,
-                out var expressionLength,
-                out var rawExpression))
+        if (analysis.Compilation is null)
         {
             return false;
         }
 
-        var normalizedExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(rawExpression);
-        if (string.IsNullOrWhiteSpace(normalizedExpression) ||
-            !CSharpSourceContextExpressionAnalysisService.TryAnalyze(
-                analysis.Compilation,
-                sourceType,
-                normalizedExpression,
-                sourceParameterName: "source",
-                out var expressionAnalysis,
-                out _) ||
-            !TryMapSymbolReferencesToRawExpression(
-                rawExpression,
-                normalizedExpression,
-                expressionAnalysis.SymbolReferences,
-                out var mappedReferences))
+        if (TryResolveAmbientDataType(analysis, element, out var ambientSourceType) &&
+            TryCreateExpressionContextForSourceType(
+                analysis,
+                sourceText,
+                element,
+                attribute,
+                attributeValueRange,
+                expressionInfo,
+                ambientSourceType,
+                out context))
         {
-            return false;
+            return true;
         }
 
-        context = new ExpressionContext(
+        return TryResolveRootType(analysis, out var rootSourceType) &&
+               TryCreateExpressionContextForSourceType(
+                   analysis,
+                   sourceText,
+                   element,
+                   attribute,
+                   attributeValueRange,
+                   expressionInfo,
+                   rootSourceType,
+                   out context);
+    }
+
+    private static bool TryCreateExpressionContextForSourceType(
+        XamlAnalysisResult analysis,
+        string sourceText,
+        XElement element,
+        XAttribute attribute,
+        SourceRange attributeValueRange,
+        XamlCSharpMarkupExpressionInfo expressionInfo,
+        INamedTypeSymbol sourceType,
+        out XamlMarkupExpressionContext context)
+    {
+        context = default;
+
+        ImmutableArray<MappedExpressionSymbolReference> mappedReferences;
+        ITypeSymbol? resultTypeSymbol = null;
+        if (expressionInfo.Kind == XamlCSharpMarkupExpressionKind.Lambda)
+        {
+            var eventHandlerType = TryResolveEventHandlerType(analysis, element, attribute);
+            if (eventHandlerType is null ||
+                !CSharpSourceContextLambdaAnalysisService.TryAnalyze(
+                    analysis.Compilation!,
+                    sourceType,
+                    eventHandlerType,
+                    expressionInfo.NormalizedExpression,
+                    "__axsgLambdaSource",
+                    out var lambdaAnalysis,
+                    out _) ||
+                !TryMapSymbolReferencesToRawExpression(
+                    expressionInfo.RawExpression,
+                    expressionInfo.NormalizedExpression,
+                    lambdaAnalysis.SymbolReferences,
+                    out mappedReferences))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (!CSharpSourceContextExpressionAnalysisService.TryAnalyze(
+                    analysis.Compilation!,
+                    sourceType,
+                    expressionInfo.NormalizedExpression,
+                    "source",
+                    out var expressionAnalysis,
+                    out _) ||
+                !TryMapSymbolReferencesToRawExpression(
+                    expressionInfo.RawExpression,
+                    expressionInfo.NormalizedExpression,
+                    expressionAnalysis.SymbolReferences,
+                    out mappedReferences))
+            {
+                return false;
+            }
+
+            resultTypeSymbol = expressionAnalysis.ResultTypeSymbol;
+        }
+
+        context = new XamlMarkupExpressionContext(
             analysis,
             sourceText,
             element,
             attribute,
             attributeValueRange,
             sourceType,
-            rawExpression,
-            expressionStartOffset,
-            expressionLength,
+            expressionInfo.RawExpression,
+            expressionInfo.NormalizedExpression,
+            expressionInfo.Kind == XamlCSharpMarkupExpressionKind.Lambda,
+            expressionInfo.ExpressionStartOffset,
+            expressionInfo.ExpressionLength,
             mappedReferences,
-            expressionAnalysis);
+            resultTypeSymbol);
         return true;
     }
 
@@ -245,127 +291,11 @@ internal static class XamlExpressionBindingNavigationService
         out INamedTypeSymbol sourceType)
     {
         sourceType = null!;
-        if (analysis.Compilation is null)
-        {
-            return false;
-        }
-
-        var current = element;
-        while (current is not null)
-        {
-            var dataTypeAttribute = current.Attributes()
-                .FirstOrDefault(static attribute => string.Equals(attribute.Name.LocalName, "DataType", StringComparison.Ordinal));
-            if (dataTypeAttribute is not null)
-            {
-                var prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(current);
-                if (XamlTypeReferenceNavigationResolver.TryResolve(
-                        analysis,
-                        prefixMap,
-                        "DataType",
-                        dataTypeAttribute.Value,
-                        out var resolvedTypeReference))
-                {
-                    var candidate = analysis.Compilation.GetTypeByMetadataName(resolvedTypeReference.FullTypeName);
-                    if (candidate is not null)
-                    {
-                        sourceType = candidate;
-                        return true;
-                    }
-                }
-            }
-
-            current = current.Parent;
-        }
-
-        return false;
-    }
-
-    private static bool TryParseExplicitExpressionMarkup(
-        string attributeValue,
-        int valueStartOffset,
-        out int expressionStartOffset,
-        out int expressionLength,
-        out string rawExpression)
-    {
-        expressionStartOffset = 0;
-        expressionLength = 0;
-        rawExpression = string.Empty;
-
-        if (!MarkupExpressionEnvelopeSemantics.IsMarkupExpression(attributeValue))
-        {
-            return false;
-        }
-
-        var trimmedStart = 0;
-        while (trimmedStart < attributeValue.Length && char.IsWhiteSpace(attributeValue[trimmedStart]))
-        {
-            trimmedStart++;
-        }
-
-        var trimmedEnd = attributeValue.Length;
-        while (trimmedEnd > trimmedStart && char.IsWhiteSpace(attributeValue[trimmedEnd - 1]))
-        {
-            trimmedEnd--;
-        }
-
-        if (trimmedEnd - trimmedStart < 3 ||
-            attributeValue[trimmedStart] != '{' ||
-            attributeValue[trimmedEnd - 1] != '}')
-        {
-            return false;
-        }
-
-        var innerStart = trimmedStart + 1;
-        var innerEnd = trimmedEnd - 1;
-        while (innerStart < innerEnd && char.IsWhiteSpace(attributeValue[innerStart]))
-        {
-            innerStart++;
-        }
-
-        while (innerEnd > innerStart && char.IsWhiteSpace(attributeValue[innerEnd - 1]))
-        {
-            innerEnd--;
-        }
-
-        if (innerEnd <= innerStart || attributeValue[innerStart] != '=')
-        {
-            return false;
-        }
-
-        var expressionStartInValue = innerStart + 1;
-        while (expressionStartInValue < innerEnd && char.IsWhiteSpace(attributeValue[expressionStartInValue]))
-        {
-            expressionStartInValue++;
-        }
-
-        if (expressionStartInValue >= innerEnd)
-        {
-            return false;
-        }
-
-        var expressionEndInValue = innerEnd;
-        while (expressionEndInValue > expressionStartInValue && char.IsWhiteSpace(attributeValue[expressionEndInValue - 1]))
-        {
-            expressionEndInValue--;
-        }
-
-        if (expressionEndInValue <= expressionStartInValue)
-        {
-            return false;
-        }
-
-        expressionStartOffset = valueStartOffset + expressionStartInValue;
-        expressionLength = expressionEndInValue - expressionStartInValue;
-        rawExpression = attributeValue.Substring(expressionStartInValue, expressionLength);
-        return rawExpression.Length > 0;
-    }
-
-    private static bool ContainsPosition(string text, SourceRange range, SourcePosition position)
-    {
-        var offset = TextCoordinateHelper.GetOffset(text, position);
-        var startOffset = TextCoordinateHelper.GetOffset(text, range.Start);
-        var endOffset = TextCoordinateHelper.GetOffset(text, range.End);
-        return offset >= startOffset && offset <= endOffset;
+        return XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+            analysis,
+            element,
+            out sourceType,
+            out _);
     }
 
     private static SourceRange CreateRange(string text, int startOffset, int length)
@@ -454,31 +384,32 @@ internal static class XamlExpressionBindingNavigationService
     private static ImmutableArray<ExpressionIdentifierToken> TokenizeIdentifierTokens(string expression)
     {
         var builder = ImmutableArray.CreateBuilder<ExpressionIdentifierToken>();
-        var inSingleQuotedLiteral = false;
-        var inDoubleQuotedLiteral = false;
-
         for (var index = 0; index < expression.Length; index++)
         {
             var current = expression[index];
-            if (!inDoubleQuotedLiteral &&
-                current == '\'' &&
-                !IsEscapedChar(expression, index))
+            if (current == '$' &&
+                index + 1 < expression.Length &&
+                expression[index + 1] is '"' or '\'')
             {
-                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                index = TokenizeInterpolatedStringTokens(expression, index, builder);
                 continue;
             }
 
-            if (!inSingleQuotedLiteral &&
-                current == '"' &&
+            if (current == '\'' &&
                 !IsEscapedChar(expression, index))
             {
-                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                index = SkipQuotedLiteral(expression, index, '\'');
                 continue;
             }
 
-            if (inSingleQuotedLiteral ||
-                inDoubleQuotedLiteral ||
-                !SyntaxFacts.IsIdentifierStartCharacter(current))
+            if (current == '"' &&
+                !IsEscapedChar(expression, index))
+            {
+                index = SkipQuotedLiteral(expression, index, '"');
+                continue;
+            }
+
+            if (!SyntaxFacts.IsIdentifierStartCharacter(current))
             {
                 continue;
             }
@@ -499,6 +430,111 @@ internal static class XamlExpressionBindingNavigationService
         }
 
         return builder.ToImmutable();
+    }
+
+    private static int SkipQuotedLiteral(string expression, int startIndex, char quote)
+    {
+        var index = startIndex + 1;
+        while (index < expression.Length)
+        {
+            if (expression[index] == quote &&
+                !IsEscapedChar(expression, index))
+            {
+                return index;
+            }
+
+            index++;
+        }
+
+        return expression.Length - 1;
+    }
+
+    private static int TokenizeInterpolatedStringTokens(
+        string expression,
+        int startIndex,
+        ImmutableArray<ExpressionIdentifierToken>.Builder builder)
+    {
+        var quote = expression[startIndex + 1];
+        var index = startIndex + 2;
+        var interpolationDepth = 0;
+
+        while (index < expression.Length)
+        {
+            var current = expression[index];
+            if (interpolationDepth == 0)
+            {
+                if (current == quote &&
+                    !IsEscapedChar(expression, index))
+                {
+                    return index;
+                }
+
+                if (current == '{')
+                {
+                    if (index + 1 < expression.Length && expression[index + 1] == '{')
+                    {
+                        index += 2;
+                        continue;
+                    }
+
+                    interpolationDepth = 1;
+                    index++;
+                    continue;
+                }
+
+                index++;
+                continue;
+            }
+
+            if (current == '{')
+            {
+                interpolationDepth++;
+                index++;
+                continue;
+            }
+
+            if (current == '}')
+            {
+                interpolationDepth--;
+                index++;
+                continue;
+            }
+
+            if (current == '\'' &&
+                !IsEscapedChar(expression, index))
+            {
+                index = SkipQuotedLiteral(expression, index, '\'') + 1;
+                continue;
+            }
+
+            if (current == '"' &&
+                !IsEscapedChar(expression, index))
+            {
+                index = SkipQuotedLiteral(expression, index, '"') + 1;
+                continue;
+            }
+
+            if (!SyntaxFacts.IsIdentifierStartCharacter(current))
+            {
+                index++;
+                continue;
+            }
+
+            var tokenStart = index;
+            index++;
+            while (index < expression.Length && SyntaxFacts.IsIdentifierPartCharacter(expression[index]))
+            {
+                index++;
+            }
+
+            var length = index - tokenStart;
+            builder.Add(new ExpressionIdentifierToken(
+                tokenStart,
+                length,
+                expression.Substring(tokenStart, length)));
+        }
+
+        return expression.Length - 1;
     }
 
     private static bool IsEscapedChar(string text, int index)
@@ -573,21 +609,62 @@ internal static class XamlExpressionBindingNavigationService
         };
     }
 
-    private readonly record struct ExpressionContext(
-        XamlAnalysisResult Analysis,
-        string SourceText,
-        XElement Element,
-        XAttribute Attribute,
-        SourceRange AttributeValueRange,
-        INamedTypeSymbol SourceType,
-        string RawExpression,
-        int ExpressionStartOffset,
-        int ExpressionLength,
-        ImmutableArray<MappedExpressionSymbolReference> SymbolReferences,
-        SourceContextExpressionAnalysisResult ExpressionAnalysis);
-
     private readonly record struct ExpressionIdentifierToken(
         int Start,
         int Length,
         string Text);
+
+    private static bool TryResolveRootType(XamlAnalysisResult analysis, out INamedTypeSymbol sourceType)
+    {
+        sourceType = null!;
+        var classFullName = analysis.ParsedDocument?.ClassFullName;
+        if (string.IsNullOrWhiteSpace(classFullName))
+        {
+            return false;
+        }
+
+        var resolvedType = XamlSemanticSourceTypeResolver.ResolveTypeSymbolByFullTypeName(
+            analysis.Compilation,
+            classFullName);
+        if (resolvedType is null)
+        {
+            return false;
+        }
+
+        sourceType = resolvedType;
+        return true;
+    }
+
+    private static INamedTypeSymbol? TryResolveEventHandlerType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        XAttribute attribute)
+    {
+        if (!XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, element, out var elementType))
+        {
+            return null;
+        }
+
+        var eventName = attribute.Name.LocalName;
+        if (string.IsNullOrWhiteSpace(eventName))
+        {
+            return null;
+        }
+
+        return FindEvent(elementType, eventName)?.Type as INamedTypeSymbol;
+    }
+
+    private static IEventSymbol? FindEvent(INamedTypeSymbol typeSymbol, string eventName)
+    {
+        for (var current = typeSymbol; current is not null; current = current.BaseType)
+        {
+            var eventSymbol = current.GetMembers(eventName).OfType<IEventSymbol>().FirstOrDefault();
+            if (eventSymbol is not null)
+            {
+                return eventSymbol;
+            }
+        }
+
+        return null;
+    }
 }

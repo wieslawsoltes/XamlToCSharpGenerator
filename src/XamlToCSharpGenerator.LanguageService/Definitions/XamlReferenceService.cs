@@ -1074,7 +1074,12 @@ public sealed class XamlReferenceService
                 foreach (var attribute in element.Attributes())
                 {
                     if (attribute.IsNamespaceDeclaration ||
-                        !XamlExpressionBindingNavigationService.IsExplicitExpressionMarkup(attribute.Value))
+                        !XamlExpressionBindingNavigationService.TryResolveExpressionContext(
+                            analysis,
+                            source.Text,
+                            element,
+                            attribute,
+                            out _))
                     {
                         continue;
                     }

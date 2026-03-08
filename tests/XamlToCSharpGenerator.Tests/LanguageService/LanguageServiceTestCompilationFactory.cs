@@ -76,6 +76,7 @@ internal static class LanguageServiceTestCompilationFactory
                                   public class Button : Control
                                   {
                                       public string Content { get; set; } = string.Empty;
+                                      public event EventHandler? Click;
                                   }
 
                                   public class TextBlock
@@ -98,8 +99,16 @@ internal static class LanguageServiceTestCompilationFactory
                                       public string Name { get; set; } = string.Empty;
                                       public string FirstName { get; set; } = string.Empty;
                                       public string LastName { get; set; } = string.Empty;
+                                      public string ProductName { get; set; } = string.Empty;
                                       public int Count { get; set; }
+                                      public int Quantity { get; set; }
+                                      public int ClickCount { get; set; }
                                       public CustomerViewModel Customer { get; set; } = new CustomerViewModel();
+                                      public bool IsLoading { get; set; }
+                                      public bool HasAccount { get; set; }
+                                      public bool AgreedToTerms { get; set; }
+                                      public bool IsVip { get; set; }
+                                      public decimal Price { get; set; }
                                       public CustomerViewModel GetCustomer() => Customer;
                                       public string FormatSummary(string firstName, string lastName, int count) => firstName + lastName + count;
                                   }
