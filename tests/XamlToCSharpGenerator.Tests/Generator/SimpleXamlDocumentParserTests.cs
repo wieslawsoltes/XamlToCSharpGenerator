@@ -248,6 +248,34 @@ public class SimpleXamlDocumentParserTests
     }
 
     [Fact]
+    public void Parse_Trims_And_Joins_Multiple_Inline_Text_Fragments()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "MainView.axaml",
+            TargetPath: "MainView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.MainView">
+                      <TextBlock>
+                          Hello
+                          <Run />
+                          World
+                      </TextBlock>
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        var textNode = Assert.Single(document!.RootObject.ChildObjects);
+        Assert.Equal("Hello World", textNode.TextContent);
+    }
+
+    [Fact]
     public void Parse_Extracts_Construction_Directives_And_Array_Item_Type()
     {
         var parser = CreateAvaloniaParser();
@@ -290,6 +318,32 @@ public class SimpleXamlDocumentParserTests
 
         var arrayNode = stackPanel.ChildObjects[1];
         Assert.Equal("x:Int32", arrayNode.ArrayItemType);
+    }
+
+    [Fact]
+    public void Parse_Preserves_Plain_Name_As_Node_Name_And_Property_Assignment()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "MainView.axaml",
+            TargetPath: "MainView.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.MainView">
+                      <TextBox Name="Input" />
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+        var textBox = Assert.Single(document!.RootObject.ChildObjects);
+        Assert.Equal("Input", textBox.Name);
+        var nameAssignment = Assert.Single(textBox.PropertyAssignments.Where(static property => property.PropertyName == "Name"));
+        Assert.Equal("Input", nameAssignment.Value);
     }
 
     [Fact]

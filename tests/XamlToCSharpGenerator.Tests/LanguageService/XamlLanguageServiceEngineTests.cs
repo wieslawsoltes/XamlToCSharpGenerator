@@ -409,24 +409,58 @@ public sealed class XamlLanguageServiceEngineTests
         await engine.UpdateDocumentAsync(uri, xamlV2, version: 2, options, CancellationToken.None);
         var third = await engine.GetSemanticTokensAsync(uri, options, CancellationToken.None);
         Assert.NotEqual(CreateTokenSignature(first), CreateTokenSignature(third));
+    }
 
-        static string CreateTokenSignature(ImmutableArray<XamlSemanticToken> tokens)
-        {
-            var builder = new StringBuilder();
-            foreach (var token in tokens)
-            {
-                builder.Append(token.Line)
-                    .Append(':')
-                    .Append(token.Character)
-                    .Append(':')
-                    .Append(token.Length)
-                    .Append(':')
-                    .Append(token.TokenType)
-                    .Append('|');
-            }
+    [Fact]
+    public async Task Reopening_SameUri_SameVersion_DoesNotReuse_Stale_SemanticTokens()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ReopenSemanticTokenCache.axaml";
+        const string firstXaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"><Button/></UserControl>";
+        const string secondXaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"><TextBlock/></UserControl>";
+        var options = new XamlLanguageServiceOptions("/tmp");
 
-            return builder.ToString();
-        }
+        await engine.OpenDocumentAsync(uri, firstXaml, version: 1, options, CancellationToken.None);
+        var firstTokens = await engine.GetSemanticTokensAsync(uri, options, CancellationToken.None);
+
+        engine.CloseDocument(uri);
+
+        await engine.OpenDocumentAsync(uri, secondXaml, version: 1, options, CancellationToken.None);
+        var secondTokens = await engine.GetSemanticTokensAsync(uri, options, CancellationToken.None);
+
+        Assert.NotEqual(CreateTokenSignature(firstTokens), CreateTokenSignature(secondTokens));
+    }
+
+    [Fact]
+    public async Task Reopening_SameUri_SameVersion_DoesNotReuse_Stale_Definitions()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/ReopenDefinitionCache.axaml";
+        const string firstXaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\"><TextBlock Text=\"{Binding FirstName}\"/></UserControl>";
+        const string secondXaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\"><TextBlock Text=\"{Binding Count}\"/></UserControl>";
+        var options = new XamlLanguageServiceOptions("/tmp");
+
+        await engine.OpenDocumentAsync(uri, firstXaml, version: 1, options, CancellationToken.None);
+        var firstDefinitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(firstXaml, firstXaml.IndexOf("FirstName", StringComparison.Ordinal) + 2),
+            options,
+            CancellationToken.None);
+
+        engine.CloseDocument(uri);
+
+        await engine.OpenDocumentAsync(uri, secondXaml, version: 1, options, CancellationToken.None);
+        var secondDefinitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(secondXaml, secondXaml.IndexOf("Count", StringComparison.Ordinal) + 2),
+            options,
+            CancellationToken.None);
+
+        Assert.NotEmpty(firstDefinitions);
+        Assert.NotEmpty(secondDefinitions);
+        Assert.NotEqual(CreateDefinitionSignature(firstDefinitions), CreateDefinitionSignature(secondDefinitions));
     }
 
     [Fact]
@@ -2579,6 +2613,44 @@ public sealed class XamlLanguageServiceEngineTests
         }
 
         return new SourcePosition(line, character);
+    }
+
+    private static string CreateTokenSignature(ImmutableArray<XamlSemanticToken> tokens)
+    {
+        var builder = new StringBuilder();
+        foreach (var token in tokens)
+        {
+            builder.Append(token.Line)
+                .Append(':')
+                .Append(token.Character)
+                .Append(':')
+                .Append(token.Length)
+                .Append(':')
+                .Append(token.TokenType)
+                .Append('|');
+        }
+
+        return builder.ToString();
+    }
+
+    private static string CreateDefinitionSignature(ImmutableArray<XamlDefinitionLocation> definitions)
+    {
+        var builder = new StringBuilder();
+        foreach (var definition in definitions)
+        {
+            builder.Append(definition.Uri)
+                .Append('@')
+                .Append(definition.Range.Start.Line)
+                .Append(':')
+                .Append(definition.Range.Start.Character)
+                .Append('-')
+                .Append(definition.Range.End.Line)
+                .Append(':')
+                .Append(definition.Range.End.Character)
+                .Append('|');
+        }
+
+        return builder.ToString();
     }
 
     private static string? GetQueryParameter(string uri, string key)
