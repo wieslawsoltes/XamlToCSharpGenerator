@@ -496,6 +496,125 @@ public class SimpleXamlDocumentParserTests
         Assert.Empty(document.Includes);
     }
 
+    [Fact]
+    public void Parse_With_Avalonia_Enricher_Collects_Framework_Features_In_Document_Order()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "FeatureInventory.axaml",
+            TargetPath: "FeatureInventory.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.FeatureInventory">
+                      <UserControl.Resources>
+                          <SolidColorBrush x:Key="AccentBrush" Color="Blue" />
+                      </UserControl.Resources>
+                      <UserControl.Styles>
+                          <Style Selector="TextBlock.title" x:DataType="x:String" x:CompileBindings="True">
+                              <Setter Property="Text" Value="Hello" />
+                          </Style>
+                      </UserControl.Styles>
+                      <UserControl.ControlTheme>
+                          <ControlTheme x:Key="CardTheme" TargetType="Border" BasedOn="{StaticResource BaseTheme}" ThemeVariant="Dark">
+                              <Setter Property="Background" Value="Red" />
+                          </ControlTheme>
+                      </UserControl.ControlTheme>
+                      <UserControl.DataTemplates>
+                          <DataTemplate x:Key="ItemTemplate" x:DataType="x:String">
+                              <TextBlock Text="{Binding}" />
+                          </DataTemplate>
+                      </UserControl.DataTemplates>
+                      <UserControl.Styles>
+                          <StyleInclude Source="/Styles/Shared.axaml" />
+                      </UserControl.Styles>
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+
+        Assert.Collection(
+            document!.Resources.OrderBy(resource => resource.Key, StringComparer.Ordinal),
+            resource =>
+            {
+                Assert.Equal("AccentBrush", resource.Key);
+                Assert.Equal("SolidColorBrush", resource.XmlTypeName);
+            },
+            resource =>
+            {
+                Assert.Equal("CardTheme", resource.Key);
+                Assert.Equal("ControlTheme", resource.XmlTypeName);
+            },
+            resource =>
+            {
+                Assert.Equal("ItemTemplate", resource.Key);
+                Assert.Equal("DataTemplate", resource.XmlTypeName);
+            });
+
+        var template = Assert.Single(document.Templates);
+        Assert.Equal("DataTemplate", template.Kind);
+        Assert.Equal("ItemTemplate", template.Key);
+        Assert.Equal("x:String", template.DataType);
+
+        var style = Assert.Single(document.Styles);
+        Assert.Equal("TextBlock.title", style.Selector);
+        Assert.Equal("x:String", style.DataType);
+        Assert.True(style.CompileBindings);
+        Assert.Equal("Text", Assert.Single(style.Setters).PropertyName);
+
+        var theme = Assert.Single(document.ControlThemes);
+        Assert.Equal("CardTheme", theme.Key);
+        Assert.Equal("Border", theme.TargetType);
+        Assert.Equal("{StaticResource BaseTheme}", theme.BasedOn);
+        Assert.Equal("Dark", theme.ThemeVariant);
+        Assert.Equal("Background", Assert.Single(theme.Setters).PropertyName);
+
+        var include = Assert.Single(document.Includes);
+        Assert.Equal("StyleInclude", include.Kind);
+        Assert.Equal("/Styles/Shared.axaml", include.Source);
+        Assert.Equal("Styles", include.MergeTarget);
+    }
+
+    [Fact]
+    public void Parse_With_Avalonia_Enricher_Preserves_Setter_Property_Element_Value()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "SetterValue.axaml",
+            TargetPath: "SetterValue.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <UserControl xmlns="https://github.com/avaloniaui"
+                               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                               x:Class="Demo.SetterValue">
+                      <UserControl.Styles>
+                          <Style Selector="Border.card">
+                              <Setter Property="Background">
+                                  <Setter.Value>
+                                      <SolidColorBrush Color="Green" />
+                                  </Setter.Value>
+                              </Setter>
+                          </Style>
+                      </UserControl.Styles>
+                  </UserControl>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        Assert.Empty(diagnostics.Where(x => x.IsError));
+
+        var style = Assert.Single(document!.Styles);
+        var setter = Assert.Single(style.Setters);
+        Assert.Equal("Background", setter.PropertyName);
+        Assert.Contains("<SolidColorBrush", setter.Value, StringComparison.Ordinal);
+        Assert.Contains("Color=\"Green\"", setter.Value, StringComparison.Ordinal);
+    }
+
     private static SimpleXamlDocumentParser CreateAvaloniaParser(
         ImmutableDictionary<string, string>? globalXmlNamespaces = null,
         bool allowImplicitDefaultXmlns = false,
