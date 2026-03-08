@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Immutable;
-using System.Linq;
 using System.Xml;
 using System.Xml.Linq;
 using XamlToCSharpGenerator.Core.Abstractions;
@@ -21,221 +20,138 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
         XamlDocumentModel document,
         XamlDocumentParseContext parseContext)
     {
-        var resources = CollectResources(
-            parseContext.RootElement,
-            parseContext.IgnoredNamespaces,
-            parseContext.ConditionalNamespacesByRawUri);
-        var templates = CollectTemplates(
-            parseContext.RootElement,
-            parseContext.IgnoredNamespaces,
-            parseContext.ConditionalNamespacesByRawUri);
-        var styles = CollectStyles(
-            parseContext.RootElement,
-            parseContext.IgnoredNamespaces,
-            parseContext.ConditionalNamespacesByRawUri);
-        var controlThemes = CollectControlThemes(
-            parseContext.RootElement,
-            parseContext.IgnoredNamespaces,
-            parseContext.ConditionalNamespacesByRawUri);
-        var includes = CollectIncludes(
-            parseContext.RootElement,
-            parseContext.IgnoredNamespaces,
-            parseContext.ConditionalNamespacesByRawUri);
+        var resources = ImmutableArray.CreateBuilder<XamlResourceDefinition>();
+        var templates = ImmutableArray.CreateBuilder<XamlTemplateDefinition>();
+        var styles = ImmutableArray.CreateBuilder<XamlStyleDefinition>();
+        var controlThemes = ImmutableArray.CreateBuilder<XamlControlThemeDefinition>();
+        var includes = ImmutableArray.CreateBuilder<XamlIncludeDefinition>();
+
+        foreach (var element in parseContext.RootElement.DescendantsAndSelf())
+        {
+            if (ShouldIgnoreElement(element, parseContext.IgnoredNamespaces))
+            {
+                continue;
+            }
+
+            AddElementFeatures(
+                element,
+                parseContext.ConditionalNamespacesByRawUri,
+                resources,
+                templates,
+                styles,
+                controlThemes,
+                includes);
+        }
 
         var enriched = document with
         {
-            Resources = resources,
-            Templates = templates,
-            Styles = styles,
-            ControlThemes = controlThemes,
-            Includes = includes
+            Resources = resources.ToImmutable(),
+            Templates = templates.ToImmutable(),
+            Styles = styles.ToImmutable(),
+            ControlThemes = controlThemes.ToImmutable(),
+            Includes = includes.ToImmutable()
         };
         return (enriched, ImmutableArray<DiagnosticInfo>.Empty);
     }
 
-    private static ImmutableArray<XamlResourceDefinition> CollectResources(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
+    private static void AddElementFeatures(
+        XElement element,
+        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri,
+        ImmutableArray<XamlResourceDefinition>.Builder resources,
+        ImmutableArray<XamlTemplateDefinition>.Builder templates,
+        ImmutableArray<XamlStyleDefinition>.Builder styles,
+        ImmutableArray<XamlControlThemeDefinition>.Builder controlThemes,
+        ImmutableArray<XamlIncludeDefinition>.Builder includes)
     {
-        var resources = ImmutableArray.CreateBuilder<XamlResourceDefinition>();
+        var info = CollectElementInfo(element);
+        var condition = XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
+            element.Name.NamespaceName,
+            conditionalNamespacesByRawUri);
+        var lineInfo = (IXmlLineInfo)element;
+        var line = lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1;
+        var column = lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1;
+        string? rawXaml = null;
 
-        foreach (var element in root.DescendantsAndSelf())
+        if (!string.IsNullOrWhiteSpace(info.Key))
         {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var key = TryGetDirectiveValue(element, "Key");
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                continue;
-            }
-
-            var lineInfo = (IXmlLineInfo)element;
+            rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
             resources.Add(new XamlResourceDefinition(
-                Key: key!,
+                Key: info.Key!,
                 XmlNamespace: XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(element.Name.NamespaceName),
                 XmlTypeName: element.Name.LocalName,
-                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
-                    element.Name.NamespaceName,
-                    conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
+                Condition: condition,
+                RawXaml: rawXaml,
+                Line: line,
+                Column: column));
         }
 
-        return resources.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlTemplateDefinition> CollectTemplates(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var templates = ImmutableArray.CreateBuilder<XamlTemplateDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf())
+        if (IsTemplateElement(element.Name.LocalName))
         {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            if (!IsTemplateElement(element.Name.LocalName))
-            {
-                continue;
-            }
-
-            var lineInfo = (IXmlLineInfo)element;
+            rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
             templates.Add(new XamlTemplateDefinition(
                 Kind: element.Name.LocalName,
-                Key: TryGetDirectiveValue(element, "Key"),
-                TargetType: element.Attributes().FirstOrDefault(attribute =>
-                    attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "TargetType")?.Value,
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
-                    element.Name.NamespaceName,
-                    conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
+                Key: info.Key,
+                TargetType: info.TargetType,
+                DataType: info.DataType,
+                Condition: condition,
+                RawXaml: rawXaml,
+                Line: line,
+                Column: column));
         }
 
-        return templates.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlStyleDefinition> CollectStyles(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var styles = ImmutableArray.CreateBuilder<XamlStyleDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf().Where(x => x.Name.LocalName == "Style"))
+        if (element.Name.LocalName == "Style")
         {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var selectorAttribute = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Selector");
-            var selector = selectorAttribute?.Value;
-
-            var lineInfo = (IXmlLineInfo)element;
-            var selectorLineInfo = selectorAttribute is null
+            rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
+            var selectorLineInfo = info.SelectorAttribute is null
                 ? lineInfo
-                : (IXmlLineInfo)selectorAttribute;
+                : (IXmlLineInfo)info.SelectorAttribute;
             styles.Add(new XamlStyleDefinition(
-                Key: TryGetDirectiveValue(element, "Key"),
-                Selector: selector ?? string.Empty,
+                Key: info.Key,
+                Selector: info.Selector ?? string.Empty,
                 SelectorLine: selectorLineInfo.HasLineInfo()
                     ? selectorLineInfo.LineNumber
-                    : (lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1),
+                    : line,
                 SelectorColumn: selectorLineInfo.HasLineInfo()
                     ? selectorLineInfo.LinePosition
-                    : (lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1),
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                CompileBindings: TryGetBoolDirectiveValue(element, "CompileBindings"),
+                    : column,
+                DataType: info.DataType,
+                CompileBindings: info.CompileBindings,
                 Setters: CollectSetters(element, conditionalNamespacesByRawUri),
-                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
-                    element.Name.NamespaceName,
-                    conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
+                Condition: condition,
+                RawXaml: rawXaml,
+                Line: line,
+                Column: column));
         }
 
-        return styles.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlControlThemeDefinition> CollectControlThemes(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var themes = ImmutableArray.CreateBuilder<XamlControlThemeDefinition>();
-
-        foreach (var element in root.DescendantsAndSelf().Where(x => x.Name.LocalName == "ControlTheme"))
+        if (element.Name.LocalName == "ControlTheme")
         {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
-            {
-                continue;
-            }
-
-            var targetType = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "TargetType")?.Value;
-            var basedOn = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "BasedOn")?.Value;
-            var themeVariant = element.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "ThemeVariant")?.Value;
-
-            var lineInfo = (IXmlLineInfo)element;
-            themes.Add(new XamlControlThemeDefinition(
-                Key: TryGetDirectiveValue(element, "Key"),
-                TargetType: targetType,
-                BasedOn: basedOn,
-                ThemeVariant: themeVariant,
-                DataType: TryGetDirectiveValue(element, "DataType"),
-                CompileBindings: TryGetBoolDirectiveValue(element, "CompileBindings"),
+            rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
+            controlThemes.Add(new XamlControlThemeDefinition(
+                Key: info.Key,
+                TargetType: info.TargetType,
+                BasedOn: info.BasedOn,
+                ThemeVariant: info.ThemeVariant,
+                DataType: info.DataType,
+                CompileBindings: info.CompileBindings,
                 Setters: CollectSetters(element, conditionalNamespacesByRawUri),
-                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
-                    element.Name.NamespaceName,
-                    conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
+                Condition: condition,
+                RawXaml: rawXaml,
+                Line: line,
+                Column: column));
         }
 
-        return themes.ToImmutable();
-    }
-
-    private static ImmutableArray<XamlSetterDefinition> CollectSetters(
-        XElement scope,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
-    {
-        var setters = ImmutableArray.CreateBuilder<XamlSetterDefinition>();
-
-        foreach (var element in scope.Elements())
+        if (IsIncludeElement(element.Name.LocalName))
         {
-            if (element.Name.LocalName == "Setter")
-            {
-                AddSetterDefinition(element, setters, conditionalNamespacesByRawUri);
-                continue;
-            }
-
-            if (IsSettersPropertyElement(scope, element))
-            {
-                foreach (var nestedSetter in element.Elements().Where(x => x.Name.LocalName == "Setter"))
-                {
-                    AddSetterDefinition(nestedSetter, setters, conditionalNamespacesByRawUri);
-                }
-            }
+            rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
+            includes.Add(new XamlIncludeDefinition(
+                Kind: element.Name.LocalName,
+                Source: string.IsNullOrWhiteSpace(info.Source) ? string.Empty : info.Source!,
+                MergeTarget: ResolveMergeTarget(element),
+                Condition: condition,
+                RawXaml: rawXaml,
+                Line: line,
+                Column: column));
         }
-
-        return setters.ToImmutable();
     }
 
     private static bool IsSettersPropertyElement(XElement scope, XElement element)
@@ -251,28 +167,56 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
         ImmutableArray<XamlSetterDefinition>.Builder setters,
         ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
     {
-        var propertyName = setter.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Property")?.Value;
+        string? propertyName = null;
+        string? value = null;
+        XElement? firstValueElement = null;
+
+        foreach (var attribute in setter.Attributes())
+        {
+            if (attribute.Name.NamespaceName.Length != 0)
+            {
+                continue;
+            }
+
+            if (attribute.Name.LocalName == "Property")
+            {
+                propertyName = attribute.Value;
+            }
+            else if (attribute.Name.LocalName == "Value")
+            {
+                value = attribute.Value;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(propertyName))
         {
             return;
         }
 
-        var value = setter.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Value")?.Value;
-
         if (value is null)
         {
-            var firstValueElement = setter.Elements().FirstOrDefault();
+            foreach (var child in setter.Elements())
+            {
+                firstValueElement = child;
+                break;
+            }
+
             if (firstValueElement is not null &&
                 XamlPropertyTokenSemantics.IsPropertyElementName(
                     firstValueElement.Name.LocalName,
                     "Value",
-                    ownerToken: setter.Name.LocalName) &&
-                firstValueElement.Elements().FirstOrDefault() is { } innerValueElement)
+                    ownerToken: setter.Name.LocalName))
             {
-                value = innerValueElement.ToString(SaveOptions.DisableFormatting);
+                XElement? innerValueElement = null;
+                foreach (var child in firstValueElement.Elements())
+                {
+                    innerValueElement = child;
+                    break;
+                }
+
+                value = innerValueElement is not null
+                    ? innerValueElement.ToString(SaveOptions.DisableFormatting)
+                    : string.Empty;
             }
             else
             {
@@ -291,45 +235,33 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
             Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
     }
 
-    private static ImmutableArray<XamlIncludeDefinition> CollectIncludes(
-        XElement root,
-        ImmutableHashSet<string> ignoredNamespaces,
+    private static ImmutableArray<XamlSetterDefinition> CollectSetters(
+        XElement scope,
         ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
     {
-        var includes = ImmutableArray.CreateBuilder<XamlIncludeDefinition>();
+        var setters = ImmutableArray.CreateBuilder<XamlSetterDefinition>();
 
-        foreach (var element in root.DescendantsAndSelf())
+        foreach (var element in scope.Elements())
         {
-            if (ShouldIgnoreElement(element, ignoredNamespaces))
+            if (element.Name.LocalName == "Setter")
             {
+                AddSetterDefinition(element, setters, conditionalNamespacesByRawUri);
                 continue;
             }
 
-            var kind = element.Name.LocalName;
-            if (kind != "ResourceInclude" && kind != "StyleInclude" && kind != "MergeResourceInclude")
+            if (IsSettersPropertyElement(scope, element))
             {
-                continue;
+                foreach (var nestedSetter in element.Elements())
+                {
+                    if (nestedSetter.Name.LocalName == "Setter")
+                    {
+                        AddSetterDefinition(nestedSetter, setters, conditionalNamespacesByRawUri);
+                    }
+                }
             }
-
-            var source = element.Attributes()
-                .FirstOrDefault(attribute => attribute.Name.NamespaceName.Length == 0 && attribute.Name.LocalName == "Source")
-                ?.Value;
-            var sourceValue = string.IsNullOrWhiteSpace(source) ? string.Empty : source;
-
-            var lineInfo = (IXmlLineInfo)element;
-            includes.Add(new XamlIncludeDefinition(
-                Kind: kind,
-                Source: sourceValue!,
-                MergeTarget: ResolveMergeTarget(element),
-                Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
-                    element.Name.NamespaceName,
-                    conditionalNamespacesByRawUri),
-                RawXaml: element.ToString(SaveOptions.DisableFormatting),
-                Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
         }
 
-        return includes.ToImmutable();
+        return setters.ToImmutable();
     }
 
     private static string ResolveMergeTarget(XElement includeElement)
@@ -362,26 +294,18 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
                || localName == "TreeDataTemplate";
     }
 
+    private static bool IsIncludeElement(string localName)
+    {
+        return localName == "ResourceInclude" || localName == "StyleInclude" || localName == "MergeResourceInclude";
+    }
+
     private static bool ShouldIgnoreElement(XElement element, ImmutableHashSet<string> ignoredNamespaces)
     {
         return ignoredNamespaces.Contains(XamlConditionalNamespaceUtilities.NormalizeXmlNamespace(element.Name.NamespaceName));
     }
 
-    private static XAttribute? TryGetDirectiveAttribute(XElement element, string directiveName)
+    private static bool? TryGetBoolDirectiveValue(string? value)
     {
-        var xaml2006 = (XNamespace)"http://schemas.microsoft.com/winfx/2006/xaml";
-        return element.Attributes().FirstOrDefault(attribute =>
-            attribute.Name.Namespace == xaml2006 && attribute.Name.LocalName == directiveName);
-    }
-
-    private static string? TryGetDirectiveValue(XElement element, string directiveName)
-    {
-        return TryGetDirectiveAttribute(element, directiveName)?.Value;
-    }
-
-    private static bool? TryGetBoolDirectiveValue(XElement element, string directiveName)
-    {
-        var value = TryGetDirectiveValue(element, directiveName);
         if (value is null)
         {
             return null;
@@ -389,4 +313,83 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
 
         return bool.TryParse(value, out var result) ? result : null;
     }
+
+    private static ElementFeatureInfo CollectElementInfo(XElement element)
+    {
+        var key = default(string);
+        var dataType = default(string);
+        var compileBindingsText = default(string);
+        var selector = default(string);
+        var selectorAttribute = default(XAttribute);
+        var targetType = default(string);
+        var basedOn = default(string);
+        var themeVariant = default(string);
+        var source = default(string);
+
+        foreach (var attribute in element.Attributes())
+        {
+            if (attribute.Name.NamespaceName.Length == 0)
+            {
+                switch (attribute.Name.LocalName)
+                {
+                    case "Selector":
+                        selector = attribute.Value;
+                        selectorAttribute = attribute;
+                        break;
+                    case "TargetType":
+                        targetType = attribute.Value;
+                        break;
+                    case "BasedOn":
+                        basedOn = attribute.Value;
+                        break;
+                    case "ThemeVariant":
+                        themeVariant = attribute.Value;
+                        break;
+                    case "Source":
+                        source = attribute.Value;
+                        break;
+                }
+
+                continue;
+            }
+
+            if (attribute.Name.NamespaceName == "http://schemas.microsoft.com/winfx/2006/xaml")
+            {
+                switch (attribute.Name.LocalName)
+                {
+                    case "Key":
+                        key = attribute.Value;
+                        break;
+                    case "DataType":
+                        dataType = attribute.Value;
+                        break;
+                    case "CompileBindings":
+                        compileBindingsText = attribute.Value;
+                        break;
+                }
+            }
+        }
+
+        return new ElementFeatureInfo(
+            Key: key,
+            DataType: dataType,
+            CompileBindings: TryGetBoolDirectiveValue(compileBindingsText),
+            Selector: selector,
+            SelectorAttribute: selectorAttribute,
+            TargetType: targetType,
+            BasedOn: basedOn,
+            ThemeVariant: themeVariant,
+            Source: source);
+    }
+
+    private readonly record struct ElementFeatureInfo(
+        string? Key,
+        string? DataType,
+        bool? CompileBindings,
+        string? Selector,
+        XAttribute? SelectorAttribute,
+        string? TargetType,
+        string? BasedOn,
+        string? ThemeVariant,
+        string? Source);
 }
