@@ -5,7 +5,8 @@ namespace XamlToCSharpGenerator.Core.Models;
 public enum ResolvedEventBindingTargetKind
 {
     Command = 0,
-    Method = 1
+    Method = 1,
+    Lambda = 2
 }
 
 public enum ResolvedEventBindingSourceMode
@@ -52,6 +53,8 @@ public sealed record ResolvedEventBindingDefinition(
     string? CompiledRootTargetPath,
     ResolvedEventBindingMethodCallPlan? CompiledDataContextMethodCall,
     ResolvedEventBindingMethodCallPlan? CompiledRootMethodCall,
+    string? CompiledDataContextLambdaExpression,
+    string? CompiledRootLambdaExpression,
     string? CompiledDataContextParameterPath,
     string? CompiledRootParameterPath,
     int Line,

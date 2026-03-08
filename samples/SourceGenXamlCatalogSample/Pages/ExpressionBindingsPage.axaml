@@ -42,6 +42,22 @@
       </Border>
 
       <Border Classes="catalog-card">
+        <StackPanel Spacing="6" x:DataType="vm:ExpressionBindingsPageViewModel">
+          <TextBlock FontWeight="SemiBold" Text="Shorthand expressions + inline lambdas" />
+          <TextBlock Text="{ProductName}" />
+          <TextBlock Text="{$'{Quantity}x {ProductName}'}" />
+          <TextBlock Text="{$'Total: ${Price * Quantity:F2}'}" />
+          <TextBlock Text="{IsVip ? 'Gold Member' : 'Standard'}" />
+          <TextBlock Text="Visible while not loading"
+                     IsVisible="{!IsLoading}" />
+          <Button Content="Submit"
+                  IsEnabled="{HasAccount &amp;&amp; AgreedToTerms}" />
+          <Button Content="{$'Clicked {ClickCount} times'}"
+                  Click="{(s, e) => ClickCount++}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
         <StackPanel Spacing="6">
           <TextBlock FontWeight="SemiBold" Text="Expression support in Style/ControlTheme setters" />
           <TextBlock Classes="expression-style" />

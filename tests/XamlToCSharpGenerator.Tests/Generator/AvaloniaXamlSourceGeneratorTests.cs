@@ -4232,6 +4232,85 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_Runtime_Call_For_Interpolated_Implicit_CSharp_Expression_Binding()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public global::Avalonia.Data.IBinding this[global::Avalonia.Data.IndexerDescriptor binding]
+                    {
+                        get => throw new global::System.NotImplementedException();
+                        set { }
+                    }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class IndexerDescriptor
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class PersonVm
+                {
+                    public decimal Price { get; set; }
+                    public int Quantity { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:PersonVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{$'Total: ${Price * Quantity:F2}'}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
+        Assert.Contains("$\"Total: {source.Price * source.Quantity:F2}\"", generated);
+    }
+
+    [Fact]
     public void Reports_Diagnostic_For_Expression_Binding_Without_XDataType()
     {
         const string code = """
@@ -6643,6 +6722,11 @@ public class AvaloniaXamlSourceGeneratorTests
                 {
                     public event global::System.EventHandler? Click;
                 }
+
+                public class TextBlock : Control
+                {
+                    public string? Text { get; set; }
+                }
             }
 
             namespace Demo
@@ -6860,8 +6944,8 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__n0.Click += __root.__AXSG_EventBinding_Click_", generated);
-        Assert.Contains("private void __AXSG_EventBinding_Click_", generated);
+        Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
+        Assert.Contains("private void __AXSG_EventBinding_", generated);
         Assert.Contains("__TryGetEventBindingDataContext(__arg0)", generated);
         Assert.Contains("__axsgDataContext is global::Demo.ViewModels.MainViewModel __axsgDataContextTyped", generated);
         Assert.DoesNotContain("SourceGenEventBindingRuntime.InvokeCommand(", generated);
@@ -6982,12 +7066,274 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
-        Assert.Contains("__n0.Click += __root.__AXSG_EventBinding_Click_", generated);
-        Assert.Contains("private void __AXSG_EventBinding_Click_", generated);
+        Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
+        Assert.Contains("private void __AXSG_EventBinding_", generated);
         Assert.DoesNotContain("SourceGenEventBindingRuntime.InvokeMethod(", generated);
         Assert.Contains("__axsgDataContextTyped.SaveWithArgs(", generated);
         Assert.Contains("__arg0", generated);
         Assert.Contains("__arg1", generated);
+    }
+
+    [Fact]
+    public void Generates_Inline_Event_Lambda_Wrapper_And_Subscription()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainViewModel
+                {
+                    public int Count { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <Button Click="{(s, e) => Count++}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0600");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
+        Assert.Contains("private void __AXSG_EventBinding_", generated);
+        Assert.Contains("var __axsgLambdaSource = __axsgDataContextTyped;", generated);
+        Assert.Contains("global::System.EventHandler __axsgHandler = (s, e) => __axsgLambdaSource.Count++;", generated);
+        Assert.Contains("__axsgHandler(__arg0, __arg1);", generated);
+    }
+
+    [Fact]
+    public void Reports_Diagnostic_For_Async_Inline_Event_Lambda()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainViewModel
+                {
+                    public global::System.Threading.Tasks.Task SaveAsync() => global::System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <Button Click="{async (s, e) => SaveAsync()}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == "AXSG0600" &&
+            diagnostic.GetMessage().Contains("does not support async lambdas", StringComparison.Ordinal));
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.DoesNotContain(".Click += __root.__AXSG_EventBinding_", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Keeps_Inline_Event_Lambda_Handler_Name_Stable_When_Line_Numbers_Shift()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public object? DataContext { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainViewModel
+                {
+                    public int Count { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string originalXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <Button Click="{(s, e) => Count++}" />
+            </UserControl>
+            """;
+
+        const string shiftedXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <TextBlock Text="Spacer" />
+                <Button Click="{(s, e) => Count++}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (originalCompilation, originalDiagnostics) = RunGenerator(compilation, originalXaml);
+        var (shiftedCompilation, shiftedDiagnostics) = RunGenerator(compilation, shiftedXaml);
+
+        Assert.DoesNotContain(originalDiagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(shiftedDiagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var originalGenerated = GetGeneratedPartialClassSource(originalCompilation, "MainView");
+        var shiftedGenerated = GetGeneratedPartialClassSource(shiftedCompilation, "MainView");
+
+        var originalMethodName = ExtractGeneratedEventBindingMethodName(originalGenerated);
+        var shiftedMethodName = ExtractGeneratedEventBindingMethodName(shiftedGenerated);
+        Assert.False(string.IsNullOrWhiteSpace(originalMethodName));
+        Assert.Equal(originalMethodName, shiftedMethodName);
+        Assert.DoesNotContain("__AXSG_EventBinding_Click_", shiftedGenerated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Keeps_Inline_Event_Lambda_Handler_Name_Stable_When_New_Event_Binding_Is_Inserted_Before_It()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public object? DataContext { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainViewModel
+                {
+                    public int Count { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string originalXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <Button Click="{(s, e) => Count++}" />
+            </UserControl>
+            """;
+
+        const string shiftedXaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <Button Click="{(s, e) => Count = 0}" />
+                <Button Click="{(s, e) => Count++}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (originalCompilation, originalDiagnostics) = RunGenerator(compilation, originalXaml);
+        var (shiftedCompilation, shiftedDiagnostics) = RunGenerator(compilation, shiftedXaml);
+
+        Assert.DoesNotContain(originalDiagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(shiftedDiagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var originalGenerated = GetGeneratedPartialClassSource(originalCompilation, "MainView");
+        var shiftedGenerated = GetGeneratedPartialClassSource(shiftedCompilation, "MainView");
+
+        var originalMethodName = ExtractGeneratedEventBindingMethodName(originalGenerated);
+        Assert.Contains($"private void {originalMethodName}(", shiftedGenerated);
+        Assert.DoesNotContain("__AXSG_EventBinding_Click_", shiftedGenerated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -13546,6 +13892,17 @@ public class AvaloniaXamlSourceGeneratorTests
         }
 
         return sources.First(source => source.Contains($"partial class {className}", StringComparison.Ordinal));
+    }
+
+    private static string ExtractGeneratedEventBindingMethodName(string generatedSource)
+    {
+        const string marker = "private void __AXSG_EventBinding_";
+        var markerIndex = generatedSource.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(markerIndex >= 0, "Expected generated event binding method.");
+        var signatureStart = markerIndex + "private void ".Length;
+        var signatureEnd = generatedSource.IndexOf('(', signatureStart);
+        Assert.True(signatureEnd > signatureStart, "Expected generated event binding signature.");
+        return generatedSource.Substring(signatureStart, signatureEnd - signatureStart);
     }
 
     private static string ReadRuntimeHotReloadStateTrackerSource()
