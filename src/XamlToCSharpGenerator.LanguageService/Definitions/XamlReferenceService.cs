@@ -20,6 +20,7 @@ public sealed class XamlReferenceService
 {
     private static readonly TimeSpan ProjectDiscoveryCacheTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SourceValidationCacheTtl = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan SourceValidationRefreshThreshold = TimeSpan.FromMilliseconds(500);
     private static readonly XmlReaderSettings ProjectFileReaderSettings = new()
     {
         CloseInput = true,
@@ -37,6 +38,8 @@ public sealed class XamlReferenceService
         new(PathComparer);
     private static readonly ConcurrentDictionary<string, CachedProjectSourceSnapshot> ProjectSourceSnapshotCache =
         new(PathComparer);
+    private static readonly ConcurrentDictionary<string, CachedProjectPathResolution> ProjectPathResolutionCache =
+        new(PathComparer);
     private static readonly ConcurrentDictionary<string, CachedXamlSourceFile> SourceFileCache =
         new(PathComparer);
     private static readonly ConcurrentDictionary<string, Regex> GlobRegexCache =
@@ -44,6 +47,78 @@ public sealed class XamlReferenceService
     private static readonly SourceRange MetadataDeclarationRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
+
+    internal static void ClearCachesForTesting()
+    {
+        ProjectFileListCache.Clear();
+        ProjectIncludePatternCache.Clear();
+        ProjectSourceSnapshotCache.Clear();
+        ProjectPathResolutionCache.Clear();
+        SourceFileCache.Clear();
+        GlobRegexCache.Clear();
+    }
+
+    internal static bool TryGetCachedSourceState(
+        string filePath,
+        out bool xmlParsed,
+        out bool hasXmlDocument)
+    {
+        var normalizedPath = NormalizePath(filePath);
+        if (SourceFileCache.TryGetValue(normalizedPath, out var cached))
+        {
+            xmlParsed = cached.XmlParsed;
+            hasXmlDocument = TryGetCachedXmlDocument(cached) is not null;
+            return true;
+        }
+
+        xmlParsed = false;
+        hasXmlDocument = false;
+        return false;
+    }
+
+    internal static bool ReusesParsedXmlForStaleSourceSnapshot(string filePath)
+    {
+        if (!TryLoadCachedSourceFile(filePath, out var staleSourceFile))
+        {
+            return false;
+        }
+
+        return ReusesParsedXmlForStaleSourceSnapshot(staleSourceFile);
+    }
+
+    internal static bool ReusesParsedXmlForStaleSourceSnapshot(string filePath, string text)
+    {
+        var normalizedPath = NormalizePath(filePath);
+        var documentUri = UriPathHelper.ToDocumentUri(normalizedPath);
+        var now = DateTimeOffset.UtcNow;
+        SourceFileCache[normalizedPath] = new CachedXamlSourceFile(
+            LastWriteUtcTicks: 0,
+            Length: text.Length,
+            ValidatedAtUtc: now,
+            DocumentUri: documentUri,
+            Text: text,
+            XmlDocumentReference: null,
+            XmlParsed: false);
+
+        return ReusesParsedXmlForStaleSourceSnapshot(new XamlProjectSourceFile(
+            normalizedPath,
+            documentUri,
+            text,
+            XmlDocument: null,
+            XmlParsed: false));
+    }
+
+    private static bool ReusesParsedXmlForStaleSourceSnapshot(XamlProjectSourceFile staleSourceFile)
+    {
+        if (!TryEnsureXmlDocumentLoaded(staleSourceFile, out var firstDocument) ||
+            firstDocument is null)
+        {
+            return false;
+        }
+
+        return TryEnsureXmlDocumentLoaded(staleSourceFile, out var secondDocument) &&
+               ReferenceEquals(firstDocument, secondDocument);
+    }
 
     public ImmutableArray<XamlReferenceLocation> GetReferences(XamlAnalysisResult analysis, SourcePosition position)
     {
@@ -1769,7 +1844,13 @@ public sealed class XamlReferenceService
         {
             if (TryLoadCachedSourceFile(filePath, out var sourceFile))
             {
-                builder.Add(sourceFile);
+                // Keep project snapshots lightweight. XML is resolved lazily from the source cache.
+                builder.Add(new XamlProjectSourceFile(
+                    sourceFile.FilePath,
+                    sourceFile.DocumentUri,
+                    sourceFile.Text,
+                    XmlDocument: null,
+                    sourceFile.XmlParsed));
             }
         }
 
@@ -1810,11 +1891,12 @@ public sealed class XamlReferenceService
         if (SourceFileCache.TryGetValue(normalizedPath, out var cachedEntry) &&
             now - cachedEntry.ValidatedAtUtc <= SourceValidationCacheTtl)
         {
+            var cachedXmlDocument = TryGetCachedXmlDocument(cachedEntry);
             sourceFile = new XamlProjectSourceFile(
                 normalizedPath,
                 cachedEntry.DocumentUri,
                 cachedEntry.Text,
-                cachedEntry.XmlDocument,
+                cachedXmlDocument,
                 cachedEntry.XmlParsed);
             return true;
         }
@@ -1841,15 +1923,19 @@ public sealed class XamlReferenceService
             cached.LastWriteUtcTicks == lastWriteTicks &&
             cached.Length == fileLength)
         {
-            SourceFileCache[normalizedPath] = cached with
+            if (now - cached.ValidatedAtUtc > SourceValidationRefreshThreshold)
             {
-                ValidatedAtUtc = now
-            };
+                SourceFileCache[normalizedPath] = cached with
+                {
+                    ValidatedAtUtc = now
+                };
+            }
+            var cachedXmlDocument = TryGetCachedXmlDocument(cached);
             sourceFile = new XamlProjectSourceFile(
                 normalizedPath,
                 cached.DocumentUri,
                 cached.Text,
-                cached.XmlDocument,
+                cachedXmlDocument,
                 cached.XmlParsed);
             return true;
         }
@@ -1870,7 +1956,7 @@ public sealed class XamlReferenceService
             now,
             UriPathHelper.ToDocumentUri(normalizedPath),
             text,
-            XmlDocument: null,
+            XmlDocumentReference: null,
             XmlParsed: false);
         sourceFile = new XamlProjectSourceFile(
             normalizedPath,
@@ -1891,10 +1977,27 @@ public sealed class XamlReferenceService
             return true;
         }
 
-        if (sourceFile.XmlParsed)
+        if (SourceFileCache.TryGetValue(sourceFile.FilePath, out var cachedSource) &&
+            string.Equals(cachedSource.Text, sourceFile.Text, StringComparison.Ordinal))
         {
-            xmlDocument = null;
-            return false;
+            if (cachedSource.XmlParsed)
+            {
+                var cachedXmlDocument = TryGetCachedXmlDocument(cachedSource);
+                if (cachedXmlDocument is not null)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    if (now - cachedSource.ValidatedAtUtc > SourceValidationRefreshThreshold)
+                    {
+                        SourceFileCache[sourceFile.FilePath] = cachedSource with
+                        {
+                            ValidatedAtUtc = now
+                        };
+                    }
+
+                    xmlDocument = cachedXmlDocument;
+                    return true;
+                }
+            }
         }
 
         xmlDocument = TryParseXml(sourceFile.Text, out var parsedDocument)
@@ -1907,7 +2010,9 @@ public sealed class XamlReferenceService
             SourceFileCache[sourceFile.FilePath] = cached with
             {
                 ValidatedAtUtc = DateTimeOffset.UtcNow,
-                XmlDocument = xmlDocument,
+                XmlDocumentReference = xmlDocument is null
+                    ? null
+                    : new WeakReference<XDocument>(xmlDocument),
                 XmlParsed = true
             };
         }
@@ -2182,7 +2287,7 @@ public sealed class XamlReferenceService
             RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
     }
 
-    private static string? ResolveProjectPath(string? projectPath, string currentFilePath)
+    internal static string? ResolveProjectPath(string? projectPath, string currentFilePath)
     {
         if (!string.IsNullOrWhiteSpace(projectPath))
         {
@@ -2210,14 +2315,32 @@ public sealed class XamlReferenceService
         }
 
         var currentDirectory = Path.GetDirectoryName(currentFilePath);
+        return string.IsNullOrWhiteSpace(currentDirectory)
+            ? null
+            : ResolveProjectPathFromDirectory(currentDirectory);
+    }
+
+    private static string? ResolveProjectPathFromDirectory(string directoryPath)
+    {
+        var visitedDirectories = new List<string>(4);
+        var currentDirectory = NormalizePath(directoryPath);
+
         while (!string.IsNullOrWhiteSpace(currentDirectory))
         {
+            if (ProjectPathResolutionCache.TryGetValue(currentDirectory, out var cachedResolution))
+            {
+                return PublishResolvedProjectPath(visitedDirectories, cachedResolution);
+            }
+
+            visitedDirectories.Add(currentDirectory);
+
             try
             {
                 var projectFile = TryFindFirstProjectFile(currentDirectory);
                 if (projectFile is not null)
                 {
-                    return projectFile;
+                    var resolution = new CachedProjectPathResolution(HasProjectPath: true, projectFile);
+                    return PublishResolvedProjectPath(visitedDirectories, resolution);
                 }
             }
             catch
@@ -2228,7 +2351,23 @@ public sealed class XamlReferenceService
             currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
         }
 
-        return null;
+        return PublishResolvedProjectPath(
+            visitedDirectories,
+            new CachedProjectPathResolution(HasProjectPath: false, ProjectPath: null));
+    }
+
+    private static string? PublishResolvedProjectPath(
+        List<string> visitedDirectories,
+        CachedProjectPathResolution resolution)
+    {
+        for (var index = 0; index < visitedDirectories.Count; index++)
+        {
+            ProjectPathResolutionCache[visitedDirectories[index]] = resolution;
+        }
+
+        return resolution.HasProjectPath
+            ? resolution.ProjectPath
+            : null;
     }
 
     private static string? TryFindFirstProjectFile(string directoryPath)
@@ -2260,6 +2399,48 @@ public sealed class XamlReferenceService
             document = null!;
             return false;
         }
+    }
+
+    internal static int CountLiveCachedXmlDocumentsForTesting()
+    {
+        var count = 0;
+        foreach (var cached in SourceFileCache.Values)
+        {
+            if (TryGetCachedXmlDocument(cached) is not null)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    internal static int CountRetainedProjectSnapshotXmlDocumentsForTesting(string projectFilePath)
+    {
+        var snapshot = GetCachedProjectSourceSnapshot(projectFilePath);
+        var count = 0;
+        for (var index = 0; index < snapshot.Length; index++)
+        {
+            if (snapshot[index].XmlDocument is not null)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static XDocument? TryGetCachedXmlDocument(CachedXamlSourceFile cached)
+    {
+        var reference = cached.XmlDocumentReference;
+        if (reference is null)
+        {
+            return null;
+        }
+
+        return reference.TryGetTarget(out var xmlDocument)
+            ? xmlDocument
+            : null;
     }
 
     private static bool TryCreateAttributeValueTokenRange(
@@ -2786,12 +2967,16 @@ public sealed class XamlReferenceService
         DateTimeOffset ValidatedAtUtc,
         ImmutableArray<XamlProjectSourceFile> Sources);
 
+    private readonly record struct CachedProjectPathResolution(
+        bool HasProjectPath,
+        string? ProjectPath);
+
     private readonly record struct CachedXamlSourceFile(
         long LastWriteUtcTicks,
         long Length,
         DateTimeOffset ValidatedAtUtc,
         string DocumentUri,
         string Text,
-        XDocument? XmlDocument,
+        WeakReference<XDocument>? XmlDocumentReference,
         bool XmlParsed);
 }
