@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
 
@@ -3603,6 +3607,26 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string rootExpression,
         string senderExpression)
     {
+        if (TryParseCompiledEventLambda(
+                lambdaExpression,
+                out var lambdaParameterNames,
+                out var lambdaBodyCode,
+                out var lambdaBodyIsBlock))
+        {
+            EmitCompiledEventLambdaBodyInvocation(
+                sourceBuilder,
+                indent,
+                definition,
+                sourceTypeName,
+                sourceExpression,
+                rootExpression,
+                senderExpression,
+                lambdaParameterNames,
+                lambdaBodyCode,
+                lambdaBodyIsBlock);
+            return;
+        }
+
         if (!definition.UsesInlineCodeContext)
         {
             sourceBuilder.AppendLine(indent + "var __axsgLambdaSource = " + sourceExpression + ";");
@@ -3644,6 +3668,63 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine(indent + "}");
     }
 
+    private static void EmitCompiledEventLambdaBodyInvocation(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string senderExpression,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        if (!definition.UsesInlineCodeContext)
+        {
+            sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+            EmitLambdaParameterAliases(sourceBuilder, indent, definition, lambdaParameterNames);
+            EmitLambdaBody(sourceBuilder, indent, lambdaBodyCode, lambdaBodyIsBlock);
+            sourceBuilder.AppendLine(indent + "return;");
+            return;
+        }
+
+        var targetTypeName = string.IsNullOrWhiteSpace(definition.LambdaContextTargetTypeName)
+            ? "global::System.Object"
+            : definition.LambdaContextTargetTypeName!;
+
+        EmitInlineEventLambdaBodyInvocationBlock(
+            sourceBuilder,
+            indent,
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            senderExpression,
+            "__axsgTargetTyped",
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+
+        sourceBuilder.AppendLine(indent + "if ((object)this is " + targetTypeName + " __axsgSelfTargetTyped)");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndBody(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            "__axsgSelfTargetTyped",
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
     private static void EmitInlineEventLambdaInvocationBlock(
         StringBuilder sourceBuilder,
         string indent,
@@ -3672,6 +3753,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine(indent + "}");
     }
 
+    private static void EmitInlineEventLambdaBodyInvocationBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string senderExpression,
+        string targetVariableName,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        sourceBuilder.AppendLine(indent + "if (" + senderExpression + " is " + targetTypeName + " " + targetVariableName + ")");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndBody(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            targetVariableName,
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
     private static void EmitInlineEventLambdaContextAndInvoke(
         StringBuilder sourceBuilder,
         string indent,
@@ -3688,6 +3801,180 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
         sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
         sourceBuilder.AppendLine(indent + "__axsgHandler(" + BuildEventBindingInvocationArgumentList(definition.Parameters) + ");");
+    }
+
+    private static void EmitInlineEventLambdaContextAndBody(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string targetExpression,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
+        sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
+        EmitLambdaParameterAliases(sourceBuilder, indent, definition, lambdaParameterNames);
+        EmitLambdaBody(sourceBuilder, indent, lambdaBodyCode, lambdaBodyIsBlock);
+    }
+
+    private static void EmitLambdaParameterAliases(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        ImmutableArray<string> lambdaParameterNames)
+    {
+        if (lambdaParameterNames.IsDefaultOrEmpty || definition.Parameters.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var count = Math.Min(lambdaParameterNames.Length, definition.Parameters.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var aliasName = lambdaParameterNames[index];
+            if (string.IsNullOrWhiteSpace(aliasName))
+            {
+                continue;
+            }
+
+            var wrapperParameter = definition.Parameters[index];
+            if (string.Equals(aliasName, wrapperParameter.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var wrapperTypeName = string.IsNullOrWhiteSpace(wrapperParameter.TypeName)
+                ? "object?"
+                : wrapperParameter.TypeName;
+            sourceBuilder.AppendLine(indent + wrapperTypeName + " " + aliasName + " = " + wrapperParameter.Name + ";");
+        }
+    }
+
+    private static void EmitLambdaBody(
+        StringBuilder sourceBuilder,
+        string indent,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        if (string.IsNullOrWhiteSpace(lambdaBodyCode))
+        {
+            return;
+        }
+
+        if (lambdaBodyIsBlock)
+        {
+            AppendIndentedCodeBlock(sourceBuilder, indent, lambdaBodyCode);
+        }
+        else
+        {
+            sourceBuilder.AppendLine(indent + lambdaBodyCode.Trim() + ";");
+        }
+    }
+
+    private static void AppendIndentedCodeBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        string code)
+    {
+        var normalized = code.Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        foreach (var line in lines)
+        {
+            if (line.Length == 0)
+            {
+                sourceBuilder.AppendLine();
+                continue;
+            }
+
+            sourceBuilder.Append(indent);
+            sourceBuilder.AppendLine(line);
+        }
+    }
+
+    private static bool TryParseCompiledEventLambda(
+        string lambdaExpression,
+        out ImmutableArray<string> parameterNames,
+        out string lambdaBodyCode,
+        out bool lambdaBodyIsBlock)
+    {
+        parameterNames = ImmutableArray<string>.Empty;
+        lambdaBodyCode = string.Empty;
+        lambdaBodyIsBlock = false;
+
+        if (string.IsNullOrWhiteSpace(lambdaExpression))
+        {
+            return false;
+        }
+
+        var parsedExpression = SyntaxFactory.ParseExpression(lambdaExpression);
+        var parseDiagnostic = parsedExpression.GetDiagnostics()
+            .FirstOrDefault(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        if (parseDiagnostic is not null || parsedExpression is not AnonymousFunctionExpressionSyntax anonymousFunction)
+        {
+            return false;
+        }
+
+        parameterNames = GetLambdaParameterNames(anonymousFunction);
+        switch (anonymousFunction.Body)
+        {
+            case BlockSyntax blockSyntax:
+                lambdaBodyCode = blockSyntax.Statements.ToFullString().Trim();
+                lambdaBodyIsBlock = true;
+                return lambdaBodyCode.Length > 0;
+            case ExpressionSyntax expressionSyntax:
+                lambdaBodyCode = expressionSyntax.ToFullString().Trim();
+                lambdaBodyIsBlock = false;
+                return lambdaBodyCode.Length > 0;
+            default:
+                return false;
+        }
+    }
+
+    private static ImmutableArray<string> GetLambdaParameterNames(AnonymousFunctionExpressionSyntax anonymousFunction)
+    {
+        switch (anonymousFunction)
+        {
+            case SimpleLambdaExpressionSyntax simpleLambdaExpression:
+                return ImmutableArray.Create(simpleLambdaExpression.Parameter.Identifier.ValueText);
+            case ParenthesizedLambdaExpressionSyntax parenthesizedLambdaExpression:
+            {
+                if (parenthesizedLambdaExpression.ParameterList.Parameters.Count == 0)
+                {
+                    return ImmutableArray<string>.Empty;
+                }
+
+                var builder = ImmutableArray.CreateBuilder<string>(parenthesizedLambdaExpression.ParameterList.Parameters.Count);
+                foreach (var parameter in parenthesizedLambdaExpression.ParameterList.Parameters)
+                {
+                    builder.Add(parameter.Identifier.ValueText);
+                }
+
+                return builder.MoveToImmutable();
+            }
+            case AnonymousMethodExpressionSyntax anonymousMethodExpression when anonymousMethodExpression.ParameterList is not null:
+            {
+                if (anonymousMethodExpression.ParameterList.Parameters.Count == 0)
+                {
+                    return ImmutableArray<string>.Empty;
+                }
+
+                var builder = ImmutableArray.CreateBuilder<string>(anonymousMethodExpression.ParameterList.Parameters.Count);
+                foreach (var parameter in anonymousMethodExpression.ParameterList.Parameters)
+                {
+                    builder.Add(parameter.Identifier.ValueText);
+                }
+
+                return builder.MoveToImmutable();
+            }
+            default:
+                return ImmutableArray<string>.Empty;
+        }
     }
 
     private static bool TryBuildEventBindingMemberAccessExpression(

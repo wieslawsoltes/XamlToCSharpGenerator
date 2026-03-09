@@ -7594,8 +7594,10 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
         Assert.Contains("private void __AXSG_EventBinding_", generated);
-        Assert.Contains("global::System.EventHandler __axsgHandler = (s, e) => source.Count++;", generated);
-        Assert.Contains("__axsgHandler(__arg0, __arg1);", generated);
+        Assert.Contains("global::Demo.ViewModels.MainViewModel source = __axsgDataContextTyped;", generated);
+        Assert.Contains(" s = ", generated, StringComparison.Ordinal);
+        Assert.Contains("source.Count++;", generated);
+        Assert.DoesNotContain("__axsgHandler =", generated, StringComparison.Ordinal);
     }
 
     [Fact]
