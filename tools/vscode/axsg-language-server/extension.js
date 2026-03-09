@@ -8,12 +8,17 @@ let outputChannel;
 let statusBarItem;
 const AXSG_METADATA_SCHEME = 'axsg-metadata';
 const AXSG_SOURCELINK_SCHEME = 'axsg-sourcelink';
+const AXSG_INLINE_CSHARP_SCHEME = 'virtualCSharp-axsg-inline';
 const metadataDocumentCache = new Map();
 const metadataUriSubscriptions = new Map();
 let metadataChangeEmitter;
 const sourceLinkDocumentCache = new Map();
 const sourceLinkUriSubscriptions = new Map();
 let sourceLinkChangeEmitter;
+const inlineCSharpProjectionCache = new Map();
+const inlineCSharpProjectionFetches = new Map();
+const inlineCSharpProjectionUriCache = new Map();
+let inlineCSharpProjectionChangeEmitter;
 const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
 const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
 const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
@@ -25,6 +30,10 @@ function decodeQueryValue(value) {
   } catch {
     return value;
   }
+}
+
+function encodeQueryValue(value) {
+  return encodeURIComponent(String(value ?? ''));
 }
 
 function renderMetadataDocument(uri) {
@@ -238,6 +247,579 @@ function renderSourceLinkDocument(uri) {
   return cached.text;
 }
 
+function createInlineCSharpLoadingDocument(uri) {
+  const query = new URLSearchParams(uri.query || '');
+  const sourceUri = decodeQueryValue(query.get('sourceUri') || '');
+  return padVirtualLoadingDocument(`// AXSG inline C# projection\n// Loading projected C# for ${sourceUri || '<unknown source>'}...\n`);
+}
+
+function updateInlineCSharpProjectionCache(cacheEntry) {
+  inlineCSharpProjectionCache.set(cacheEntry.cacheKey, cacheEntry);
+  for (const projection of cacheEntry.projections) {
+    inlineCSharpProjectionUriCache.set(projection.uri.toString(), {
+      cacheKey: cacheEntry.cacheKey,
+      sourceUri: cacheEntry.sourceUri,
+      version: cacheEntry.version,
+      sourceText: cacheEntry.sourceText,
+      projection
+    });
+    if (inlineCSharpProjectionChangeEmitter) {
+      inlineCSharpProjectionChangeEmitter.fire(projection.uri);
+    }
+  }
+}
+
+function buildInlineCSharpProjectionUri(sourceUri, version, projectionId) {
+  const query = new URLSearchParams();
+  query.set('sourceUri', encodeQueryValue(sourceUri));
+  query.set('version', String(version));
+  query.set('id', encodeQueryValue(projectionId));
+
+  return vscode.Uri.from({
+    scheme: AXSG_INLINE_CSHARP_SCHEME,
+    authority: 'axsg-inline',
+    path: `/${projectionId}.cs`,
+    query: query.toString()
+  });
+}
+
+function createInlineCSharpProjectionCacheKey(sourceUri, version) {
+  return `${sourceUri}::${version}`;
+}
+
+function parseInlineCSharpProjectionUri(uri) {
+  const query = new URLSearchParams(uri.query || '');
+  const sourceUri = decodeQueryValue(query.get('sourceUri') || '');
+  const versionValue = Number.parseInt(query.get('version') || '0', 10);
+  const projectionId = decodeQueryValue(query.get('id') || '');
+
+  if (!sourceUri || !projectionId || !Number.isFinite(versionValue)) {
+    return undefined;
+  }
+
+  return {
+    sourceUri,
+    version: versionValue,
+    projectionId,
+    cacheKey: createInlineCSharpProjectionCacheKey(sourceUri, versionValue)
+  };
+}
+
+function cloneRange(range) {
+  return new vscode.Range(
+    range.start.line,
+    range.start.character,
+    range.end.line,
+    range.end.character
+  );
+}
+
+function comparePositions(left, right) {
+  if (left.line !== right.line) {
+    return left.line - right.line;
+  }
+
+  return left.character - right.character;
+}
+
+function containsPosition(range, position) {
+  return comparePositions(position, range.start) >= 0 && comparePositions(position, range.end) <= 0;
+}
+
+function intersectsRanges(left, right) {
+  return comparePositions(left.end, right.start) >= 0 && comparePositions(right.end, left.start) >= 0;
+}
+
+function offsetAt(text, position) {
+  const normalizedText = String(text || '').replace(/\r\n/g, '\n');
+  let line = 0;
+  let character = 0;
+
+  for (let index = 0; index < normalizedText.length; index++) {
+    if (line === position.line && character === position.character) {
+      return index;
+    }
+
+    if (normalizedText[index] === '\n') {
+      line++;
+      character = 0;
+      if (line > position.line) {
+        return index + 1;
+      }
+    } else {
+      character++;
+    }
+  }
+
+  return normalizedText.length;
+}
+
+function positionAt(text, offset) {
+  const normalizedText = String(text || '').replace(/\r\n/g, '\n');
+  const boundedOffset = Math.max(0, Math.min(offset, normalizedText.length));
+  let line = 0;
+  let character = 0;
+
+  for (let index = 0; index < boundedOffset; index++) {
+    if (normalizedText[index] === '\n') {
+      line++;
+      character = 0;
+    } else {
+      character++;
+    }
+  }
+
+  return new vscode.Position(line, character);
+}
+
+function mapProjectedPositionToXamlPosition(sourceText, projection, projectedPosition) {
+  const projectedCodeStart = offsetAt(projection.projectedText, projection.projectedCodeRange.start);
+  const projectedCodeEnd = offsetAt(projection.projectedText, projection.projectedCodeRange.end);
+  const projectedOffset = offsetAt(projection.projectedText, projectedPosition);
+  if (projectedOffset < projectedCodeStart || projectedOffset > projectedCodeEnd) {
+    return undefined;
+  }
+
+  const xamlCodeStart = offsetAt(sourceText, projection.xamlRange.start);
+  return positionAt(sourceText, xamlCodeStart + (projectedOffset - projectedCodeStart));
+}
+
+function mapProjectedRangeToXamlRange(sourceText, projection, projectedRange) {
+  const start = mapProjectedPositionToXamlPosition(sourceText, projection, projectedRange.start);
+  const end = mapProjectedPositionToXamlPosition(sourceText, projection, projectedRange.end);
+  if (!start || !end) {
+    return undefined;
+  }
+
+  return new vscode.Range(start, end);
+}
+
+function mapXamlPositionToProjectedPosition(sourceText, projection, xamlPosition) {
+  const xamlCodeStart = offsetAt(sourceText, projection.xamlRange.start);
+  const xamlCodeEnd = offsetAt(sourceText, projection.xamlRange.end);
+  const xamlOffset = offsetAt(sourceText, xamlPosition);
+  if (xamlOffset < xamlCodeStart || xamlOffset > xamlCodeEnd) {
+    return undefined;
+  }
+
+  const projectedCodeStart = offsetAt(projection.projectedText, projection.projectedCodeRange.start);
+  return positionAt(projection.projectedText, projectedCodeStart + (xamlOffset - xamlCodeStart));
+}
+
+function mapXamlRangeToProjectedRange(sourceText, projection, xamlRange) {
+  const start = mapXamlPositionToProjectedPosition(sourceText, projection, xamlRange.start);
+  const end = mapXamlPositionToProjectedPosition(sourceText, projection, xamlRange.end);
+  if (!start || !end) {
+    return undefined;
+  }
+
+  return new vscode.Range(start, end);
+}
+
+async function fetchInlineCSharpProjections(document, token) {
+  if (!client) {
+    return undefined;
+  }
+
+  const sourceUri = document.uri.toString();
+  const version = document.version ?? 0;
+  const cacheKey = createInlineCSharpProjectionCacheKey(sourceUri, version);
+  const cached = inlineCSharpProjectionCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const inflight = inlineCSharpProjectionFetches.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const fetchPromise = (async () => {
+    const response = await client.sendRequest('axsg/inlineCSharpProjections', {
+      textDocument: {
+        uri: sourceUri
+      },
+      version,
+      documentText: document.getText()
+    }, token);
+
+    const responseItems = Array.isArray(response) ? response : [];
+    const projections = responseItems
+      .filter(item => item && typeof item.id === 'string' && item.xamlRange && item.projectedCodeRange && typeof item.projectedText === 'string')
+      .map(item => {
+        const projection = {
+          id: item.id,
+          kind: typeof item.kind === 'string' ? item.kind : 'expression',
+          sourceUri,
+          version,
+          xamlRange: toVsCodeRange(item.xamlRange),
+          projectedCodeRange: toVsCodeRange(item.projectedCodeRange),
+          projectedText: item.projectedText
+        };
+
+        projection.uri = buildInlineCSharpProjectionUri(sourceUri, version, projection.id);
+        return projection;
+      });
+
+    const entry = {
+      cacheKey,
+      sourceUri,
+      version,
+      sourceText: document.getText(),
+      projections,
+      projectionMap: new Map(projections.map(projection => [projection.id, projection]))
+    };
+
+    updateInlineCSharpProjectionCache(entry);
+    return entry;
+  })();
+
+  inlineCSharpProjectionFetches.set(cacheKey, fetchPromise);
+  try {
+    return await fetchPromise;
+  } finally {
+    inlineCSharpProjectionFetches.delete(cacheKey);
+  }
+}
+
+async function resolveInlineCSharpProjectionFromUri(uri, token) {
+  const cached = inlineCSharpProjectionUriCache.get(uri.toString());
+  if (cached) {
+    return cached;
+  }
+
+  const parsed = parseInlineCSharpProjectionUri(uri);
+  if (!parsed) {
+    return undefined;
+  }
+
+  const exactCacheEntry = inlineCSharpProjectionCache.get(parsed.cacheKey);
+  if (exactCacheEntry) {
+    const exactProjection = exactCacheEntry.projectionMap.get(parsed.projectionId);
+    if (exactProjection) {
+      return {
+        cacheKey: exactCacheEntry.cacheKey,
+        sourceUri: exactCacheEntry.sourceUri,
+        version: exactCacheEntry.version,
+        sourceText: exactCacheEntry.sourceText,
+        projection: exactProjection
+      };
+    }
+  }
+
+  const sourceDocument = await vscode.workspace.openTextDocument(vscode.Uri.parse(parsed.sourceUri));
+  if ((sourceDocument.version ?? 0) !== parsed.version) {
+    return undefined;
+  }
+
+  const cacheEntry = await fetchInlineCSharpProjections(sourceDocument, token);
+  if (!cacheEntry) {
+    return undefined;
+  }
+
+  const projection = cacheEntry.projectionMap.get(parsed.projectionId);
+  if (!projection) {
+    return undefined;
+  }
+
+  return {
+    cacheKey: cacheEntry.cacheKey,
+    sourceUri: cacheEntry.sourceUri,
+    version: cacheEntry.version,
+    sourceText: cacheEntry.sourceText,
+    projection
+  };
+}
+
+async function openInlineCSharpProjectionDocument(projectionUri) {
+  let document = await vscode.workspace.openTextDocument(projectionUri);
+  if (document.languageId !== 'csharp') {
+    document = await vscode.languages.setTextDocumentLanguage(document, 'csharp');
+  }
+
+  return document;
+}
+
+async function tryGetInlineCSharpProjectionAtPosition(document, position, token) {
+  if (!isXamlDocument(document)) {
+    return undefined;
+  }
+
+  const cacheEntry = await fetchInlineCSharpProjections(document, token);
+  if (!cacheEntry || !Array.isArray(cacheEntry.projections) || cacheEntry.projections.length === 0) {
+    return undefined;
+  }
+
+  for (const projection of cacheEntry.projections) {
+    if (!containsPosition(projection.xamlRange, position)) {
+      continue;
+    }
+
+    const projectedPosition = mapXamlPositionToProjectedPosition(cacheEntry.sourceText, projection, position);
+    if (!projectedPosition) {
+      continue;
+    }
+
+    const projectedDocument = await openInlineCSharpProjectionDocument(projection.uri);
+    return {
+      cacheEntry,
+      projection,
+      projectedPosition,
+      projectedDocument
+    };
+  }
+
+  return undefined;
+}
+
+function normalizeLocationResults(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return [value];
+}
+
+function mapProjectedResultLocation(result) {
+  if (!result) {
+    return undefined;
+  }
+
+  if (result.targetUri && result.targetRange) {
+    const targetUri = result.targetUri;
+    if (targetUri.scheme === AXSG_INLINE_CSHARP_SCHEME) {
+      const projectionInfo = inlineCSharpProjectionUriCache.get(targetUri.toString());
+      if (!projectionInfo) {
+        return undefined;
+      }
+
+      const mappedRange = mapProjectedRangeToXamlRange(
+        projectionInfo.sourceText,
+        projectionInfo.projection,
+        result.targetSelectionRange ?? result.targetRange);
+      if (!mappedRange) {
+        return undefined;
+      }
+
+      return new vscode.Location(vscode.Uri.parse(projectionInfo.sourceUri), mappedRange);
+    }
+
+    return new vscode.Location(targetUri, result.targetSelectionRange ?? result.targetRange);
+  }
+
+  if (result.uri && result.range) {
+    if (result.uri.scheme === AXSG_INLINE_CSHARP_SCHEME) {
+      const projectionInfo = inlineCSharpProjectionUriCache.get(result.uri.toString());
+      if (!projectionInfo) {
+        return undefined;
+      }
+
+      const mappedRange = mapProjectedRangeToXamlRange(
+        projectionInfo.sourceText,
+        projectionInfo.projection,
+        result.range);
+      if (!mappedRange) {
+        return undefined;
+      }
+
+      return new vscode.Location(vscode.Uri.parse(projectionInfo.sourceUri), mappedRange);
+    }
+
+    return result;
+  }
+
+  return undefined;
+}
+
+function dedupeLocations(locations) {
+  const map = new Map();
+  for (const location of locations) {
+    if (!(location instanceof vscode.Location)) {
+      continue;
+    }
+
+    const key = `${location.uri.toString()}::${location.range.start.line}:${location.range.start.character}:${location.range.end.line}:${location.range.end.character}`;
+    if (!map.has(key)) {
+      map.set(key, location);
+    }
+  }
+
+  return [...map.values()];
+}
+
+function mapProjectedCompletionRange(sourceText, projection, range) {
+  if (!range) {
+    return undefined;
+  }
+
+  if (range.inserting && range.replacing) {
+    const inserting = mapProjectedRangeToXamlRange(sourceText, projection, range.inserting);
+    const replacing = mapProjectedRangeToXamlRange(sourceText, projection, range.replacing);
+    if (!inserting || !replacing) {
+      return undefined;
+    }
+
+    return { inserting, replacing };
+  }
+
+  return mapProjectedRangeToXamlRange(sourceText, projection, range);
+}
+
+function mapProjectedTextEdits(sourceText, projection, edits) {
+  if (!Array.isArray(edits) || edits.length === 0) {
+    return undefined;
+  }
+
+  const mapped = [];
+  for (const edit of edits) {
+    if (!edit || !edit.range) {
+      continue;
+    }
+
+    const mappedRange = mapProjectedRangeToXamlRange(sourceText, projection, edit.range);
+    if (!mappedRange) {
+      continue;
+    }
+
+    mapped.push(new vscode.TextEdit(mappedRange, typeof edit.newText === 'string' ? edit.newText : ''));
+  }
+
+  return mapped.length > 0 ? mapped : undefined;
+}
+
+function mapProjectedCompletionItem(sourceText, projection, item) {
+  if (!item) {
+    return undefined;
+  }
+
+  const mappedRange = mapProjectedCompletionRange(sourceText, projection, item.range);
+  if (item.range && !mappedRange) {
+    return undefined;
+  }
+
+  if (mappedRange) {
+    item.range = mappedRange;
+  }
+
+  const mappedTextEdits = mapProjectedTextEdits(sourceText, projection, item.additionalTextEdits);
+  if (Array.isArray(item.additionalTextEdits) && !mappedTextEdits) {
+    delete item.additionalTextEdits;
+  } else if (mappedTextEdits) {
+    item.additionalTextEdits = mappedTextEdits;
+  }
+
+  return item;
+}
+
+function mapProjectedHover(sourceText, projection, hover) {
+  if (!hover) {
+    return undefined;
+  }
+
+  if (!hover.range) {
+    return hover;
+  }
+
+  const mappedRange = mapProjectedRangeToXamlRange(sourceText, projection, hover.range);
+  if (!mappedRange) {
+    return undefined;
+  }
+
+  return new vscode.Hover(hover.contents, mappedRange);
+}
+
+async function tryExecuteCommand(command, ...args) {
+  try {
+    return await vscode.commands.executeCommand(command, ...args);
+  } catch {
+    return undefined;
+  }
+}
+
+async function requestInlineCSharpCompletion(document, position, completionContext, token) {
+  const projectionInfo = await tryGetInlineCSharpProjectionAtPosition(document, position, token);
+  if (!projectionInfo) {
+    return undefined;
+  }
+
+  const result = await tryExecuteCommand(
+    'vscode.executeCompletionItemProvider',
+    projectionInfo.projectedDocument.uri,
+    projectionInfo.projectedPosition,
+    completionContext && typeof completionContext.triggerCharacter === 'string'
+      ? completionContext.triggerCharacter
+      : undefined);
+
+  if (!result) {
+    return undefined;
+  }
+
+  if (Array.isArray(result)) {
+    const items = result
+      .map(item => mapProjectedCompletionItem(projectionInfo.cacheEntry.sourceText, projectionInfo.projection, item))
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
+  }
+
+  if (Array.isArray(result.items)) {
+    const items = result.items
+      .map(item => mapProjectedCompletionItem(projectionInfo.cacheEntry.sourceText, projectionInfo.projection, item))
+      .filter(Boolean);
+    if (items.length === 0) {
+      return undefined;
+    }
+
+    return new vscode.CompletionList(items, result.isIncomplete);
+  }
+
+  return undefined;
+}
+
+async function requestInlineCSharpHover(document, position, token) {
+  const projectionInfo = await tryGetInlineCSharpProjectionAtPosition(document, position, token);
+  if (!projectionInfo) {
+    return undefined;
+  }
+
+  const hovers = await tryExecuteCommand(
+    'vscode.executeHoverProvider',
+    projectionInfo.projectedDocument.uri,
+    projectionInfo.projectedPosition);
+  if (!Array.isArray(hovers) || hovers.length === 0) {
+    return undefined;
+  }
+
+  for (const hover of hovers) {
+    const mappedHover = mapProjectedHover(projectionInfo.cacheEntry.sourceText, projectionInfo.projection, hover);
+    if (mappedHover) {
+      return mappedHover;
+    }
+  }
+
+  return undefined;
+}
+
+async function requestInlineCSharpLocations(command, document, position, token, includeDeclaration) {
+  const projectionInfo = await tryGetInlineCSharpProjectionAtPosition(document, position, token);
+  if (!projectionInfo) {
+    return [];
+  }
+
+  const locations = await tryExecuteCommand(
+    command,
+    projectionInfo.projectedDocument.uri,
+    projectionInfo.projectedPosition,
+    includeDeclaration);
+
+  return dedupeLocations(normalizeLocationResults(locations)
+    .map(mapProjectedResultLocation)
+    .filter(location => location instanceof vscode.Location));
+}
+
 function resolveWorkspaceRoot() {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
@@ -315,6 +897,66 @@ function resolveClientOptions(context) {
       inlayHints: {
         bindingTypeHintsEnabled: configuration.get('inlayHints.bindingTypeHints.enabled', true),
         typeDisplayStyle: configuration.get('inlayHints.typeDisplayStyle', 'short')
+      }
+    },
+    middleware: {
+      provideCompletionItem: async (document, position, completionContext, token, next) => {
+        const inlineResult = await requestInlineCSharpCompletion(document, position, completionContext, token);
+        if (inlineResult) {
+          return inlineResult;
+        }
+
+        return next(document, position, completionContext, token);
+      },
+      provideHover: async (document, position, token, next) => {
+        const inlineHover = await requestInlineCSharpHover(document, position, token);
+        if (inlineHover) {
+          return inlineHover;
+        }
+
+        return next(document, position, token);
+      },
+      provideDefinition: async (document, position, token, next) => {
+        const inlineLocations = await requestInlineCSharpLocations(
+          'vscode.executeDefinitionProvider',
+          document,
+          position,
+          token,
+          undefined);
+        const fallbackLocations = dedupeLocations(
+          normalizeLocationResults(await next(document, position, token))
+            .map(mapProjectedResultLocation)
+            .filter(location => location instanceof vscode.Location));
+        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
+        return merged.length > 0 ? merged : undefined;
+      },
+      provideDeclaration: async (document, position, token, next) => {
+        const inlineLocations = await requestInlineCSharpLocations(
+          'vscode.executeDeclarationProvider',
+          document,
+          position,
+          token,
+          undefined);
+        const fallbackLocations = dedupeLocations(
+          normalizeLocationResults(await next(document, position, token))
+            .map(mapProjectedResultLocation)
+            .filter(location => location instanceof vscode.Location));
+        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
+        return merged.length > 0 ? merged : undefined;
+      },
+      provideReferences: async (document, position, referenceContext, token, next) => {
+        const inlineLocations = await requestInlineCSharpLocations(
+          'vscode.executeReferenceProvider',
+          document,
+          position,
+          token,
+          referenceContext && referenceContext.includeDeclaration === true);
+        const fallbackLocations = dedupeLocations(
+          normalizeLocationResults(await next(document, position, referenceContext, token))
+            .map(mapProjectedResultLocation)
+            .filter(location => location instanceof vscode.Location));
+        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
+        return merged.length > 0 ? merged : undefined;
       }
     }
   };
@@ -643,10 +1285,23 @@ async function activate(context) {
   context.subscriptions.push(metadataChangeEmitter);
   sourceLinkChangeEmitter = new vscode.EventEmitter();
   context.subscriptions.push(sourceLinkChangeEmitter);
+  inlineCSharpProjectionChangeEmitter = new vscode.EventEmitter();
+  context.subscriptions.push(inlineCSharpProjectionChangeEmitter);
   const sourceLinkProvider = {
     onDidChange: sourceLinkChangeEmitter.event,
     provideTextDocumentContent(uri) {
       return renderSourceLinkDocument(uri);
+    }
+  };
+  const inlineCSharpProjectionProvider = {
+    onDidChange: inlineCSharpProjectionChangeEmitter.event,
+    async provideTextDocumentContent(uri) {
+      const projectionInfo = await resolveInlineCSharpProjectionFromUri(uri);
+      if (!projectionInfo) {
+        return createInlineCSharpLoadingDocument(uri);
+      }
+
+      return projectionInfo.projection.projectedText;
     }
   };
   const metadataProviderWithUpdates = {
@@ -661,6 +1316,9 @@ async function activate(context) {
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(
     AXSG_SOURCELINK_SCHEME,
     sourceLinkProvider));
+  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(
+    AXSG_INLINE_CSHARP_SCHEME,
+    inlineCSharpProjectionProvider));
   context.subscriptions.push(vscode.commands.registerCommand(
     'axsg.refactor.renameSymbol',
     async argument => {
@@ -738,7 +1396,8 @@ async function activate(context) {
     }));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async document => {
     if (document.uri.scheme !== AXSG_METADATA_SCHEME &&
-        document.uri.scheme !== AXSG_SOURCELINK_SCHEME) {
+        document.uri.scheme !== AXSG_SOURCELINK_SCHEME &&
+        document.uri.scheme !== AXSG_INLINE_CSHARP_SCHEME) {
       return;
     }
 
@@ -826,6 +1485,11 @@ async function deactivate() {
   if (metadataChangeEmitter) {
     metadataChangeEmitter.dispose();
     metadataChangeEmitter = undefined;
+  }
+
+  if (inlineCSharpProjectionChangeEmitter) {
+    inlineCSharpProjectionChangeEmitter.dispose();
+    inlineCSharpProjectionChangeEmitter = undefined;
   }
 }
 

@@ -122,6 +122,16 @@ public sealed class XamlReferenceService
 
     public ImmutableArray<XamlReferenceLocation> GetReferences(XamlAnalysisResult analysis, SourcePosition position)
     {
+        if (XamlInlineCSharpNavigationService.TryResolveNavigationTarget(analysis, position, out var inlineCodeTarget))
+        {
+            if (inlineCodeTarget.DeclarationRange is not null)
+            {
+                return CollectInlineCodeLocalReferences(analysis, position, inlineCodeTarget);
+            }
+
+            return CollectExpressionSymbolReferences(analysis, inlineCodeTarget.Symbol);
+        }
+
         var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
         var identifier = XamlResourceReferenceNavigationSemantics.TryResolveResourceIdentifierAtOffset(
             analysis.Document.Text,
@@ -235,7 +245,7 @@ public sealed class XamlReferenceService
             AddReference(builder, seen, reference.Uri, reference.Range, reference.IsDeclaration);
         }
 
-        return SortReferencesDeterministically(builder);
+        return builder.ToImmutable();
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectNamedOrResourceReferences(
@@ -554,7 +564,7 @@ public sealed class XamlReferenceService
             }
         }
 
-        return SortReferencesDeterministically(builder);
+        return builder.ToImmutable();
     }
 
     private static ImmutableArray<XamlReferenceLocation> CollectPseudoClassReferences(
@@ -1073,22 +1083,43 @@ public sealed class XamlReferenceService
             {
                 foreach (var attribute in element.Attributes())
                 {
-                    if (attribute.IsNamespaceDeclaration ||
-                        !XamlExpressionBindingNavigationService.TryResolveExpressionContext(
-                            analysis,
-                            source.Text,
-                            element,
-                            attribute,
-                            out _))
+                    if (attribute.IsNamespaceDeclaration)
                     {
                         continue;
                     }
 
-                    foreach (var range in XamlExpressionBindingNavigationService.FindReferenceRanges(
-                                 analysis,
-                                 source.Text,
-                                 element,
-                                 attribute,
+                    if (XamlExpressionBindingNavigationService.TryResolveExpressionContext(
+                            analysis,
+                            source.Text,
+                            element,
+                            attribute,
+                            out var expressionContext))
+                    {
+                        foreach (var range in XamlExpressionBindingNavigationService.FindReferenceRanges(
+                                     expressionContext,
+                                     targetSymbol))
+                        {
+                            AddReference(
+                                builder,
+                                seen,
+                                source.DocumentUri,
+                                range,
+                                isDeclaration: false);
+                        }
+                    }
+
+                    if (!XamlInlineCSharpNavigationService.TryResolveCompactAttributeContext(
+                            analysis,
+                            source.Text,
+                            element,
+                            attribute,
+                            out var inlineAttributeContext))
+                    {
+                        continue;
+                    }
+
+                    foreach (var range in XamlInlineCSharpNavigationService.FindReferenceRanges(
+                                 inlineAttributeContext,
                                  targetSymbol))
                     {
                         AddReference(
@@ -1098,6 +1129,27 @@ public sealed class XamlReferenceService
                             range,
                             isDeclaration: false);
                     }
+                }
+
+                if (!XamlInlineCSharpNavigationService.TryResolveElementContentContext(
+                        analysis,
+                        source.Text,
+                        element,
+                        out var inlineElementContext))
+                {
+                    continue;
+                }
+
+                foreach (var range in XamlInlineCSharpNavigationService.FindReferenceRanges(
+                             inlineElementContext,
+                             targetSymbol))
+                {
+                    AddReference(
+                        builder,
+                        seen,
+                        source.DocumentUri,
+                        range,
+                        isDeclaration: false);
                 }
             }
         }
@@ -1401,6 +1453,107 @@ public sealed class XamlReferenceService
         }
 
         return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<XamlReferenceLocation> CollectInlineCodeLocalReferences(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        XamlInlineCSharpNavigationTarget target)
+    {
+        if (!XamlInlineCSharpNavigationService.TryFindContextAtPosition(
+                analysis,
+                position,
+                out var context,
+                out _))
+        {
+            return ImmutableArray<XamlReferenceLocation>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlReferenceLocation>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var codeStartOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, context.CodeRange.Start);
+        var currentContextTargetSymbol = TryResolveInlineTargetSymbol(context, target)
+            ?? target.Symbol;
+        foreach (var occurrence in context.SymbolOccurrences)
+        {
+            if (!AreEquivalentInlineSymbols(occurrence.Symbol, currentContextTargetSymbol))
+            {
+                continue;
+            }
+
+            var startOffset = codeStartOffset + occurrence.Start;
+            AddReference(
+                builder,
+                seen,
+                UriPathHelper.ToDocumentUri(analysis.Document.FilePath),
+                new SourceRange(
+                    TextCoordinateHelper.GetPosition(analysis.Document.Text, startOffset),
+                    TextCoordinateHelper.GetPosition(analysis.Document.Text, startOffset + occurrence.Length)),
+                isDeclaration: occurrence.IsDeclaration);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ISymbol? TryResolveInlineTargetSymbol(
+        XamlInlineCSharpContext context,
+        XamlInlineCSharpNavigationTarget target)
+    {
+        if (target.DeclarationRange is null)
+        {
+            return null;
+        }
+
+        var declarationStartOffset = TextCoordinateHelper.GetOffset(context.SourceText, target.DeclarationRange.Value.Start);
+        var codeStartOffset = TextCoordinateHelper.GetOffset(context.SourceText, context.CodeRange.Start);
+        if (declarationStartOffset < codeStartOffset)
+        {
+            return null;
+        }
+
+        var relativeDeclarationStart = declarationStartOffset - codeStartOffset;
+        foreach (var occurrence in context.SymbolOccurrences)
+        {
+            if (!occurrence.IsDeclaration ||
+                occurrence.Start != relativeDeclarationStart)
+            {
+                continue;
+            }
+
+            return occurrence.Symbol;
+        }
+
+        return null;
+    }
+
+    private static bool AreEquivalentInlineSymbols(ISymbol left, ISymbol right)
+    {
+        left = NormalizeInlineSymbol(left);
+        right = NormalizeInlineSymbol(right);
+
+        if (SymbolEqualityComparer.Default.Equals(left, right))
+        {
+            return true;
+        }
+
+        return left is ITypeSymbol leftType &&
+               right is ITypeSymbol rightType &&
+               string.Equals(
+                   leftType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                   rightType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                   StringComparison.Ordinal);
+    }
+
+    private static ISymbol NormalizeInlineSymbol(ISymbol symbol)
+    {
+        return symbol switch
+        {
+            IMethodSymbol methodSymbol when methodSymbol.MethodKind != MethodKind.LocalFunction => methodSymbol.OriginalDefinition,
+            IPropertySymbol propertySymbol => propertySymbol.OriginalDefinition,
+            IFieldSymbol fieldSymbol => fieldSymbol.OriginalDefinition,
+            INamedTypeSymbol typeSymbol => typeSymbol.OriginalDefinition,
+            _ => symbol
+        };
     }
 
     private static bool TryResolvePseudoClassInfo(

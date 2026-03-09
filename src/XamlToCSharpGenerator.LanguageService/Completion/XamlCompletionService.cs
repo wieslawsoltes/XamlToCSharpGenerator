@@ -32,6 +32,14 @@ public sealed class XamlCompletionService
 
     public ImmutableArray<XamlCompletionItem> GetCompletions(XamlAnalysisResult analysis, SourcePosition position)
     {
+        if (XamlInlineCSharpCompletionService.TryGetCompletions(analysis, position, out var inlineCodeCompletions))
+        {
+            return inlineCodeCompletions
+                .DistinctBy(static completion => completion.Label, StringComparer.Ordinal)
+                .OrderBy(static completion => completion.Label, StringComparer.Ordinal)
+                .ToImmutableArray();
+        }
+
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
         if (context.Kind == XamlCompletionContextKind.Unknown)
         {

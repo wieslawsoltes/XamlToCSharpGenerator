@@ -19,6 +19,11 @@ public sealed class XamlHoverService
 {
     public XamlHoverInfo? GetHover(XamlAnalysisResult analysis, SourcePosition position)
     {
+        if (TryGetInlineCSharpHover(analysis, position, out var inlineCodeHover))
+        {
+            return inlineCodeHover;
+        }
+
         if (TryGetExpressionHover(analysis, position, out var expressionHover))
         {
             return expressionHover;
@@ -80,6 +85,23 @@ public sealed class XamlHoverService
     {
         hover = null;
         if (!XamlExpressionBindingNavigationService.TryResolveNavigationTarget(analysis, position, out var target))
+        {
+            return false;
+        }
+
+        hover = new XamlHoverInfo(
+            XamlHoverMarkdownFormatter.FormatSymbol(GetSymbolHeading(target.Symbol), target.Symbol),
+            target.UsageRange);
+        return true;
+    }
+
+    private static bool TryGetInlineCSharpHover(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        out XamlHoverInfo? hover)
+    {
+        hover = null;
+        if (!XamlInlineCSharpNavigationService.TryResolveNavigationTarget(analysis, position, out var target))
         {
             return false;
         }

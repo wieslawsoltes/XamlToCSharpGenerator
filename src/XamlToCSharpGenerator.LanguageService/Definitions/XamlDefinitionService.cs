@@ -12,6 +12,31 @@ public sealed class XamlDefinitionService
 
     public ImmutableArray<XamlDefinitionLocation> GetDefinitions(XamlAnalysisResult analysis, SourcePosition position)
     {
+        if (XamlInlineCSharpNavigationService.TryResolveNavigationTarget(analysis, position, out var inlineCodeTarget))
+        {
+            if (inlineCodeTarget.DeclarationRange is { } inlineDeclarationRange)
+            {
+                return
+                [
+                    new XamlDefinitionLocation(
+                        UriPathHelper.ToDocumentUri(analysis.Document.FilePath),
+                        inlineDeclarationRange)
+                ];
+            }
+
+            if (inlineCodeTarget.DefinitionLocation is { } inlineDefinitionLocation)
+            {
+                return
+                [
+                    new XamlDefinitionLocation(
+                        inlineDefinitionLocation.Uri,
+                        inlineDefinitionLocation.Range)
+                ];
+            }
+
+            return [CreateSymbolDefinitionLocation(analysis, inlineCodeTarget.Symbol)];
+        }
+
         var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
         var identifier = XamlResourceReferenceNavigationSemantics.TryResolveResourceIdentifierAtOffset(
             analysis.Document.Text,

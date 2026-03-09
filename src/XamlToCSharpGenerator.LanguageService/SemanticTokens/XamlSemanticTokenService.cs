@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlToCSharpGenerator.ExpressionSemantics;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Parsing;
@@ -13,6 +14,8 @@ namespace XamlToCSharpGenerator.LanguageService.SemanticTokens;
 
 public sealed class XamlSemanticTokenService
 {
+    private readonly record struct OffsetRange(int Start, int End);
+
     public static readonly ImmutableArray<string> TokenTypes =
     [
         "xamlDelimiter",
@@ -48,7 +51,10 @@ public sealed class XamlSemanticTokenService
 
         var tokens = ImmutableArray.CreateBuilder<XamlSemanticToken>();
         var mapper = new OffsetLineMap(text);
+        var inlineCSharpContexts = XamlInlineCSharpNavigationService.EnumerateContexts(analysis);
         var markupExpressionInfoByOffset = BuildMarkupExpressionInfoMap(analysis, text);
+        var inlineCodeContextsByOffset = BuildInlineCodeContextMap(text, inlineCSharpContexts);
+        var inlineElementCodeRanges = BuildInlineElementCodeRanges(text, inlineCSharpContexts);
 
         var index = 0;
         while (index < text.Length)
@@ -56,14 +62,21 @@ public sealed class XamlSemanticTokenService
             var current = text[index];
             if (current == '<')
             {
-                TokenizeTag(text, ref index, mapper, tokens, markupExpressionInfoByOffset);
+                TokenizeTag(
+                    text,
+                    ref index,
+                    mapper,
+                    tokens,
+                    markupExpressionInfoByOffset,
+                    inlineCodeContextsByOffset);
                 continue;
             }
 
-            TokenizeTextNode(text, ref index, mapper, tokens);
+            TokenizeTextNode(text, ref index, mapper, tokens, inlineElementCodeRanges);
         }
 
         AddMarkupExpressionSemanticTokens(analysis, mapper, tokens);
+        AddInlineCSharpSemanticTokens(inlineCSharpContexts, mapper, tokens);
         return tokens.ToImmutable();
     }
 
@@ -71,7 +84,8 @@ public sealed class XamlSemanticTokenService
         string text,
         ref int index,
         OffsetLineMap mapper,
-        ImmutableArray<XamlSemanticToken>.Builder tokens)
+        ImmutableArray<XamlSemanticToken>.Builder tokens,
+        ImmutableArray<OffsetRange> skippedRanges)
     {
         var end = text.IndexOf('<', index);
         if (end < 0)
@@ -80,6 +94,38 @@ public sealed class XamlSemanticTokenService
         }
 
         var cursor = index;
+        foreach (var skippedRange in skippedRanges)
+        {
+            if (skippedRange.End <= cursor)
+            {
+                continue;
+            }
+
+            if (skippedRange.Start >= end)
+            {
+                break;
+            }
+
+            TokenizeTextNodeSegment(text, cursor, Math.Min(skippedRange.Start, end), mapper, tokens);
+            cursor = Math.Max(cursor, Math.Min(skippedRange.End, end));
+            if (cursor >= end)
+            {
+                break;
+            }
+        }
+
+        TokenizeTextNodeSegment(text, cursor, end, mapper, tokens);
+        index = end;
+    }
+
+    private static void TokenizeTextNodeSegment(
+        string text,
+        int start,
+        int end,
+        OffsetLineMap mapper,
+        ImmutableArray<XamlSemanticToken>.Builder tokens)
+    {
+        var cursor = start;
         while (cursor < end)
         {
             while (cursor < end && char.IsWhiteSpace(text[cursor]))
@@ -87,19 +133,17 @@ public sealed class XamlSemanticTokenService
                 cursor++;
             }
 
-            var start = cursor;
+            var tokenStart = cursor;
             while (cursor < end && !char.IsWhiteSpace(text[cursor]))
             {
                 cursor++;
             }
 
-            if (cursor > start)
+            if (cursor > tokenStart)
             {
-                AddToken(tokens, mapper, start, cursor - start, "xamlText");
+                AddToken(tokens, mapper, tokenStart, cursor - tokenStart, "xamlText");
             }
         }
-
-        index = end;
     }
 
     private static void TokenizeTag(
@@ -107,7 +151,8 @@ public sealed class XamlSemanticTokenService
         ref int index,
         OffsetLineMap mapper,
         ImmutableArray<XamlSemanticToken>.Builder tokens,
-        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset)
+        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset,
+        IReadOnlyDictionary<int, XamlInlineCSharpContext> inlineCodeContextsByOffset)
     {
         if (index + 3 < text.Length &&
             text[index + 1] == '!' &&
@@ -130,6 +175,29 @@ public sealed class XamlSemanticTokenService
 
             AddToken(tokens, mapper, commentEnd, 3, "xamlDelimiter");
             index = commentEnd + 3;
+            return;
+        }
+
+        if (index + 8 < text.Length &&
+            text[index + 1] == '!' &&
+            text[index + 2] == '[' &&
+            text[index + 3] == 'C' &&
+            text[index + 4] == 'D' &&
+            text[index + 5] == 'A' &&
+            text[index + 6] == 'T' &&
+            text[index + 7] == 'A' &&
+            text[index + 8] == '[')
+        {
+            AddToken(tokens, mapper, index, 9, "xamlDelimiter");
+            var cdataEnd = text.IndexOf("]]>", index + 9, StringComparison.Ordinal);
+            if (cdataEnd < 0)
+            {
+                index = text.Length;
+                return;
+            }
+
+            AddToken(tokens, mapper, cdataEnd, 3, "xamlDelimiter");
+            index = cdataEnd + 3;
             return;
         }
 
@@ -196,7 +264,13 @@ public sealed class XamlSemanticTokenService
 
             if (text[index] == '"' || text[index] == '\'')
             {
-                TokenizeQuotedValue(text, ref index, mapper, tokens, markupExpressionInfoByOffset);
+                TokenizeQuotedValue(
+                    text,
+                    ref index,
+                    mapper,
+                    tokens,
+                    markupExpressionInfoByOffset,
+                    inlineCodeContextsByOffset);
                 continue;
             }
 
@@ -233,7 +307,13 @@ public sealed class XamlSemanticTokenService
 
                 if (index < text.Length && (text[index] == '"' || text[index] == '\''))
                 {
-                    TokenizeQuotedValue(text, ref index, mapper, tokens, markupExpressionInfoByOffset);
+                    TokenizeQuotedValue(
+                        text,
+                        ref index,
+                        mapper,
+                        tokens,
+                        markupExpressionInfoByOffset,
+                        inlineCodeContextsByOffset);
                 }
                 else
                 {
@@ -248,7 +328,14 @@ public sealed class XamlSemanticTokenService
                     var valueLength = index - valueStart;
                     if (valueLength > 0)
                     {
-                        TokenizeAttributeValueSpan(text, valueStart, valueLength, mapper, tokens, markupExpressionInfoByOffset);
+                        TokenizeAttributeValueSpan(
+                            text,
+                            valueStart,
+                            valueLength,
+                            mapper,
+                            tokens,
+                            markupExpressionInfoByOffset,
+                            inlineCodeContextsByOffset);
                     }
                 }
             }
@@ -260,7 +347,8 @@ public sealed class XamlSemanticTokenService
         ref int index,
         OffsetLineMap mapper,
         ImmutableArray<XamlSemanticToken>.Builder tokens,
-        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset)
+        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset,
+        IReadOnlyDictionary<int, XamlInlineCSharpContext> inlineCodeContextsByOffset)
     {
         var quote = text[index];
         AddToken(tokens, mapper, index, 1, "xamlAttributeQuotes");
@@ -273,7 +361,14 @@ public sealed class XamlSemanticTokenService
 
         if (valueEnd > valueStart)
         {
-            TokenizeAttributeValueSpan(text, valueStart, valueEnd - valueStart, mapper, tokens, markupExpressionInfoByOffset);
+            TokenizeAttributeValueSpan(
+                text,
+                valueStart,
+                valueEnd - valueStart,
+                mapper,
+                tokens,
+                markupExpressionInfoByOffset,
+                inlineCodeContextsByOffset);
         }
 
         if (valueEnd < text.Length)
@@ -339,10 +434,18 @@ public sealed class XamlSemanticTokenService
         int length,
         OffsetLineMap mapper,
         ImmutableArray<XamlSemanticToken>.Builder tokens,
-        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset)
+        IReadOnlyDictionary<int, XamlCSharpMarkupExpressionInfo> markupExpressionInfoByOffset,
+        IReadOnlyDictionary<int, XamlInlineCSharpContext> inlineCodeContextsByOffset)
     {
         if (length <= 0)
         {
+            return;
+        }
+
+        if (inlineCodeContextsByOffset.TryGetValue(start, out var inlineCodeContext) &&
+            TextCoordinateHelper.GetOffset(text, inlineCodeContext.CodeRange.End) == start + length)
+        {
+            TokenizeCSharpExpressionSpan(text, start, start + length, mapper, tokens);
             return;
         }
 
@@ -361,7 +464,7 @@ public sealed class XamlSemanticTokenService
 
         if (length >= 2 && text[start] == '{' && text[start + length - 1] == '}')
         {
-            TokenizeMarkupExtension(text, start, length, mapper, tokens);
+            TokenizeMarkupExtension(text, start, length, mapper, tokens, inlineCodeContextsByOffset);
             return;
         }
 
@@ -406,7 +509,8 @@ public sealed class XamlSemanticTokenService
         int start,
         int length,
         OffsetLineMap mapper,
-        ImmutableArray<XamlSemanticToken>.Builder tokens)
+        ImmutableArray<XamlSemanticToken>.Builder tokens,
+        IReadOnlyDictionary<int, XamlInlineCSharpContext> inlineCodeContextsByOffset)
     {
         var end = start + length;
         AddToken(tokens, mapper, start, 1, "xamlDelimiter");
@@ -496,12 +600,24 @@ public sealed class XamlSemanticTokenService
                 TrimRange(text, ref valueStart, ref valueEnd);
                 if (valueStart < valueEnd)
                 {
-                    TokenizeMarkupExtensionParameterValue(text, valueStart, valueEnd - valueStart, mapper, tokens);
+                    TokenizeMarkupExtensionParameterValue(
+                        text,
+                        valueStart,
+                        valueEnd - valueStart,
+                        mapper,
+                        tokens,
+                        inlineCodeContextsByOffset);
                 }
             }
             else
             {
-                TokenizeMarkupExtensionParameterValue(text, segmentStart, segmentEnd - segmentStart, mapper, tokens);
+                TokenizeMarkupExtensionParameterValue(
+                    text,
+                    segmentStart,
+                    segmentEnd - segmentStart,
+                    mapper,
+                    tokens,
+                    inlineCodeContextsByOffset);
             }
         }
     }
@@ -511,10 +627,18 @@ public sealed class XamlSemanticTokenService
         int start,
         int length,
         OffsetLineMap mapper,
-        ImmutableArray<XamlSemanticToken>.Builder tokens)
+        ImmutableArray<XamlSemanticToken>.Builder tokens,
+        IReadOnlyDictionary<int, XamlInlineCSharpContext> inlineCodeContextsByOffset)
     {
         if (length <= 0)
         {
+            return;
+        }
+
+        if (inlineCodeContextsByOffset.TryGetValue(start, out var inlineCodeContext) &&
+            TextCoordinateHelper.GetOffset(text, inlineCodeContext.CodeRange.End) == start + length)
+        {
+            TokenizeCSharpExpressionSpan(text, start, start + length, mapper, tokens);
             return;
         }
 
@@ -724,6 +848,39 @@ public sealed class XamlSemanticTokenService
         }
     }
 
+    private static void AddInlineCSharpSemanticTokens(
+        ImmutableArray<XamlInlineCSharpContext> contexts,
+        OffsetLineMap mapper,
+        ImmutableArray<XamlSemanticToken>.Builder tokens)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var context in contexts)
+        {
+            var codeStartOffset = TextCoordinateHelper.GetOffset(mapper.Text, context.CodeRange.Start);
+            var codeEndOffset = TextCoordinateHelper.GetOffset(mapper.Text, context.CodeRange.End);
+            if (codeStartOffset < 0 || codeEndOffset <= codeStartOffset)
+            {
+                continue;
+            }
+
+            if (context.InlineCodeElement is not null && context.Attribute is null)
+            {
+                TokenizeCSharpExpressionSpan(mapper.Text, codeStartOffset, codeEndOffset, mapper, tokens);
+            }
+
+            foreach (var occurrence in context.SymbolOccurrences)
+            {
+                AddUniqueToken(
+                    tokens,
+                    mapper,
+                    seen,
+                    codeStartOffset + occurrence.Start,
+                    occurrence.Length,
+                    MapInlineCSharpTokenType(occurrence.TokenKind));
+            }
+        }
+    }
+
     private static void AddLambdaParameterTokens(
         string rawExpression,
         int expressionStartOffset,
@@ -800,6 +957,70 @@ public sealed class XamlSemanticTokenService
         }
 
         AddToken(tokens, mapper, start, length, tokenType);
+    }
+
+    private static string MapInlineCSharpTokenType(SourceContextSymbolTokenKind tokenKind)
+    {
+        return tokenKind switch
+        {
+            SourceContextSymbolTokenKind.Type => "type",
+            SourceContextSymbolTokenKind.Method => "method",
+            SourceContextSymbolTokenKind.Parameter => "parameter",
+            SourceContextSymbolTokenKind.Variable => "variable",
+            _ => "property"
+        };
+    }
+
+    private static Dictionary<int, XamlInlineCSharpContext> BuildInlineCodeContextMap(
+        string text,
+        ImmutableArray<XamlInlineCSharpContext> contexts)
+    {
+        var map = new Dictionary<int, XamlInlineCSharpContext>();
+        foreach (var context in contexts)
+        {
+            if (context.Attribute is null)
+            {
+                continue;
+            }
+
+            var startOffset = TextCoordinateHelper.GetOffset(text, context.CodeRange.Start);
+            if (startOffset < 0)
+            {
+                continue;
+            }
+
+            map[startOffset] = context;
+        }
+
+        return map;
+    }
+
+    private static ImmutableArray<OffsetRange> BuildInlineElementCodeRanges(
+        string text,
+        ImmutableArray<XamlInlineCSharpContext> contexts)
+    {
+        var builder = ImmutableArray.CreateBuilder<OffsetRange>();
+        foreach (var context in contexts)
+        {
+            if (context.InlineCodeElement is null || context.Attribute is not null)
+            {
+                continue;
+            }
+
+            var startOffset = TextCoordinateHelper.GetOffset(text, context.CodeRange.Start);
+            var endOffset = TextCoordinateHelper.GetOffset(text, context.CodeRange.End);
+            if (startOffset < 0 || endOffset <= startOffset)
+            {
+                continue;
+            }
+
+            builder.Add(new OffsetRange(startOffset, endOffset));
+        }
+
+        return builder
+            .ToImmutable()
+            .OrderBy(static range => range.Start)
+            .ToImmutableArray();
     }
 
     private static bool IsNumericToken(string text, int start, int length)

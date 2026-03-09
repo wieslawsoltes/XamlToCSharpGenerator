@@ -103,6 +103,15 @@ internal static class XamlExpressionBindingNavigationService
             return ImmutableArray<SourceRange>.Empty;
         }
 
+        return FindReferenceRanges(context, targetSymbol);
+    }
+
+    internal static ImmutableArray<SourceRange> FindReferenceRanges(
+        XamlMarkupExpressionContext context,
+        ISymbol targetSymbol)
+    {
+        var sourceText = context.SourceText;
+
         var builder = ImmutableArray.CreateBuilder<SourceRange>();
         var normalizedTarget = NormalizeSymbol(targetSymbol);
         foreach (var reference in context.SymbolReferences)

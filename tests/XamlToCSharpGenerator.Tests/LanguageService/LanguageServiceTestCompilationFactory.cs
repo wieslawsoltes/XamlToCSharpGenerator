@@ -19,6 +19,7 @@ internal static class LanguageServiceTestCompilationFactory
                               using System;
 
                               [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "XamlToCSharpGenerator.Runtime.Markup")]
 
                               namespace Avalonia.Metadata
                               {
@@ -40,6 +41,12 @@ internal static class LanguageServiceTestCompilationFactory
 
                               namespace TestApp.Controls
                               {
+                                  public class AdvancedClickEventArgs : EventArgs
+                                  {
+                                      public bool Handled { get; set; }
+                                      public string Message { get; set; } = string.Empty;
+                                  }
+
                                   public static class TestPseudoClasses
                                   {
                                       public const string ButtonPressed = ":pressed";
@@ -77,6 +84,7 @@ internal static class LanguageServiceTestCompilationFactory
                                   {
                                       public string Content { get; set; } = string.Empty;
                                       public event EventHandler? Click;
+                                      public event EventHandler<AdvancedClickEventArgs>? AdvancedClick;
                                   }
 
                                   public class TextBlock
@@ -100,6 +108,7 @@ internal static class LanguageServiceTestCompilationFactory
                                       public string FirstName { get; set; } = string.Empty;
                                       public string LastName { get; set; } = string.Empty;
                                       public string ProductName { get; set; } = string.Empty;
+                                      public string LastAction { get; set; } = string.Empty;
                                       public int Count { get; set; }
                                       public int Quantity { get; set; }
                                       public int ClickCount { get; set; }
@@ -111,9 +120,34 @@ internal static class LanguageServiceTestCompilationFactory
                                       public decimal Price { get; set; }
                                       public CustomerViewModel GetCustomer() => Customer;
                                       public string FormatSummary(string firstName, string lastName, int count) => firstName + lastName + count;
+                                      public void RecordSender(object? sender) { }
                                   }
 
                                   public class MyExtension
+                                  {
+                                  }
+                              }
+
+                              namespace XamlToCSharpGenerator.Runtime.Markup
+                              {
+                                  public class CSharp
+                                  {
+                                      public string Code { get; set; } = string.Empty;
+                                  }
+
+                                  public class CSharpExtension
+                                  {
+                                      public string Code { get; set; } = string.Empty;
+                                  }
+                              }
+
+                              namespace XamlToCSharpGenerator.Runtime
+                              {
+                                  public class CSharp : Markup.CSharp
+                                  {
+                                  }
+
+                                  public class CSharpExtension : Markup.CSharpExtension
                                   {
                                   }
                               }

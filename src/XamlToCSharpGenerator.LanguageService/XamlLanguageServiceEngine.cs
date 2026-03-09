@@ -8,6 +8,7 @@ using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
 using XamlToCSharpGenerator.LanguageService.Hover;
+using XamlToCSharpGenerator.LanguageService.InlineCode;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Refactorings;
@@ -33,6 +34,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly CSharpToXamlNavigationService _csharpToXamlNavigationService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
+    private readonly XamlInlineCSharpProjectionService _inlineCSharpProjectionService;
     private readonly XamlRefactoringService _refactoringService;
     private readonly ConcurrentDictionary<string, int> _uriGenerations =
         new(StringComparer.Ordinal);
@@ -70,6 +72,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             new CSharpSymbolResolutionService(_compilationProvider));
         _documentSymbolService = new XamlDocumentSymbolService();
         _semanticTokenService = new XamlSemanticTokenService();
+        _inlineCSharpProjectionService = new XamlInlineCSharpProjectionService();
         var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService);
         var renameRefactoringProvider = new XamlRenameRefactoringProvider(renameService);
         _refactoringService = new XamlRefactoringService(
@@ -318,6 +321,18 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return XamlMetadataAsSourceService.TryGetDocumentText(documentId, out var text)
             ? text
             : null;
+    }
+
+    public async Task<ImmutableArray<XamlInlineCSharpProjection>> GetInlineCSharpProjectionsAsync(
+        string uri,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? ImmutableArray<XamlInlineCSharpProjection>.Empty
+            : _inlineCSharpProjectionService.GetProjections(analysis);
     }
 
     public Task<XamlPrepareRenameResult?> PrepareRenameAsync(
