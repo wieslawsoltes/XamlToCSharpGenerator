@@ -32,8 +32,29 @@ internal static class XamlExpressionCompletionService
                 out var attribute,
                 out _,
                 out var expressionInfo,
-                out var caretOffsetInExpression) ||
-            !TryResolveExpressionSourceType(analysis, element, out var sourceType) ||
+                out var caretOffsetInExpression))
+        {
+            return false;
+        }
+
+        if (TryResolveForcedShorthandCompletion(
+                analysis,
+                element,
+                expressionInfo.RawExpression,
+                caretOffsetInExpression,
+                out var forcedReceiverType,
+                out var forcedMemberPrefix))
+        {
+            completions = XamlClrMemberCompletionFactory.CreateMemberCompletions(
+                    forcedReceiverType,
+                    forcedMemberPrefix,
+                    XamlMemberCompletionMode.Expression)
+                .DistinctBy(static item => item.Label, StringComparer.Ordinal)
+                .ToImmutableArray();
+            return completions.Length > 0;
+        }
+
+        if (!TryResolveExpressionSourceType(analysis, element, expressionInfo.RawExpression, out var sourceType) ||
             !TryResolveCompletionExpression(
                 expressionInfo,
                 caretOffsetInExpression,
@@ -238,15 +259,96 @@ internal static class XamlExpressionCompletionService
     private static bool TryResolveExpressionSourceType(
         XamlAnalysisResult analysis,
         XElement element,
+        string rawExpression,
         out INamedTypeSymbol sourceType)
     {
         sourceType = null!;
+        if (rawExpression.StartsWith("this.", StringComparison.Ordinal))
+        {
+            return TryResolveRootType(analysis, out sourceType);
+        }
+
+        if (rawExpression.StartsWith(".", StringComparison.Ordinal) ||
+            rawExpression.StartsWith("BindingContext.", StringComparison.Ordinal))
+        {
+            return XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                analysis,
+                element,
+                out sourceType,
+                out _);
+        }
+
         return XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
                    analysis,
                    element,
-                   out sourceType,
+                    out sourceType,
                    out _) ||
                TryResolveRootType(analysis, out sourceType);
+    }
+
+    private static bool TryResolveForcedShorthandCompletion(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string rawExpression,
+        int caretOffsetInExpression,
+        out INamedTypeSymbol receiverType,
+        out string memberPrefix)
+    {
+        receiverType = null!;
+        memberPrefix = string.Empty;
+
+        if (rawExpression.StartsWith("this.", StringComparison.Ordinal))
+        {
+            if (!TryResolveRootType(analysis, out receiverType))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, "this.".Length, caretOffsetInExpression);
+            return true;
+        }
+
+        if (rawExpression.StartsWith("BindingContext.", StringComparison.Ordinal))
+        {
+            if (!XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                    analysis,
+                    element,
+                    out receiverType,
+                    out _))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, "BindingContext.".Length, caretOffsetInExpression);
+            return true;
+        }
+
+        if (rawExpression.StartsWith(".", StringComparison.Ordinal))
+        {
+            if (!XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                    analysis,
+                    element,
+                    out receiverType,
+                    out _))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, 1, caretOffsetInExpression);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string ExtractForcedMemberPrefix(
+        string rawExpression,
+        int prefixLength,
+        int caretOffsetInExpression)
+    {
+        var boundedCaret = Math.Clamp(caretOffsetInExpression, prefixLength, rawExpression.Length);
+        var prefix = rawExpression.Substring(prefixLength, boundedCaret - prefixLength);
+        return prefix.Trim();
     }
 
     private static bool TryResolveRootType(

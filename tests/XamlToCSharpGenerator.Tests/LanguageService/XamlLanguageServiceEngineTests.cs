@@ -151,6 +151,55 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Completion_InBindingContextShorthand_ReturnsSourceMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingContextShorthandCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{.}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var expressionCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{.}", StringComparison.Ordinal) + 2);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(expressionCaret.Line, expressionCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "ProductName", StringComparison.Ordinal));
+        Assert.DoesNotContain(completions, item => string.Equals(item.Label, "RootOnly", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_InRootShorthand_ReturnsRootMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/RootShorthandCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{this.}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var expressionCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{this.}", StringComparison.Ordinal) + "{this.".Length);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(expressionCaret.Line, expressionCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "RootOnly", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "FormatTitle", StringComparison.Ordinal));
+        Assert.DoesNotContain(completions, item => string.Equals(item.Label, "ProductName", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_InExplicitInlineCSharpCompactContext_ReturnsSourceMembers()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -1216,6 +1265,56 @@ public sealed class XamlLanguageServiceEngineTests
         var definitions = await engine.GetDefinitionsAsync(
             uri,
             GetPosition(xaml, firstNameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForBindingContextShorthandProperty_ResolvesViewModelMember()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingContextShorthandDefinition.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{.Name}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var offset = xaml.IndexOf(".Name", StringComparison.Ordinal) + 2;
+        var position = SourceText.From(xaml).Lines.GetLinePosition(offset);
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            new SourcePosition(position.Line, position.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForRootShorthandProperty_ResolvesRootMember()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/RootShorthandDefinition.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{this.Title}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var offset = xaml.IndexOf("this.Title", StringComparison.Ordinal) + "this.".Length + 2;
+        var position = SourceText.From(xaml).Lines.GetLinePosition(offset);
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            new SourcePosition(position.Line, position.Character),
             new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
             CancellationToken.None);
 

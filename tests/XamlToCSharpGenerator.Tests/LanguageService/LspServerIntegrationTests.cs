@@ -315,6 +315,49 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Completion_Request_ForRootShorthand_ReturnsRootMembers()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/RootShorthandCompletionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{this.}\"/>\n" +
+                            "</UserControl>";
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{this.}", StringComparison.Ordinal) + "{this.".Length);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2033, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = caret.Line,
+                ["character"] = caret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2033);
+        var items = response.RootElement.GetProperty("result").GetProperty("items");
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "RootOnly", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_Request_ForExplicitInlineCSharp_ReturnsMembers()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -1684,6 +1727,50 @@ public sealed class LspServerIntegrationTests
         });
 
         using var response = await harness.ReadResponseAsync(3205);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForRootShorthand_ReturnsPropertyLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionRootShorthandView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:vm=\"using:TestApp.Controls\" x:Class=\"TestApp.Controls.MainView\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{this.Title}\"/>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var titleOffset = xaml.IndexOf("this.Title", StringComparison.Ordinal);
+        Assert.True(titleOffset >= 0, "Expected root shorthand token not found.");
+        var lineOffset = titleOffset - xaml.LastIndexOf('\n', titleOffset);
+
+        await harness.SendRequestAsync(3206, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 1,
+                ["character"] = lineOffset + "this.".Length + 1
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(3206);
         var definitions = response.RootElement.GetProperty("result");
         Assert.True(definitions.GetArrayLength() >= 1);
     }

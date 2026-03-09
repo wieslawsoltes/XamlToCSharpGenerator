@@ -123,6 +123,13 @@ internal static class LanguageServiceTestCompilationFactory
                                       public void RecordSender(object? sender) { }
                                   }
 
+                                  public partial class MainView : UserControl
+                                  {
+                                      public string Title { get; set; } = string.Empty;
+                                      public string RootOnly { get; set; } = string.Empty;
+                                      public string FormatTitle() => Title;
+                                  }
+
                                   public class MyExtension
                                   {
                                   }

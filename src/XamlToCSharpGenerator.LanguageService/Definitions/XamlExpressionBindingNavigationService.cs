@@ -195,6 +195,24 @@ internal static class XamlExpressionBindingNavigationService
             return false;
         }
 
+        if (TryResolveSimpleShorthandContext(
+                analysis,
+                sourceText,
+                element,
+                attribute,
+                attributeValueRange,
+                expressionInfo,
+                out var shorthandHandled,
+                out context))
+        {
+            return true;
+        }
+
+        if (shorthandHandled)
+        {
+            return false;
+        }
+
         if (TryResolveAmbientDataType(analysis, element, out var ambientSourceType) &&
             TryCreateExpressionContextForSourceType(
                 analysis,
@@ -219,6 +237,91 @@ internal static class XamlExpressionBindingNavigationService
                    expressionInfo,
                    rootSourceType,
                    out context);
+    }
+
+    private static bool TryResolveSimpleShorthandContext(
+        XamlAnalysisResult analysis,
+        string sourceText,
+        XElement element,
+        XAttribute attribute,
+        SourceRange attributeValueRange,
+        XamlCSharpMarkupExpressionInfo expressionInfo,
+        out bool handled,
+        out XamlMarkupExpressionContext context)
+    {
+        handled = false;
+        context = default;
+
+        if (expressionInfo.Kind != XamlCSharpMarkupExpressionKind.Expression ||
+            !CSharpMarkupExpressionSemantics.TryParseSimpleShorthandPath(expressionInfo.RawExpression, out var shorthand))
+        {
+            return false;
+        }
+
+        handled = true;
+
+        var hasAmbientSource = TryResolveAmbientDataType(analysis, element, out var ambientSourceType);
+        var hasRootSource = TryResolveRootType(analysis, out var rootSourceType);
+
+        switch (shorthand.Scope)
+        {
+            case CSharpShorthandExpressionScope.BindingContext:
+                return hasAmbientSource &&
+                       TryCreateExpressionContextForSourceType(
+                           analysis,
+                           sourceText,
+                           element,
+                           attribute,
+                           attributeValueRange,
+                           CreateShorthandExpressionInfo(expressionInfo, shorthand.Path),
+                           ambientSourceType,
+                           out context);
+
+            case CSharpShorthandExpressionScope.Root:
+                return hasRootSource &&
+                       TryCreateExpressionContextForSourceType(
+                           analysis,
+                           sourceText,
+                           element,
+                           attribute,
+                           attributeValueRange,
+                           CreateShorthandExpressionInfo(expressionInfo, shorthand.Path),
+                           rootSourceType,
+                           out context);
+
+            case CSharpShorthandExpressionScope.Auto:
+            {
+                var sourceResolved = hasAmbientSource &&
+                                     TryResolveSimplePathOnType(ambientSourceType, shorthand.Path);
+                var rootResolved = hasRootSource &&
+                                   TryResolveSimplePathOnType(rootSourceType, shorthand.Path);
+
+                if (!sourceResolved && !rootResolved)
+                {
+                    handled = false;
+                    return false;
+                }
+
+                if (sourceResolved && rootResolved)
+                {
+                    return false;
+                }
+
+                var chosenType = sourceResolved ? ambientSourceType : rootSourceType;
+                return TryCreateExpressionContextForSourceType(
+                    analysis,
+                    sourceText,
+                    element,
+                    attribute,
+                    attributeValueRange,
+                    CreateShorthandExpressionInfo(expressionInfo, shorthand.Path),
+                    chosenType,
+                    out context);
+            }
+
+            default:
+                return false;
+        }
     }
 
     private static bool TryCreateExpressionContextForSourceType(
@@ -305,6 +408,49 @@ internal static class XamlExpressionBindingNavigationService
             element,
             out sourceType,
             out _);
+    }
+
+    private static bool TryResolveSimplePathOnType(INamedTypeSymbol typeSymbol, string path)
+    {
+        var currentType = (ITypeSymbol)typeSymbol;
+        foreach (var segment in path.Split('.'))
+        {
+            if (currentType is not INamedTypeSymbol namedType)
+            {
+                return false;
+            }
+
+            var property = XamlClrMemberSymbolResolver.ResolveInstanceProperty(namedType, segment);
+            if (property is not null)
+            {
+                currentType = property.Type;
+                continue;
+            }
+
+            var method = XamlClrMemberSymbolResolver.ResolveParameterlessMethod(namedType, segment);
+            if (method is not null)
+            {
+                currentType = method.ReturnType;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static XamlCSharpMarkupExpressionInfo CreateShorthandExpressionInfo(
+        XamlCSharpMarkupExpressionInfo expressionInfo,
+        string normalizedExpression)
+    {
+        return new XamlCSharpMarkupExpressionInfo(
+            expressionInfo.RawExpression,
+            normalizedExpression,
+            expressionInfo.ExpressionStartOffset,
+            expressionInfo.ExpressionLength,
+            expressionInfo.IsExplicitExpression,
+            expressionInfo.Kind);
     }
 
     private static SourceRange CreateRange(string text, int startOffset, int length)
