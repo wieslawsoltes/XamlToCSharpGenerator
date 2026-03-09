@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -289,6 +290,36 @@ public sealed class XamlReferenceService
                         IsDeclaration: false));
                 }
             }
+
+            var root = analysis.XmlDocument?.Root;
+            if (root is not null)
+            {
+                foreach (var element in root.DescendantsAndSelf())
+                {
+                    foreach (var attribute in element.Attributes())
+                    {
+                        if (!string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        foreach (var range in FindSelectorNamedElementReferences(
+                                     analysis.Document.Text,
+                                     element,
+                                     attribute,
+                                     identifier))
+                        {
+                            if (seen.Add(CreateReferenceIdentity(UriPathHelper.ToDocumentUri(analysis.Document.FilePath), range)))
+                            {
+                                resultBuilder.Add(new XamlReferenceLocation(
+                                    UriPathHelper.ToDocumentUri(analysis.Document.FilePath),
+                                    range,
+                                    IsDeclaration: false));
+                            }
+                        }
+                    }
+                }
+            }
         }
         else if (symbolKind == XamlNavigationTextSemantics.NavigationSymbolKind.ResourceKey)
         {
@@ -342,6 +373,11 @@ public sealed class XamlReferenceService
                     return CollectStyleClassReferences(analysis, selectorTarget.Name);
                 case XamlSelectorNavigationTargetKind.PseudoClass:
                     return CollectPseudoClassReferences(analysis, selectorTarget);
+                case XamlSelectorNavigationTargetKind.NamedElement:
+                    return CollectNamedOrResourceReferences(
+                        analysis,
+                        selectorTarget.Name,
+                        XamlNavigationTextSemantics.NavigationSymbolKind.NamedElement);
             }
         }
 
@@ -460,6 +496,33 @@ public sealed class XamlReferenceService
             typeInfo is not null)
         {
             return CollectTypeReferences(analysis, typeInfo);
+        }
+
+        if (context.Kind == XamlCompletionContextKind.QualifiedPropertyElement)
+        {
+            var tokenOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position) - context.TokenStartOffset;
+            if (XamlPropertyElementSemantics.IsOwnerSegmentOffset(token, tokenOffset) &&
+                XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(token, out var ownerToken, out _) &&
+                XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex, prefixMap, ownerToken, out var ownerSegmentTypeInfo) &&
+                ownerSegmentTypeInfo is not null)
+            {
+                return CollectTypeReferences(analysis, ownerSegmentTypeInfo);
+            }
+
+            if (!XamlClrSymbolResolver.TryResolvePropertyInfo(
+                    analysis.TypeIndex,
+                    prefixMap,
+                    currentElementName: null,
+                    token,
+                    out var propertyElementInfo,
+                    out var propertyElementOwnerType) ||
+                propertyElementInfo is null ||
+                propertyElementOwnerType is null)
+            {
+                return ImmutableArray<XamlReferenceLocation>.Empty;
+            }
+
+            return CollectPropertyReferences(analysis, propertyElementOwnerType, propertyElementInfo);
         }
 
         if (context.Kind != XamlCompletionContextKind.AttributeName)
@@ -705,6 +768,21 @@ public sealed class XamlReferenceService
 
             foreach (var element in xmlDocument.Root?.DescendantsAndSelf() ?? Enumerable.Empty<XElement>())
             {
+                if (TryAddQualifiedPropertyElementOwnerTypeReference(
+                        analysis.TypeIndex!,
+                        source.Text,
+                        element,
+                        typeInfo,
+                        out var propertyOwnerRange))
+                {
+                    AddReference(
+                        builder,
+                        seen,
+                        source.DocumentUri,
+                        propertyOwnerRange,
+                        isDeclaration: false);
+                }
+
                 AvaloniaTypeInfo? elementTypeInfo = null;
                 if (string.Equals(element.Name.LocalName, typeInfo.XmlTypeName, StringComparison.Ordinal) &&
                     TryResolveTypeInfoByXmlNamespace(
@@ -904,6 +982,36 @@ public sealed class XamlReferenceService
         return SortReferencesDeterministically(builder);
     }
 
+    private static bool TryAddQualifiedPropertyElementOwnerTypeReference(
+        AvaloniaTypeIndex typeIndex,
+        string sourceText,
+        XElement element,
+        AvaloniaTypeInfo targetTypeInfo,
+        out SourceRange range)
+    {
+        range = default;
+
+        if (!XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(element.Name.LocalName, out var ownerToken, out _) ||
+            !TryResolveTypeInfoByXmlNamespace(typeIndex, element.Name.NamespaceName, ownerToken, out var ownerTypeInfo) ||
+            ownerTypeInfo is null ||
+            !string.Equals(ownerTypeInfo.FullTypeName, targetTypeInfo.FullTypeName, StringComparison.Ordinal) ||
+            !TryCreateElementNameRange(sourceText, element, out var elementNameRange))
+        {
+            return false;
+        }
+
+        var startOffset = TextCoordinateHelper.GetOffset(sourceText, elementNameRange.Start);
+        if (startOffset < 0)
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            elementNameRange.Start,
+            TextCoordinateHelper.GetPosition(sourceText, startOffset + ownerToken.Length));
+        return true;
+    }
+
     private static ImmutableArray<XamlReferenceLocation> CollectPropertyReferences(
         XamlAnalysisResult analysis,
         AvaloniaTypeInfo ownerTypeInfo,
@@ -966,6 +1074,22 @@ public sealed class XamlReferenceService
 
             foreach (var element in xmlDocument.Root?.DescendantsAndSelf() ?? Enumerable.Empty<XElement>())
             {
+                if (TryAddPropertyElementReference(
+                        typeIndex,
+                        source.Text,
+                        element,
+                        ownerTypeInfo,
+                        targetProperty,
+                        out var propertyElementRange))
+                {
+                    AddReference(
+                        builder,
+                        seen,
+                        source.DocumentUri,
+                        propertyElementRange,
+                        isDeclaration: false);
+                }
+
                 AvaloniaTypeInfo? elementTypeInfo = null;
                 if (string.Equals(element.Name.LocalName, targetProperty.Name, StringComparison.Ordinal) ||
                     ElementMayReferencePropertyByAttribute(element, targetProperty.Name))
@@ -1056,6 +1180,39 @@ public sealed class XamlReferenceService
         }
 
         return SortReferencesDeterministically(builder);
+    }
+
+    private static bool TryAddPropertyElementReference(
+        AvaloniaTypeIndex typeIndex,
+        string sourceText,
+        XElement element,
+        AvaloniaTypeInfo targetOwnerType,
+        AvaloniaPropertyInfo targetProperty,
+        out SourceRange range)
+    {
+        range = default;
+
+        if (!XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(
+                element.Name.LocalName,
+                out var ownerToken,
+                out var propertyToken) ||
+            !string.Equals(propertyToken, targetProperty.Name, StringComparison.Ordinal) ||
+            !TryResolveTypeInfoByXmlNamespace(typeIndex, element.Name.NamespaceName, ownerToken, out var propertyElementOwnerType) ||
+            propertyElementOwnerType is null)
+        {
+            return false;
+        }
+
+        var candidateProperty = propertyElementOwnerType.Properties.FirstOrDefault(property =>
+            string.Equals(property.Name, propertyToken, StringComparison.Ordinal));
+        if (candidateProperty is null ||
+            !IsSamePropertySymbol(candidateProperty, propertyElementOwnerType, targetProperty, targetOwnerType) ||
+            !TryCreateElementNameRange(sourceText, element, out range))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static void AddExpressionReferences(
@@ -1643,6 +1800,41 @@ public sealed class XamlReferenceService
         {
             if (selectorReference.Kind != SelectorReferenceKind.PseudoClass ||
                 !string.Equals(selectorReference.Name, pseudoClassName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (TryCreateAttributeValueTokenRange(
+                    sourceText,
+                    attribute,
+                    selectorReference.Start,
+                    selectorReference.Length,
+                    out var range))
+            {
+                builder.Add(range);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<SourceRange> FindSelectorNamedElementReferences(
+        string sourceText,
+        XElement element,
+        XAttribute attribute,
+        string elementName)
+    {
+        var builder = ImmutableArray.CreateBuilder<SourceRange>();
+        if (!string.Equals(element.Name.LocalName, "Style", StringComparison.Ordinal) ||
+            !string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
+        {
+            return ImmutableArray<SourceRange>.Empty;
+        }
+
+        foreach (var selectorReference in SelectorReferenceSemantics.EnumerateReferences(attribute.Value))
+        {
+            if (selectorReference.Kind != SelectorReferenceKind.NamedElement ||
+                !string.Equals(selectorReference.Name, elementName, StringComparison.Ordinal))
             {
                 continue;
             }

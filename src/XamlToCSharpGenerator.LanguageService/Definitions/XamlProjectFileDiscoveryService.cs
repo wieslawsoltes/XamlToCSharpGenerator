@@ -18,6 +18,8 @@ internal static class XamlProjectFileDiscoveryService
     private static readonly ConcurrentDictionary<string, CachedProjectFileList> ProjectFileListCache =
         new(PathComparer);
 
+    internal readonly record struct ProjectXamlFileEntry(string FilePath, string TargetPath);
+
     public static ImmutableArray<string> DiscoverProjectXamlFilePaths(
         string? projectPath,
         string? currentFilePath)
@@ -42,6 +44,77 @@ internal static class XamlProjectFileDiscoveryService
         }
 
         return builder.ToImmutable();
+    }
+
+    public static bool TryResolveProjectXamlFileByTargetPath(
+        string? projectPath,
+        string? currentFilePath,
+        string? targetPath,
+        out string filePath)
+    {
+        filePath = string.Empty;
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            return false;
+        }
+
+        var resolvedProjectPath = ResolveProjectPath(projectPath, currentFilePath);
+        if (resolvedProjectPath is null)
+        {
+            return false;
+        }
+
+        var normalizedTargetPath = NormalizeTargetPath(targetPath);
+        if (normalizedTargetPath.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var entry in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        {
+            if (!PathComparer.Equals(entry.TargetPath, normalizedTargetPath))
+            {
+                continue;
+            }
+
+            filePath = entry.FilePath;
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool TryResolveProjectXamlEntryByFilePath(
+        string? projectPath,
+        string? currentFilePath,
+        string filePath,
+        out ProjectXamlFileEntry entry)
+    {
+        entry = default;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        var resolvedProjectPath = ResolveProjectPath(projectPath, currentFilePath);
+        if (resolvedProjectPath is null)
+        {
+            return false;
+        }
+
+        var normalizedFilePath = NormalizePath(filePath);
+        foreach (var candidate in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        {
+            if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
+            {
+                continue;
+            }
+
+            entry = candidate;
+            return true;
+        }
+
+        return false;
     }
 
     public static string? ResolveProjectPath(string? projectPath, string? currentFilePath)
@@ -106,40 +179,66 @@ internal static class XamlProjectFileDiscoveryService
 
     private static ImmutableArray<string> GetCachedProjectXamlFileList(string projectFilePath)
     {
+        var entries = GetCachedProjectXamlFileEntries(projectFilePath);
+        if (entries.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>(entries.Length);
+        foreach (var entry in entries)
+        {
+            builder.Add(entry.FilePath);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<ProjectXamlFileEntry> GetCachedProjectXamlFileEntries(string projectFilePath)
+    {
         var normalizedProjectPath = NormalizePath(projectFilePath);
         var now = DateTimeOffset.UtcNow;
         if (ProjectFileListCache.TryGetValue(normalizedProjectPath, out var cached) &&
             now - cached.CachedAtUtc <= ProjectDiscoveryCacheTtl)
         {
-            return cached.Paths;
+            return cached.Entries;
         }
 
-        var paths = BuildProjectXamlFileList(normalizedProjectPath);
-        ProjectFileListCache[normalizedProjectPath] = new CachedProjectFileList(now, paths);
-        return paths;
+        var entries = BuildProjectXamlFileList(normalizedProjectPath);
+        ProjectFileListCache[normalizedProjectPath] = new CachedProjectFileList(now, entries);
+        return entries;
     }
 
-    private static ImmutableArray<string> BuildProjectXamlFileList(string projectFilePath)
+    private static ImmutableArray<ProjectXamlFileEntry> BuildProjectXamlFileList(string projectFilePath)
     {
-        var builder = ImmutableArray.CreateBuilder<string>();
-        var seen = new HashSet<string>(PathComparer);
+        var entriesByFilePath = new Dictionary<string, ProjectXamlFileEntry>(PathComparer);
         var projectDirectory = Path.GetDirectoryName(projectFilePath);
         if (string.IsNullOrWhiteSpace(projectDirectory) || !Directory.Exists(projectDirectory))
         {
-            return builder.ToImmutable();
+            return ImmutableArray<ProjectXamlFileEntry>.Empty;
         }
 
         foreach (var filePath in EnumerateXamlFilesUnder(projectDirectory))
         {
-            AddCandidatePath(builder, seen, filePath);
+            AddOrUpdateEntry(entriesByFilePath, new ProjectXamlFileEntry(
+                NormalizePath(filePath),
+                NormalizeTargetPath(Path.GetRelativePath(projectDirectory, filePath))));
         }
 
-        foreach (var includePath in EnumerateExplicitXamlIncludes(projectFilePath, projectDirectory))
+        foreach (var includeEntry in EnumerateExplicitXamlIncludes(projectFilePath, projectDirectory))
         {
-            AddCandidatePath(builder, seen, includePath);
+            AddOrUpdateEntry(entriesByFilePath, includeEntry);
         }
 
-        return builder.ToImmutable();
+        if (entriesByFilePath.Count == 0)
+        {
+            return ImmutableArray<ProjectXamlFileEntry>.Empty;
+        }
+
+        var ordered = entriesByFilePath.Values
+            .OrderBy(static value => value.FilePath, PathComparer)
+            .ToImmutableArray();
+        return ordered;
     }
 
     private static IEnumerable<string> EnumerateXamlFilesUnder(string rootDirectory)
@@ -181,7 +280,7 @@ internal static class XamlProjectFileDiscoveryService
         }
     }
 
-    private static IEnumerable<string> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
+    private static IEnumerable<ProjectXamlFileEntry> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
     {
         XDocument projectDocument;
         try
@@ -207,9 +306,13 @@ internal static class XamlProjectFileDiscoveryService
                 continue;
             }
 
+            var targetPathMetadata = itemElement.Attribute("TargetPath")?.Value
+                ?? itemElement.Attribute("Link")?.Value;
             foreach (var includePath in ExpandProjectIncludePattern(projectDirectory, includeValue))
             {
-                yield return includePath;
+                yield return new ProjectXamlFileEntry(
+                    NormalizePath(includePath),
+                    ResolveTargetPath(projectDirectory, includeValue, includePath, targetPathMetadata));
             }
         }
     }
@@ -350,6 +453,51 @@ internal static class XamlProjectFileDiscoveryService
         return Path.GetFullPath(path);
     }
 
+    private static string NormalizeTargetPath(string path)
+    {
+        return path.Replace('\\', '/').TrimStart('/');
+    }
+
+    private static string ResolveTargetPath(
+        string projectDirectory,
+        string includeValue,
+        string includePath,
+        string? targetPathMetadata)
+    {
+        if (!string.IsNullOrWhiteSpace(targetPathMetadata))
+        {
+            return NormalizeTargetPath(targetPathMetadata);
+        }
+
+        if (includeValue.IndexOfAny(['*', '?']) >= 0)
+        {
+            return NormalizeTargetPath(Path.GetRelativePath(projectDirectory, includePath));
+        }
+
+        return NormalizeTargetPath(includeValue);
+    }
+
+    private static void AddOrUpdateEntry(
+        Dictionary<string, ProjectXamlFileEntry> entriesByFilePath,
+        ProjectXamlFileEntry entry)
+    {
+        if (!File.Exists(entry.FilePath))
+        {
+            return;
+        }
+
+        if (!entriesByFilePath.TryGetValue(entry.FilePath, out var existing))
+        {
+            entriesByFilePath[entry.FilePath] = entry;
+            return;
+        }
+
+        if (entry.TargetPath.Length > 0)
+        {
+            entriesByFilePath[entry.FilePath] = entry;
+        }
+    }
+
     private static bool IsXamlFile(string path)
     {
         var extension = Path.GetExtension(path);
@@ -370,5 +518,5 @@ internal static class XamlProjectFileDiscoveryService
 
     private readonly record struct CachedProjectFileList(
         DateTimeOffset CachedAtUtc,
-        ImmutableArray<string> Paths);
+        ImmutableArray<ProjectXamlFileEntry> Entries);
 }

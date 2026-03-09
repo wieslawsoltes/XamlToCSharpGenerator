@@ -179,6 +179,54 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Completion_Request_ForQualifiedPropertyElement_ReturnsPropertyItems()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/QualifiedPropertyElementCompletionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.O\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("<Path.O", StringComparison.Ordinal) + "<Path.O".Length);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2011, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = caret.Line,
+                ["character"] = caret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2011);
+        var items = response.RootElement
+            .GetProperty("result")
+            .GetProperty("items");
+
+        Assert.Contains(items.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("label").GetString(), "Opacity", StringComparison.Ordinal) &&
+            string.Equals(item.GetProperty("textEdit").GetProperty("newText").GetString(), "Path.Opacity", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_Request_ForBindingPath_ReturnsBindingMembers()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -217,6 +265,96 @@ public sealed class LspServerIntegrationTests
         });
 
         using var response = await harness.ReadResponseAsync(202);
+        var items = response.RootElement
+            .GetProperty("result")
+            .GetProperty("items");
+
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FirstName", StringComparison.Ordinal));
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "GetCustomer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_Request_ForMarkupExtension_UsesTextEditToReplaceTypedOpeningBrace()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/MarkupExtensionCompletionView.axaml";
+        const string xaml = "<Window xmlns=\"https://github.com/avaloniaui\" Title=\"{\" />";
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{", StringComparison.Ordinal) + 1);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2019, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = caret.Line,
+                ["character"] = caret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2019);
+        var items = response.RootElement
+            .GetProperty("result")
+            .GetProperty("items");
+
+        Assert.Contains(items.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("label").GetString(), "Binding", StringComparison.Ordinal) &&
+            string.Equals(item.GetProperty("textEdit").GetProperty("newText").GetString(), "{Binding $0}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_Request_ForBindingPath_OnNonStringTarget_ReturnsBindingMembers()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/BindingCompletionWidthView.axaml";
+        const string xaml = "<Window xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\" Width=\"{Binding }\">\n" +
+                            "</Window>";
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{Binding }", StringComparison.Ordinal) + "{Binding ".Length);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2021, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = bindingCaret.Line,
+                ["character"] = bindingCaret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2021);
         var items = response.RootElement
             .GetProperty("result")
             .GetProperty("items");
@@ -1648,6 +1786,79 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Definition_Request_ForStyleIncludeSource_Returns_Target_Xaml_File()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-lsp-include-def-" + Guid.NewGuid().ToString("N"));
+        var projectDir = Path.Combine(tempRoot, "project");
+        var themesDir = Path.Combine(projectDir, "Themes");
+        Directory.CreateDirectory(themesDir);
+
+        var projectPath = Path.Combine(projectDir, "TestApp.csproj");
+        var openFilePath = Path.Combine(projectDir, "MainView.axaml");
+        var targetFilePath = Path.Combine(themesDir, "Fluent.xaml");
+        var openUri = new Uri(openFilePath).AbsoluteUri;
+        const string xaml = """
+<UserControl xmlns="https://github.com/avaloniaui">
+  <UserControl.Styles>
+    <StyleInclude Source="/Themes/Fluent.xaml" />
+  </UserControl.Styles>
+</UserControl>
+""";
+
+        await File.WriteAllTextAsync(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="MainView.axaml" />
+                <AvaloniaXaml Include="Themes/Fluent.xaml" />
+              </ItemGroup>
+            </Project>
+            """);
+        await File.WriteAllTextAsync(openFilePath, xaml);
+        await File.WriteAllTextAsync(targetFilePath, "<Styles xmlns=\"https://github.com/avaloniaui\" />");
+
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: projectDir);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = openUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = xaml
+                }
+            });
+
+            await harness.SendRequestAsync(23121, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = openUri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = 2,
+                    ["character"] = xaml.Split('\n')[2].IndexOf("Fluent.xaml", StringComparison.Ordinal) + 2
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(23121);
+            var definitions = response.RootElement.GetProperty("result");
+            Assert.Equal(1, definitions.GetArrayLength());
+            Assert.Equal(new Uri(targetFilePath).AbsoluteUri, definitions[0].GetProperty("uri").GetString());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Definition_Request_ForBindingPathProperty_ReturnsPropertyLocation()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -1683,6 +1894,52 @@ public sealed class LspServerIntegrationTests
         });
 
         using var response = await harness.ReadResponseAsync(320);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForQualifiedPropertyElement_ReturnsPropertyLocation()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionQualifiedPropertyElementView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var opacityOffset = xaml.IndexOf("Opacity", StringComparison.Ordinal);
+        Assert.True(opacityOffset >= 0, "Expected qualified property element token not found.");
+        var lineOffset = opacityOffset - xaml.LastIndexOf('\n', opacityOffset);
+
+        await harness.SendRequestAsync(3201, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 2,
+                ["character"] = lineOffset + 2
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(3201);
         var definitions = response.RootElement.GetProperty("result");
         Assert.True(definitions.GetArrayLength() >= 1);
     }
@@ -1973,6 +2230,177 @@ public sealed class LspServerIntegrationTests
         using var response = await harness.ReadResponseAsync(323);
         var definitions = response.RootElement.GetProperty("result");
         Assert.True(definitions.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForSelectorNamedElement_WithPseudoClass_ReturnsNamedElementDeclaration()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionSelectorNamedElementView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <ToggleButton x:Name=\"ThemeToggle\"/>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"ToggleButton#ThemeToggle:checked\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var nameOffset = xaml.IndexOf("ThemeToggle", xaml.IndexOf("Selector=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(nameOffset >= 0, "Expected selector named element token not found.");
+        var lineOffset = nameOffset - xaml.LastIndexOf('\n', nameOffset);
+
+        await harness.SendRequestAsync(3235, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 3,
+                ["character"] = lineOffset + 1
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(3235);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+        Assert.Equal(uri, definitions[0].GetProperty("uri").GetString());
+        Assert.Equal(1, definitions[0].GetProperty("range").GetProperty("start").GetProperty("line").GetInt32());
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForQualifiedElementPrefix_ReturnsXmlnsDeclaration()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DefinitionQualifiedElementPrefixView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:pages=\"clr-namespace:TestApp.Controls\">\n" +
+                            "  <pages:Button />\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var prefixOffset = xaml.IndexOf("pages:Button", StringComparison.Ordinal);
+        Assert.True(prefixOffset >= 0, "Expected qualified element token not found.");
+        var lineOffset = prefixOffset - xaml.LastIndexOf('\n', prefixOffset);
+
+        await harness.SendRequestAsync(32355, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 1,
+                ["character"] = lineOffset + 2
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(32355);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.True(definitions.GetArrayLength() >= 1);
+        Assert.Equal(uri, definitions[0].GetProperty("uri").GetString());
+        Assert.Equal(0, definitions[0].GetProperty("range").GetProperty("start").GetProperty("line").GetInt32());
+    }
+
+    [Fact]
+    public async Task References_Request_FromNamedElementDeclaration_Includes_SelectorUsage_WithPseudoClass()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ReferencesSelectorNamedElementDeclarationView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <ToggleButton x:Name=\"ThemeToggle\"/>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"ToggleButton#ThemeToggle:checked\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        var declarationOffset = xaml.IndexOf("ThemeToggle", xaml.IndexOf("x:Name=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(declarationOffset >= 0, "Expected x:Name declaration token not found.");
+        var lineOffset = declarationOffset - xaml.LastIndexOf('\n', declarationOffset);
+
+        await harness.SendRequestAsync(3236, "textDocument/references", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = 1,
+                ["character"] = lineOffset + 1
+            },
+            ["context"] = new JsonObject
+            {
+                ["includeDeclaration"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(3236);
+        Assert.True(
+            response.RootElement.TryGetProperty("result", out var references),
+            "Expected result payload for references request. Actual: " + response.RootElement.GetRawText());
+        Assert.True(references.GetArrayLength() >= 2);
+
+        var sawDeclaration = false;
+        var sawSelectorUsage = false;
+        foreach (var reference in references.EnumerateArray())
+        {
+            if (reference.GetProperty("uri").GetString() != uri)
+            {
+                continue;
+            }
+
+            var line = reference.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32();
+            if (line == 1)
+            {
+                sawDeclaration = true;
+            }
+            else if (line == 3)
+            {
+                sawSelectorUsage = true;
+            }
+        }
+
+        Assert.True(sawDeclaration);
+        Assert.True(sawSelectorUsage);
     }
 
     [Fact]

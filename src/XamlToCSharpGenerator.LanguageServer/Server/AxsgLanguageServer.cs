@@ -618,11 +618,23 @@ internal sealed class AxsgLanguageServer : IDisposable
             {
                 ["label"] = completion.Label,
                 ["kind"] = ToCompletionKind(completion.Kind),
-                ["insertText"] = completion.InsertText,
                 ["detail"] = completion.Detail,
                 ["documentation"] = completion.Documentation,
                 ["deprecated"] = completion.IsDeprecated
             };
+
+            if (completion.ReplaceRange is { } replaceRange)
+            {
+                completionItem["textEdit"] = new JsonObject
+                {
+                    ["range"] = SerializeRange(replaceRange),
+                    ["newText"] = completion.InsertText
+                };
+            }
+            else
+            {
+                completionItem["insertText"] = completion.InsertText;
+            }
 
             if (ContainsSnippetPlaceholder(completion.InsertText))
             {

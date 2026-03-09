@@ -2,7 +2,7 @@
   "name": "axsg-language-server",
   "displayName": "AXSG XAML Language Service",
   "description": "XAML/AXAML IntelliSense powered by XamlToCSharpGenerator.",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "publisher": "xamltocsharpgenerator",
   "license": "MIT",
   "homepage": "https://github.com/wieslawsoltes/XamlToCSharpGenerator/tree/main/tools/vscode/axsg-language-server",
@@ -49,6 +49,7 @@
           "AXAML",
           "axaml"
         ],
+        "configuration": "./language-configuration.json",
         "extensions": [
           ".axaml"
         ]
@@ -59,6 +60,7 @@
           "XAML",
           "xaml"
         ],
+        "configuration": "./language-configuration.json",
         "extensions": [
           ".xaml"
         ]

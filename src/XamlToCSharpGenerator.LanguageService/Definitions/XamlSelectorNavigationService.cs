@@ -15,6 +15,7 @@ internal enum XamlSelectorNavigationTargetKind
     Type = 1,
     StyleClass = 2,
     PseudoClass = 3,
+    NamedElement = 4,
 }
 
 internal readonly struct XamlSelectorNavigationTarget
@@ -140,6 +141,7 @@ internal static class XamlSelectorNavigationService
             SelectorReferenceKind.Type => XamlSelectorNavigationTargetKind.Type,
             SelectorReferenceKind.StyleClass => XamlSelectorNavigationTargetKind.StyleClass,
             SelectorReferenceKind.PseudoClass => XamlSelectorNavigationTargetKind.PseudoClass,
+            SelectorReferenceKind.NamedElement => XamlSelectorNavigationTargetKind.NamedElement,
             _ => XamlSelectorNavigationTargetKind.Unknown
         };
         if (kind == XamlSelectorNavigationTargetKind.Unknown)

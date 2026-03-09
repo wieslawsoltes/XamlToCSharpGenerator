@@ -267,6 +267,33 @@ public sealed class XamlRefactoringTests
     }
 
     [Fact]
+    public async Task PrepareRename_ForQualifiedPropertyElementOwner_ReturnsExactTypeRange()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementOwnerRename.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var result = await engine.PrepareRenameAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Path.Opacity", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("Path", result!.Placeholder);
+        Assert.Equal("Path", ReadRangeText(xaml, result.Range));
+    }
+
+    [Fact]
     public async Task Rename_FromXamlResourceKey_ProducesProjectWideXamlEdits()
     {
         var project = await CreateResourceRenameProjectAsync();

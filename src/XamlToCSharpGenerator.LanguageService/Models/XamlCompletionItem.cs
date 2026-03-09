@@ -6,4 +6,5 @@ public sealed record XamlCompletionItem(
     XamlCompletionItemKind Kind,
     string? Detail = null,
     string? Documentation = null,
-    bool IsDeprecated = false);
+    bool IsDeprecated = false,
+    SourceRange? ReplaceRange = null);

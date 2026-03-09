@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using XamlToCSharpGenerator.Core.Parsing;
+using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 
@@ -55,6 +57,10 @@ public sealed class XamlCompletionService
                 AddElementCompletions(builder, context, prefixMap, analysis.TypeIndex);
                 break;
 
+            case XamlCompletionContextKind.QualifiedPropertyElement:
+                AddQualifiedPropertyElementCompletions(builder, analysis.Document.Text, context, prefixMap, analysis.TypeIndex);
+                break;
+
             case XamlCompletionContextKind.AttributeName:
                 AddAttributeCompletions(builder, context, prefixMap, analysis.TypeIndex);
                 break;
@@ -101,6 +107,45 @@ public sealed class XamlCompletionService
         }
 
         AppendElementTypeCompletions(completions, typeIndex, prefixedNamespace, prefix + ":", typedName);
+    }
+
+    private static void AddQualifiedPropertyElementCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder completions,
+        string documentText,
+        XamlCompletionContext context,
+        ImmutableDictionary<string, string> prefixMap,
+        AvaloniaTypeIndex? typeIndex)
+    {
+        if (typeIndex is null ||
+            !XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(
+                context.Token,
+                out var ownerToken,
+                out var propertyPrefix) ||
+            !XamlClrSymbolResolver.TryResolveTypeInfo(typeIndex, prefixMap, ownerToken, out var ownerTypeInfo) ||
+            ownerTypeInfo is null)
+        {
+            return;
+        }
+
+        foreach (var property in ownerTypeInfo.Properties)
+        {
+            if (!property.Name.StartsWith(propertyPrefix ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var kind = property.IsAttached
+                ? XamlCompletionItemKind.AttachedProperty
+                : XamlCompletionItemKind.Property;
+            completions.Add(new XamlCompletionItem(
+                property.Name,
+                ownerToken + "." + property.Name,
+                kind,
+                property.TypeName,
+                ReplaceRange: new SourceRange(
+                    XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenStartOffset),
+                    XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenEndOffset))));
+        }
     }
 
     private static void AddAttributeCompletions(
@@ -161,7 +206,7 @@ public sealed class XamlCompletionService
             return;
         }
 
-        completions.AddRange(MarkupExtensionCompletions);
+        completions.AddRange(CreateMarkupExtensionCompletions(analysis.Document.Text, context));
 
         if (string.Equals(context.CurrentAttributeName, "x:Name", StringComparison.Ordinal))
         {
@@ -274,6 +319,30 @@ public sealed class XamlCompletionService
 
         return context.CurrentAttributeValue?.IndexOf("StaticResource", StringComparison.Ordinal) >= 0 ||
                context.CurrentAttributeValue?.IndexOf("DynamicResource", StringComparison.Ordinal) >= 0;
+    }
+
+    private static ImmutableArray<XamlCompletionItem> CreateMarkupExtensionCompletions(
+        string documentText,
+        XamlCompletionContext context)
+    {
+        if (string.IsNullOrEmpty(context.Token) ||
+            context.TokenStartOffset < 0 ||
+            context.TokenEndOffset < context.TokenStartOffset)
+        {
+            return MarkupExtensionCompletions;
+        }
+
+        var replaceRange = new SourceRange(
+            XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenStartOffset),
+            XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenEndOffset));
+
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>(MarkupExtensionCompletions.Length);
+        foreach (var completion in MarkupExtensionCompletions)
+        {
+            builder.Add(completion with { ReplaceRange = replaceRange });
+        }
+
+        return builder.ToImmutable();
     }
 
     private static void AppendElementTypeCompletions(
