@@ -4,6 +4,10 @@ const vscode = require('vscode');
 const lc = require('vscode-languageclient/node');
 
 let client;
+let clientStartPromise;
+let extensionContext;
+let resolvedServerStartup;
+let resolvedClientOptions;
 let outputChannel;
 let statusBarItem;
 const AXSG_METADATA_SCHEME = 'axsg-metadata';
@@ -18,6 +22,7 @@ let sourceLinkChangeEmitter;
 const inlineCSharpProjectionCache = new Map();
 const inlineCSharpProjectionFetches = new Map();
 const inlineCSharpProjectionUriCache = new Map();
+const inlineCSharpPresenceCache = new Map();
 let inlineCSharpProjectionChangeEmitter;
 const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
 const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
@@ -132,13 +137,14 @@ async function fetchAndCacheMetadataDocument(documentId, uri) {
     return;
   }
 
-  if (!client) {
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
     updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
     return;
   }
 
   try {
-    const response = await client.sendRequest('axsg/metadataDocument', { id: documentId });
+    const response = await activeClient.sendRequest('axsg/metadataDocument', { id: documentId });
     if (!response || typeof response.text !== 'string' || response.text.length === 0) {
       updateMetadataCacheAndNotify(documentId, 'error', padVirtualLoadingDocument(renderMetadataProjectionFallback(new URLSearchParams(uri.query || ''))));
       return;
@@ -287,6 +293,23 @@ function createInlineCSharpProjectionCacheKey(sourceUri, version) {
   return `${sourceUri}::${version}`;
 }
 
+function documentMayContainInlineCSharp(document) {
+  if (!isXamlDocument(document)) {
+    return false;
+  }
+
+  const cacheKey = createInlineCSharpProjectionCacheKey(document.uri.toString(), document.version ?? 0);
+  const cached = inlineCSharpPresenceCache.get(cacheKey);
+  if (typeof cached === 'boolean') {
+    return cached;
+  }
+
+  const text = document.getText();
+  const containsInlineCSharp = text.includes('CSharp');
+  inlineCSharpPresenceCache.set(cacheKey, containsInlineCSharp);
+  return containsInlineCSharp;
+}
+
 function parseInlineCSharpProjectionUri(uri) {
   const query = new URLSearchParams(uri.query || '');
   const sourceUri = decodeQueryValue(query.get('sourceUri') || '');
@@ -417,7 +440,12 @@ function mapXamlRangeToProjectedRange(sourceText, projection, xamlRange) {
 }
 
 async function fetchInlineCSharpProjections(document, token) {
-  if (!client) {
+  if (!documentMayContainInlineCSharp(document)) {
+    return undefined;
+  }
+
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
     return undefined;
   }
 
@@ -435,7 +463,7 @@ async function fetchInlineCSharpProjections(document, token) {
   }
 
   const fetchPromise = (async () => {
-    const response = await client.sendRequest('axsg/inlineCSharpProjections', {
+    const response = await activeClient.sendRequest('axsg/inlineCSharpProjections', {
       textDocument: {
         uri: sourceUri
       },
@@ -649,6 +677,28 @@ function dedupeLocations(locations) {
   }
 
   return [...map.values()];
+}
+
+function hasCompletionItems(result) {
+  if (!result) {
+    return false;
+  }
+
+  if (Array.isArray(result)) {
+    return result.length > 0;
+  }
+
+  if (Array.isArray(result.items)) {
+    return result.items.length > 0;
+  }
+
+  return false;
+}
+
+function hasLocations(result) {
+  return normalizeLocationResults(result)
+    .map(mapProjectedResultLocation)
+    .some(location => location instanceof vscode.Location);
 }
 
 function mapProjectedCompletionRange(sourceText, projection, range) {
@@ -880,6 +930,66 @@ function resolveServerOptions(context) {
   };
 }
 
+function createLanguageClient() {
+  if (!extensionContext || !resolvedServerStartup) {
+    return undefined;
+  }
+
+  resolvedClientOptions = resolvedClientOptions ?? resolveClientOptions(extensionContext);
+  const clientInstance = new lc.LanguageClient(
+    'axsgLanguageServer',
+    'AXSG Language Server',
+    resolvedServerStartup.serverOptions,
+    resolvedClientOptions);
+  const trace = vscode.workspace.getConfiguration('axsg').get('languageServer.trace', 'off');
+  clientInstance.setTrace(trace);
+  return clientInstance;
+}
+
+async function ensureClientStarted() {
+  if (clientStartPromise) {
+    return clientStartPromise;
+  }
+
+  if (!client) {
+    client = createLanguageClient();
+  }
+
+  if (!client || !resolvedServerStartup) {
+    return undefined;
+  }
+
+  setStatusBarState('starting', resolvedServerStartup.details);
+
+  const startingClient = client;
+  clientStartPromise = (async () => {
+    try {
+      await startingClient.start();
+      setStatusBarState('running', resolvedServerStartup.details);
+      return startingClient;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatusBarState('error', resolvedServerStartup.details, message);
+      if (client === startingClient) {
+        client = undefined;
+      }
+
+      clientStartPromise = undefined;
+      throw error;
+    }
+  })();
+
+  return clientStartPromise;
+}
+
+async function tryEnsureClientStarted() {
+  try {
+    return await ensureClientStarted();
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveClientOptions(context) {
   outputChannel = outputChannel ?? vscode.window.createOutputChannel('AXSG Language Server');
   const configuration = vscode.workspace.getConfiguration('axsg');
@@ -901,62 +1011,73 @@ function resolveClientOptions(context) {
     },
     middleware: {
       provideCompletionItem: async (document, position, completionContext, token, next) => {
-        const inlineResult = await requestInlineCSharpCompletion(document, position, completionContext, token);
-        if (inlineResult) {
-          return inlineResult;
+        const fallbackResult = await next(document, position, completionContext, token);
+        if (hasCompletionItems(fallbackResult)) {
+          return fallbackResult;
         }
 
-        return next(document, position, completionContext, token);
+        const inlineResult = await requestInlineCSharpCompletion(document, position, completionContext, token);
+        return inlineResult ?? fallbackResult;
       },
       provideHover: async (document, position, token, next) => {
-        const inlineHover = await requestInlineCSharpHover(document, position, token);
-        if (inlineHover) {
-          return inlineHover;
+        const fallbackHover = await next(document, position, token);
+        if (fallbackHover) {
+          return fallbackHover;
         }
 
-        return next(document, position, token);
+        const inlineHover = await requestInlineCSharpHover(document, position, token);
+        return inlineHover ?? fallbackHover;
       },
       provideDefinition: async (document, position, token, next) => {
+        const fallbackLocations = dedupeLocations(
+          normalizeLocationResults(await next(document, position, token))
+            .map(mapProjectedResultLocation)
+            .filter(location => location instanceof vscode.Location));
+        if (fallbackLocations.length > 0) {
+          return fallbackLocations;
+        }
+
         const inlineLocations = await requestInlineCSharpLocations(
           'vscode.executeDefinitionProvider',
           document,
           position,
           token,
           undefined);
+        return inlineLocations.length > 0 ? inlineLocations : undefined;
+      },
+      provideDeclaration: async (document, position, token, next) => {
         const fallbackLocations = dedupeLocations(
           normalizeLocationResults(await next(document, position, token))
             .map(mapProjectedResultLocation)
             .filter(location => location instanceof vscode.Location));
-        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
-        return merged.length > 0 ? merged : undefined;
-      },
-      provideDeclaration: async (document, position, token, next) => {
+        if (fallbackLocations.length > 0) {
+          return fallbackLocations;
+        }
+
         const inlineLocations = await requestInlineCSharpLocations(
           'vscode.executeDeclarationProvider',
           document,
           position,
           token,
           undefined);
-        const fallbackLocations = dedupeLocations(
-          normalizeLocationResults(await next(document, position, token))
-            .map(mapProjectedResultLocation)
-            .filter(location => location instanceof vscode.Location));
-        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
-        return merged.length > 0 ? merged : undefined;
+        return inlineLocations.length > 0 ? inlineLocations : undefined;
       },
       provideReferences: async (document, position, referenceContext, token, next) => {
+        const fallbackLocations = dedupeLocations(
+          normalizeLocationResults(await next(document, position, referenceContext, token))
+            .map(mapProjectedResultLocation)
+            .filter(location => location instanceof vscode.Location));
+        if (fallbackLocations.length > 0) {
+          return fallbackLocations;
+        }
+
         const inlineLocations = await requestInlineCSharpLocations(
           'vscode.executeReferenceProvider',
           document,
           position,
           token,
           referenceContext && referenceContext.includeDeclaration === true);
-        const fallbackLocations = dedupeLocations(
-          normalizeLocationResults(await next(document, position, referenceContext, token))
-            .map(mapProjectedResultLocation)
-            .filter(location => location instanceof vscode.Location));
-        const merged = dedupeLocations([...inlineLocations, ...fallbackLocations]);
-        return merged.length > 0 ? merged : undefined;
+        return inlineLocations.length > 0 ? inlineLocations : undefined;
       }
     }
   };
@@ -987,11 +1108,12 @@ function toVsCodeLocation(location) {
 }
 
 async function requestCrossLanguageLocations(method, document, position, token) {
-  if (!client) {
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
     return [];
   }
 
-  const response = await client.sendRequest(method, {
+  const response = await activeClient.sendRequest(method, {
     textDocument: {
       uri: document.uri.toString()
     },
@@ -1095,7 +1217,8 @@ async function resolveEditorForRenameArgument(argument) {
 }
 
 async function executeCrossLanguageRenameCommand(argument) {
-  if (!client) {
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
     return;
   }
 
@@ -1117,6 +1240,11 @@ async function executeCrossLanguageRenameCommand(argument) {
 }
 
 async function executeAxsgRename(editor, position) {
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
+    return;
+  }
+
   const document = editor.document;
   const params = {
     textDocument: {
@@ -1126,7 +1254,7 @@ async function executeAxsgRename(editor, position) {
     documentText: document.getText()
   };
 
-  const prepareResult = await client.sendRequest('axsg/refactor/prepareRename', params);
+  const prepareResult = await activeClient.sendRequest('axsg/refactor/prepareRename', params);
   if (!prepareResult || !prepareResult.range) {
     void vscode.window.showInformationMessage('AXSG rename is not available at the current position.');
     return;
@@ -1141,7 +1269,7 @@ async function executeAxsgRename(editor, position) {
     return;
   }
 
-  const renameResult = await client.sendRequest('axsg/refactor/rename', {
+  const renameResult = await activeClient.sendRequest('axsg/refactor/rename', {
     ...params,
     newName
   });
@@ -1231,12 +1359,13 @@ async function buildCombinedCSharpRenameEdit(document, position, newName, token,
     return undefined;
   }
 
-  if (!client) {
+  const activeClient = await tryEnsureClientStarted();
+  if (!activeClient) {
     return nativeRenameEdit;
   }
 
   try {
-    const xamlPropagationEdit = await client.sendRequest('axsg/csharp/renamePropagation', {
+    const xamlPropagationEdit = await activeClient.sendRequest('axsg/csharp/renamePropagation', {
       textDocument: {
         uri: document.uri.toString()
       },
@@ -1265,6 +1394,8 @@ function setStatusBarState(state, details, errorMessage) {
     statusBarItem.text = '$(sync~spin) AXSG';
   } else if (state === 'running') {
     statusBarItem.text = '$(info) AXSG';
+  } else if (state === 'idle') {
+    statusBarItem.text = '$(debug-disconnect) AXSG';
   } else {
     statusBarItem.text = '$(error) AXSG';
   }
@@ -1279,8 +1410,8 @@ function setStatusBarState(state, details, errorMessage) {
 }
 
 async function activate(context) {
-  const { serverOptions, details } = resolveServerOptions(context);
-  const clientOptions = resolveClientOptions(context);
+  extensionContext = context;
+  resolvedServerStartup = resolveServerOptions(context);
   metadataChangeEmitter = new vscode.EventEmitter();
   context.subscriptions.push(metadataChangeEmitter);
   sourceLinkChangeEmitter = new vscode.EventEmitter();
@@ -1395,6 +1526,10 @@ async function activate(context) {
       }
     }));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async document => {
+    if (isXamlDocument(document)) {
+      void tryEnsureClientStarted();
+    }
+
     if (document.uri.scheme !== AXSG_METADATA_SCHEME &&
         document.uri.scheme !== AXSG_SOURCELINK_SCHEME &&
         document.uri.scheme !== AXSG_INLINE_CSHARP_SCHEME) {
@@ -1417,10 +1552,10 @@ async function activate(context) {
   statusBarItem.command = 'axsg.languageServer.showInfo';
   context.subscriptions.push(statusBarItem);
   statusBarItem.show();
-  setStatusBarState('starting', details);
+  setStatusBarState('idle', resolvedServerStartup.details);
 
   context.subscriptions.push(vscode.commands.registerCommand('axsg.languageServer.showInfo', async () => {
-    const info = `AXSG Language Server (${details.effectiveMode})`;
+    const info = `AXSG Language Server (${resolvedServerStartup.details.effectiveMode})`;
     const selection = await vscode.window.showInformationMessage(
       info,
       'Open Output');
@@ -1429,21 +1564,13 @@ async function activate(context) {
     }
   }));
 
-  client = new lc.LanguageClient(
-    'axsgLanguageServer',
-    'AXSG Language Server',
-    serverOptions,
-    clientOptions);
-
-  const trace = vscode.workspace.getConfiguration('axsg').get('languageServer.trace', 'off');
-  client.setTrace(trace);
-
   context.subscriptions.push({
     dispose: async () => {
       if (client) {
         await client.stop();
         client = undefined;
       }
+      clientStartPromise = undefined;
       if (statusBarItem) {
         statusBarItem.dispose();
         statusBarItem = undefined;
@@ -1451,13 +1578,8 @@ async function activate(context) {
     }
   });
 
-  try {
-    await client.start();
-    setStatusBarState('running', details);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatusBarState('error', details, message);
-    throw error;
+  if (vscode.window.visibleTextEditors.some(editor => isXamlDocument(editor.document))) {
+    void tryEnsureClientStarted();
   }
 }
 
@@ -1467,11 +1589,13 @@ async function deactivate() {
       statusBarItem.dispose();
       statusBarItem = undefined;
     }
+    clientStartPromise = undefined;
     return;
   }
 
   await client.stop();
   client = undefined;
+  clientStartPromise = undefined;
   if (statusBarItem) {
     statusBarItem.dispose();
     statusBarItem = undefined;
@@ -1491,6 +1615,10 @@ async function deactivate() {
     inlineCSharpProjectionChangeEmitter.dispose();
     inlineCSharpProjectionChangeEmitter = undefined;
   }
+
+  resolvedClientOptions = undefined;
+  resolvedServerStartup = undefined;
+  extensionContext = undefined;
 }
 
 module.exports = {

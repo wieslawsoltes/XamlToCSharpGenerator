@@ -34,9 +34,10 @@
     "Programming Languages"
   ],
   "activationEvents": [
+    "workspaceContains:**/*.axaml",
+    "workspaceContains:**/*.xaml",
     "onLanguage:axaml",
     "onLanguage:xaml",
-    "onLanguage:csharp",
     "onCommand:axsg.refactor.renameSymbol"
   ],
   "main": "./extension.js",
