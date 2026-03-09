@@ -148,7 +148,14 @@ public static class BindingEventMarkupParser
             return normalizedBindingMarkup;
         }
 
-        if (TryParseElementNameQuery(trimmedPath, out var elementName, out var normalizedPath))
+        var queryPath = trimmedPath;
+        var leadingNotCount = CountLeadingNotOperators(queryPath);
+        if (leadingNotCount > 0 && leadingNotCount < queryPath.Length)
+        {
+            queryPath = queryPath.Substring(leadingNotCount);
+        }
+
+        if (TryParseElementNameQuery(queryPath, out var elementName, out var normalizedPath))
         {
             if (HasExplicitBindingSource(normalizedBindingMarkup))
             {
@@ -159,7 +166,7 @@ public static class BindingEventMarkupParser
 
             return new BindingMarkup(
                 isCompiledBinding: normalizedBindingMarkup.IsCompiledBinding,
-                path: normalizedPath,
+                path: ReapplyLeadingNotOperators(normalizedPath, leadingNotCount),
                 mode: normalizedBindingMarkup.Mode,
                 elementName: elementName,
                 relativeSource: normalizedBindingMarkup.RelativeSource,
@@ -177,7 +184,7 @@ public static class BindingEventMarkupParser
                 sourceConflictMessage: normalizedBindingMarkup.SourceConflictMessage);
         }
 
-        if (TryParseSelfQuery(trimmedPath, out var selfRelativeSource, out normalizedPath))
+        if (TryParseSelfQuery(queryPath, out var selfRelativeSource, out normalizedPath))
         {
             if (HasExplicitBindingSource(normalizedBindingMarkup))
             {
@@ -188,7 +195,7 @@ public static class BindingEventMarkupParser
 
             return new BindingMarkup(
                 isCompiledBinding: normalizedBindingMarkup.IsCompiledBinding,
-                path: normalizedPath,
+                path: ReapplyLeadingNotOperators(normalizedPath, leadingNotCount),
                 mode: normalizedBindingMarkup.Mode,
                 elementName: normalizedBindingMarkup.ElementName,
                 relativeSource: selfRelativeSource,
@@ -206,7 +213,7 @@ public static class BindingEventMarkupParser
                 sourceConflictMessage: normalizedBindingMarkup.SourceConflictMessage);
         }
 
-        if (TryParseParentQuery(trimmedPath, out var relativeSource, out normalizedPath))
+        if (TryParseParentQuery(queryPath, out var relativeSource, out normalizedPath))
         {
             if (HasExplicitBindingSource(normalizedBindingMarkup))
             {
@@ -217,7 +224,7 @@ public static class BindingEventMarkupParser
 
             return new BindingMarkup(
                 isCompiledBinding: normalizedBindingMarkup.IsCompiledBinding,
-                path: normalizedPath,
+                path: ReapplyLeadingNotOperators(normalizedPath, leadingNotCount),
                 mode: normalizedBindingMarkup.Mode,
                 elementName: normalizedBindingMarkup.ElementName,
                 relativeSource: relativeSource,
@@ -236,6 +243,27 @@ public static class BindingEventMarkupParser
         }
 
         return normalizedBindingMarkup;
+    }
+
+    private static int CountLeadingNotOperators(string path)
+    {
+        var count = 0;
+        while (count < path.Length && path[count] == '!')
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static string ReapplyLeadingNotOperators(string normalizedPath, int leadingNotCount)
+    {
+        if (leadingNotCount <= 0)
+        {
+            return normalizedPath;
+        }
+
+        return new string('!', leadingNotCount) + normalizedPath;
     }
 
     public static bool HasExplicitBindingSource(BindingMarkup bindingMarkup)

@@ -3385,6 +3385,110 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Supports_Negated_Typed_Parent_Query_Compiled_Binding_Without_Ambient_XDataType()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public global::Avalonia.Data.IBinding this[global::Avalonia.Data.IndexerDescriptor binding]
+                    {
+                        get => throw new global::System.NotImplementedException();
+                        set { }
+                    }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class IndexerDescriptor
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                }
+
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                    public object? RelativeSource { get; set; }
+                }
+
+                public enum RelativeSourceMode
+                {
+                    FindAncestor
+                }
+
+                public class RelativeSource
+                {
+                    public RelativeSource(RelativeSourceMode mode) { }
+                    public int AncestorLevel { get; set; }
+                    public global::System.Type? AncestorType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject
+                {
+                    public bool IsEnabled { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class DataGrid : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Border : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty IsVisibleProperty = new();
+                    public bool IsVisible { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         x:CompileBindings="True">
+                <DataGrid>
+                    <Border IsVisible="{Binding !$parent[DataGrid].IsEnabled}" />
+                </DataGrid>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0110");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("RelativeSourceMode.FindAncestor", generated);
+        Assert.Contains("AncestorType = typeof(global::Avalonia.Controls.DataGrid)", generated);
+        Assert.Contains("\"!IsEnabled\"", generated);
+        Assert.Contains("source.IsEnabled", generated);
+        Assert.Contains("!global::System.Convert.ToBoolean(source.IsEnabled)", generated);
+    }
+
+    [Fact]
     public void Supports_Self_Query_Binding_Path_With_CompiledBindings_Enabled()
     {
         const string code = """
@@ -5930,7 +6034,10 @@ public class AvaloniaXamlSourceGeneratorTests
         const string code = """
             namespace Avalonia.Controls
             {
-                public class Control { }
+                public class Control
+                {
+                    public object? Tag { get; set; }
+                }
                 public class UserControl : Control
                 {
                     public object? Resources { get; set; }
@@ -7049,6 +7156,46 @@ public class AvaloniaXamlSourceGeneratorTests
         var (_, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0306");
+    }
+
+    [Fact]
+    public void Does_Not_Report_Cycle_For_ControlTheme_Self_Key_BasedOn_Override_Pattern()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Resources { get; set; }
+                }
+                public class DataGrid : Control { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <ControlTheme x:Key="{x:Type DataGrid}"
+                                  TargetType="DataGrid"
+                                  BasedOn="{StaticResource {x:Type DataGrid}}">
+                        <Setter Property="Tag" Value="Override" />
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0306");
     }
 
     [Fact]

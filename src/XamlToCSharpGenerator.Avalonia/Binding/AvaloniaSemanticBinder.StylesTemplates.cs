@@ -420,6 +420,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                 if (TryParseBindingMarkup(setter.Value, out var bindingMarkup))
                 {
+                    var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
+                    INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
+                    var requiresAmbientDataType = false;
                     if (!TryReportBindingSourceConflict(
                             bindingMarkup,
                             diagnostics,
@@ -427,23 +430,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             setter.Line,
                             setter.Column,
                             options.StrictMode) &&
-                        CanUseCompiledBinding(bindingMarkup) &&
-                        (bindingMarkup.IsCompiledBinding || compileBindingsEnabled))
+                        wantsCompiledBinding &&
+                        TryResolveCompiledBindingSourceType(
+                            compilation,
+                            document,
+                            bindingMarkup,
+                            styleDataType,
+                            targetType,
+                            out compiledBindingSourceTypeSymbol,
+                            out requiresAmbientDataType))
                     {
-                        if (styleDataType is null)
-                        {
-                            diagnostics.Add(new DiagnosticInfo(
-                                "AXSG0110",
-                                $"Compiled binding for style setter '{setter.PropertyName}' requires x:DataType on the style.",
-                                document.FilePath,
-                                setter.Line,
-                                setter.Column,
-                                options.StrictMode));
-                        }
-                        else if (!TryBuildCompiledBindingAccessorExpression(
+                        if (!TryBuildCompiledBindingAccessorExpression(
                                      compilation,
                                      document,
-                                     styleDataType,
+                                     compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
                                      out var accessorExpression,
                                      out var normalizedPath,
@@ -452,7 +452,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         {
                             diagnostics.Add(new DiagnosticInfo(
                                 "AXSG0111",
-                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{styleDataType.ToDisplayString()}': {errorMessage}",
+                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{compiledBindingSourceTypeSymbol!.ToDisplayString()}': {errorMessage}",
                                 document.FilePath,
                                 setter.Line,
                                 setter.Column,
@@ -465,7 +465,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                 TargetTypeName: targetTypeName,
                                 TargetPropertyName: resolvedPropertyName,
                                 Path: normalizedPath,
-                                SourceTypeName: styleDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                                SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                                 ResultTypeName: resultTypeName,
                                 AccessorExpression: accessorExpression,
                                 IsSetterBinding: true,
@@ -474,8 +474,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                             isCompiledBinding = true;
                             compiledBindingPath = normalizedPath;
-                            compiledBindingSourceType = styleDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                            compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
+                    }
+                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for style setter '{setter.PropertyName}' requires x:DataType on the style.",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
                     }
 
                     if (!isCompiledBinding &&
@@ -931,6 +941,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                 if (TryParseBindingMarkup(setter.Value, out var bindingMarkup))
                 {
+                    var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
+                    INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
+                    var requiresAmbientDataType = false;
                     if (!TryReportBindingSourceConflict(
                             bindingMarkup,
                             diagnostics,
@@ -938,23 +951,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             setter.Line,
                             setter.Column,
                             options.StrictMode) &&
-                        CanUseCompiledBinding(bindingMarkup) &&
-                        (bindingMarkup.IsCompiledBinding || compileBindingsEnabled))
+                        wantsCompiledBinding &&
+                        TryResolveCompiledBindingSourceType(
+                            compilation,
+                            document,
+                            bindingMarkup,
+                            themeDataType,
+                            targetType,
+                            out compiledBindingSourceTypeSymbol,
+                            out requiresAmbientDataType))
                     {
-                        if (themeDataType is null)
-                        {
-                            diagnostics.Add(new DiagnosticInfo(
-                                "AXSG0110",
-                                $"Compiled binding for control theme setter '{setter.PropertyName}' requires x:DataType on the control theme.",
-                                document.FilePath,
-                                setter.Line,
-                                setter.Column,
-                                options.StrictMode));
-                        }
-                        else if (!TryBuildCompiledBindingAccessorExpression(
+                        if (!TryBuildCompiledBindingAccessorExpression(
                                      compilation,
                                      document,
-                                     themeDataType,
+                                     compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
                                      out var accessorExpression,
                                      out var normalizedPath,
@@ -963,7 +973,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         {
                             diagnostics.Add(new DiagnosticInfo(
                                 "AXSG0111",
-                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{themeDataType.ToDisplayString()}': {errorMessage}",
+                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{compiledBindingSourceTypeSymbol!.ToDisplayString()}': {errorMessage}",
                                 document.FilePath,
                                 setter.Line,
                                 setter.Column,
@@ -976,7 +986,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                 TargetTypeName: targetTypeName,
                                 TargetPropertyName: resolvedPropertyName,
                                 Path: normalizedPath,
-                                SourceTypeName: themeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                                SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                                 ResultTypeName: resultTypeName,
                                 AccessorExpression: accessorExpression,
                                 IsSetterBinding: true,
@@ -985,8 +995,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                             isCompiledBinding = true;
                             compiledBindingPath = normalizedPath;
-                            compiledBindingSourceType = themeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                            compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
+                    }
+                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for control theme setter '{setter.PropertyName}' requires x:DataType on the control theme.",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
                     }
 
                     if (!isCompiledBinding &&
@@ -1095,8 +1115,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var byKey = new Dictionary<string, ResolvedControlThemeDefinition>(StringComparer.Ordinal);
-        foreach (var controlTheme in controlThemes)
+        var indicesByKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var index = 0; index < controlThemes.Length; index++)
         {
+            var controlTheme = controlThemes[index];
             if (controlTheme.Key is null)
             {
                 continue;
@@ -1109,10 +1131,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             byKey[controlThemeKey] = controlTheme;
+            if (!indicesByKey.TryGetValue(controlThemeKey, out var indices))
+            {
+                indices = new List<int>();
+                indicesByKey[controlThemeKey] = indices;
+            }
+
+            indices.Add(index);
         }
 
-        foreach (var controlTheme in controlThemes)
+        for (var index = 0; index < controlThemes.Length; index++)
         {
+            var controlTheme = controlThemes[index];
             var basedOnKey = TryExtractControlThemeBasedOnKey(controlTheme.BasedOn);
             if (basedOnKey is null)
             {
@@ -1138,21 +1168,22 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
         }
 
-        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        var state = new Dictionary<int, int>();
         var emitted = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in byKey.Keys)
+        for (var index = 0; index < controlThemes.Length; index++)
         {
-            DetectCycle(key, key);
+            DetectCycle(index, index);
         }
 
-        void DetectCycle(string key, string startKey)
+        void DetectCycle(int index, int startIndex)
         {
-            if (!byKey.TryGetValue(key, out var currentTheme))
+            var currentTheme = controlThemes[index];
+            if (currentTheme.Key is null)
             {
                 return;
             }
 
-            if (state.TryGetValue(key, out var currentState))
+            if (state.TryGetValue(index, out var currentState))
             {
                 if (currentState == 2)
                 {
@@ -1161,12 +1192,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                 if (currentState == 1)
                 {
-                    var cycleKey = startKey + "->" + key;
+                    var cycleKey = startIndex.ToString(global::System.Globalization.CultureInfo.InvariantCulture) +
+                        "->" +
+                        index.ToString(global::System.Globalization.CultureInfo.InvariantCulture);
                     if (emitted.Add(cycleKey))
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             "AXSG0306",
-                            $"ControlTheme BasedOn chain contains a cycle at key '{key}'.",
+                            $"ControlTheme BasedOn chain contains a cycle at key '{currentTheme.Key}'.",
                             document.FilePath,
                             currentTheme.Line,
                             currentTheme.Column,
@@ -1177,19 +1210,55 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 }
             }
 
-            state[key] = 1;
+            state[index] = 1;
             var basedOnKey = TryExtractControlThemeBasedOnKey(currentTheme.BasedOn);
             if (basedOnKey is not null)
             {
                 var basedOnKeyValue = basedOnKey.Trim();
-                if (basedOnKeyValue.Length > 0 && byKey.ContainsKey(basedOnKeyValue))
+                if (basedOnKeyValue.Length > 0 &&
+                    TryResolveLocalControlThemeIndex(indicesByKey, basedOnKeyValue, index, out var basedOnIndex))
                 {
-                    DetectCycle(basedOnKeyValue, startKey);
+                    DetectCycle(basedOnIndex, startIndex);
                 }
             }
 
-            state[key] = 2;
+            state[index] = 2;
         }
+    }
+
+    private static bool TryResolveLocalControlThemeIndex(
+        Dictionary<string, List<int>> indicesByKey,
+        string key,
+        int currentIndex,
+        out int resolvedIndex)
+    {
+        resolvedIndex = -1;
+        if (!indicesByKey.TryGetValue(key, out var indices) || indices.Count == 0)
+        {
+            return false;
+        }
+
+        for (var i = indices.Count - 1; i >= 0; i--)
+        {
+            var candidateIndex = indices[i];
+            if (candidateIndex < currentIndex)
+            {
+                resolvedIndex = candidateIndex;
+                return true;
+            }
+        }
+
+        for (var i = indices.Count - 1; i >= 0; i--)
+        {
+            var candidateIndex = indices[i];
+            if (candidateIndex != currentIndex)
+            {
+                resolvedIndex = candidateIndex;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? TryExtractControlThemeBasedOnKey(string? basedOnExpression)
