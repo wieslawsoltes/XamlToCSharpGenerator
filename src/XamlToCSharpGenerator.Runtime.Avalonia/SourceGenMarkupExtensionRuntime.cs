@@ -995,6 +995,63 @@ public static class SourceGenMarkupExtensionRuntime
         return multiBinding;
     }
 
+    public static IBinding ProvideInlineCodeBinding<TSource, TRoot, TTarget>(
+        Func<TSource, TRoot, TTarget, object?> evaluator,
+        IReadOnlyList<string>? dependencyNames,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+        where TSource : class
+        where TRoot : class
+        where TTarget : class
+    {
+        _ = CreateContextProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject,
+            targetProperty,
+            baseUri,
+            parentStack);
+
+        var multiBinding = new MultiBinding
+        {
+            Converter = new SourceGenInlineCodeMultiValueConverter<TSource, TRoot, TTarget>(
+                evaluator,
+                rootObject,
+                targetObject),
+            Mode = BindingMode.OneWay
+        };
+
+        multiBinding.Bindings.Add(new Binding("."));
+
+        if (dependencyNames is not null)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var dependencyName in dependencyNames)
+            {
+                if (string.IsNullOrWhiteSpace(dependencyName))
+                {
+                    continue;
+                }
+
+                var trimmedDependencyName = dependencyName.Trim();
+                if (!seen.Add(trimmedDependencyName))
+                {
+                    continue;
+                }
+
+                multiBinding.Bindings.Add(new Binding(trimmedDependencyName));
+            }
+        }
+
+        return multiBinding;
+    }
+
     public static object? ProvideMarkupExtension(
         object extension,
         IServiceProvider? parentServiceProvider,

@@ -49,92 +49,19 @@ internal sealed class CSharpExpressionClassificationService
             return false;
         }
 
-        if (!MarkupExpressionEnvelopeSemantics.TryExtractInnerContent(value, out var innerExpression))
+        if (!CSharpMarkupExpressionSemantics.TryParseMarkupExpression(
+                value,
+                implicitExpressionsEnabled,
+                innerExpression => LooksLikeMarkupExtensionStart(innerExpression, compilation, document),
+                out var rawExpression,
+                out isExplicitExpression,
+                out _))
         {
             return false;
         }
 
-        if (innerExpression.Length == 0)
-        {
-            return false;
-        }
-
-        if (innerExpression.StartsWith("=", StringComparison.Ordinal))
-        {
-            var explicitExpression = innerExpression.Substring(1).Trim();
-            if (explicitExpression.Length == 0)
-            {
-                return false;
-            }
-
-            csharpExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(explicitExpression);
-            isExplicitExpression = true;
-            return csharpExpression.Length > 0;
-        }
-
-        if (!implicitExpressionsEnabled)
-        {
-            return false;
-        }
-
-        if (!IsImplicitCSharpExpressionMarkup(innerExpression, compilation, document))
-        {
-            return false;
-        }
-
-        csharpExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(innerExpression);
+        csharpExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(rawExpression);
         return csharpExpression.Length > 0;
-    }
-
-    private bool IsImplicitCSharpExpressionMarkup(
-        string expressionBody,
-        Compilation compilation,
-        XamlDocumentModel document)
-    {
-        if (string.IsNullOrWhiteSpace(expressionBody))
-        {
-            return false;
-        }
-
-        if (LooksLikeMarkupExtensionStart(expressionBody, compilation, document))
-        {
-            return false;
-        }
-
-        var trimmed = expressionBody.Trim();
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        if (trimmed.StartsWith("(", StringComparison.Ordinal) ||
-            trimmed.StartsWith("!", StringComparison.Ordinal) ||
-            trimmed.StartsWith("new ", StringComparison.Ordinal) ||
-            trimmed.StartsWith("$\"", StringComparison.Ordinal) ||
-            trimmed.StartsWith("$'", StringComparison.Ordinal) ||
-            trimmed.StartsWith("typeof(", StringComparison.Ordinal) ||
-            trimmed.StartsWith("nameof(", StringComparison.Ordinal) ||
-            trimmed.StartsWith("default(", StringComparison.Ordinal) ||
-            trimmed.StartsWith("sizeof(", StringComparison.Ordinal) ||
-            trimmed.StartsWith(".", StringComparison.Ordinal) ||
-            trimmed.StartsWith("this.", StringComparison.Ordinal) ||
-            trimmed.StartsWith("BindingContext.", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (CSharpExpressionTextSemantics.ContainsImplicitExpressionOperator(trimmed))
-        {
-            return true;
-        }
-
-        if (CSharpExpressionTextSemantics.IsMethodCallLikeExpression(trimmed) ||
-            CSharpExpressionTextSemantics.IsMemberAccessLikeExpression(trimmed))
-        {
-            return true;
-        }
-
-        return CSharpExpressionTextSemantics.IsBareIdentifierExpression(trimmed);
     }
 
     private bool LooksLikeMarkupExtensionStart(

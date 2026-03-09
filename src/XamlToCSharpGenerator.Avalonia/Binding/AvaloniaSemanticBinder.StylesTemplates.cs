@@ -93,6 +93,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var styleDataType = ResolveTypeFromTypeExpression(compilation, document, style.DataType, document.ClassNamespace);
+            var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
             var compileBindingsEnabled = style.CompileBindings ?? options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(style.Setters.Length);
@@ -215,6 +216,149 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
                 string? compiledBindingSourceType = null;
+                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            styleDataType,
+                            rootContextType,
+                            targetType,
+                            inlineCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for style setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    setters.Add(new ResolvedSetterDefinition(
+                        PropertyName: resolvedPropertyName,
+                        ValueExpression: inlineBindingExpression,
+                        IsCompiledBinding: false,
+                        CompiledBindingPath: null,
+                        CompiledBindingSourceTypeName: null,
+                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                        AvaloniaPropertyFieldName: setterPropertyFieldName,
+                        Line: setter.Line,
+                        Column: setter.Column,
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
+                if (TryResolveImplicitCSharpShorthandExpression(
+                        setter.Value,
+                        compilation,
+                        document,
+                        options,
+                        styleDataType,
+                        rootContextType,
+                        targetType,
+                        out var isShorthandExpression,
+                        out var shorthandResolution))
+                {
+                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
+                        shorthandResolution.Path is not null &&
+                        TryBuildRuntimeBindingExpression(
+                            compilation,
+                            document,
+                            new BindingMarkup(
+                                isCompiledBinding: false,
+                                path: shorthandResolution.Path,
+                                mode: null,
+                                elementName: null,
+                                relativeSource: null,
+                                source: null,
+                                converter: null,
+                                converterCulture: null,
+                                converterParameter: null,
+                                stringFormat: null,
+                                fallbackValue: null,
+                                targetNullValue: null,
+                                delay: null,
+                                priority: null,
+                                updateSourceTrigger: null,
+                                hasSourceConflict: false,
+                                sourceConflictMessage: null),
+                            targetType,
+                            BindingPriorityScope.Style,
+                            out var shorthandBindingExpression))
+                    {
+                        var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
+                        if (shorthandResolution.SourceTypeName is not null &&
+                            shorthandResolution.AccessorExpression is not null)
+                        {
+                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                                TargetTypeName: targetTypeName,
+                                TargetPropertyName: resolvedPropertyName,
+                                Path: shorthandResolution.Path,
+                                SourceTypeName: shorthandResolution.SourceTypeName,
+                                ResultTypeName: shorthandResolution.ResultTypeName,
+                                AccessorExpression: shorthandResolution.AccessorExpression,
+                                IsSetterBinding: true,
+                                Line: setter.Line,
+                                Column: setter.Column));
+                        }
+
+                        setters.Add(new ResolvedSetterDefinition(
+                            PropertyName: resolvedPropertyName,
+                            ValueExpression: shorthandBindingExpression,
+                            IsCompiledBinding: shorthandResolution.SourceTypeName is not null,
+                            CompiledBindingPath: shorthandResolution.Path,
+                            CompiledBindingSourceTypeName: shorthandResolution.SourceTypeName,
+                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                            AvaloniaPropertyFieldName: setterPropertyFieldName,
+                            Line: setter.Line,
+                            Column: setter.Column,
+                            Condition: setter.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
+                        shorthandResolution.ValueExpression is not null)
+                    {
+                        setters.Add(new ResolvedSetterDefinition(
+                            PropertyName: resolvedPropertyName,
+                            ValueExpression: shorthandResolution.ValueExpression,
+                            IsCompiledBinding: false,
+                            CompiledBindingPath: null,
+                            CompiledBindingSourceTypeName: null,
+                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                            AvaloniaPropertyFieldName: setterPropertyFieldName,
+                            Line: setter.Line,
+                            Column: setter.Column,
+                            Condition: setter.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    if (isShorthandExpression &&
+                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
+                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            shorthandResolution.DiagnosticId!,
+                            shorthandResolution.DiagnosticMessage!,
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,
@@ -460,6 +604,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var themeDataType = ResolveTypeFromTypeExpression(compilation, document, controlTheme.DataType, document.ClassNamespace);
+            var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
             var compileBindingsEnabled = controlTheme.CompileBindings ?? options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(controlTheme.Setters.Length);
@@ -582,6 +727,149 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
                 string? compiledBindingSourceType = null;
+                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            themeDataType,
+                            rootContextType,
+                            targetType,
+                            inlineCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for control theme setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    setters.Add(new ResolvedSetterDefinition(
+                        PropertyName: resolvedPropertyName,
+                        ValueExpression: inlineBindingExpression,
+                        IsCompiledBinding: false,
+                        CompiledBindingPath: null,
+                        CompiledBindingSourceTypeName: null,
+                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                        AvaloniaPropertyFieldName: setterPropertyFieldName,
+                        Line: setter.Line,
+                        Column: setter.Column,
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
+                if (TryResolveImplicitCSharpShorthandExpression(
+                        setter.Value,
+                        compilation,
+                        document,
+                        options,
+                        themeDataType,
+                        rootContextType,
+                        targetType,
+                        out var isShorthandExpression,
+                        out var shorthandResolution))
+                {
+                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
+                        shorthandResolution.Path is not null &&
+                        TryBuildRuntimeBindingExpression(
+                            compilation,
+                            document,
+                            new BindingMarkup(
+                                isCompiledBinding: false,
+                                path: shorthandResolution.Path,
+                                mode: null,
+                                elementName: null,
+                                relativeSource: null,
+                                source: null,
+                                converter: null,
+                                converterCulture: null,
+                                converterParameter: null,
+                                stringFormat: null,
+                                fallbackValue: null,
+                                targetNullValue: null,
+                                delay: null,
+                                priority: null,
+                                updateSourceTrigger: null,
+                                hasSourceConflict: false,
+                                sourceConflictMessage: null),
+                            targetType,
+                            BindingPriorityScope.Style,
+                            out var shorthandBindingExpression))
+                    {
+                        var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
+                        if (shorthandResolution.SourceTypeName is not null &&
+                            shorthandResolution.AccessorExpression is not null)
+                        {
+                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                                TargetTypeName: targetTypeName,
+                                TargetPropertyName: resolvedPropertyName,
+                                Path: shorthandResolution.Path,
+                                SourceTypeName: shorthandResolution.SourceTypeName,
+                                ResultTypeName: shorthandResolution.ResultTypeName,
+                                AccessorExpression: shorthandResolution.AccessorExpression,
+                                IsSetterBinding: true,
+                                Line: setter.Line,
+                                Column: setter.Column));
+                        }
+
+                        setters.Add(new ResolvedSetterDefinition(
+                            PropertyName: resolvedPropertyName,
+                            ValueExpression: shorthandBindingExpression,
+                            IsCompiledBinding: shorthandResolution.SourceTypeName is not null,
+                            CompiledBindingPath: shorthandResolution.Path,
+                            CompiledBindingSourceTypeName: shorthandResolution.SourceTypeName,
+                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                            AvaloniaPropertyFieldName: setterPropertyFieldName,
+                            Line: setter.Line,
+                            Column: setter.Column,
+                            Condition: setter.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
+                        shorthandResolution.ValueExpression is not null)
+                    {
+                        setters.Add(new ResolvedSetterDefinition(
+                            PropertyName: resolvedPropertyName,
+                            ValueExpression: shorthandResolution.ValueExpression,
+                            IsCompiledBinding: false,
+                            CompiledBindingPath: null,
+                            CompiledBindingSourceTypeName: null,
+                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                            AvaloniaPropertyFieldName: setterPropertyFieldName,
+                            Line: setter.Line,
+                            Column: setter.Column,
+                            Condition: setter.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    if (isShorthandExpression &&
+                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
+                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            shorthandResolution.DiagnosticId!,
+                            shorthandResolution.DiagnosticMessage!,
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,

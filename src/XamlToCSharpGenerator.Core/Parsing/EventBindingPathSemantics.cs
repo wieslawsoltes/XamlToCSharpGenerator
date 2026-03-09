@@ -158,6 +158,47 @@ public static class EventBindingPathSemantics
                column.ToString(CultureInfo.InvariantCulture);
     }
 
+    public static string BuildGeneratedMethodName(string eventName, string stableKey)
+    {
+        var chars = eventName.ToCharArray();
+        if (chars.Length == 0)
+        {
+            return "__AXSG_EventBinding_H" + ComputeStableHash(stableKey).ToString("X8", CultureInfo.InvariantCulture);
+        }
+
+        for (var index = 0; index < chars.Length; index++)
+        {
+            if (!char.IsLetterOrDigit(chars[index]) && chars[index] != '_')
+            {
+                chars[index] = '_';
+            }
+        }
+
+        var normalizedName = new string(chars);
+        var hashSuffix = ComputeStableHash(stableKey).ToString("X8", CultureInfo.InvariantCulture);
+        if (!char.IsLetter(chars[0]) && chars[0] != '_')
+        {
+            return "__AXSG_EventBinding_E" + normalizedName + "_H" + hashSuffix;
+        }
+
+        return "__AXSG_EventBinding_" + normalizedName + "_H" + hashSuffix;
+    }
+
+    private static uint ComputeStableHash(string value)
+    {
+        const uint offsetBasis = 2166136261;
+        const uint prime = 16777619;
+
+        var hash = offsetBasis;
+        for (var index = 0; index < value.Length; index++)
+        {
+            hash ^= value[index];
+            hash *= prime;
+        }
+
+        return hash;
+    }
+
     private static string BuildTargetPath(
         ImmutableArray<string> segments,
         int length)

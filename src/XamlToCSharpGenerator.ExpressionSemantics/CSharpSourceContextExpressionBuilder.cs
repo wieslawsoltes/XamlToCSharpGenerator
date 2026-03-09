@@ -39,6 +39,21 @@ internal readonly struct SourceContextExpressionRewriteResult
     public ImmutableArray<string> DependencyNames { get; }
 }
 
+internal readonly struct SourceContextLambdaRewriteResult
+{
+    public SourceContextLambdaRewriteResult(
+        AnonymousFunctionExpressionSyntax rewrittenLambdaExpressionSyntax,
+        ImmutableArray<string> dependencyNames)
+    {
+        RewrittenLambdaExpressionSyntax = rewrittenLambdaExpressionSyntax;
+        DependencyNames = dependencyNames.IsDefault ? ImmutableArray<string>.Empty : dependencyNames;
+    }
+
+    public AnonymousFunctionExpressionSyntax RewrittenLambdaExpressionSyntax { get; }
+
+    public ImmutableArray<string> DependencyNames { get; }
+}
+
 public static class CSharpSourceContextExpressionBuilder
 {
     internal const string RawSpanAnnotationKind = "AXSGExpressionRawSpan";
@@ -158,6 +173,71 @@ public static class CSharpSourceContextExpressionBuilder
 
         result = new SourceContextExpressionRewriteResult(
             rewrittenExpressionSyntax,
+            rewriter.Dependencies
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToImmutableArray());
+        return true;
+    }
+
+    internal static bool TryRewriteLambdaExpression(
+        INamedTypeSymbol sourceType,
+        string rawLambdaExpression,
+        string sourceParameterName,
+        out SourceContextLambdaRewriteResult result,
+        out string errorMessage)
+    {
+        if (sourceType is null)
+        {
+            throw new ArgumentNullException(nameof(sourceType));
+        }
+
+        result = default;
+        errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(sourceParameterName))
+        {
+            errorMessage = "source parameter name is empty";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawLambdaExpression))
+        {
+            errorMessage = "lambda expression text is empty";
+            return false;
+        }
+
+        var normalizedExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(rawLambdaExpression.Trim());
+        var parsedExpression = SyntaxFactory.ParseExpression(normalizedExpression);
+        var parseDiagnostic = parsedExpression
+            .GetDiagnostics()
+            .FirstOrDefault(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        if (parseDiagnostic is not null)
+        {
+            errorMessage = parseDiagnostic.GetMessage(CultureInfo.InvariantCulture);
+            return false;
+        }
+
+        if (parsedExpression is not AnonymousFunctionExpressionSyntax anonymousFunction)
+        {
+            errorMessage = "expression is not a lambda expression";
+            return false;
+        }
+
+        var annotatedExpression = (AnonymousFunctionExpressionSyntax)AnnotateSimpleNames(anonymousFunction);
+        var sourceMemberNames = GetExpressionSourceMemberNames(sourceType);
+        var expressionLocalNames = GetExpressionLocalNames(annotatedExpression);
+        var rewriter = new SourceContextExpressionRewriter(
+            sourceMemberNames,
+            expressionLocalNames,
+            sourceParameterName);
+        if (rewriter.Visit(annotatedExpression) is not AnonymousFunctionExpressionSyntax rewrittenLambdaSyntax)
+        {
+            errorMessage = "lambda rewrite failed";
+            return false;
+        }
+
+        result = new SourceContextLambdaRewriteResult(
+            rewrittenLambdaSyntax,
             rewriter.Dependencies
                 .OrderBy(static name => name, StringComparer.Ordinal)
                 .ToImmutableArray());

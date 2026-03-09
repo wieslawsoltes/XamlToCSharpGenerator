@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
 
@@ -19,6 +24,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     private const string MarkupContextParentStackToken = "__AXSG_CTX_PARENT_STACK__";
 
     private static readonly IReadOnlyDictionary<string, string> EmptyNamedFieldMap =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+    private static readonly IReadOnlyDictionary<string, string> EmptyGeneratedMethodNameMap =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     public (string HintName, string Source) Emit(ResolvedViewModel viewModel)
@@ -43,6 +50,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var eventBindingDefinitions = viewModel.Document.IsClassBacked
             ? BuildEventBindingDefinitions(viewModel.RootObject)
             : ImmutableArray<ResolvedEventBindingDefinition>.Empty;
+        var emittedEventBindingMethodNames = eventBindingDefinitions.IsDefaultOrEmpty
+            ? EmptyGeneratedMethodNameMap
+            : BuildStableEventBindingMethodNameMap(eventBindingDefinitions);
 
         if (emitReloadStateTracking)
         {
@@ -179,6 +189,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             "            ",
             "__root",
             namedFieldMap,
+            emittedEventBindingMethodNames,
             viewModel.EmitNameScopeRegistration,
             viewModel.EmitNameScopeRegistration ? "__nameScope" : null,
             "__root",
@@ -235,7 +246,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 "        private static global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor[] __GetSourceGenHotReloadRootEventCleanupDescriptors()");
             sourceBuilder.AppendLine("        {");
             sourceBuilder.AppendLine(
-                $"            return {BuildHotReloadEventCleanupDescriptorArrayExpression(hotReloadRootEventSubscriptions, viewModel.RootObject.TypeName)};");
+                $"            return {BuildHotReloadEventCleanupDescriptorArrayExpression(hotReloadRootEventSubscriptions, viewModel.RootObject.TypeName, emittedEventBindingMethodNames)};");
             sourceBuilder.AppendLine("        }");
             sourceBuilder.AppendLine();
             sourceBuilder.AppendLine("        private static void __TrackAndReconcileSourceGenHotReloadState(object __instance)");
@@ -290,7 +301,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         if (eventBindingDefinitions.Length > 0)
         {
-            EmitEventBindingMethods(sourceBuilder, eventBindingDefinitions);
+            EmitEventBindingMethods(sourceBuilder, eventBindingDefinitions, emittedEventBindingMethodNames);
         }
 
         sourceBuilder.AppendLine("        private static global::Avalonia.Styling.ControlTheme __BuildGeneratedControlTheme(int __index)");
@@ -488,6 +499,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string indent,
         string rootReference,
         IReadOnlyDictionary<string, string> namedFieldMap,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames,
         bool emitNameScopeRegistration,
         string? nameScopeReference,
         string? existingVariableName = null,
@@ -568,6 +580,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 rootReference,
                 variableName,
                 namedFieldMap,
+                emittedEventBindingMethodNames,
                 emitNameScopeRegistration,
                 nameScopeReference,
                 existingVariableName is null,
@@ -736,6 +749,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 variableName,
                 rootReference,
                 eventSubscription,
+                emittedEventBindingMethodNames,
                 emitDebugLineDirectives,
                 lineDirectiveFilePath);
         }
@@ -779,6 +793,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -853,6 +868,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference,
@@ -931,6 +947,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 indent,
                 rootReference,
                 namedFieldMap,
+                emittedEventBindingMethodNames,
                 emitNameScopeRegistration,
                 nameScopeReference,
                 serviceProviderReference: serviceProviderReference,
@@ -1045,6 +1062,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1114,6 +1132,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1165,6 +1184,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1220,6 +1240,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1282,6 +1303,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1330,6 +1352,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string rootReference,
         string variableName,
         IReadOnlyDictionary<string, string> namedFieldMap,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames,
         bool emitNameScopeRegistration,
         string? nameScopeReference,
         bool shouldCreateVariable,
@@ -1557,6 +1580,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 variableName,
                 rootReference,
                 eventSubscription,
+                emittedEventBindingMethodNames,
                 emitDebugLineDirectives,
                 lineDirectiveFilePath);
         }
@@ -1605,6 +1629,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference: serviceProviderReference,
@@ -1679,6 +1704,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         indent,
                         rootReference,
                         namedFieldMap,
+                        emittedEventBindingMethodNames,
                         emitNameScopeRegistration,
                         nameScopeReference,
                         serviceProviderReference,
@@ -1757,6 +1783,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 indent,
                 rootReference,
                 namedFieldMap,
+                emittedEventBindingMethodNames,
                 emitNameScopeRegistration,
                 nameScopeReference,
                 serviceProviderReference: serviceProviderReference,
@@ -1868,6 +1895,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 factoryIndent,
                 rootReference,
                 EmptyNamedFieldMap,
+                emittedEventBindingMethodNames,
                 emitNameScopeRegistration: true,
                 nameScopeReference: templateScopeName,
                 completeNameScopeOnNodeCompletion: true,
@@ -1903,17 +1931,27 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string variableName,
         string rootReference,
         ResolvedEventSubscription eventSubscription,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames,
         bool emitDebugLineDirectives,
         string lineDirectiveFilePath)
     {
+        var handlerMethodName = ResolveEmittedEventBindingMethodName(
+            eventSubscription.HandlerMethodName,
+            emittedEventBindingMethodNames);
+
+        if (string.IsNullOrWhiteSpace(handlerMethodName))
+        {
+            return;
+        }
+
         if (eventSubscription.Kind == ResolvedEventSubscriptionKind.RoutedEvent &&
             !string.IsNullOrWhiteSpace(eventSubscription.RoutedEventOwnerTypeName) &&
             !string.IsNullOrWhiteSpace(eventSubscription.RoutedEventFieldName))
         {
             var routedEventReference = eventSubscription.RoutedEventOwnerTypeName + "." + eventSubscription.RoutedEventFieldName;
             var handlerExpression = string.IsNullOrWhiteSpace(eventSubscription.RoutedEventHandlerTypeName)
-                ? rootReference + "." + eventSubscription.HandlerMethodName
-                : "(" + eventSubscription.RoutedEventHandlerTypeName + ")" + rootReference + "." + eventSubscription.HandlerMethodName;
+                ? rootReference + "." + handlerMethodName
+                : "(" + eventSubscription.RoutedEventHandlerTypeName + ")" + rootReference + "." + handlerMethodName;
             AppendSourceMappedLine(
                 sourceBuilder,
                 $"{indent}{variableName}.RemoveHandler({routedEventReference}, {handlerExpression});",
@@ -1933,14 +1971,14 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         AppendSourceMappedLine(
             sourceBuilder,
-            $"{indent}{variableName}.{eventSubscription.EventName} -= {rootReference}.{eventSubscription.HandlerMethodName};",
+            $"{indent}{variableName}.{eventSubscription.EventName} -= {rootReference}.{handlerMethodName};",
             emitDebugLineDirectives,
             lineDirectiveFilePath,
             eventSubscription.Line,
             eventSubscription.Column);
         AppendSourceMappedLine(
             sourceBuilder,
-            $"{indent}{variableName}.{eventSubscription.EventName} += {rootReference}.{eventSubscription.HandlerMethodName};",
+            $"{indent}{variableName}.{eventSubscription.EventName} += {rootReference}.{handlerMethodName};",
             emitDebugLineDirectives,
             lineDirectiveFilePath,
             eventSubscription.Line,
@@ -1955,6 +1993,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string indent,
         string rootReference,
         IReadOnlyDictionary<string, string> namedFieldMap,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames,
         bool emitNameScopeRegistration,
         string? nameScopeReference,
         string serviceProviderReference,
@@ -2001,6 +2040,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     indent,
                     rootReference,
                     namedFieldMap,
+                    emittedEventBindingMethodNames,
                     emitNameScopeRegistration,
                     nameScopeReference,
                     serviceProviderReference: serviceProviderReference,
@@ -2053,6 +2093,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     indent,
                     rootReference,
                     namedFieldMap,
+                    emittedEventBindingMethodNames,
                     emitNameScopeRegistration,
                     nameScopeReference,
                     serviceProviderReference: serviceProviderReference,
@@ -2092,6 +2133,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             indent,
             rootReference,
             namedFieldMap,
+            emittedEventBindingMethodNames,
             emitNameScopeRegistration,
             nameScopeReference,
             serviceProviderReference: serviceProviderReference,
@@ -3052,6 +3094,155 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             : builder.ToImmutable();
     }
 
+    private static IReadOnlyDictionary<string, string> BuildStableEventBindingMethodNameMap(
+        ImmutableArray<ResolvedEventBindingDefinition> eventBindingDefinitions)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        var signatureNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        var usedNames = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < eventBindingDefinitions.Length; index++)
+        {
+            var definition = eventBindingDefinitions[index];
+            if (string.IsNullOrWhiteSpace(definition.GeneratedMethodName))
+            {
+                continue;
+            }
+
+            var signature = BuildStableEventBindingSignature(definition);
+            if (!signatureNames.TryGetValue(signature, out var stableName))
+            {
+                stableName = "__AXSG_EventBinding_" + ComputeStableEventBindingSignatureHash(signature);
+                if (!usedNames.Add(stableName))
+                {
+                    var collisionIndex = 1;
+                    var collisionName = stableName + "_" + collisionIndex;
+                    while (!usedNames.Add(collisionName))
+                    {
+                        collisionIndex++;
+                        collisionName = stableName + "_" + collisionIndex;
+                    }
+
+                    stableName = collisionName;
+                }
+
+                signatureNames[signature] = stableName;
+            }
+
+            map[definition.GeneratedMethodName] = stableName;
+        }
+
+        return map.Count == 0
+            ? EmptyGeneratedMethodNameMap
+            : map;
+    }
+
+    private static string BuildStableEventBindingSignature(ResolvedEventBindingDefinition definition)
+    {
+        var builder = new StringBuilder();
+        AppendSignaturePart(builder, definition.DelegateTypeName);
+        AppendSignaturePart(builder, definition.TargetKind.ToString());
+        AppendSignaturePart(builder, definition.SourceMode.ToString());
+        AppendSignaturePart(builder, definition.TargetPath);
+        AppendSignaturePart(builder, definition.ParameterPath);
+        AppendSignaturePart(builder, definition.ParameterValueExpression);
+        AppendSignaturePart(builder, definition.DataContextTypeName);
+        AppendSignaturePart(builder, definition.RootTypeName);
+        AppendSignaturePart(builder, definition.CompiledDataContextTargetPath);
+        AppendSignaturePart(builder, definition.CompiledRootTargetPath);
+        AppendSignaturePart(builder, definition.CompiledDataContextLambdaExpression);
+        AppendSignaturePart(builder, definition.CompiledRootLambdaExpression);
+        AppendSignaturePart(builder, definition.CompiledDataContextParameterPath);
+        AppendSignaturePart(builder, definition.CompiledRootParameterPath);
+        AppendSignaturePart(builder, definition.PassEventArgs ? "1" : "0");
+
+        for (var parameterIndex = 0; parameterIndex < definition.Parameters.Length; parameterIndex++)
+        {
+            var parameter = definition.Parameters[parameterIndex];
+            AppendSignaturePart(builder, parameter.TypeName);
+            AppendSignaturePart(builder, parameter.Name);
+        }
+
+        if (definition.CompiledDataContextMethodCall is not null)
+        {
+            AppendSignaturePart(builder, definition.CompiledDataContextMethodCall.TargetPath);
+            AppendSignaturePart(builder, definition.CompiledDataContextMethodCall.MethodName);
+            for (var argumentIndex = 0; argumentIndex < definition.CompiledDataContextMethodCall.Arguments.Length; argumentIndex++)
+            {
+                var argument = definition.CompiledDataContextMethodCall.Arguments[argumentIndex];
+                AppendSignaturePart(builder, argument.Kind.ToString());
+                AppendSignaturePart(builder, argument.TypeName);
+            }
+        }
+
+        if (definition.CompiledRootMethodCall is not null)
+        {
+            AppendSignaturePart(builder, definition.CompiledRootMethodCall.TargetPath);
+            AppendSignaturePart(builder, definition.CompiledRootMethodCall.MethodName);
+            for (var argumentIndex = 0; argumentIndex < definition.CompiledRootMethodCall.Arguments.Length; argumentIndex++)
+            {
+                var argument = definition.CompiledRootMethodCall.Arguments[argumentIndex];
+                AppendSignaturePart(builder, argument.Kind.ToString());
+                AppendSignaturePart(builder, argument.TypeName);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AppendSignaturePart(StringBuilder builder, string? value)
+    {
+        if (builder.Length > 0)
+        {
+            builder.Append('\u001F');
+        }
+
+        if (!string.IsNullOrEmpty(value))
+        {
+            builder.Append(value);
+        }
+    }
+
+    private static string ComputeStableEventBindingSignatureHash(string signature)
+    {
+        unchecked
+        {
+            const ulong offset = 14695981039346656037UL;
+            const ulong prime = 1099511628211UL;
+            var hash = offset;
+            for (var index = 0; index < signature.Length; index++)
+            {
+                hash ^= signature[index];
+                hash *= prime;
+            }
+
+            return hash.ToString("X16", CultureInfo.InvariantCulture);
+        }
+    }
+
+    private static string ResolveEmittedEventBindingMethodName(
+        string? generatedMethodName,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames)
+    {
+        if (generatedMethodName is null)
+        {
+            return string.Empty;
+        }
+
+        var methodName = generatedMethodName;
+        if (string.IsNullOrWhiteSpace(methodName))
+        {
+            return string.Empty;
+        }
+
+        if (emittedEventBindingMethodNames.TryGetValue(methodName, out var stableMethodName) &&
+            !string.IsNullOrWhiteSpace(stableMethodName))
+        {
+            return stableMethodName;
+        }
+
+        return methodName;
+    }
+
     private static void CollectEventBindingDefinitions(
         ResolvedObjectNode node,
         ImmutableArray<ResolvedEventBindingDefinition>.Builder builder,
@@ -3086,7 +3277,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
     private static void EmitEventBindingMethods(
         StringBuilder sourceBuilder,
-        ImmutableArray<ResolvedEventBindingDefinition> eventBindingDefinitions)
+        ImmutableArray<ResolvedEventBindingDefinition> eventBindingDefinitions,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames)
     {
         if (!eventBindingDefinitions.IsDefaultOrEmpty)
         {
@@ -3101,7 +3293,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         foreach (var definition in eventBindingDefinitions)
         {
-            if (string.IsNullOrWhiteSpace(definition.GeneratedMethodName))
+            var methodName = ResolveEmittedEventBindingMethodName(
+                definition.GeneratedMethodName,
+                emittedEventBindingMethodNames);
+
+            if (string.IsNullOrWhiteSpace(methodName))
             {
                 continue;
             }
@@ -3114,7 +3310,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 : "null";
 
             sourceBuilder.AppendLine(
-                $"        private void {definition.GeneratedMethodName}({BuildEventBindingParameterList(definition.Parameters)})");
+                $"        private void {methodName}({BuildEventBindingParameterList(definition.Parameters)})");
             sourceBuilder.AppendLine("        {");
             if (definition.TargetKind == ResolvedEventBindingTargetKind.Command)
             {
@@ -3199,7 +3395,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 sourceBuilder.AppendLine("            {");
                 sourceBuilder.AppendLine("            }");
             }
-            else
+            else if (definition.TargetKind == ResolvedEventBindingTargetKind.Method)
             {
                 var dataContextMethodInvocationExpression = string.Empty;
                 var dataContextMethodParameterExpression = "null";
@@ -3294,6 +3490,58 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 sourceBuilder.AppendLine("            {");
                 sourceBuilder.AppendLine("            }");
             }
+            else
+            {
+                var canEmitDataContextLambda = definition.SourceMode != ResolvedEventBindingSourceMode.Root &&
+                                               !string.IsNullOrWhiteSpace(definition.DataContextTypeName) &&
+                                               !string.IsNullOrWhiteSpace(definition.CompiledDataContextLambdaExpression);
+                var canEmitRootLambda = definition.SourceMode != ResolvedEventBindingSourceMode.DataContext &&
+                                        !string.IsNullOrWhiteSpace(definition.RootTypeName) &&
+                                        !string.IsNullOrWhiteSpace(definition.CompiledRootLambdaExpression);
+
+                sourceBuilder.AppendLine("            try");
+                sourceBuilder.AppendLine("            {");
+                if (canEmitDataContextLambda)
+                {
+                    sourceBuilder.AppendLine(
+                        $"                var __axsgDataContext = __TryGetEventBindingDataContext({senderExpression}) ?? __TryGetEventBindingDataContext(this);");
+                    sourceBuilder.AppendLine(
+                        $"                if (__axsgDataContext is {definition.DataContextTypeName} __axsgDataContextTyped)");
+                    sourceBuilder.AppendLine("                {");
+                    EmitCompiledEventLambdaInvocation(
+                        sourceBuilder,
+                        "                    ",
+                        definition,
+                        definition.CompiledDataContextLambdaExpression!,
+                        definition.DataContextTypeName!,
+                        "__axsgDataContextTyped",
+                        "this",
+                        senderExpression);
+                    sourceBuilder.AppendLine("                }");
+                }
+
+                if (canEmitRootLambda)
+                {
+                    sourceBuilder.AppendLine(
+                        $"                if (this is {definition.RootTypeName} __axsgRootTyped)");
+                    sourceBuilder.AppendLine("                {");
+                    EmitCompiledEventLambdaInvocation(
+                        sourceBuilder,
+                        "                    ",
+                        definition,
+                        definition.CompiledRootLambdaExpression!,
+                        "global::System.Object",
+                        "__axsgRootTyped",
+                        "__axsgRootTyped",
+                        senderExpression);
+                    sourceBuilder.AppendLine("                }");
+                }
+
+                sourceBuilder.AppendLine("            }");
+                sourceBuilder.AppendLine("            catch");
+                sourceBuilder.AppendLine("            {");
+                sourceBuilder.AppendLine("            }");
+            }
 
             sourceBuilder.AppendLine("        }");
             sourceBuilder.AppendLine();
@@ -3326,6 +3574,407 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildEventBindingInvocationArgumentList(ImmutableArray<ResolvedEventBindingParameter> parameters)
+    {
+        if (parameters.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        for (var index = 0; index < parameters.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(parameters[index].Name);
+        }
+
+        return builder.ToString();
+    }
+
+    private static void EmitCompiledEventLambdaInvocation(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string senderExpression)
+    {
+        if (TryParseCompiledEventLambda(
+                lambdaExpression,
+                out var lambdaParameterNames,
+                out var lambdaBodyCode,
+                out var lambdaBodyIsBlock))
+        {
+            EmitCompiledEventLambdaBodyInvocation(
+                sourceBuilder,
+                indent,
+                definition,
+                sourceTypeName,
+                sourceExpression,
+                rootExpression,
+                senderExpression,
+                lambdaParameterNames,
+                lambdaBodyCode,
+                lambdaBodyIsBlock);
+            return;
+        }
+
+        if (!definition.UsesInlineCodeContext)
+        {
+            sourceBuilder.AppendLine(indent + "var __axsgLambdaSource = " + sourceExpression + ";");
+            sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
+            sourceBuilder.AppendLine(indent + "__axsgHandler(" + BuildEventBindingInvocationArgumentList(definition.Parameters) + ");");
+            sourceBuilder.AppendLine(indent + "return;");
+            return;
+        }
+
+        var targetTypeName = string.IsNullOrWhiteSpace(definition.LambdaContextTargetTypeName)
+            ? "global::System.Object"
+            : definition.LambdaContextTargetTypeName!;
+
+        EmitInlineEventLambdaInvocationBlock(
+            sourceBuilder,
+            indent,
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            senderExpression,
+            "__axsgTargetTyped");
+
+        sourceBuilder.AppendLine(indent + "if ((object)this is " + targetTypeName + " __axsgSelfTargetTyped)");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndInvoke(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            "__axsgSelfTargetTyped");
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitCompiledEventLambdaBodyInvocation(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string senderExpression,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        if (!definition.UsesInlineCodeContext)
+        {
+            sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+            EmitLambdaParameterAliases(sourceBuilder, indent, definition, lambdaParameterNames);
+            EmitLambdaBody(sourceBuilder, indent, lambdaBodyCode, lambdaBodyIsBlock);
+            sourceBuilder.AppendLine(indent + "return;");
+            return;
+        }
+
+        var targetTypeName = string.IsNullOrWhiteSpace(definition.LambdaContextTargetTypeName)
+            ? "global::System.Object"
+            : definition.LambdaContextTargetTypeName!;
+
+        EmitInlineEventLambdaBodyInvocationBlock(
+            sourceBuilder,
+            indent,
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            senderExpression,
+            "__axsgTargetTyped",
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+
+        sourceBuilder.AppendLine(indent + "if ((object)this is " + targetTypeName + " __axsgSelfTargetTyped)");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndBody(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            "__axsgSelfTargetTyped",
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitInlineEventLambdaInvocationBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string senderExpression,
+        string targetVariableName)
+    {
+        sourceBuilder.AppendLine(indent + "if (" + senderExpression + " is " + targetTypeName + " " + targetVariableName + ")");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndInvoke(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            targetVariableName);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitInlineEventLambdaBodyInvocationBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string senderExpression,
+        string targetVariableName,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        sourceBuilder.AppendLine(indent + "if (" + senderExpression + " is " + targetTypeName + " " + targetVariableName + ")");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndBody(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            targetVariableName,
+            lambdaParameterNames,
+            lambdaBodyCode,
+            lambdaBodyIsBlock);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitInlineEventLambdaContextAndInvoke(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string targetExpression)
+    {
+        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
+        sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
+        sourceBuilder.AppendLine(indent + "__axsgHandler(" + BuildEventBindingInvocationArgumentList(definition.Parameters) + ");");
+    }
+
+    private static void EmitInlineEventLambdaContextAndBody(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string targetExpression,
+        ImmutableArray<string> lambdaParameterNames,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
+        sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
+        EmitLambdaParameterAliases(sourceBuilder, indent, definition, lambdaParameterNames);
+        EmitLambdaBody(sourceBuilder, indent, lambdaBodyCode, lambdaBodyIsBlock);
+    }
+
+    private static void EmitLambdaParameterAliases(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        ImmutableArray<string> lambdaParameterNames)
+    {
+        if (lambdaParameterNames.IsDefaultOrEmpty || definition.Parameters.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var count = Math.Min(lambdaParameterNames.Length, definition.Parameters.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var aliasName = lambdaParameterNames[index];
+            if (string.IsNullOrWhiteSpace(aliasName))
+            {
+                continue;
+            }
+
+            var wrapperParameter = definition.Parameters[index];
+            if (string.Equals(aliasName, wrapperParameter.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var wrapperTypeName = string.IsNullOrWhiteSpace(wrapperParameter.TypeName)
+                ? "object?"
+                : wrapperParameter.TypeName;
+            sourceBuilder.AppendLine(indent + wrapperTypeName + " " + aliasName + " = " + wrapperParameter.Name + ";");
+        }
+    }
+
+    private static void EmitLambdaBody(
+        StringBuilder sourceBuilder,
+        string indent,
+        string lambdaBodyCode,
+        bool lambdaBodyIsBlock)
+    {
+        if (string.IsNullOrWhiteSpace(lambdaBodyCode))
+        {
+            return;
+        }
+
+        if (lambdaBodyIsBlock)
+        {
+            AppendIndentedCodeBlock(sourceBuilder, indent, lambdaBodyCode);
+        }
+        else
+        {
+            sourceBuilder.AppendLine(indent + lambdaBodyCode.Trim() + ";");
+        }
+    }
+
+    private static void AppendIndentedCodeBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        string code)
+    {
+        var normalized = code.Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        foreach (var line in lines)
+        {
+            if (line.Length == 0)
+            {
+                sourceBuilder.AppendLine();
+                continue;
+            }
+
+            sourceBuilder.Append(indent);
+            sourceBuilder.AppendLine(line);
+        }
+    }
+
+    private static bool TryParseCompiledEventLambda(
+        string lambdaExpression,
+        out ImmutableArray<string> parameterNames,
+        out string lambdaBodyCode,
+        out bool lambdaBodyIsBlock)
+    {
+        parameterNames = ImmutableArray<string>.Empty;
+        lambdaBodyCode = string.Empty;
+        lambdaBodyIsBlock = false;
+
+        if (string.IsNullOrWhiteSpace(lambdaExpression))
+        {
+            return false;
+        }
+
+        var parsedExpression = SyntaxFactory.ParseExpression(lambdaExpression);
+        var parseDiagnostic = parsedExpression.GetDiagnostics()
+            .FirstOrDefault(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        if (parseDiagnostic is not null || parsedExpression is not AnonymousFunctionExpressionSyntax anonymousFunction)
+        {
+            return false;
+        }
+
+        parameterNames = GetLambdaParameterNames(anonymousFunction);
+        switch (anonymousFunction.Body)
+        {
+            case BlockSyntax blockSyntax:
+                lambdaBodyCode = blockSyntax.Statements.ToFullString().Trim();
+                lambdaBodyIsBlock = true;
+                return lambdaBodyCode.Length > 0;
+            case ExpressionSyntax expressionSyntax:
+                lambdaBodyCode = expressionSyntax.ToFullString().Trim();
+                lambdaBodyIsBlock = false;
+                return lambdaBodyCode.Length > 0;
+            default:
+                return false;
+        }
+    }
+
+    private static ImmutableArray<string> GetLambdaParameterNames(AnonymousFunctionExpressionSyntax anonymousFunction)
+    {
+        switch (anonymousFunction)
+        {
+            case SimpleLambdaExpressionSyntax simpleLambdaExpression:
+                return ImmutableArray.Create(simpleLambdaExpression.Parameter.Identifier.ValueText);
+            case ParenthesizedLambdaExpressionSyntax parenthesizedLambdaExpression:
+            {
+                if (parenthesizedLambdaExpression.ParameterList.Parameters.Count == 0)
+                {
+                    return ImmutableArray<string>.Empty;
+                }
+
+                var builder = ImmutableArray.CreateBuilder<string>(parenthesizedLambdaExpression.ParameterList.Parameters.Count);
+                foreach (var parameter in parenthesizedLambdaExpression.ParameterList.Parameters)
+                {
+                    builder.Add(parameter.Identifier.ValueText);
+                }
+
+                return builder.MoveToImmutable();
+            }
+            case AnonymousMethodExpressionSyntax anonymousMethodExpression when anonymousMethodExpression.ParameterList is not null:
+            {
+                if (anonymousMethodExpression.ParameterList.Parameters.Count == 0)
+                {
+                    return ImmutableArray<string>.Empty;
+                }
+
+                var builder = ImmutableArray.CreateBuilder<string>(anonymousMethodExpression.ParameterList.Parameters.Count);
+                foreach (var parameter in anonymousMethodExpression.ParameterList.Parameters)
+                {
+                    builder.Add(parameter.Identifier.ValueText);
+                }
+
+                return builder.MoveToImmutable();
+            }
+            default:
+                return ImmutableArray<string>.Empty;
+        }
     }
 
     private static bool TryBuildEventBindingMemberAccessExpression(
@@ -3690,20 +4339,24 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
     private static string BuildHotReloadEventCleanupDescriptorArrayExpression(
         ImmutableArray<ResolvedEventSubscription> eventSubscriptions,
-        string rootTypeName)
+        string rootTypeName,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames)
     {
         var builder = new StringBuilder();
         var hasDescriptors = false;
 
         foreach (var eventSubscription in eventSubscriptions)
         {
-            if (string.IsNullOrWhiteSpace(eventSubscription.HandlerMethodName) ||
-                !IsValidIdentifierForGeneratedMemberAccess(eventSubscription.HandlerMethodName))
+            var handlerMethodName = ResolveEmittedEventBindingMethodName(
+                eventSubscription.HandlerMethodName,
+                emittedEventBindingMethodNames);
+            if (string.IsNullOrWhiteSpace(handlerMethodName) ||
+                !IsValidIdentifierForGeneratedMemberAccess(handlerMethodName))
             {
                 continue;
             }
 
-            var token = BuildHotReloadEventToken(eventSubscription);
+            var token = BuildHotReloadEventToken(eventSubscription, handlerMethodName);
             if (eventSubscription.Kind == ResolvedEventSubscriptionKind.ClrEvent)
             {
                 if (string.IsNullOrWhiteSpace(eventSubscription.EventName) ||
@@ -3720,7 +4373,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 builder.Append(" __typed) { __typed.");
                 builder.Append(eventSubscription.EventName);
                 builder.Append(" -= __typed.");
-                builder.Append(eventSubscription.HandlerMethodName);
+                builder.Append(handlerMethodName);
                 builder.Append("; } })");
                 continue;
             }
@@ -3756,7 +4409,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             builder.Append(", (");
             builder.Append(eventSubscription.RoutedEventHandlerTypeName);
             builder.Append(")__typed.");
-            builder.Append(eventSubscription.HandlerMethodName);
+            builder.Append(handlerMethodName);
             builder.Append("); } })");
         }
 
@@ -3769,12 +4422,14 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         return builder.ToString();
     }
 
-    private static string BuildHotReloadEventToken(ResolvedEventSubscription eventSubscription)
+    private static string BuildHotReloadEventToken(
+        ResolvedEventSubscription eventSubscription,
+        string handlerMethodName)
     {
         var kindToken = eventSubscription.Kind == ResolvedEventSubscriptionKind.RoutedEvent ? "R" : "C";
         return kindToken + "|" +
                (eventSubscription.EventName ?? string.Empty) + "|" +
-               (eventSubscription.HandlerMethodName ?? string.Empty) + "|" +
+               handlerMethodName + "|" +
                (eventSubscription.RoutedEventOwnerTypeName ?? string.Empty) + "|" +
                (eventSubscription.RoutedEventFieldName ?? string.Empty) + "|" +
                (eventSubscription.RoutedEventHandlerTypeName ?? string.Empty);

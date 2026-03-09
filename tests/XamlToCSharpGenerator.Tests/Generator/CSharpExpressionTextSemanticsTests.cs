@@ -20,6 +20,21 @@ public class CSharpExpressionTextSemanticsTests
         Assert.Equal("'x' + \"hello\"", normalized);
     }
 
+    [Fact]
+    public void NormalizeExpressionCode_Converts_SingleQuoted_Interpolated_Strings_With_Format_Clauses()
+    {
+        var normalized = CSharpExpressionTextSemantics.NormalizeExpressionCode("$'Total: ${Price * Quantity:F2}'");
+
+        Assert.Equal("$\"Total: {Price * Quantity:F2}\"", normalized);
+    }
+
+    [Fact]
+    public void IsAsyncLambdaExpression_Detects_Async_Lambda()
+    {
+        Assert.True(CSharpMarkupExpressionSemantics.IsAsyncLambdaExpression("async (s, e) => SaveAsync()"));
+        Assert.False(CSharpMarkupExpressionSemantics.IsAsyncLambdaExpression("(s, e) => Count++"));
+    }
+
     [Theory]
     [InlineData("A + B", true)]
     [InlineData("A AND B", true)]

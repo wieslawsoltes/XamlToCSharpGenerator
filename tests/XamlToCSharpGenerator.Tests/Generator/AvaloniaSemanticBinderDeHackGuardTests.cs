@@ -364,7 +364,7 @@ public class AvaloniaSemanticBinderDeHackGuardTests
     {
         var source = ReadCSharpExpressionClassificationServiceSource();
 
-        Assert.Contains("MarkupExpressionEnvelopeSemantics.TryExtractInnerContent(", source, StringComparison.Ordinal);
+        Assert.Contains("CSharpMarkupExpressionSemantics.TryParseMarkupExpression(", source, StringComparison.Ordinal);
         Assert.DoesNotContain("trimmed.StartsWith(\"{\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("trimmed.Substring(1, trimmed.Length - 2)", source, StringComparison.Ordinal);
     }

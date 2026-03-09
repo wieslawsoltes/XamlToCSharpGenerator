@@ -36,7 +36,7 @@ internal sealed class SourceGenExpressionMultiValueConverter<TSource> : IMultiVa
         return null;
     }
 
-    private static object? CoerceEvaluatedValue(object? value, Type targetType, CultureInfo culture)
+    internal static object? CoerceEvaluatedValue(object? value, Type targetType, CultureInfo culture)
     {
         if (value is null ||
             targetType == typeof(object))

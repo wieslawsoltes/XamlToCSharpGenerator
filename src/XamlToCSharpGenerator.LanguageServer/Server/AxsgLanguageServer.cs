@@ -258,6 +258,15 @@ internal sealed class AxsgLanguageServer : IDisposable
                 }
                 break;
 
+            case "axsg/inlineCSharpProjections":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleInlineCSharpProjectionsAsync(requestId, requestParameters, token));
+                }
+                break;
+
             case "axsg/csharp/references":
                 if (hasId)
                 {
@@ -913,6 +922,54 @@ internal sealed class AxsgLanguageServer : IDisposable
         {
             ["text"] = documentText
         };
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleInlineCSharpProjectionsAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var version = parameters.TryGetProperty("version", out var versionElement) && versionElement.ValueKind == JsonValueKind.Number
+            ? versionElement.GetInt32()
+            : 0;
+        var documentTextOverride = parameters.TryGetProperty("documentText", out var textElement) &&
+                                   textElement.ValueKind == JsonValueKind.String
+            ? textElement.GetString()
+            : null;
+
+        if (!string.IsNullOrEmpty(documentTextOverride))
+        {
+            if (_openDocuments.TryGetValue(uri, out var state))
+            {
+                var effectiveVersion = version > 0 ? version : state.Version;
+                _openDocuments[uri] = new DocumentState(documentTextOverride!, effectiveVersion);
+                _engine.UpsertDocument(uri, documentTextOverride!, effectiveVersion);
+            }
+            else
+            {
+                var effectiveVersion = version > 0 ? version : 0;
+                _openDocuments[uri] = new DocumentState(documentTextOverride!, effectiveVersion);
+                _engine.UpsertDocument(uri, documentTextOverride!, effectiveVersion);
+            }
+        }
+
+        var projections = await _engine.GetInlineCSharpProjectionsAsync(
+            uri,
+            _navigationOptions,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var projection in projections)
+        {
+            payload.Add(new JsonObject
+            {
+                ["id"] = projection.Id,
+                ["kind"] = projection.Kind,
+                ["xamlRange"] = SerializeRange(NormalizeTransportRange(projection.XamlRange)),
+                ["projectedCodeRange"] = SerializeRange(NormalizeTransportRange(projection.ProjectedCodeRange)),
+                ["projectedText"] = projection.ProjectedText
+            });
+        }
+
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
     }
 

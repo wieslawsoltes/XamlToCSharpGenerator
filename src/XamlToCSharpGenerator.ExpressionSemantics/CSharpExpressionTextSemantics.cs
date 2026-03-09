@@ -15,6 +15,7 @@ public static class CSharpExpressionTextSemantics
 
         var normalized = ReplaceExpressionOperatorAliases(code.Trim());
         normalized = NormalizeSingleQuotedExpressionStrings(normalized);
+        normalized = NormalizeInterpolatedExpressionMarkers(normalized);
         return normalized.Trim();
     }
 
@@ -367,6 +368,55 @@ public static class CSharpExpressionTextSemantics
 
             result.Append('"');
             index = cursor + 1;
+        }
+
+        return result.ToString();
+    }
+
+    private static string NormalizeInterpolatedExpressionMarkers(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return code;
+        }
+
+        var result = new StringBuilder(code.Length);
+        var inInterpolatedString = false;
+        var interpolatedQuote = '\0';
+
+        for (var index = 0; index < code.Length; index++)
+        {
+            var current = code[index];
+            if (!inInterpolatedString &&
+                current == '$' &&
+                index + 1 < code.Length &&
+                code[index + 1] is '"' or '\'')
+            {
+                inInterpolatedString = true;
+                interpolatedQuote = code[index + 1];
+                result.Append(current);
+                result.Append(interpolatedQuote);
+                index++;
+                continue;
+            }
+
+            if (inInterpolatedString &&
+                current == '$' &&
+                index + 1 < code.Length &&
+                code[index + 1] == '{')
+            {
+                continue;
+            }
+
+            result.Append(current);
+
+            if (inInterpolatedString &&
+                current == interpolatedQuote &&
+                !IsEscapedChar(code, index))
+            {
+                inInterpolatedString = false;
+                interpolatedQuote = '\0';
+            }
         }
 
         return result.ToString();

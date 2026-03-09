@@ -2326,6 +2326,41 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (FindEvent(targetType, eventName) is { } eventSymbol)
         {
+            if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var inlineEventCode))
+            {
+                if (!TryBuildInlineEventCodeDefinition(
+                        rawCode: inlineEventCode,
+                        isLambdaExpression: CSharpMarkupExpressionSemantics.IsLambdaExpression(inlineEventCode),
+                        eventName: eventName,
+                        eventHandlerType: eventSymbol.Type,
+                        compilation: compilation,
+                        nodeDataType: nodeDataType,
+                        targetType: targetType,
+                        rootTypeSymbol: rootTypeSymbol,
+                        diagnostics: diagnostics,
+                        document: document,
+                        options: options,
+                        line: assignment.Line,
+                        column: assignment.Column,
+                        out var inlineEventDefinition))
+                {
+                    return true;
+                }
+
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: inlineEventDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.ClrEvent,
+                    RoutedEventOwnerTypeName: null,
+                    RoutedEventFieldName: null,
+                    RoutedEventHandlerTypeName: null,
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: inlineEventDefinition);
+                return true;
+            }
+
             if (TryParseMarkupExtension(assignment.Value, out var clrEventMarkupExtension) &&
                 IsEventBindingMarkupExtension(clrEventMarkupExtension))
             {
@@ -2355,6 +2390,39 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     Column: assignment.Column,
                     Condition: assignment.Condition,
                     EventBindingDefinition: eventBindingDefinition);
+                return true;
+            }
+
+            if (TryBindInlineEventLambda(
+                    assignment,
+                    eventName,
+                    compilation,
+                    eventSymbol.Type,
+                    nodeDataType,
+                    targetType,
+                    rootTypeSymbol,
+                    diagnostics,
+                    document,
+                    options,
+                    out var inlineLambdaDefinition,
+                    out var inlineLambdaHandled))
+            {
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: inlineLambdaDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.ClrEvent,
+                    RoutedEventOwnerTypeName: null,
+                    RoutedEventFieldName: null,
+                    RoutedEventHandlerTypeName: null,
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: inlineLambdaDefinition);
+                return true;
+            }
+
+            if (inlineLambdaHandled)
+            {
                 return true;
             }
 
@@ -2426,6 +2494,41 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 return true;
             }
 
+            if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var routedInlineEventCode))
+            {
+                if (!TryBuildInlineEventCodeDefinition(
+                        rawCode: routedInlineEventCode,
+                        isLambdaExpression: CSharpMarkupExpressionSemantics.IsLambdaExpression(routedInlineEventCode),
+                        eventName: eventName,
+                        eventHandlerType: routedEventHandlerTypeSymbol,
+                        compilation: compilation,
+                        nodeDataType: nodeDataType,
+                        targetType: targetType,
+                        rootTypeSymbol: rootTypeSymbol,
+                        diagnostics: diagnostics,
+                        document: document,
+                        options: options,
+                        line: assignment.Line,
+                        column: assignment.Column,
+                        out var inlineEventDefinition))
+                {
+                    return true;
+                }
+
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: inlineEventDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.RoutedEvent,
+                    RoutedEventOwnerTypeName: routedEventOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    RoutedEventFieldName: routedEventField.Name,
+                    RoutedEventHandlerTypeName: routedEventHandlerTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: inlineEventDefinition);
+                return true;
+            }
+
             if (TryParseMarkupExtension(assignment.Value, out var routedEventMarkupExtension) &&
                 IsEventBindingMarkupExtension(routedEventMarkupExtension))
             {
@@ -2455,6 +2558,39 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     Column: assignment.Column,
                     Condition: assignment.Condition,
                     EventBindingDefinition: eventBindingDefinition);
+                return true;
+            }
+
+            if (TryBindInlineEventLambda(
+                    assignment,
+                    eventName,
+                    compilation,
+                    routedEventHandlerTypeSymbol,
+                    nodeDataType,
+                    targetType,
+                    rootTypeSymbol,
+                    diagnostics,
+                    document,
+                    options,
+                    out var routedInlineLambdaDefinition,
+                    out var routedInlineLambdaHandled))
+            {
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: routedInlineLambdaDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.RoutedEvent,
+                    RoutedEventOwnerTypeName: routedEventOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    RoutedEventFieldName: routedEventField.Name,
+                    RoutedEventHandlerTypeName: routedEventHandlerTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: routedInlineLambdaDefinition);
+                return true;
+            }
+
+            if (routedInlineLambdaHandled)
+            {
                 return true;
             }
 
@@ -2508,6 +2644,332 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return false;
+    }
+
+    private static bool TryBindInlineEventLambda(
+        XamlPropertyAssignment assignment,
+        string eventName,
+        Compilation compilation,
+        ITypeSymbol eventHandlerType,
+        INamedTypeSymbol? nodeDataType,
+        INamedTypeSymbol targetType,
+        INamedTypeSymbol? rootTypeSymbol,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        out ResolvedEventBindingDefinition? eventBindingDefinition,
+        out bool handled)
+    {
+        eventBindingDefinition = null;
+        handled = false;
+
+        if (!TryParseInlineEventLambdaExpression(assignment.Value, out var lambdaExpression))
+        {
+            return false;
+        }
+
+        handled = true;
+
+        if (CSharpMarkupExpressionSemantics.IsAsyncLambdaExpression(lambdaExpression))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0600",
+                $"Inline event lambda on '{eventName}' does not support async lambdas.",
+                document.FilePath,
+                assignment.Line,
+                assignment.Column,
+                options.StrictMode));
+            return false;
+        }
+
+        return TryBuildInlineEventCodeDefinition(
+            rawCode: lambdaExpression,
+            isLambdaExpression: true,
+            eventName: eventName,
+            eventHandlerType: eventHandlerType,
+            compilation: compilation,
+            nodeDataType: nodeDataType,
+            targetType: targetType,
+            rootTypeSymbol: rootTypeSymbol,
+            diagnostics: diagnostics,
+            document: document,
+            options: options,
+            line: assignment.Line,
+            column: assignment.Column,
+            out eventBindingDefinition);
+    }
+
+    private static bool TryBindInlineEventCodeSubscription(
+        INamedTypeSymbol targetType,
+        string propertyName,
+        string rawCode,
+        int line,
+        int column,
+        ConditionalXamlExpression? condition,
+        Compilation compilation,
+        INamedTypeSymbol? nodeDataType,
+        INamedTypeSymbol? rootTypeSymbol,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        out ResolvedEventSubscription? subscription)
+    {
+        subscription = null;
+        var eventName = NormalizePropertyName(propertyName);
+        var isLambdaExpression = CSharpMarkupExpressionSemantics.IsLambdaExpression(rawCode);
+
+        if (FindEvent(targetType, eventName) is { } eventSymbol)
+        {
+            if (!TryBuildInlineEventCodeDefinition(
+                    rawCode,
+                    isLambdaExpression,
+                    eventName,
+                    eventSymbol.Type,
+                    compilation,
+                    nodeDataType,
+                    targetType,
+                    rootTypeSymbol,
+                    diagnostics,
+                    document,
+                    options,
+                    line,
+                    column,
+                    out var eventBindingDefinition))
+            {
+                return true;
+            }
+
+            subscription = new ResolvedEventSubscription(
+                EventName: eventName,
+                HandlerMethodName: eventBindingDefinition!.GeneratedMethodName,
+                Kind: ResolvedEventSubscriptionKind.ClrEvent,
+                RoutedEventOwnerTypeName: null,
+                RoutedEventFieldName: null,
+                RoutedEventHandlerTypeName: null,
+                Line: line,
+                Column: column,
+                Condition: condition,
+                EventBindingDefinition: eventBindingDefinition);
+            return true;
+        }
+
+        if (TryFindStaticEventField(
+                targetType,
+                eventName,
+                out var routedEventOwnerType,
+                out var routedEventField))
+        {
+            if (!TryResolveRoutedEventHandlerType(routedEventField.Type, compilation, out var routedEventHandlerTypeSymbol))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0600",
+                    $"Event definition '{routedEventOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.{routedEventField.Name}' is not compatible with Avalonia routed events.",
+                    document.FilePath,
+                    line,
+                    column,
+                    options.StrictMode));
+                return true;
+            }
+
+            if (!TryBuildInlineEventCodeDefinition(
+                    rawCode,
+                    isLambdaExpression,
+                    eventName,
+                    routedEventHandlerTypeSymbol,
+                    compilation,
+                    nodeDataType,
+                    targetType,
+                    rootTypeSymbol,
+                    diagnostics,
+                    document,
+                    options,
+                    line,
+                    column,
+                    out var routedEventDefinition))
+            {
+                return true;
+            }
+
+            subscription = new ResolvedEventSubscription(
+                EventName: eventName,
+                HandlerMethodName: routedEventDefinition!.GeneratedMethodName,
+                Kind: ResolvedEventSubscriptionKind.RoutedEvent,
+                RoutedEventOwnerTypeName: routedEventOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                RoutedEventFieldName: routedEventField.Name,
+                RoutedEventHandlerTypeName: routedEventHandlerTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                Line: line,
+                Column: column,
+                Condition: condition,
+                EventBindingDefinition: routedEventDefinition);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryBuildInlineEventCodeDefinition(
+        string rawCode,
+        bool isLambdaExpression,
+        string eventName,
+        ITypeSymbol eventHandlerType,
+        Compilation compilation,
+        INamedTypeSymbol? nodeDataType,
+        INamedTypeSymbol targetType,
+        INamedTypeSymbol? rootTypeSymbol,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        int line,
+        int column,
+        out ResolvedEventBindingDefinition? eventBindingDefinition)
+    {
+        eventBindingDefinition = null;
+        var rootTypeName = rootTypeSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                           ?? (document.IsClassBacked ? document.ClassFullName : null);
+
+        if (string.IsNullOrWhiteSpace(rootTypeName))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0600",
+                $"Inline event code on '{eventName}' requires x:Class-backed root type.",
+                document.FilePath,
+                line,
+                column,
+                options.StrictMode));
+            return false;
+        }
+
+        if (eventHandlerType is not INamedTypeSymbol namedDelegateType ||
+            !TryBuildEventBindingDelegateSignature(
+                namedDelegateType,
+                out var delegateTypeName,
+                out var delegateParameters))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0600",
+                $"Inline event code on '{eventName}' is not supported for delegate type '{eventHandlerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}'.",
+                document.FilePath,
+                line,
+                column,
+                options.StrictMode));
+            return false;
+        }
+
+        var compiledDataContextLambdaExpression = (string?)null;
+        var compiledRootLambdaExpression = (string?)null;
+
+        if (nodeDataType is not null &&
+            TryAnalyzeInlineEventCode(
+                compilation,
+                nodeDataType,
+                rootTypeSymbol,
+                targetType,
+                namedDelegateType,
+                rawCode,
+                isLambdaExpression,
+                out var dataContextAnalysis,
+                out _))
+        {
+            compiledDataContextLambdaExpression = dataContextAnalysis.RewrittenLambdaExpression;
+        }
+
+        if (rootTypeSymbol is not null &&
+            TryAnalyzeInlineEventCode(
+                compilation,
+                sourceType: null,
+                rootType: rootTypeSymbol,
+                targetType: targetType,
+                delegateType: namedDelegateType,
+                rawCode: rawCode,
+                isLambdaExpression: isLambdaExpression,
+                out var rootAnalysis,
+                out _))
+        {
+            compiledRootLambdaExpression = rootAnalysis.RewrittenLambdaExpression;
+        }
+
+        if (!HasCompiledEventBindingCoverage(
+                ResolvedEventBindingSourceMode.DataContextThenRoot,
+                !string.IsNullOrWhiteSpace(compiledDataContextLambdaExpression),
+                !string.IsNullOrWhiteSpace(compiledRootLambdaExpression)))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0600",
+                $"Inline event code on '{eventName}' requires compile-time resolvable members against x:DataType, root, or target context.",
+                document.FilePath,
+                line,
+                column,
+                options.StrictMode));
+            return false;
+        }
+
+        var methodName = BuildGeneratedEventBindingMethodName(
+            eventName,
+            BuildInlineEventBindingStableKey(
+                rawCode,
+                eventHandlerType,
+                nodeDataType,
+                rootTypeSymbol,
+                targetType,
+                isLambdaExpression));
+        eventBindingDefinition = new ResolvedEventBindingDefinition(
+            GeneratedMethodName: methodName,
+            DelegateTypeName: delegateTypeName,
+            Parameters: delegateParameters,
+            TargetKind: ResolvedEventBindingTargetKind.Lambda,
+            SourceMode: ResolvedEventBindingSourceMode.DataContextThenRoot,
+            TargetPath: rawCode,
+            ParameterPath: null,
+            ParameterValueExpression: null,
+            HasParameterValueExpression: false,
+            PassEventArgs: false,
+            DataContextTypeName: nodeDataType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            RootTypeName: rootTypeName,
+            CompiledDataContextTargetPath: null,
+            CompiledRootTargetPath: null,
+            CompiledDataContextMethodCall: null,
+            CompiledRootMethodCall: null,
+            CompiledDataContextLambdaExpression: compiledDataContextLambdaExpression,
+            CompiledRootLambdaExpression: compiledRootLambdaExpression,
+            CompiledDataContextParameterPath: null,
+            CompiledRootParameterPath: null,
+            LambdaContextTargetTypeName: targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            UsesInlineCodeContext: true,
+            Line: line,
+            Column: column);
+        return true;
+    }
+
+    private static bool TryAnalyzeInlineEventCode(
+        Compilation compilation,
+        INamedTypeSymbol? sourceType,
+        INamedTypeSymbol? rootType,
+        INamedTypeSymbol? targetType,
+        INamedTypeSymbol delegateType,
+        string rawCode,
+        bool isLambdaExpression,
+        out SourceContextLambdaAnalysisResult analysis,
+        out string errorMessage)
+    {
+        return isLambdaExpression
+            ? CSharpInlineCodeAnalysisService.TryAnalyzeLambda(
+                compilation,
+                sourceType,
+                rootType,
+                targetType,
+                delegateType,
+                rawCode,
+                out analysis,
+                out errorMessage)
+            : CSharpInlineCodeAnalysisService.TryAnalyzeEventStatements(
+                compilation,
+                sourceType,
+                rootType,
+                targetType,
+                delegateType,
+                rawCode,
+                out analysis,
+                out errorMessage);
     }
 
     private static bool TryBindEventBinding(
@@ -2749,8 +3211,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             CompiledRootTargetPath: compiledRootTargetPath,
             CompiledDataContextMethodCall: compiledDataContextMethodCall,
             CompiledRootMethodCall: compiledRootMethodCall,
+            CompiledDataContextLambdaExpression: null,
+            CompiledRootLambdaExpression: null,
             CompiledDataContextParameterPath: compiledDataContextParameterPath,
             CompiledRootParameterPath: compiledRootParameterPath,
+            LambdaContextTargetTypeName: null,
+            UsesInlineCodeContext: false,
             Line: assignment.Line,
             Column: assignment.Column);
         return true;
@@ -3227,6 +3693,33 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return EventBindingPathSemantics.BuildGeneratedMethodName(eventName, line, column);
     }
 
+    private static string BuildGeneratedEventBindingMethodName(string eventName, string stableKey)
+    {
+        return EventBindingPathSemantics.BuildGeneratedMethodName(eventName, stableKey);
+    }
+
+    private static string BuildInlineEventBindingStableKey(
+        string rawCode,
+        ITypeSymbol eventHandlerType,
+        INamedTypeSymbol? sourceType,
+        INamedTypeSymbol? rootType,
+        INamedTypeSymbol targetType,
+        bool isLambdaExpression)
+    {
+        return string.Concat(
+            eventHandlerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            "|",
+            sourceType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "<null>",
+            "|",
+            rootType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "<null>",
+            "|",
+            targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            "|",
+            isLambdaExpression ? "lambda" : "statements",
+            "|",
+            rawCode.Trim());
+    }
+
     private static bool TryBindAvaloniaPropertyAssignment(
         INamedTypeSymbol targetType,
         string targetTypeName,
@@ -3261,6 +3754,161 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var valueType = fallbackValueType ?? TryGetAvaloniaPropertyValueType(propertyField.Type);
+
+        if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var inlineCode))
+        {
+            if (!TryBuildInlineCodeBindingExpression(
+                    compilation,
+                    nodeDataType,
+                    rootTypeSymbol,
+                    setterTargetType ?? targetType,
+                    inlineCode,
+                    out var inlineBindingExpression,
+                    out _,
+                    out _,
+                    out var inlineErrorMessage))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0112",
+                    $"Inline C# for '{propertyName}' is invalid: {inlineErrorMessage}",
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                return true;
+            }
+
+            resolvedAssignment = new ResolvedPropertyAssignment(
+                PropertyName: propertyName,
+                ValueExpression: inlineBindingExpression,
+                AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                AvaloniaPropertyFieldName: propertyField.Name,
+                ClrPropertyOwnerTypeName: null,
+                ClrPropertyTypeName: null,
+                BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                    targetType,
+                    propertyField,
+                    compilation,
+                    bindingPriorityScope),
+                Line: assignment.Line,
+                Column: assignment.Column,
+                Condition: assignment.Condition,
+                ValueKind: ResolvedValueKind.Binding,
+                ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+            return true;
+        }
+
+        if (TryResolveImplicitCSharpShorthandExpression(
+                assignment.Value,
+                compilation,
+                document,
+                options,
+                nodeDataType,
+                rootTypeSymbol,
+                setterTargetType ?? targetType,
+                out var isShorthandExpression,
+                out var shorthandResolution))
+        {
+            if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
+                shorthandResolution.Path is not null &&
+                TryBuildRuntimeBindingExpression(
+                    compilation,
+                    document,
+                    new BindingMarkup(
+                        isCompiledBinding: false,
+                        path: shorthandResolution.Path,
+                        mode: null,
+                        elementName: null,
+                        relativeSource: null,
+                        source: null,
+                        converter: null,
+                        converterCulture: null,
+                        converterParameter: null,
+                        stringFormat: null,
+                        fallbackValue: null,
+                        targetNullValue: null,
+                        delay: null,
+                        priority: null,
+                        updateSourceTrigger: null,
+                        hasSourceConflict: false,
+                        sourceConflictMessage: null),
+                    setterTargetType ?? targetType,
+                    bindingPriorityScope,
+                    out var shorthandBindingExpression))
+            {
+                if (allowCompiledBindingRegistration &&
+                    shorthandResolution.SourceTypeName is not null &&
+                    shorthandResolution.AccessorExpression is not null)
+                {
+                    compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                        TargetTypeName: targetTypeName,
+                        TargetPropertyName: propertyName,
+                        Path: shorthandResolution.Path,
+                        SourceTypeName: shorthandResolution.SourceTypeName,
+                        ResultTypeName: shorthandResolution.ResultTypeName,
+                        AccessorExpression: shorthandResolution.AccessorExpression,
+                        IsSetterBinding: false,
+                        Line: assignment.Line,
+                        Column: assignment.Column));
+                }
+
+                resolvedAssignment = new ResolvedPropertyAssignment(
+                    PropertyName: propertyName,
+                    ValueExpression: shorthandBindingExpression,
+                    AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: propertyField.Name,
+                    ClrPropertyOwnerTypeName: null,
+                    ClrPropertyTypeName: null,
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        targetType,
+                        propertyField,
+                        compilation,
+                        bindingPriorityScope),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    ValueKind: ResolvedValueKind.Binding,
+                    ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+                return true;
+            }
+
+            if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
+                shorthandResolution.ValueExpression is not null)
+            {
+                resolvedAssignment = new ResolvedPropertyAssignment(
+                    PropertyName: propertyName,
+                    ValueExpression: shorthandResolution.ValueExpression,
+                    AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: propertyField.Name,
+                    ClrPropertyOwnerTypeName: null,
+                    ClrPropertyTypeName: null,
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        targetType,
+                        propertyField,
+                        compilation,
+                        bindingPriorityScope),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    ValueKind: ResolvedValueKind.Binding,
+                    ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+                return true;
+            }
+
+            if (isShorthandExpression &&
+                !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
+                !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    shorthandResolution.DiagnosticId!,
+                    shorthandResolution.DiagnosticMessage!,
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                return true;
+            }
+        }
 
         if (TryConvertCSharpExpressionMarkupToBindingExpression(
                 assignment.Value,
@@ -4494,6 +5142,25 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         handlerName = parsedHandlerName;
         return true;
+    }
+
+    private static bool TryParseInlineEventLambdaExpression(string value, out string lambdaExpression)
+    {
+        lambdaExpression = string.Empty;
+        if (!CSharpMarkupExpressionSemantics.TryParseMarkupExpression(
+                value,
+                implicitExpressionsEnabled: true,
+                looksLikeMarkupExtensionStart: static _ => false,
+                out var rawExpression,
+                out _,
+                out var isLambdaExpression) ||
+            !isLambdaExpression)
+        {
+            return false;
+        }
+
+        lambdaExpression = CSharpExpressionTextSemantics.NormalizeExpressionCode(rawExpression);
+        return lambdaExpression.Length > 0;
     }
 
     private static bool TryBuildDelegateMethodGroupValueExpression(

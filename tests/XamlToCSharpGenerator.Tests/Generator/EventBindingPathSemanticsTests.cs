@@ -96,4 +96,14 @@ public class EventBindingPathSemanticsTests
         var generated = EventBindingPathSemantics.BuildGeneratedMethodName("Pointer-Pressed", 12, 34);
         Assert.Equal("__AXSG_EventBinding_Pointer_Pressed_12_34", generated);
     }
+
+    [Fact]
+    public void BuildGeneratedMethodName_With_StableKey_Is_Deterministic()
+    {
+        var generated = EventBindingPathSemantics.BuildGeneratedMethodName(
+            "Pointer-Pressed",
+            "global::System.EventHandler|lambda|source.Count++");
+
+        Assert.Equal("__AXSG_EventBinding_Pointer_Pressed_HA7695AE0", generated);
+    }
 }

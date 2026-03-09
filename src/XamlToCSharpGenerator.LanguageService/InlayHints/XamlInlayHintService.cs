@@ -98,31 +98,79 @@ public sealed class XamlInlayHintService
                         bindingHint.ResultTypeLocation);
                 }
 
-                if (!XamlExpressionBindingNavigationService.TryResolveInlayHintTarget(
+                if (XamlExpressionBindingNavigationService.TryResolveInlayHintTarget(
                         analysis,
                         analysis.Document.Text,
                         element,
                         attribute,
                         out var expressionHint))
                 {
-                    continue;
+                    AddInlayHint(
+                        builder,
+                        seen,
+                        expressionHint.HintAnchorRange,
+                        options,
+                        expressionHint.ResultTypeName,
+                        BuildTooltip(
+                            heading: "**Expression Binding**",
+                            targetTypeName: null,
+                            targetPropertyName: null,
+                            path: expressionHint.Expression,
+                            sourceTypeName: expressionHint.SourceTypeName,
+                            resultTypeName: expressionHint.ResultTypeName),
+                        expressionHint.ResultTypeLocation);
                 }
 
-                AddInlayHint(
-                    builder,
-                    seen,
-                    expressionHint.HintAnchorRange,
-                    options,
-                    expressionHint.ResultTypeName,
-                    BuildTooltip(
-                        heading: "**Expression Binding**",
-                        targetTypeName: null,
-                        targetPropertyName: null,
-                        path: expressionHint.Expression,
-                        sourceTypeName: expressionHint.SourceTypeName,
-                        resultTypeName: expressionHint.ResultTypeName),
-                    expressionHint.ResultTypeLocation);
+                if (XamlInlineCSharpNavigationService.TryResolveInlayHintTarget(
+                        analysis,
+                        analysis.Document.Text,
+                        element,
+                        attribute,
+                        out var inlineAttributeHint))
+                {
+                    AddInlayHint(
+                        builder,
+                        seen,
+                        inlineAttributeHint.HintAnchorRange,
+                        options,
+                        inlineAttributeHint.ResultTypeName,
+                        BuildTooltip(
+                            heading: "**Inline C#**",
+                            targetTypeName: null,
+                            targetPropertyName: null,
+                            path: inlineAttributeHint.Code,
+                            sourceTypeName: inlineAttributeHint.ContextTypeName,
+                            resultTypeName: inlineAttributeHint.ResultTypeName),
+                        inlineAttributeHint.ResultTypeLocation);
+                }
             }
+        }
+
+        foreach (var element in analysis.XmlDocument.Root?.DescendantsAndSelf() ?? Enumerable.Empty<XElement>())
+        {
+            if (!XamlInlineCSharpNavigationService.TryResolveInlayHintTarget(
+                    analysis,
+                    analysis.Document.Text,
+                    element,
+                    out var inlineElementHint))
+            {
+                continue;
+            }
+
+            AddInlayHint(
+                builder,
+                seen,
+                inlineElementHint.HintAnchorRange,
+                options,
+                inlineElementHint.ResultTypeName,
+                BuildTooltip(
+                    heading: "**Inline C#**",
+                    targetTypeName: null,
+                    targetPropertyName: null,
+                    path: inlineElementHint.Code,
+                    sourceTypeName: inlineElementHint.ContextTypeName,
+                    resultTypeName: inlineElementHint.ResultTypeName),
+                inlineElementHint.ResultTypeLocation);
         }
 
         return builder

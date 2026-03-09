@@ -6,7 +6,10 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Parsing;
+using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
 
@@ -22,36 +25,123 @@ internal static class XamlExpressionCompletionService
         out ImmutableArray<XamlCompletionItem> completions)
     {
         completions = ImmutableArray<XamlCompletionItem>.Empty;
-        if (!TryFindExpressionAttributeContext(analysis, position, out var element, out var expressionText, out var caretOffsetInExpression) ||
-            !XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(analysis, element, out var sourceType, out _) ||
-            !TryResolveExpressionReceiverType(analysis, sourceType, expressionText, caretOffsetInExpression, out var receiverType, out var memberPrefix))
+        if (!TryFindCompletionExpressionContext(
+                analysis,
+                position,
+                out var element,
+                out var attribute,
+                out _,
+                out var expressionInfo,
+                out var caretOffsetInExpression))
         {
             return false;
         }
 
-        completions = XamlClrMemberCompletionFactory.CreateMemberCompletions(
+        if (TryResolveForcedShorthandCompletion(
+                analysis,
+                element,
+                expressionInfo.RawExpression,
+                caretOffsetInExpression,
+                out var forcedReceiverType,
+                out var forcedMemberPrefix))
+        {
+            completions = XamlClrMemberCompletionFactory.CreateMemberCompletions(
+                    forcedReceiverType,
+                    forcedMemberPrefix,
+                    XamlMemberCompletionMode.Expression)
+                .DistinctBy(static item => item.Label, StringComparer.Ordinal)
+                .ToImmutableArray();
+            return completions.Length > 0;
+        }
+
+        if (!TryResolveExpressionSourceType(analysis, element, expressionInfo.RawExpression, out var sourceType) ||
+            !TryResolveCompletionExpression(
+                expressionInfo,
+                caretOffsetInExpression,
+                out var completionExpression,
+                out var completionCaretOffset,
+                out var isLambdaExpression) ||
+            !TryResolveExpressionReceiverType(
+                analysis,
+                sourceType,
+                completionExpression,
+                completionCaretOffset,
+                out var receiverType,
+                out var memberPrefix))
+        {
+            return false;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>();
+        if (isLambdaExpression)
+        {
+            AddLambdaParameterCompletions(builder, expressionInfo.RawExpression, memberPrefix);
+        }
+
+        builder.AddRange(XamlClrMemberCompletionFactory.CreateMemberCompletions(
             receiverType,
             memberPrefix,
-            XamlMemberCompletionMode.Expression);
+            XamlMemberCompletionMode.Expression));
+        completions = builder
+            .ToImmutable()
+            .DistinctBy(static item => item.Label, StringComparer.Ordinal)
+            .ToImmutableArray();
         return completions.Length > 0;
     }
 
-    private static bool TryFindExpressionAttributeContext(
+    private static bool TryFindCompletionExpressionContext(
         XamlAnalysisResult analysis,
         SourcePosition position,
         out XElement element,
-        out string expressionText,
+        out XAttribute attribute,
+        out SourceRange attributeValueRange,
+        out XamlCSharpMarkupExpressionInfo expressionInfo,
+        out int caretOffsetInExpression)
+    {
+        if (XamlCSharpMarkupExpressionService.TryFindMarkupExpressionAttributeContext(
+                analysis,
+                position,
+                out element,
+                out attribute,
+                out attributeValueRange,
+                out expressionInfo,
+                out caretOffsetInExpression))
+        {
+            return true;
+        }
+
+        return TryFindEmptyExplicitExpressionContext(
+            analysis,
+            position,
+            out element,
+            out attribute,
+            out attributeValueRange,
+            out expressionInfo,
+            out caretOffsetInExpression);
+    }
+
+    private static bool TryFindEmptyExplicitExpressionContext(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        out XElement element,
+        out XAttribute attribute,
+        out SourceRange attributeValueRange,
+        out XamlCSharpMarkupExpressionInfo expressionInfo,
         out int caretOffsetInExpression)
     {
         element = null!;
-        expressionText = string.Empty;
+        attribute = null!;
+        attributeValueRange = default;
+        expressionInfo = default;
         caretOffsetInExpression = -1;
+
         if (analysis.XmlDocument?.Root is null)
         {
             return false;
         }
 
-        var absoluteOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position);
+        var sourceText = analysis.Document.Text;
+        var absoluteOffset = TextCoordinateHelper.GetOffset(sourceText, position);
         if (absoluteOffset < 0)
         {
             return false;
@@ -62,32 +152,267 @@ internal static class XamlExpressionCompletionService
             foreach (var candidateAttribute in candidateElement.Attributes())
             {
                 if (!XamlXmlSourceRangeService.TryCreateAttributeValueRange(
-                        analysis.Document.Text,
+                        sourceText,
                         candidateAttribute,
                         out var valueRange))
                 {
                     continue;
                 }
 
-                var valueStart = TextCoordinateHelper.GetOffset(analysis.Document.Text, valueRange.Start);
-                var valueEnd = TextCoordinateHelper.GetOffset(analysis.Document.Text, valueRange.End);
+                var valueStart = TextCoordinateHelper.GetOffset(sourceText, valueRange.Start);
+                var valueEnd = TextCoordinateHelper.GetOffset(sourceText, valueRange.End);
                 if (valueStart < 0 || valueEnd < valueStart || absoluteOffset < valueStart || absoluteOffset > valueEnd)
                 {
                     continue;
                 }
 
-                var caretOffsetInValue = absoluteOffset - valueStart;
-                if (!TryExtractExplicitExpression(candidateAttribute.Value, caretOffsetInValue, out expressionText, out _, out caretOffsetInExpression))
+                var attributeValue = candidateAttribute.Value;
+                if (!TryGetEmptyExplicitExpressionSpan(attributeValue, out var expressionStartInValue, out var expressionEndInValue))
+                {
+                    continue;
+                }
+
+                var expressionStartOffset = valueStart + expressionStartInValue;
+                var expressionEndOffset = valueStart + expressionEndInValue;
+                if (absoluteOffset < expressionStartOffset || absoluteOffset > expressionEndOffset)
                 {
                     continue;
                 }
 
                 element = candidateElement;
+                attribute = candidateAttribute;
+                attributeValueRange = valueRange;
+                expressionInfo = new XamlCSharpMarkupExpressionInfo(
+                    RawExpression: string.Empty,
+                    NormalizedExpression: string.Empty,
+                    ExpressionStartOffset: expressionStartOffset,
+                    ExpressionLength: 0,
+                    IsExplicitExpression: true,
+                    Kind: XamlCSharpMarkupExpressionKind.Expression);
+                caretOffsetInExpression = 0;
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static bool TryGetEmptyExplicitExpressionSpan(
+        string attributeValue,
+        out int expressionStartInValue,
+        out int expressionEndInValue)
+    {
+        expressionStartInValue = 0;
+        expressionEndInValue = 0;
+
+        if (string.IsNullOrWhiteSpace(attributeValue))
+        {
+            return false;
+        }
+
+        var trimmedStart = 0;
+        while (trimmedStart < attributeValue.Length && char.IsWhiteSpace(attributeValue[trimmedStart]))
+        {
+            trimmedStart++;
+        }
+
+        var trimmedEnd = attributeValue.Length;
+        while (trimmedEnd > trimmedStart && char.IsWhiteSpace(attributeValue[trimmedEnd - 1]))
+        {
+            trimmedEnd--;
+        }
+
+        if (trimmedEnd - trimmedStart < 3 ||
+            attributeValue[trimmedStart] != '{' ||
+            attributeValue[trimmedEnd - 1] != '}')
+        {
+            return false;
+        }
+
+        var cursor = trimmedStart + 1;
+        while (cursor < trimmedEnd - 1 && char.IsWhiteSpace(attributeValue[cursor]))
+        {
+            cursor++;
+        }
+
+        if (cursor >= trimmedEnd - 1 || attributeValue[cursor] != '=')
+        {
+            return false;
+        }
+
+        cursor++;
+        while (cursor < trimmedEnd - 1 && char.IsWhiteSpace(attributeValue[cursor]))
+        {
+            cursor++;
+        }
+
+        if (cursor != trimmedEnd - 1)
+        {
+            return false;
+        }
+
+        expressionStartInValue = cursor;
+        expressionEndInValue = cursor;
+        return true;
+    }
+
+    private static bool TryResolveExpressionSourceType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string rawExpression,
+        out INamedTypeSymbol sourceType)
+    {
+        sourceType = null!;
+        if (rawExpression.StartsWith("this.", StringComparison.Ordinal))
+        {
+            return TryResolveRootType(analysis, out sourceType);
+        }
+
+        if (rawExpression.StartsWith(".", StringComparison.Ordinal) ||
+            rawExpression.StartsWith("BindingContext.", StringComparison.Ordinal))
+        {
+            return XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                analysis,
+                element,
+                out sourceType,
+                out _);
+        }
+
+        return XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                   analysis,
+                   element,
+                    out sourceType,
+                   out _) ||
+               TryResolveRootType(analysis, out sourceType);
+    }
+
+    private static bool TryResolveForcedShorthandCompletion(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string rawExpression,
+        int caretOffsetInExpression,
+        out INamedTypeSymbol receiverType,
+        out string memberPrefix)
+    {
+        receiverType = null!;
+        memberPrefix = string.Empty;
+
+        if (rawExpression.StartsWith("this.", StringComparison.Ordinal))
+        {
+            if (!TryResolveRootType(analysis, out receiverType))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, "this.".Length, caretOffsetInExpression);
+            return true;
+        }
+
+        if (rawExpression.StartsWith("BindingContext.", StringComparison.Ordinal))
+        {
+            if (!XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                    analysis,
+                    element,
+                    out receiverType,
+                    out _))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, "BindingContext.".Length, caretOffsetInExpression);
+            return true;
+        }
+
+        if (rawExpression.StartsWith(".", StringComparison.Ordinal))
+        {
+            if (!XamlSemanticSourceTypeResolver.TryResolveAmbientDataType(
+                    analysis,
+                    element,
+                    out receiverType,
+                    out _))
+            {
+                return false;
+            }
+
+            memberPrefix = ExtractForcedMemberPrefix(rawExpression, 1, caretOffsetInExpression);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string ExtractForcedMemberPrefix(
+        string rawExpression,
+        int prefixLength,
+        int caretOffsetInExpression)
+    {
+        var boundedCaret = Math.Clamp(caretOffsetInExpression, prefixLength, rawExpression.Length);
+        var prefix = rawExpression.Substring(prefixLength, boundedCaret - prefixLength);
+        return prefix.Trim();
+    }
+
+    private static bool TryResolveRootType(
+        XamlAnalysisResult analysis,
+        out INamedTypeSymbol sourceType)
+    {
+        sourceType = null!;
+        var classFullName = analysis.ParsedDocument?.ClassFullName;
+        if (string.IsNullOrWhiteSpace(classFullName))
+        {
+            return false;
+        }
+
+        var resolvedType = XamlSemanticSourceTypeResolver.ResolveTypeSymbolByFullTypeName(
+            analysis.Compilation,
+            classFullName);
+        if (resolvedType is null)
+        {
+            return false;
+        }
+
+        sourceType = resolvedType;
+        return true;
+    }
+
+    private static bool TryResolveCompletionExpression(
+        XamlCSharpMarkupExpressionInfo expressionInfo,
+        int caretOffsetInExpression,
+        out string completionExpression,
+        out int completionCaretOffset,
+        out bool isLambdaExpression)
+    {
+        completionExpression = expressionInfo.RawExpression;
+        completionCaretOffset = Math.Clamp(caretOffsetInExpression, 0, completionExpression.Length);
+        isLambdaExpression = expressionInfo.Kind == XamlCSharpMarkupExpressionKind.Lambda;
+
+        if (!isLambdaExpression)
+        {
+            return true;
+        }
+
+        var arrowIndex = FindLambdaArrow(expressionInfo.RawExpression);
+        if (arrowIndex < 0)
+        {
+            return false;
+        }
+
+        var bodyStart = arrowIndex + 2;
+        while (bodyStart < expressionInfo.RawExpression.Length &&
+               char.IsWhiteSpace(expressionInfo.RawExpression[bodyStart]))
+        {
+            bodyStart++;
+        }
+
+        if (caretOffsetInExpression <= bodyStart)
+        {
+            completionExpression = string.Empty;
+            completionCaretOffset = 0;
+            return true;
+        }
+
+        completionExpression = expressionInfo.RawExpression.Substring(bodyStart);
+        completionCaretOffset = Math.Clamp(caretOffsetInExpression - bodyStart, 0, completionExpression.Length);
+        return true;
     }
 
     private static bool TryResolveExpressionReceiverType(
@@ -100,6 +425,11 @@ internal static class XamlExpressionCompletionService
     {
         receiverType = sourceType;
         memberPrefix = string.Empty;
+
+        if (string.IsNullOrEmpty(expressionText))
+        {
+            return true;
+        }
 
         if (!TryCreateCompletionExpression(expressionText, caretOffsetInExpression, out memberPrefix, out var completionExpression))
         {
@@ -263,59 +593,109 @@ internal static class XamlExpressionCompletionService
         return builder.ToString();
     }
 
-    private static bool TryExtractExplicitExpression(
-        string attributeValue,
-        int caretOffsetInValue,
-        out string expressionText,
-        out int expressionStartInValue,
-        out int caretOffsetInExpression)
+    private static void AddLambdaParameterCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder builder,
+        string rawExpression,
+        string memberPrefix)
     {
-        expressionText = string.Empty;
-        expressionStartInValue = 0;
-        caretOffsetInExpression = -1;
-        if (string.IsNullOrWhiteSpace(attributeValue))
+        if (string.IsNullOrWhiteSpace(rawExpression))
+        {
+            return;
+        }
+
+        var arrowIndex = FindLambdaArrow(rawExpression);
+        if (arrowIndex <= 0)
+        {
+            return;
+        }
+
+        var header = rawExpression.Substring(0, arrowIndex).Trim();
+        if (header.Length == 0)
+        {
+            return;
+        }
+
+        if (header[0] == '(' && header[^1] == ')' && header.Length >= 2)
+        {
+            header = header.Substring(1, header.Length - 2);
+        }
+
+        foreach (var parameterToken in header.Split(','))
+        {
+            var candidate = parameterToken.Trim();
+            if (candidate.Length == 0)
+            {
+                continue;
+            }
+
+            var lastSpace = candidate.LastIndexOf(' ');
+            if (lastSpace >= 0 && lastSpace < candidate.Length - 1)
+            {
+                candidate = candidate.Substring(lastSpace + 1);
+            }
+
+            if (!IsIdentifierPrefix(candidate))
+            {
+                continue;
+            }
+
+            builder.Add(new XamlCompletionItem(
+                candidate,
+                candidate,
+                XamlCompletionItemKind.Property,
+                "lambda parameter"));
+        }
+    }
+
+    private static int FindLambdaArrow(string expressionText)
+    {
+        var inSingleQuotedString = false;
+        var inDoubleQuotedString = false;
+        for (var index = 0; index + 1 < expressionText.Length; index++)
+        {
+            var current = expressionText[index];
+            if (!inDoubleQuotedString &&
+                current == '\'' &&
+                !IsEscapedChar(expressionText, index))
+            {
+                inSingleQuotedString = !inSingleQuotedString;
+                continue;
+            }
+
+            if (!inSingleQuotedString &&
+                current == '"' &&
+                !IsEscapedChar(expressionText, index))
+            {
+                inDoubleQuotedString = !inDoubleQuotedString;
+                continue;
+            }
+
+            if (!inSingleQuotedString &&
+                !inDoubleQuotedString &&
+                current == '=' &&
+                expressionText[index + 1] == '>')
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsEscapedChar(string text, int index)
+    {
+        if (index <= 0 || index >= text.Length)
         {
             return false;
         }
 
-        var trimmedStart = 0;
-        while (trimmedStart < attributeValue.Length && char.IsWhiteSpace(attributeValue[trimmedStart]))
+        var escapeCount = 0;
+        for (var current = index - 1; current >= 0 && text[current] == '\\'; current--)
         {
-            trimmedStart++;
+            escapeCount++;
         }
 
-        if (trimmedStart + 1 >= attributeValue.Length ||
-            attributeValue[trimmedStart] != '{' ||
-            attributeValue[trimmedStart + 1] != '=')
-        {
-            return false;
-        }
-
-        expressionStartInValue = trimmedStart + 2;
-        while (expressionStartInValue < attributeValue.Length && char.IsWhiteSpace(attributeValue[expressionStartInValue]))
-        {
-            expressionStartInValue++;
-        }
-
-        var trimmedEnd = attributeValue.Length;
-        while (trimmedEnd > expressionStartInValue && char.IsWhiteSpace(attributeValue[trimmedEnd - 1]))
-        {
-            trimmedEnd--;
-        }
-
-        if (trimmedEnd > expressionStartInValue && attributeValue[trimmedEnd - 1] == '}')
-        {
-            trimmedEnd--;
-        }
-
-        if (caretOffsetInValue < expressionStartInValue || caretOffsetInValue > Math.Max(expressionStartInValue, trimmedEnd))
-        {
-            return false;
-        }
-
-        expressionText = attributeValue.Substring(expressionStartInValue, Math.Max(0, trimmedEnd - expressionStartInValue));
-        caretOffsetInExpression = Math.Clamp(caretOffsetInValue - expressionStartInValue, 0, expressionText.Length);
-        return true;
+        return escapeCount % 2 == 1;
     }
 
     private static bool IsIdentifierPrefix(string prefix)

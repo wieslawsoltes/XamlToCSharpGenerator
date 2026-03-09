@@ -97,6 +97,12 @@
       <TabItem Header="C# Expressions">
         <pages:ExpressionBindingsPage DataContext="{Binding Expressions}" />
       </TabItem>
+      <TabItem Header="Inline C#">
+        <pages:InlineCodePage DataContext="{Binding InlineCode}" />
+      </TabItem>
+      <TabItem Header="Inline C# CDATA">
+        <pages:InlineCodeCDataPage DataContext="{Binding InlineCodeCData}" />
+      </TabItem>
       <TabItem Header="Event Bindings">
         <pages:EventBindingsPage DataContext="{Binding EventBindings}" />
       </TabItem>
