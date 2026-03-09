@@ -16,7 +16,7 @@ The repository ships both a recommended end-user install surface and the lower-l
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Editor.Avalonia?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Editor.Avalonia?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | Editor/tool authors | `dotnet add package XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based AXAML editor control backed by the AXSG language-service core. |
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageService?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageService?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | Tooling authors | `dotnet add package XamlToCSharpGenerator.LanguageService` | Shared semantic language-service layer used by LSP and in-app editors. |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageServer.Tool?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageServer.Tool?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | CLI and editor integration | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` | Packs the `axsg-lsp` command for LSP hosting outside VS Code. |
-| `AXSG XAML Language Service` | VS Code extension (`.vsix`) | [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/xamltocsharpgenerator.axsg-language-server?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | [![Downloads](https://img.shields.io/visual-studio-marketplace/d/xamltocsharpgenerator.axsg-language-server?label=Downloads)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | VS Code users | `code --install-extension ./axsg-language-server-<version>.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, and semantic highlighting. |
+| `AXSG XAML Language Service` | VS Code extension (`.vsix`) | [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/xamltocsharpgenerator.axsg-language-server?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | [![Downloads](https://img.shields.io/visual-studio-marketplace/d/xamltocsharpgenerator.axsg-language-server?label=Downloads)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | VS Code users | `code --install-extension ./axsg-language-server-<version>.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, semantic highlighting, and inline C# editor support. |
 | `XamlToCSharpGenerator.Generator` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Generator?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Generator?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Generator` | Standalone Roslyn generator backend. Use when you need the generator without the umbrella package. |
 | `XamlToCSharpGenerator.Core` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Core?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Core?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Core` | Immutable parser model, diagnostics, configuration contracts, and shared semantic core. |
 | `XamlToCSharpGenerator.Compiler` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Compiler?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Compiler/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Compiler?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Compiler/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Compiler` | Incremental host orchestration and generator pipeline entry points. |
@@ -97,7 +97,7 @@ Use:
 - `LanguageService` for custom IDE or editor integrations.
 - `Editor.Avalonia` for an in-app AXAML editor surface.
 - `LanguageServer.Tool` when you need a CLI/LSP host.
-- the VS Code extension when you want the packaged editor experience.
+- the VS Code extension when you want the packaged editor experience, including inline C# completion, hover, references, definitions, inlay hints, and semantic highlighting inside attribute expressions, object-element code, and `<![CDATA[ ... ]]>` blocks.
 
 ### Compiler building blocks
 
@@ -116,19 +116,24 @@ The remaining NuGet packages exist for advanced composition:
 
 - Source-generated Avalonia XAML backend selected with `AvaloniaXamlCompilerBackend=SourceGen`
 - Compiled-binding-first workflow with semantic type analysis
-- C# expression bindings (`{= ...}` and optional implicit expression mode)
-- Event bindings for commands and methods
+- C# expression bindings with explicit, implicit, shorthand, interpolation, and formatting forms
+- Inline C# code via `{CSharp Code=...}`, `<CSharp>...</CSharp>`, and `<![CDATA[ ... ]]>` content blocks
+- Inline event handlers, including lambda expressions and multi-line statement bodies
+- Event bindings for commands, methods, and inline code
 - Global XML namespace imports and implicit namespace conventions
 - Conditional XAML pruning
 - Runtime loading for URI and inline XAML scenarios
 - Hot reload, iOS hot reload transport support, and hot design tooling
 - Shared XAML language-service core with references/definitions/hover/inlay hints/rename
+- Inline C# language-service support with semantic highlighting, completion, references, and declarations in both attribute and element-content forms
 - VS Code extension and Avalonia editor control built on the same semantic engine
 
 For feature-specific details:
 
 - configuration model: [`docs/configuration-model.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-model.md)
 - configuration migration: [`docs/configuration-migration.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-migration.md)
+- C# expressions: [`docs/csharp-expressions.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/csharp-expressions.md)
+- inline C# code blocks: [`docs/inline-csharp-code.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/inline-csharp-code.md)
 - iOS hot reload: [`docs/hot-reload-ios.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/hot-reload-ios.md)
 
 ## AXSG vs XamlX
@@ -143,7 +148,8 @@ For Avalonia, `XamlX` is the compiler foundation behind the default `XamlIl` bac
 | Compiled bindings | Yes | Yes | Both stacks support typed binding flows for Avalonia. |
 | Runtime loading | Shipped as AXSG runtime packages with source-generated registries | Shipped in Avalonia via `AvaloniaRuntimeXamlLoader` / `AvaloniaXamlIlRuntimeCompiler` | Both support runtime loading, but through different runtime contracts. |
 | AOT / trimming posture | Explicit project rule: no reflection in emitted/runtime execution paths | Compile-time path is mature; Avalonia runtime loader paths are marked `RequiresUnreferencedCode` | AXSG is stricter here because NativeAOT/trimming is a first-class contract in this repo. |
-| C# expression bindings (`{= ...}`) | Yes | No equivalent compiler feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
+| C# expression bindings (`{= ...}`, shorthand, interpolation) | Yes | No equivalent compiler feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
+| Inline C# code blocks (`{CSharp ...}`, `<CSharp>`, `<![CDATA[ ... ]]>`) | Yes | No equivalent compiler feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
 | Event bindings | Yes | No equivalent AXSG-style event-binding feature in Avalonia `XamlIl` baseline | AXSG-specific extension. |
 | Conditional XAML pruning | Yes | Not part of the default Avalonia `XamlIl` compiler surface | AXSG-specific extension. |
 | Global xmlns and transform-rule configuration | Yes | Not exposed as the same unified configuration model | AXSG-specific configuration surface. |

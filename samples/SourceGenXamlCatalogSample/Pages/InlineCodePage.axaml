@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.InlineCodePage"
+             x:DataType="vm:InlineCodePageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Compact inline code" />
+          <TextBlock Text="{CSharp Code=source.ProductName}" />
+          <TextBlock Text="{CSharp Code=$&quot;{source.Quantity}x {source.ProductName}&quot;}" />
+          <TextBlock Text="{CSharp Code=$&quot;Total: {source.Price * source.Quantity:F2}&quot;}" />
+          <TextBlock Text="{CSharp Code=source.IsVip ? &quot;Gold Member&quot; : &quot;Standard&quot;}" />
+          <TextBlock Text="Visible while not loading"
+                     IsVisible="{CSharp Code=!source.IsLoading}" />
+          <Button Content="Submit"
+                  IsEnabled="{CSharp Code=source.HasAccount &amp;&amp; source.AgreedToTerms}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Object-element inline code" />
+          <TextBlock>
+            <TextBlock.Text>
+              <CSharp>
+                source.FormatSummary(source.ProductName, source.Quantity)
+              </CSharp>
+            </TextBlock.Text>
+          </TextBlock>
+          <TextBlock>
+            <TextBlock.Text>
+              <CSharp Code="source.ProductName + &quot; #&quot; + source.ClickCount" />
+            </TextBlock.Text>
+          </TextBlock>
+          <TextBlock Text="{Binding LastAction}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Inline event code" />
+          <Button Content="{CSharp Code=$&quot;Clicked {source.ClickCount} times&quot;}"
+                  Click="{CSharp Code=(sender, e) => source.ClickCount++}" />
+          <Button Content="Reset with statement block">
+            <Button.Click>
+              <CSharp>
+                source.ClickCount = 0;
+                source.LastAction = "Reset from inline statements.";
+              </CSharp>
+            </Button.Click>
+          </Button>
+          <Button Content="Record sender type">
+            <Button.Click>
+              <CSharp Code="source.RecordSender(sender);" />
+            </Button.Click>
+          </Button>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

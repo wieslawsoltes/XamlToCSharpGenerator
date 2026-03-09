@@ -24,6 +24,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ExpressionBindingsPageViewModel Expressions { get; } = new();
 
+    public InlineCodePageViewModel InlineCode { get; } = new();
+
+    public InlineCodePageViewModel InlineCodeCData { get; } = new();
+
     public EventBindingsPageViewModel EventBindings { get; } = new();
 
     public GlobalXmlnsPageViewModel GlobalXmlns { get; } = new();

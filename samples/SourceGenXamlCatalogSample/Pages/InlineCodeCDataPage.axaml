@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.InlineCodeCDataPage"
+             x:DataType="vm:InlineCodePageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="CDATA value expressions" />
+          <TextBlock Classes="subtitle"
+                     Text="Use CDATA when the inline code contains quotes, braces, or longer interpolation." />
+          <TextBlock>
+            <TextBlock.Text>
+              <CSharp><![CDATA[
+$"{source.Quantity}x {source.ProductName}"
+              ]]></CSharp>
+            </TextBlock.Text>
+          </TextBlock>
+          <TextBlock>
+            <TextBlock.Text>
+              <CSharp><![CDATA[
+$"Total: {source.Price * source.Quantity:F2}"
+              ]]></CSharp>
+            </TextBlock.Text>
+          </TextBlock>
+          <TextBlock>
+            <TextBlock.Text>
+              <CSharp><![CDATA[
+source.IsVip ? "Gold Member" : "Standard"
+              ]]></CSharp>
+            </TextBlock.Text>
+          </TextBlock>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="CDATA event statements" />
+          <TextBlock Classes="subtitle"
+                     Text="Statement blocks keep the XAML valid while allowing multi-line event code." />
+          <Button Content="Increment with CDATA">
+            <Button.Click>
+              <CSharp><![CDATA[
+source.ClickCount++;
+source.LastAction = $"Incremented to {source.ClickCount}";
+              ]]></CSharp>
+            </Button.Click>
+          </Button>
+          <Button Content="Record sender and reset">
+            <Button.Click>
+              <CSharp><![CDATA[
+source.RecordSender(sender);
+source.ClickCount = 0;
+              ]]></CSharp>
+            </Button.Click>
+          </Button>
+          <TextBlock Text="{Binding LastAction}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
