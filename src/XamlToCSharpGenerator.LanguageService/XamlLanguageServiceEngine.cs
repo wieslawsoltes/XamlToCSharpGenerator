@@ -52,7 +52,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         new();
 
     public XamlLanguageServiceEngine()
-        : this(new MsBuildCompilationProvider())
+        : this(new DeferredCompilationProvider(static () => new MsBuildCompilationProvider()))
     {
     }
 
