@@ -286,6 +286,72 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
+                var isPotentialCSharpExpressionMarkup =
+                    ExpressionClassificationService.TryParseCSharpExpressionMarkup(
+                        assignment.Value,
+                        compilation,
+                        document,
+                        options.CSharpExpressionsEnabled,
+                        options.ImplicitCSharpExpressionsEnabled,
+                        out _,
+                        out _);
+
+                if (isPotentialCSharpExpressionMarkup &&
+                    TryBindAvaloniaPropertyAssignment(
+                        symbol,
+                        typeName,
+                        normalizedPropertyName,
+                        assignment,
+                        compilation,
+                        document,
+                        options,
+                        diagnostics,
+                        compiledBindings,
+                        compileBindingsEnabled,
+                        nodeDataType,
+                        property.Type,
+                        currentBindingPriorityScope,
+                        currentSetterTargetType,
+                        rootTypeSymbol,
+                        out var avaloniaShorthandAssignment,
+                        allowCompiledBindingRegistration: true))
+                {
+                    if (avaloniaShorthandAssignment is not null)
+                    {
+                        assignments.Add(avaloniaShorthandAssignment);
+                    }
+
+                    continue;
+                }
+
+                if (isPotentialCSharpExpressionMarkup &&
+                    TryResolveImplicitCSharpShorthandExpression(
+                        assignment.Value,
+                        compilation,
+                        document,
+                        options,
+                        nodeDataType,
+                        rootTypeSymbol,
+                        currentSetterTargetType ?? symbol,
+                        out var isShorthandExpression,
+                        out var shorthandResolution) &&
+                    isShorthandExpression)
+                {
+                    if (!string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
+                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            shorthandResolution.DiagnosticId!,
+                            shorthandResolution.DiagnosticMessage!,
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                    }
+
+                    continue;
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         assignment.Value,
                         compilation,
@@ -317,20 +383,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             currentSetterTargetType,
                             rootTypeSymbol,
                             out var avaloniaExpressionBindingAssignment,
-                            allowCompiledBindingRegistration: false))
+                            allowCompiledBindingRegistration: true))
                     {
                         if (avaloniaExpressionBindingAssignment is not null)
                         {
-                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                                TargetTypeName: typeName,
-                                TargetPropertyName: property.Name,
-                                Path: "{= " + normalizedExpression + " }",
-                                SourceTypeName: nodeDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                                ResultTypeName: expressionResultTypeName,
-                                AccessorExpression: expressionAccessorExpression,
-                                IsSetterBinding: false,
-                                Line: assignment.Line,
-                                Column: assignment.Column));
                             assignments.Add(avaloniaExpressionBindingAssignment);
                         }
 

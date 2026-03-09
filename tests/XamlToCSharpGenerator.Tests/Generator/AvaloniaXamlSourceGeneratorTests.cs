@@ -4543,6 +4543,265 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Lowers_Shorthand_Expressions_To_Bindings_And_Root_Expressions()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public object? Text { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Style : Control
+                {
+                    public string? Selector { get; set; }
+                }
+
+                public class ControlTheme : Control
+                {
+                    public object? TargetType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainViewModel
+                {
+                    public string Title { get; set; } = string.Empty;
+                    public string Caption { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string Title { get; set; } = string.Empty;
+                    public string RootOnly { get; set; } = string.Empty;
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <StackPanel>
+                    <TextBlock Text="{.Title}" />
+                    <TextBlock Text="{this.RootOnly}" />
+                </StackPanel>
+                <UserControl.Styles>
+                    <Style Selector="TextBlock" x:DataType="vm:MainViewModel">
+                        <Setter Property="Text" Value="{Caption}" />
+                    </Style>
+                </UserControl.Styles>
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Button" TargetType="Button" x:DataType="vm:MainViewModel">
+                        <Setter Property="Content" Value="{.Title}" />
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0113" &&
+                          diagnostic.GetMessage().Contains("ambiguous", StringComparison.OrdinalIgnoreCase));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("new global::Avalonia.Data.Binding(\"Title\")", generated);
+        Assert.True(
+            generated.Split("XamlCompiledBindingRegistry.Register", StringSplitOptions.None).Length - 1 >= 3,
+            "Expected compiled binding registrations for direct, style, and control theme shorthand bindings.");
+        Assert.Contains("\"Caption\"", generated);
+        Assert.Contains("ProvideInlineCodeBinding<global::Demo.ViewModels.MainViewModel, global::Demo.MainView", generated);
+        Assert.Contains("root.RootOnly", generated);
+    }
+
+    [Fact]
+    public void Reports_Diagnostic_For_Ambiguous_Shorthand_Between_DataType_And_Root()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainViewModel
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel">
+                <TextBlock Text="{Title}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0113" &&
+                          diagnostic.GetMessage().Contains("ambiguous", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Reports_Diagnostic_When_BindingContext_Shorthand_Has_No_DataType()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <TextBlock Text="{.Title}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0110" &&
+                          diagnostic.GetMessage().Contains("x:DataType", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Generates_InlineCSharp_Bindings_For_Compact_And_ObjectElement_Values()
     {
         const string code = """

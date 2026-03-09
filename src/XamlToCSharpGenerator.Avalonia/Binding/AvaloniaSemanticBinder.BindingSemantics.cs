@@ -3798,6 +3798,118 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
+        if (TryResolveImplicitCSharpShorthandExpression(
+                assignment.Value,
+                compilation,
+                document,
+                options,
+                nodeDataType,
+                rootTypeSymbol,
+                setterTargetType ?? targetType,
+                out var isShorthandExpression,
+                out var shorthandResolution))
+        {
+            if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
+                shorthandResolution.Path is not null &&
+                TryBuildRuntimeBindingExpression(
+                    compilation,
+                    document,
+                    new BindingMarkup(
+                        isCompiledBinding: false,
+                        path: shorthandResolution.Path,
+                        mode: null,
+                        elementName: null,
+                        relativeSource: null,
+                        source: null,
+                        converter: null,
+                        converterCulture: null,
+                        converterParameter: null,
+                        stringFormat: null,
+                        fallbackValue: null,
+                        targetNullValue: null,
+                        delay: null,
+                        priority: null,
+                        updateSourceTrigger: null,
+                        hasSourceConflict: false,
+                        sourceConflictMessage: null),
+                    setterTargetType ?? targetType,
+                    bindingPriorityScope,
+                    out var shorthandBindingExpression))
+            {
+                if (allowCompiledBindingRegistration &&
+                    shorthandResolution.SourceTypeName is not null &&
+                    shorthandResolution.AccessorExpression is not null)
+                {
+                    compiledBindings.Add(new ResolvedCompiledBindingDefinition(
+                        TargetTypeName: targetTypeName,
+                        TargetPropertyName: propertyName,
+                        Path: shorthandResolution.Path,
+                        SourceTypeName: shorthandResolution.SourceTypeName,
+                        ResultTypeName: shorthandResolution.ResultTypeName,
+                        AccessorExpression: shorthandResolution.AccessorExpression,
+                        IsSetterBinding: false,
+                        Line: assignment.Line,
+                        Column: assignment.Column));
+                }
+
+                resolvedAssignment = new ResolvedPropertyAssignment(
+                    PropertyName: propertyName,
+                    ValueExpression: shorthandBindingExpression,
+                    AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: propertyField.Name,
+                    ClrPropertyOwnerTypeName: null,
+                    ClrPropertyTypeName: null,
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        targetType,
+                        propertyField,
+                        compilation,
+                        bindingPriorityScope),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    ValueKind: ResolvedValueKind.Binding,
+                    ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+                return true;
+            }
+
+            if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
+                shorthandResolution.ValueExpression is not null)
+            {
+                resolvedAssignment = new ResolvedPropertyAssignment(
+                    PropertyName: propertyName,
+                    ValueExpression: shorthandResolution.ValueExpression,
+                    AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    AvaloniaPropertyFieldName: propertyField.Name,
+                    ClrPropertyOwnerTypeName: null,
+                    ClrPropertyTypeName: null,
+                    BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                        targetType,
+                        propertyField,
+                        compilation,
+                        bindingPriorityScope),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    ValueKind: ResolvedValueKind.Binding,
+                    ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true));
+                return true;
+            }
+
+            if (isShorthandExpression &&
+                !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
+                !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    shorthandResolution.DiagnosticId!,
+                    shorthandResolution.DiagnosticMessage!,
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                return true;
+            }
+        }
+
         if (TryConvertCSharpExpressionMarkupToBindingExpression(
                 assignment.Value,
                 compilation,

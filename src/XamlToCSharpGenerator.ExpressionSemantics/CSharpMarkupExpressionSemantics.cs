@@ -1,9 +1,22 @@
 using System;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.ExpressionSemantics;
+
+public enum CSharpShorthandExpressionScope
+{
+    Auto = 0,
+    BindingContext = 1,
+    Root = 2
+}
+
+public readonly record struct CSharpShorthandExpressionInfo(
+    string Path,
+    CSharpShorthandExpressionScope Scope,
+    string RawExpression);
 
 public static class CSharpMarkupExpressionSemantics
 {
@@ -97,6 +110,79 @@ public static class CSharpMarkupExpressionSemantics
         return CSharpExpressionTextSemantics.IsBareIdentifierExpression(trimmed);
     }
 
+    public static bool TryParseSimpleShorthandPath(
+        string expressionText,
+        out CSharpShorthandExpressionInfo shorthand)
+    {
+        shorthand = default;
+        if (string.IsNullOrWhiteSpace(expressionText))
+        {
+            return false;
+        }
+
+        var trimmed = expressionText.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        if (trimmed.StartsWith("this.", StringComparison.Ordinal))
+        {
+            var rootPath = trimmed.Substring("this.".Length).Trim();
+            if (!TryNormalizeShorthandPath(rootPath, out var normalizedRootPath))
+            {
+                return false;
+            }
+
+            shorthand = new CSharpShorthandExpressionInfo(
+                normalizedRootPath,
+                CSharpShorthandExpressionScope.Root,
+                trimmed);
+            return true;
+        }
+
+        if (trimmed.StartsWith(".", StringComparison.Ordinal))
+        {
+            var bindingPath = trimmed.Substring(1).Trim();
+            if (!TryNormalizeShorthandPath(bindingPath, out var normalizedBindingPath))
+            {
+                return false;
+            }
+
+            shorthand = new CSharpShorthandExpressionInfo(
+                normalizedBindingPath,
+                CSharpShorthandExpressionScope.BindingContext,
+                trimmed);
+            return true;
+        }
+
+        if (trimmed.StartsWith("BindingContext.", StringComparison.Ordinal))
+        {
+            var bindingPath = trimmed.Substring("BindingContext.".Length).Trim();
+            if (!TryNormalizeShorthandPath(bindingPath, out var normalizedBindingPath))
+            {
+                return false;
+            }
+
+            shorthand = new CSharpShorthandExpressionInfo(
+                normalizedBindingPath,
+                CSharpShorthandExpressionScope.BindingContext,
+                trimmed);
+            return true;
+        }
+
+        if (!EventBindingPathSemantics.IsSimplePath(trimmed))
+        {
+            return false;
+        }
+
+        shorthand = new CSharpShorthandExpressionInfo(
+            trimmed,
+            CSharpShorthandExpressionScope.Auto,
+            trimmed);
+        return true;
+    }
+
     public static bool IsLambdaExpression(string expressionText)
     {
         if (string.IsNullOrWhiteSpace(expressionText))
@@ -160,5 +246,13 @@ public static class CSharpMarkupExpressionSemantics
                expressionText.StartsWith("this.", StringComparison.Ordinal) ||
                expressionText.StartsWith("BindingContext.", StringComparison.Ordinal) ||
                IsLambdaExpression(expressionText);
+    }
+
+    private static bool TryNormalizeShorthandPath(string path, out string normalizedPath)
+    {
+        normalizedPath = string.IsNullOrWhiteSpace(path)
+            ? "."
+            : path.Trim();
+        return EventBindingPathSemantics.IsSimplePath(normalizedPath);
     }
 }

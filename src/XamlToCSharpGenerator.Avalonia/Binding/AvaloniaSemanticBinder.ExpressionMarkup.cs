@@ -10,6 +10,24 @@ namespace XamlToCSharpGenerator.Avalonia.Binding;
 
 public sealed partial class AvaloniaSemanticBinder
 {
+    private enum CSharpShorthandResolutionKind
+    {
+        None = 0,
+        BindingPath = 1,
+        RootExpression = 2,
+        Conflict = 3
+    }
+
+    private readonly record struct CSharpShorthandResolutionResult(
+        CSharpShorthandResolutionKind Kind,
+        string? Path,
+        string? ValueExpression,
+        string? AccessorExpression,
+        string? SourceTypeName,
+        string? ResultTypeName,
+        string? DiagnosticId,
+        string? DiagnosticMessage);
+
     private static bool RequiresStaticResourceResolver(
         ResolvedObjectNode root,
         ImmutableArray<ResolvedStyleDefinition> styles,
@@ -141,6 +159,259 @@ public sealed partial class AvaloniaSemanticBinder
         }
 
         return true;
+    }
+
+    private static bool TryResolveImplicitCSharpShorthandExpression(
+        string value,
+        Compilation compilation,
+        XamlDocumentModel document,
+        GeneratorOptions options,
+        INamedTypeSymbol? sourceType,
+        INamedTypeSymbol? rootTypeSymbol,
+        INamedTypeSymbol? targetType,
+        out bool isShorthandExpression,
+        out CSharpShorthandResolutionResult result)
+    {
+        isShorthandExpression = false;
+        result = default;
+
+        if (!ExpressionClassificationService.TryParseCSharpExpressionMarkup(
+                value,
+                compilation,
+                document,
+                options.CSharpExpressionsEnabled,
+                options.ImplicitCSharpExpressionsEnabled,
+                out var csharpExpressionCode,
+                out var isExplicitExpression) ||
+            isExplicitExpression ||
+            !CSharpMarkupExpressionSemantics.TryParseSimpleShorthandPath(csharpExpressionCode, out var shorthand))
+        {
+            return false;
+        }
+
+        isShorthandExpression = true;
+
+        switch (shorthand.Scope)
+        {
+            case CSharpShorthandExpressionScope.BindingContext:
+                if (sourceType is null)
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.None,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "AXSG0110",
+                        "Shorthand binding requires x:DataType in scope.");
+                    return true;
+                }
+
+                if (TryBuildCompiledBindingAccessorExpression(
+                        compilation,
+                        document,
+                        sourceType,
+                        shorthand.Path,
+                        out var forcedBindingAccessor,
+                        out var forcedBindingPath,
+                        out var forcedBindingResultTypeName,
+                        out _))
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.BindingPath,
+                        forcedBindingPath,
+                        null,
+                        forcedBindingAccessor,
+                        sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        forcedBindingResultTypeName,
+                        null,
+                        null);
+                    return true;
+                }
+
+                result = new CSharpShorthandResolutionResult(
+                    CSharpShorthandResolutionKind.None,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "AXSG0111",
+                    $"Shorthand binding path '{shorthand.RawExpression}' could not be resolved against x:DataType '{sourceType.ToDisplayString()}'.");
+                return true;
+
+            case CSharpShorthandExpressionScope.Root:
+                if (rootTypeSymbol is null)
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.None,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "AXSG0600",
+                        "Root-scoped shorthand requires x:Class-backed root type.");
+                    return true;
+                }
+
+                if (!TryBuildCompiledBindingAccessorExpression(
+                        compilation,
+                        document,
+                        rootTypeSymbol,
+                        shorthand.Path,
+                        out _,
+                        out var normalizedRootPath,
+                        out var rootResultTypeName,
+                        out _))
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.None,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "AXSG0111",
+                        $"Root-scoped shorthand '{shorthand.RawExpression}' could not be resolved against root type '{rootTypeSymbol.ToDisplayString()}'.");
+                    return true;
+                }
+
+                if (!TryBuildInlineCodeBindingExpression(
+                        compilation,
+                        sourceType,
+                        rootTypeSymbol,
+                        targetType,
+                        "root." + normalizedRootPath,
+                        out var rootValueExpression,
+                        out _,
+                        out _,
+                        out var rootErrorMessage))
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.None,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "AXSG0111",
+                        rootErrorMessage);
+                    return true;
+                }
+
+                result = new CSharpShorthandResolutionResult(
+                    CSharpShorthandResolutionKind.RootExpression,
+                    normalizedRootPath,
+                    rootValueExpression,
+                    "root." + normalizedRootPath,
+                    rootTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    rootResultTypeName,
+                    null,
+                    null);
+                return true;
+
+            case CSharpShorthandExpressionScope.Auto:
+            {
+                var sourceAccessor = string.Empty;
+                var sourcePath = string.Empty;
+                string? sourceResultTypeName = null;
+                var sourceResolved = sourceType is not null &&
+                                     TryBuildCompiledBindingAccessorExpression(
+                                         compilation,
+                                         document,
+                                         sourceType,
+                                         shorthand.Path,
+                                         out sourceAccessor,
+                                         out sourcePath,
+                                         out sourceResultTypeName,
+                                         out _);
+
+                var rootPath = string.Empty;
+                string? rootResolvedResultTypeName = null;
+                var rootResolved = rootTypeSymbol is not null &&
+                                   TryBuildCompiledBindingAccessorExpression(
+                                       compilation,
+                                       document,
+                                       rootTypeSymbol,
+                                       shorthand.Path,
+                                       out _,
+                                       out rootPath,
+                                       out rootResolvedResultTypeName,
+                                       out _);
+
+                if (sourceResolved && rootResolved && sourceType is not null && rootTypeSymbol is not null)
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.Conflict,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "AXSG0113",
+                        $"Shorthand expression '{shorthand.RawExpression}' is ambiguous between x:DataType '{sourceType.ToDisplayString()}' and root type '{rootTypeSymbol.ToDisplayString()}'. Use '.{sourcePath}' or 'this.{rootPath}'.");
+                    return true;
+                }
+
+                if (sourceResolved && sourceType is not null)
+                {
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.BindingPath,
+                        sourcePath,
+                        null,
+                        sourceAccessor,
+                        sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        sourceResultTypeName,
+                        null,
+                        null);
+                    return true;
+                }
+
+                if (rootResolved && rootTypeSymbol is not null)
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            sourceType,
+                            rootTypeSymbol,
+                            targetType,
+                            "root." + rootPath,
+                            out var autoRootValueExpression,
+                            out _,
+                            out _,
+                            out var autoRootErrorMessage))
+                    {
+                        result = new CSharpShorthandResolutionResult(
+                            CSharpShorthandResolutionKind.None,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            "AXSG0111",
+                            autoRootErrorMessage);
+                        return true;
+                    }
+
+                    result = new CSharpShorthandResolutionResult(
+                        CSharpShorthandResolutionKind.RootExpression,
+                        rootPath,
+                        autoRootValueExpression,
+                        "root." + rootPath,
+                        rootTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        rootResolvedResultTypeName,
+                        null,
+                        null);
+                    return true;
+                }
+
+                return false;
+            }
+
+            default:
+                return false;
+        }
     }
 
     private static bool TryBuildCompiledExpressionAccessorExpression(
