@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
@@ -216,6 +217,92 @@ public sealed partial class AvaloniaSemanticBinder
             MarkupContextParentStackToken +
             ")";
         return true;
+    }
+
+    private static bool TryParseInlineCSharpMarkupExtensionCode(
+        string value,
+        out string code)
+    {
+        code = string.Empty;
+        if (!TryParseMarkupExtension(value, out var markup) ||
+            XamlMarkupExtensionNameSemantics.Classify(markup.Name) != XamlMarkupExtensionKind.CSharp)
+        {
+            return false;
+        }
+
+        var rawCode = TryGetNamedMarkupArgument(markup, "Code") ??
+                      (markup.PositionalArguments.Length > 0 ? markup.PositionalArguments[0] : null);
+        if (string.IsNullOrWhiteSpace(rawCode))
+        {
+            return false;
+        }
+
+        code = Unquote(rawCode!);
+        return code.Trim().Length > 0;
+    }
+
+    private static bool TryBuildInlineCodeBindingExpression(
+        Compilation compilation,
+        INamedTypeSymbol? sourceType,
+        INamedTypeSymbol? rootType,
+        INamedTypeSymbol? targetType,
+        string rawCode,
+        out string bindingExpression,
+        out string normalizedExpression,
+        out string? resultTypeName,
+        out string errorMessage)
+    {
+        bindingExpression = string.Empty;
+        normalizedExpression = string.Empty;
+        resultTypeName = null;
+        errorMessage = string.Empty;
+
+        if (!CSharpInlineCodeAnalysisService.TryAnalyzeExpression(
+                compilation,
+                sourceType,
+                rootType,
+                targetType,
+                rawCode,
+                out var inlineAnalysis,
+                out errorMessage))
+        {
+            return false;
+        }
+
+        normalizedExpression = inlineAnalysis.NormalizedExpression;
+        resultTypeName = inlineAnalysis.ResultTypeSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        bindingExpression =
+            "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideInlineCodeBinding<" +
+            GetTypeNameOrObject(sourceType, compilation) +
+            ", " +
+            GetTypeNameOrObject(rootType, compilation) +
+            ", " +
+            GetTypeNameOrObject(targetType, compilation) +
+            ">(static (source, root, target) => (object?)(" +
+            inlineAnalysis.NormalizedExpression +
+            "), " +
+            BuildStringArrayLiteral(inlineAnalysis.DependencyNames) +
+            ", " +
+            MarkupContextServiceProviderToken +
+            ", " +
+            MarkupContextRootObjectToken +
+            ", " +
+            MarkupContextIntermediateRootObjectToken +
+            ", " +
+            MarkupContextTargetObjectToken +
+            ", " +
+            MarkupContextTargetPropertyToken +
+            ", " +
+            MarkupContextBaseUriToken +
+            ", " +
+            MarkupContextParentStackToken +
+            ")";
+        return true;
+    }
+
+    private static string GetTypeNameOrObject(INamedTypeSymbol? typeSymbol, Compilation compilation)
+    {
+        return (typeSymbol ?? compilation.ObjectType).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     }
 
     private static string BuildStringArrayLiteral(ImmutableArray<string> values)

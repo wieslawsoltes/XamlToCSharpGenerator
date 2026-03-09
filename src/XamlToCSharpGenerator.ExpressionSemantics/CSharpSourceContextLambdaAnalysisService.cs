@@ -11,7 +11,8 @@ namespace XamlToCSharpGenerator.ExpressionSemantics;
 public readonly record struct SourceContextLambdaAnalysisResult(
     string RewrittenLambdaExpression,
     ImmutableArray<string> DependencyNames,
-    ImmutableArray<SourceContextExpressionSymbolReference> SymbolReferences);
+    ImmutableArray<SourceContextExpressionSymbolReference> SymbolReferences,
+    ImmutableArray<SourceContextSymbolOccurrence> SymbolOccurrences);
 
 public static class CSharpSourceContextLambdaAnalysisService
 {
@@ -67,7 +68,8 @@ public static class CSharpSourceContextLambdaAnalysisService
         result = new SourceContextLambdaAnalysisResult(
             rewriteResult.RewrittenLambdaExpressionSyntax.ToFullString().Trim(),
             rewriteResult.DependencyNames,
-            symbolReferences);
+            symbolReferences,
+            ImmutableArray<SourceContextSymbolOccurrence>.Empty);
         return true;
     }
 

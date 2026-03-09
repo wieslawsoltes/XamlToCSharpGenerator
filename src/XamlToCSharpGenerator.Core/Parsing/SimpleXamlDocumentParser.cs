@@ -207,6 +207,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
         string? xamlArrayItemType = null;
         string? plainArrayItemType = null;
         var textContent = TryGetInlineTextContent(element);
+        var rawTextContent = TryGetRawInlineTextContent(element);
 
         foreach (var attribute in element.Attributes())
         {
@@ -361,7 +362,8 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             ChildObjects: childObjects.ToImmutable(),
             PropertyElements: propertyElements.ToImmutable(),
             Line: elementLineInfo.HasLineInfo() ? elementLineInfo.LineNumber : 1,
-            Column: elementLineInfo.HasLineInfo() ? elementLineInfo.LinePosition : 1);
+            Column: elementLineInfo.HasLineInfo() ? elementLineInfo.LinePosition : 1,
+            RawTextContent: rawTextContent);
     }
 
     private XDocument LoadDocument(string text)
@@ -433,6 +435,29 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             }
 
             builder!.Append(trimmedValue);
+        }
+
+        return builder?.ToString();
+    }
+
+    private static string? TryGetRawInlineTextContent(XElement element)
+    {
+        StringBuilder? builder = null;
+
+        foreach (var node in element.Nodes())
+        {
+            if (node is not XText textNode)
+            {
+                continue;
+            }
+
+            if (textNode.Value.Length == 0)
+            {
+                continue;
+            }
+
+            builder ??= new StringBuilder(textNode.Value.Length);
+            builder.Append(textNode.Value);
         }
 
         return builder?.ToString();

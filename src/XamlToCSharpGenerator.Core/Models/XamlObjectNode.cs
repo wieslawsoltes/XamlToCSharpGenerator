@@ -20,4 +20,5 @@ public sealed record XamlObjectNode(
     ImmutableArray<XamlPropertyElement> PropertyElements,
     int Line,
     int Column,
-    ConditionalXamlExpression? Condition = null);
+    ConditionalXamlExpression? Condition = null,
+    string? RawTextContent = null);

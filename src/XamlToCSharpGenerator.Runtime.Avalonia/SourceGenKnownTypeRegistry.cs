@@ -50,12 +50,14 @@ public static class SourceGenKnownTypeRegistry
     static SourceGenKnownTypeRegistry()
     {
         RegisterXmlnsDefinition(AvaloniaDefaultXmlNamespace, "Avalonia");
+        RegisterXmlnsDefinition(AvaloniaDefaultXmlNamespace, "XamlToCSharpGenerator.Runtime.Markup");
         for (var index = 0; index < AvaloniaDefaultNamespaceCandidates.Length; index++)
         {
             RegisterXmlnsDefinition(AvaloniaDefaultXmlNamespace, AvaloniaDefaultNamespaceCandidates[index]);
         }
 
         SeedBuiltInAvaloniaTypes();
+        RegisterTypes(typeof(Markup.CSharp), typeof(Markup.CSharpExtension), typeof(CSharp), typeof(CSharpExtension));
     }
 
     public static void RegisterType(Type type)

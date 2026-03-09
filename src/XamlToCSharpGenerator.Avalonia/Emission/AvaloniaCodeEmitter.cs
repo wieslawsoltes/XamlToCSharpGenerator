@@ -3504,12 +3504,15 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     sourceBuilder.AppendLine(
                         $"                if (__axsgDataContext is {definition.DataContextTypeName} __axsgDataContextTyped)");
                     sourceBuilder.AppendLine("                {");
-                    sourceBuilder.AppendLine("                    var __axsgLambdaSource = __axsgDataContextTyped;");
-                    sourceBuilder.AppendLine(
-                        $"                    {definition.DelegateTypeName} __axsgHandler = {definition.CompiledDataContextLambdaExpression};");
-                    sourceBuilder.AppendLine(
-                        $"                    __axsgHandler({BuildEventBindingInvocationArgumentList(definition.Parameters)});");
-                    sourceBuilder.AppendLine("                    return;");
+                    EmitCompiledEventLambdaInvocation(
+                        sourceBuilder,
+                        "                    ",
+                        definition,
+                        definition.CompiledDataContextLambdaExpression!,
+                        definition.DataContextTypeName!,
+                        "__axsgDataContextTyped",
+                        "this",
+                        senderExpression);
                     sourceBuilder.AppendLine("                }");
                 }
 
@@ -3518,12 +3521,15 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     sourceBuilder.AppendLine(
                         $"                if (this is {definition.RootTypeName} __axsgRootTyped)");
                     sourceBuilder.AppendLine("                {");
-                    sourceBuilder.AppendLine("                    var __axsgLambdaSource = __axsgRootTyped;");
-                    sourceBuilder.AppendLine(
-                        $"                    {definition.DelegateTypeName} __axsgHandler = {definition.CompiledRootLambdaExpression};");
-                    sourceBuilder.AppendLine(
-                        $"                    __axsgHandler({BuildEventBindingInvocationArgumentList(definition.Parameters)});");
-                    sourceBuilder.AppendLine("                    return;");
+                    EmitCompiledEventLambdaInvocation(
+                        sourceBuilder,
+                        "                    ",
+                        definition,
+                        definition.CompiledRootLambdaExpression!,
+                        "global::System.Object",
+                        "__axsgRootTyped",
+                        "__axsgRootTyped",
+                        senderExpression);
                     sourceBuilder.AppendLine("                }");
                 }
 
@@ -3585,6 +3591,103 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return builder.ToString();
+    }
+
+    private static void EmitCompiledEventLambdaInvocation(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string senderExpression)
+    {
+        if (!definition.UsesInlineCodeContext)
+        {
+            sourceBuilder.AppendLine(indent + "var __axsgLambdaSource = " + sourceExpression + ";");
+            sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
+            sourceBuilder.AppendLine(indent + "__axsgHandler(" + BuildEventBindingInvocationArgumentList(definition.Parameters) + ");");
+            sourceBuilder.AppendLine(indent + "return;");
+            return;
+        }
+
+        var targetTypeName = string.IsNullOrWhiteSpace(definition.LambdaContextTargetTypeName)
+            ? "global::System.Object"
+            : definition.LambdaContextTargetTypeName!;
+
+        EmitInlineEventLambdaInvocationBlock(
+            sourceBuilder,
+            indent,
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            senderExpression,
+            "__axsgTargetTyped");
+
+        sourceBuilder.AppendLine(indent + "if ((object)this is " + targetTypeName + " __axsgSelfTargetTyped)");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndInvoke(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            "__axsgSelfTargetTyped");
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitInlineEventLambdaInvocationBlock(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string senderExpression,
+        string targetVariableName)
+    {
+        sourceBuilder.AppendLine(indent + "if (" + senderExpression + " is " + targetTypeName + " " + targetVariableName + ")");
+        sourceBuilder.AppendLine(indent + "{");
+        EmitInlineEventLambdaContextAndInvoke(
+            sourceBuilder,
+            indent + "    ",
+            definition,
+            lambdaExpression,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetTypeName,
+            targetVariableName);
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
+    }
+
+    private static void EmitInlineEventLambdaContextAndInvoke(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string lambdaExpression,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetTypeName,
+        string targetExpression)
+    {
+        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
+        sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
+        sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
+        sourceBuilder.AppendLine(indent + "__axsgHandler(" + BuildEventBindingInvocationArgumentList(definition.Parameters) + ");");
     }
 
     private static bool TryBuildEventBindingMemberAccessExpression(

@@ -220,6 +220,72 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (property is not null && property.SetMethod is not null)
             {
+                if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var inlineCode))
+                {
+                    if (TryBindAvaloniaPropertyAssignment(
+                            symbol,
+                            typeName,
+                            normalizedPropertyName,
+                            assignment,
+                            compilation,
+                            document,
+                            options,
+                            diagnostics,
+                            compiledBindings,
+                            compileBindingsEnabled,
+                            nodeDataType,
+                            property.Type,
+                            currentBindingPriorityScope,
+                            currentSetterTargetType,
+                            rootTypeSymbol,
+                            out var avaloniaInlineCodeAssignment,
+                            allowCompiledBindingRegistration: false))
+                    {
+                        if (avaloniaInlineCodeAssignment is not null)
+                        {
+                            assignments.Add(avaloniaInlineCodeAssignment);
+                        }
+
+                        continue;
+                    }
+
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            nodeDataType,
+                            rootTypeSymbol,
+                            symbol,
+                            inlineCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for '{property.Name}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    assignments.Add(new ResolvedPropertyAssignment(
+                        PropertyName: property.Name,
+                        ValueExpression: inlineBindingExpression,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        Line: assignment.Line,
+                        Column: assignment.Column,
+                        Condition: assignment.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         assignment.Value,
                         compilation,
@@ -724,6 +790,116 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             var propertyAlias = ResolvePropertyAlias(symbol, propertyElement.PropertyName);
             var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
+
+            if (propertyElement.ObjectValues.Length == 1 &&
+                TryExtractInlineCSharpObjectNodeCode(
+                    propertyElement.ObjectValues[0],
+                    compilation,
+                    document,
+                    out var inlinePropertyCode))
+            {
+                var inlineAssignment = new XamlPropertyAssignment(
+                    PropertyName: propertyElement.PropertyName,
+                    XmlNamespace: string.Empty,
+                    Value: inlinePropertyCode,
+                    IsAttached: false,
+                    Line: propertyElement.Line,
+                    Column: propertyElement.Column,
+                    Condition: propertyElement.Condition);
+
+                if (symbol is not null &&
+                    TryBindInlineEventCodeSubscription(
+                        symbol,
+                        propertyElement.PropertyName,
+                        inlinePropertyCode,
+                        propertyElement.Line,
+                        propertyElement.Column,
+                        propertyElement.Condition,
+                        compilation,
+                        nodeDataType,
+                        rootTypeSymbol,
+                        diagnostics,
+                        document,
+                        options,
+                        out var inlineEventSubscription))
+                {
+                    if (inlineEventSubscription is not null)
+                    {
+                        eventSubscriptions.Add(inlineEventSubscription);
+                    }
+
+                    continue;
+                }
+
+                var inlineProperty = symbol is null
+                    ? null
+                    : FindProperty(symbol, normalizedPropertyName);
+                if (inlineProperty is not null && inlineProperty.SetMethod is not null)
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            nodeDataType,
+                            rootTypeSymbol,
+                            symbol,
+                            inlinePropertyCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for '{inlineProperty.Name}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            propertyElement.Line,
+                            propertyElement.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    if (TryFindAvaloniaPropertyField(
+                            symbol!,
+                            normalizedPropertyName,
+                            out var inlineOwnerType,
+                            out var inlinePropertyField))
+                    {
+                        assignments.Add(new ResolvedPropertyAssignment(
+                            PropertyName: inlineProperty.Name,
+                            ValueExpression: inlineBindingExpression,
+                            AvaloniaPropertyOwnerTypeName: inlineOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            AvaloniaPropertyFieldName: inlinePropertyField.Name,
+                            ClrPropertyOwnerTypeName: null,
+                            ClrPropertyTypeName: null,
+                            BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                                symbol!,
+                                inlinePropertyField,
+                                compilation,
+                                currentBindingPriorityScope),
+                            Line: propertyElement.Line,
+                            Column: propertyElement.Column,
+                            Condition: propertyElement.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        continue;
+                    }
+
+                    assignments.Add(new ResolvedPropertyAssignment(
+                        PropertyName: inlineProperty.Name,
+                        ValueExpression: inlineBindingExpression,
+                        AvaloniaPropertyOwnerTypeName: null,
+                        AvaloniaPropertyFieldName: null,
+                        ClrPropertyOwnerTypeName: inlineProperty.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ClrPropertyTypeName: inlineProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        BindingPriorityExpression: null,
+                        Line: propertyElement.Line,
+                        Column: propertyElement.Column,
+                        Condition: propertyElement.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(contentPropertyName) &&
                 normalizedPropertyName.Equals(contentPropertyName, StringComparison.Ordinal))
             {
@@ -1617,5 +1793,66 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             symbol,
             GetActiveTypeSymbolCatalog(compilation),
             IsTypeAssignableTo);
+    }
+
+    private static bool TryExtractInlineCSharpObjectNodeCode(
+        XamlObjectNode node,
+        Compilation compilation,
+        XamlDocumentModel document,
+        out string code)
+    {
+        const string avaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
+        const string runtimeUsingNamespace = "using:XamlToCSharpGenerator.Runtime";
+        const string runtimeClrNamespace = "clr-namespace:XamlToCSharpGenerator.Runtime";
+        const string markupUsingNamespace = "using:XamlToCSharpGenerator.Runtime.Markup";
+        const string markupClrNamespace = "clr-namespace:XamlToCSharpGenerator.Runtime.Markup";
+
+        code = string.Empty;
+        var symbol = ResolveObjectTypeSymbol(compilation, document, node);
+        var isInlineCSharpNode =
+            string.Equals(
+                symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                "global::XamlToCSharpGenerator.Runtime.CSharp",
+                StringComparison.Ordinal) ||
+            string.Equals(
+                symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                "global::XamlToCSharpGenerator.Runtime.Markup.CSharp",
+                StringComparison.Ordinal) ||
+            (string.Equals(node.XmlTypeName, "CSharp", StringComparison.Ordinal) &&
+             (string.Equals(node.XmlNamespace, runtimeUsingNamespace, StringComparison.Ordinal) ||
+              string.Equals(node.XmlNamespace, runtimeClrNamespace, StringComparison.Ordinal) ||
+              string.Equals(node.XmlNamespace, markupUsingNamespace, StringComparison.Ordinal) ||
+              string.Equals(node.XmlNamespace, markupClrNamespace, StringComparison.Ordinal) ||
+              string.Equals(node.XmlNamespace, avaloniaDefaultXmlNamespace, StringComparison.Ordinal)));
+        if (!isInlineCSharpNode)
+        {
+            return false;
+        }
+
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (NormalizePropertyName(assignment.PropertyName).Equals("Code", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(assignment.Value))
+            {
+                code = Unquote(assignment.Value);
+                return code.Trim().Length > 0;
+            }
+        }
+
+        var rawTextContent = node.RawTextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(rawTextContent))
+        {
+            code = rawTextContent!;
+            return true;
+        }
+
+        var textContent = node.TextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(textContent))
+        {
+            code = textContent!;
+            return true;
+        }
+
+        return false;
     }
 }

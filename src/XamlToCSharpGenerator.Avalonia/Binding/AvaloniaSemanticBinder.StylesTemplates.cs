@@ -93,6 +93,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var styleDataType = ResolveTypeFromTypeExpression(compilation, document, style.DataType, document.ClassNamespace);
+            var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
             var compileBindingsEnabled = style.CompileBindings ?? options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(style.Setters.Length);
@@ -215,6 +216,45 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
                 string? compiledBindingSourceType = null;
+                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            styleDataType,
+                            rootContextType,
+                            targetType,
+                            inlineCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for style setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    setters.Add(new ResolvedSetterDefinition(
+                        PropertyName: resolvedPropertyName,
+                        ValueExpression: inlineBindingExpression,
+                        IsCompiledBinding: false,
+                        CompiledBindingPath: null,
+                        CompiledBindingSourceTypeName: null,
+                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                        AvaloniaPropertyFieldName: setterPropertyFieldName,
+                        Line: setter.Line,
+                        Column: setter.Column,
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,
@@ -460,6 +500,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var themeDataType = ResolveTypeFromTypeExpression(compilation, document, controlTheme.DataType, document.ClassNamespace);
+            var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
             var compileBindingsEnabled = controlTheme.CompileBindings ?? options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(controlTheme.Setters.Length);
@@ -582,6 +623,45 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var isCompiledBinding = false;
                 string? compiledBindingPath = null;
                 string? compiledBindingSourceType = null;
+                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
+                {
+                    if (!TryBuildInlineCodeBindingExpression(
+                            compilation,
+                            themeDataType,
+                            rootContextType,
+                            targetType,
+                            inlineCode,
+                            out var inlineBindingExpression,
+                            out _,
+                            out _,
+                            out var inlineErrorMessage))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0112",
+                            $"Inline C# for control theme setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
+                        continue;
+                    }
+
+                    setters.Add(new ResolvedSetterDefinition(
+                        PropertyName: resolvedPropertyName,
+                        ValueExpression: inlineBindingExpression,
+                        IsCompiledBinding: false,
+                        CompiledBindingPath: null,
+                        CompiledBindingSourceTypeName: null,
+                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
+                        AvaloniaPropertyFieldName: setterPropertyFieldName,
+                        Line: setter.Line,
+                        Column: setter.Column,
+                        Condition: setter.Condition,
+                        ValueKind: ResolvedValueKind.Binding,
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                    continue;
+                }
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,

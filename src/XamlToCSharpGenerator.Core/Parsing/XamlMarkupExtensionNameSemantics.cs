@@ -17,6 +17,7 @@ public enum XamlMarkupExtensionKind
     OnFormFactor,
     Reference,
     ResolveByName,
+    CSharp,
     Static,
     Type,
     Null,
@@ -67,6 +68,7 @@ public static class XamlMarkupExtensionNameSemantics
             "onformfactor" => XamlMarkupExtensionKind.OnFormFactor,
             "reference" => XamlMarkupExtensionKind.Reference,
             "resolvebyname" => XamlMarkupExtensionKind.ResolveByName,
+            "csharp" => XamlMarkupExtensionKind.CSharp,
             "static" => XamlMarkupExtensionKind.Static,
             "type" => XamlMarkupExtensionKind.Type,
             "null" => XamlMarkupExtensionKind.Null,
@@ -141,6 +143,14 @@ public static class XamlMarkupExtensionNameSemantics
         if (token.StartsWith(XamlDirectivePrefix, StringComparison.OrdinalIgnoreCase))
         {
             token = token.Substring(XamlDirectivePrefix.Length);
+        }
+        else
+        {
+            var prefixSeparator = token.IndexOf(':');
+            if (prefixSeparator >= 0 && prefixSeparator < token.Length - 1)
+            {
+                token = token.Substring(prefixSeparator + 1);
+            }
         }
 
         if (token.EndsWith(ExtensionSuffix, StringComparison.OrdinalIgnoreCase))

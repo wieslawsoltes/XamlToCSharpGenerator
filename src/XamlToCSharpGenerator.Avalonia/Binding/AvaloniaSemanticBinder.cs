@@ -59,6 +59,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         "x:Reference",
         "Reference",
         "ResolveByName",
+        "CSharp",
         "x:Static",
         "Static",
         "x:Type",

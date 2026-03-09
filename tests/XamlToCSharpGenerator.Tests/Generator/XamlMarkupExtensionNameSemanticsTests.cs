@@ -13,6 +13,8 @@ public class XamlMarkupExtensionNameSemanticsTests
     [InlineData("x:Uri", XamlMarkupExtensionKind.Uri)]
     [InlineData("CompiledBinding", XamlMarkupExtensionKind.CompiledBinding)]
     [InlineData("x:EventBinding", XamlMarkupExtensionKind.EventBinding)]
+    [InlineData("CSharp", XamlMarkupExtensionKind.CSharp)]
+    [InlineData("axsg:CSharp", XamlMarkupExtensionKind.CSharp)]
     [InlineData("ResolveByNameExtension", XamlMarkupExtensionKind.ResolveByName)]
     [InlineData("UnknownThing", XamlMarkupExtensionKind.Unknown)]
     public void Classify_Maps_Xaml_And_Extension_Forms(string token, XamlMarkupExtensionKind expected)
