@@ -116,8 +116,11 @@ public sealed class XamlReferenceService
             return false;
         }
 
-        return TryEnsureXmlDocumentLoaded(staleSourceFile, out var secondDocument) &&
-               ReferenceEquals(firstDocument, secondDocument);
+        var heldFirstDocument = firstDocument;
+        var reused = TryEnsureXmlDocumentLoaded(staleSourceFile, out var secondDocument) &&
+                     ReferenceEquals(heldFirstDocument, secondDocument);
+        GC.KeepAlive(heldFirstDocument);
+        return reused;
     }
 
     public ImmutableArray<XamlReferenceLocation> GetReferences(XamlAnalysisResult analysis, SourcePosition position)

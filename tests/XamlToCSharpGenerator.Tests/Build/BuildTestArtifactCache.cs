@@ -11,6 +11,7 @@ namespace XamlToCSharpGenerator.Tests.Build;
 
 internal static class BuildTestArtifactCache
 {
+    private const string ArtifactConfiguration = "Release";
     private static readonly string[] RoslynTransientFailureMarkers =
     {
         "BoundStepThroughSequencePoint.<Span>k__BackingField",
@@ -30,6 +31,8 @@ internal static class BuildTestArtifactCache
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj"));
+        BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime.Core", "XamlToCSharpGenerator.Runtime.Core.csproj"));
+        BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime.Avalonia", "XamlToCSharpGenerator.Runtime.Avalonia.csproj"));
         BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime", "XamlToCSharpGenerator.Runtime.csproj"));
 
         var runtimeReferences = new[]
@@ -66,7 +69,7 @@ internal static class BuildTestArtifactCache
     private static string GetAssemblyPath(string repositoryRoot, string projectName, string targetFramework)
     {
         var projectDirectory = Path.Combine(repositoryRoot, "src", projectName);
-        var assemblyPath = Path.Combine(projectDirectory, "bin", "Debug", targetFramework, projectName + ".dll");
+        var assemblyPath = Path.Combine(projectDirectory, "bin", ArtifactConfiguration, targetFramework, projectName + ".dll");
         Assert.True(File.Exists(assemblyPath), $"Expected build artifact '{assemblyPath}' to exist.");
         return assemblyPath;
     }
@@ -76,7 +79,7 @@ internal static class BuildTestArtifactCache
         var result = RunProcess(
             repositoryRoot,
             "dotnet",
-            $"build \"{projectPath}\" -c Debug --nologo -m:1 /nodeReuse:false --disable-build-servers");
+            $"build \"{projectPath}\" -c {ArtifactConfiguration} --nologo -m:1 /nodeReuse:false --disable-build-servers");
         Assert.True(result.ExitCode == 0, result.Output);
     }
 
