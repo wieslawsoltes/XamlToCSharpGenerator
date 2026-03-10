@@ -70,6 +70,11 @@ public sealed class XamlHoverService
             return attributeHover;
         }
 
+        if (TryGetQualifiedPropertyElementHover(analysis, position, context, out var propertyElementHover))
+        {
+            return propertyElementHover;
+        }
+
         if (TryGetElementHover(analysis, context, out var elementHover))
         {
             return elementHover;
@@ -146,6 +151,18 @@ public sealed class XamlHoverService
                     XamlHoverMarkdownFormatter.FormatStyleClass(reference.Target.Name, reference.Target.TypeContextToken),
                     reference.Range);
                 return true;
+            case XamlSelectorNavigationTargetKind.NamedElement:
+                var namedElement = analysis.ParsedDocument?.NamedElements.FirstOrDefault(named =>
+                    string.Equals(named.Name, reference.Target.Name, StringComparison.Ordinal));
+                if (namedElement is not null)
+                {
+                    hover = new XamlHoverInfo(
+                        XamlHoverMarkdownFormatter.FormatNamedElement(namedElement),
+                        reference.Range);
+                    return true;
+                }
+
+                break;
             case XamlSelectorNavigationTargetKind.PseudoClass:
                 var declaringTypeName = TryResolvePseudoClassDeclaringTypeName(analysis, position, reference.Target);
                 hover = new XamlHoverInfo(
@@ -510,6 +527,54 @@ public sealed class XamlHoverService
 
         hover = new XamlHoverInfo(
             XamlHoverMarkdownFormatter.FormatElement(typeInfo),
+            BuildRange(analysis.Document.Text, context.TokenStartOffset, context.TokenEndOffset));
+        return true;
+    }
+
+    private static bool TryGetQualifiedPropertyElementHover(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        XamlCompletionContext context,
+        out XamlHoverInfo? hover)
+    {
+        hover = null;
+        if (context.Kind != XamlCompletionContextKind.QualifiedPropertyElement ||
+            analysis.TypeIndex is null ||
+            string.IsNullOrWhiteSpace(context.Token))
+        {
+            return false;
+        }
+
+        var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position) - context.TokenStartOffset;
+        if (XamlPropertyElementSemantics.IsOwnerSegmentOffset(context.Token, offset) &&
+            XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(context.Token, out var ownerToken, out _) &&
+            XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex, analysis.PrefixMap, ownerToken, out var ownerSegmentTypeInfo) &&
+            ownerSegmentTypeInfo is not null)
+        {
+            hover = new XamlHoverInfo(
+                XamlHoverMarkdownFormatter.FormatType("Type", ownerSegmentTypeInfo),
+                BuildRange(
+                    analysis.Document.Text,
+                    context.TokenStartOffset,
+                    context.TokenStartOffset + ownerToken.Length));
+            return true;
+        }
+
+        if (!XamlClrSymbolResolver.TryResolvePropertyInfo(
+                analysis.TypeIndex,
+                analysis.PrefixMap,
+                currentElementName: null,
+                context.Token,
+                out var propertyInfo,
+                out var propertyOwnerTypeInfo) ||
+            propertyInfo is null ||
+            propertyOwnerTypeInfo is null)
+        {
+            return false;
+        }
+
+        hover = new XamlHoverInfo(
+            XamlHoverMarkdownFormatter.FormatProperty(propertyOwnerTypeInfo, propertyInfo),
             BuildRange(analysis.Document.Text, context.TokenStartOffset, context.TokenEndOffset));
         return true;
     }

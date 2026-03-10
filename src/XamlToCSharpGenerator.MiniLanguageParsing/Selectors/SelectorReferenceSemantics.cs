@@ -10,6 +10,7 @@ public enum SelectorReferenceKind
     Type = 1,
     StyleClass = 2,
     PseudoClass = 3,
+    NamedElement = 4,
 }
 
 public readonly struct SelectorReference
@@ -250,10 +251,18 @@ public static class SelectorReferenceSemantics
             if (token == '#')
             {
                 index++;
-                if (!SelectorTokenSyntax.TryParseIdentifierToken(segmentText, ref index, out _))
+                var nameStart = index;
+                if (!SelectorTokenSyntax.TryParseIdentifierToken(segmentText, ref index, out var name))
                 {
                     return;
                 }
+
+                builder.Add(new SelectorReference(
+                    SelectorReferenceKind.NamedElement,
+                    name,
+                    segmentOffset + nameStart,
+                    name.Length,
+                    currentTypeToken));
 
                 continue;
             }

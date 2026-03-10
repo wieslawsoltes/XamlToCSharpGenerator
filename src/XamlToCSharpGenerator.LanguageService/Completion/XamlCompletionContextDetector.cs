@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -61,8 +62,12 @@ internal static class XamlCompletionContextDetector
 
         if (!hasWhitespace)
         {
+            var kind = XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(rawToken, out _, out _)
+                ? XamlCompletionContextKind.QualifiedPropertyElement
+                : XamlCompletionContextKind.ElementName;
+
             return new XamlCompletionContext(
-                XamlCompletionContextKind.ElementName,
+                kind,
                 rawToken,
                 currentElement,
                 null,

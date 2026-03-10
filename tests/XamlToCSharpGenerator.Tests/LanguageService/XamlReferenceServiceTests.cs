@@ -96,6 +96,73 @@ public class XamlReferenceServiceTests
     }
 
     [Fact]
+    public void ResolveProjectXamlFileByTargetPath_Uses_Link_Metadata()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        var linkedDirectory = Path.Combine(workspace.RootPath, "shared");
+        Directory.CreateDirectory(projectDirectory);
+        Directory.CreateDirectory(linkedDirectory);
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        var currentFilePath = Path.Combine(projectDirectory, "Views", "MainView.axaml");
+        var linkedFilePath = Path.Combine(linkedDirectory, "Fluent.xaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(currentFilePath)!);
+        File.WriteAllText(currentFilePath, "<UserControl />");
+        File.WriteAllText(linkedFilePath, "<Styles />");
+        File.WriteAllText(
+            projectFilePath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="Views/MainView.axaml" />
+                <AvaloniaXaml Include="../../shared/Fluent.xaml" Link="Themes/Fluent.xaml" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var resolved = XamlProjectFileDiscoveryService.TryResolveProjectXamlFileByTargetPath(
+            projectFilePath,
+            currentFilePath,
+            "Themes/Fluent.xaml",
+            out var resolvedFilePath);
+
+        Assert.True(resolved);
+        Assert.Equal(Path.GetFullPath(linkedFilePath), resolvedFilePath);
+    }
+
+    [Fact]
+    public void ResolveProjectXamlEntryByFilePath_Returns_TargetPath()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        Directory.CreateDirectory(Path.Combine(projectDirectory, "Views"));
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        var currentFilePath = Path.Combine(projectDirectory, "Views", "MainView.axaml");
+        File.WriteAllText(
+            projectFilePath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="Views/MainView.axaml" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(currentFilePath, "<UserControl />");
+
+        var resolved = XamlProjectFileDiscoveryService.TryResolveProjectXamlEntryByFilePath(
+            projectFilePath,
+            currentFilePath,
+            currentFilePath,
+            out var entry);
+
+        Assert.True(resolved);
+        Assert.Equal(Path.GetFullPath(currentFilePath), entry.FilePath);
+        Assert.Equal("Views/MainView.axaml", entry.TargetPath);
+    }
+
+    [Fact]
     public void ReusesParsedXmlForStaleSourceSnapshot()
     {
         XamlReferenceService.ClearCachesForTesting();

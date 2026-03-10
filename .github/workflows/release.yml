@@ -200,10 +200,47 @@ jobs:
               --skip-duplicate
           done < <(find release-artifacts -type f -name '*.nupkg' -print0)
 
+  publish-vscode-marketplace:
+    name: Publish to VS Code Marketplace
+    runs-on: ubuntu-latest
+    needs: [build, pack]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    environment: vscode-marketplace
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-${{ needs.build.outputs.version }}
+          path: release-artifacts
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tools/vscode/axsg-language-server/package-lock.json
+
+      - name: Publish VS Code Marketplace extension
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          VSIX_PATH="$(find release-artifacts -type f -name 'axsg-language-server-*.vsix' | head -n 1)"
+          if [[ -z "${VSIX_PATH}" ]]; then
+            echo "Unable to find packaged VSIX in release-artifacts." >&2
+            exit 1
+          fi
+          bash eng/release/publish-vscode-marketplace.sh \
+            "${VSIX_PATH}" \
+            "${{ needs.build.outputs.is-prerelease }}"
+
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, pack, publish-nuget]
+    needs: [build, pack, publish-nuget, publish-vscode-marketplace]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write

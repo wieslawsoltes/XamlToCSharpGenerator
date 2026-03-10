@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -12,6 +13,16 @@ public sealed class XamlDefinitionService
 
     public ImmutableArray<XamlDefinitionLocation> GetDefinitions(XamlAnalysisResult analysis, SourcePosition position)
     {
+        if (XamlUriValueNavigationService.TryResolveDefinitionAtOffset(analysis, position, out var uriValueDefinition))
+        {
+            return [uriValueDefinition];
+        }
+
+        if (XamlXmlNamespaceNavigationService.TryResolvePrefixDefinitionAtPosition(analysis, position, out var xmlnsDefinition))
+        {
+            return [xmlnsDefinition];
+        }
+
         if (XamlInlineCSharpNavigationService.TryResolveNavigationTarget(analysis, position, out var inlineCodeTarget))
         {
             if (inlineCodeTarget.DeclarationRange is { } inlineDeclarationRange)
@@ -233,6 +244,8 @@ public sealed class XamlDefinitionService
                 case XamlSelectorNavigationTargetKind.StyleClass:
                 case XamlSelectorNavigationTargetKind.PseudoClass:
                     return CollectDefinitionsFromReferences(ReferenceService.GetReferences(analysis, position));
+                case XamlSelectorNavigationTargetKind.NamedElement:
+                    return CollectNamedElementDefinitions(analysis, selectorTarget.Name);
             }
         }
 
@@ -336,6 +349,31 @@ public sealed class XamlDefinitionService
             return [CreateTypeDefinitionLocation(analysis, typeInfo)];
         }
 
+        if (context.Kind == XamlCompletionContextKind.QualifiedPropertyElement)
+        {
+            if (TryResolveQualifiedPropertyElementOwnerDefinition(
+                    analysis,
+                    position,
+                    context,
+                    prefixMap,
+                    out var ownerDefinition))
+            {
+                return [ownerDefinition];
+            }
+
+            if (TryResolvePropertyDefinition(
+                    analysis,
+                    prefixMap,
+                    ownerTypeToken: null,
+                    token,
+                    out var propertyElementDefinition))
+            {
+                return [propertyElementDefinition];
+            }
+
+            return ImmutableArray<XamlDefinitionLocation>.Empty;
+        }
+
         if (context.Kind != XamlCompletionContextKind.AttributeName)
         {
             return ImmutableArray<XamlDefinitionLocation>.Empty;
@@ -407,6 +445,32 @@ public sealed class XamlDefinitionService
         return TryResolvePropertyDefinition(analysis, ownerTypeInfo: null, propertyInfo, out definitionLocation, resolvedOwnerTypeToken: propertyToken.Contains('.', StringComparison.Ordinal)
             ? propertyToken[..propertyToken.IndexOf('.', StringComparison.Ordinal)]
             : ownerTypeToken ?? string.Empty, prefixMap);
+    }
+
+    private static bool TryResolveQualifiedPropertyElementOwnerDefinition(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        XamlCompletionContext context,
+        ImmutableDictionary<string, string> prefixMap,
+        out XamlDefinitionLocation definitionLocation)
+    {
+        definitionLocation = default!;
+        if (string.IsNullOrWhiteSpace(context.Token))
+        {
+            return false;
+        }
+
+        var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position) - context.TokenStartOffset;
+        if (!XamlPropertyElementSemantics.IsOwnerSegmentOffset(context.Token, offset) ||
+            !XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(context.Token, out var ownerToken, out _) ||
+            !XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex!, prefixMap, ownerToken, out var ownerTypeInfo) ||
+            ownerTypeInfo is null)
+        {
+            return false;
+        }
+
+        definitionLocation = CreateTypeDefinitionLocation(analysis, ownerTypeInfo);
+        return true;
     }
 
     private static bool TryResolvePropertyDefinition(

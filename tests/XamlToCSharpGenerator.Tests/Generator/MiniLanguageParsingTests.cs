@@ -174,6 +174,33 @@ public class MiniLanguageParsingTests
     }
 
     [Fact]
+    public void SelectorReferenceSemantics_Enumerates_Named_Element_Before_Pseudo_Class()
+    {
+        var references = SelectorReferenceSemantics.EnumerateReferences(
+            "ToggleButton#ThemeToggle:checked");
+
+        Assert.Collection(
+            references,
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.Type, reference.Kind);
+                Assert.Equal("ToggleButton", reference.Name);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.NamedElement, reference.Kind);
+                Assert.Equal("ThemeToggle", reference.Name);
+                Assert.Equal("ToggleButton", reference.TypeContextToken);
+            },
+            reference =>
+            {
+                Assert.Equal(SelectorReferenceKind.PseudoClass, reference.Kind);
+                Assert.Equal(":checked", reference.Name);
+                Assert.Equal("ToggleButton", reference.TypeContextToken);
+            });
+    }
+
+    [Fact]
     public void SelectorSyntaxValidator_Validates_Selector_And_Extracts_Branch_Type_Tokens()
     {
         var validation = SelectorSyntaxValidator.Validate("Button:pointerover, TextBlock.warning");

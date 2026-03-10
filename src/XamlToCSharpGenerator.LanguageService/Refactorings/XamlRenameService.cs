@@ -11,6 +11,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Rename;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
@@ -551,6 +552,19 @@ internal sealed class XamlRenameService
             return true;
         }
 
+        if (context.Kind == XamlCompletionContextKind.QualifiedPropertyElement)
+        {
+            if (TryResolveQualifiedPropertyElementRenameTarget(analysis, position, context, out target))
+            {
+                return true;
+            }
+
+            if (TryResolveAttributePropertyRenameTarget(analysis, context, out target))
+            {
+                return true;
+            }
+        }
+
         if (context.Kind == XamlCompletionContextKind.AttributeName &&
             TryResolveAttributePropertyRenameTarget(analysis, context, out target))
         {
@@ -741,6 +755,10 @@ internal sealed class XamlRenameService
                 target = new RenameTarget(RenameTargetKind.StyleClass, absoluteRange, selectedText, Symbol: null, TypeFullName: null);
                 return true;
 
+            case XamlSelectorNavigationTargetKind.NamedElement:
+                target = new RenameTarget(RenameTargetKind.NamedElement, absoluteRange, selectedText, Symbol: null, TypeFullName: null);
+                return true;
+
             case XamlSelectorNavigationTargetKind.PseudoClass:
                 target = new RenameTarget(RenameTargetKind.PseudoClass, absoluteRange, selectedText, Symbol: null, TypeFullName: null);
                 return true;
@@ -861,6 +879,49 @@ internal sealed class XamlRenameService
             ownerTypeInfo.FullTypeName,
             propertyInfo.Name,
             CreatePropertyRenameRange(analysis.Document.Text, ResolveTokenRange(analysis.Document.Text, context, default)),
+            out target);
+    }
+
+    private static bool TryResolveQualifiedPropertyElementRenameTarget(
+        XamlAnalysisResult analysis,
+        SourcePosition position,
+        XamlCompletionContext context,
+        out RenameTarget target)
+    {
+        target = default;
+        if (string.IsNullOrWhiteSpace(context.Token))
+        {
+            return false;
+        }
+
+        var offset = TextCoordinateHelper.GetOffset(analysis.Document.Text, position) - context.TokenStartOffset;
+        if (!XamlPropertyElementSemantics.IsOwnerSegmentOffset(context.Token, offset) ||
+            !XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(context.Token, out var ownerToken, out _))
+        {
+            return false;
+        }
+
+        if (!XamlClrSymbolResolver.TryResolveTypeInfo(analysis.TypeIndex!, analysis.PrefixMap, ownerToken, out var ownerTypeInfo) ||
+            ownerTypeInfo is null)
+        {
+            return false;
+        }
+
+        var fullRange = ResolveTokenRange(analysis.Document.Text, context, position);
+        var startOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, fullRange.Start);
+        if (startOffset < 0)
+        {
+            return false;
+        }
+
+        var ownerRange = new SourceRange(
+            fullRange.Start,
+            TextCoordinateHelper.GetPosition(analysis.Document.Text, startOffset + ownerToken.Length));
+
+        return TryResolveClrTypeRenameTarget(
+            analysis,
+            ownerTypeInfo.FullTypeName,
+            CreateTypeRenameRange(analysis.Document.Text, ownerRange, ownerToken),
             out target);
     }
 
@@ -1208,6 +1269,18 @@ internal sealed class XamlRenameService
                 AddEdit(builder, seen, elementRange, ComputeTypeReplacement(ReadRangeText(analysis.Document.Text, elementRange), oldName, newName));
             }
 
+            if (TryAddQualifiedPropertyElementOwnerTypeRenameEdit(
+                    analysis,
+                    element,
+                    targetFullTypeName,
+                    oldName,
+                    newName,
+                    builder,
+                    seen))
+            {
+                continue;
+            }
+
             var sourcePrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
             foreach (var attribute in element.Attributes())
             {
@@ -1285,6 +1358,43 @@ internal sealed class XamlRenameService
         }
 
         return builder.ToImmutable();
+    }
+
+    private static bool TryAddQualifiedPropertyElementOwnerTypeRenameEdit(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string targetFullTypeName,
+        string oldName,
+        string newName,
+        ImmutableArray<XamlDocumentTextEdit>.Builder builder,
+        HashSet<string> seen)
+    {
+        if (analysis.TypeIndex is null ||
+            !XamlPropertyElementSemantics.TrySplitOwnerQualifiedPropertyFragment(element.Name.LocalName, out var ownerToken, out _) ||
+            !TryResolveTypeInfoByXmlNamespace(analysis, element.Name.NamespaceName, ownerToken, out var ownerTypeInfo) ||
+            ownerTypeInfo is null ||
+            !string.Equals(ownerTypeInfo.FullTypeName, targetFullTypeName, StringComparison.Ordinal) ||
+            !TryCreateElementNameRange(analysis.Document.Text, element, out var elementRange))
+        {
+            return false;
+        }
+
+        var startOffset = TextCoordinateHelper.GetOffset(analysis.Document.Text, elementRange.Start);
+        if (startOffset < 0)
+        {
+            return false;
+        }
+
+        var ownerRange = new SourceRange(
+            elementRange.Start,
+            TextCoordinateHelper.GetPosition(analysis.Document.Text, startOffset + ownerToken.Length));
+        var renameRange = CreateTypeRenameRange(analysis.Document.Text, ownerRange, ownerToken);
+        AddEdit(
+            builder,
+            seen,
+            renameRange,
+            ComputeTypeReplacement(ReadRangeText(analysis.Document.Text, renameRange), oldName, newName));
+        return true;
     }
 
     private static bool TryResolveElementTypeReference(
@@ -1516,6 +1626,34 @@ internal sealed class XamlRenameService
         foreach (var range in XamlNavigationTextSemantics.FindElementReferenceRanges(analysis.Document.Text, identifier))
         {
             AddEdit(builder, seen, range, newName);
+        }
+
+        foreach (var element in root.DescendantsAndSelf())
+        {
+            foreach (var attribute in element.Attributes())
+            {
+                if (!string.Equals(attribute.Name.LocalName, "Selector", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var selectorReference in SelectorReferenceSemantics.EnumerateReferences(attribute.Value))
+                {
+                    if (selectorReference.Kind != SelectorReferenceKind.NamedElement ||
+                        !string.Equals(selectorReference.Name, identifier, StringComparison.Ordinal) ||
+                        !TryCreateAttributeValueTokenRange(
+                            analysis.Document.Text,
+                            attribute,
+                            selectorReference.Start,
+                            selectorReference.Length,
+                            out var range))
+                    {
+                        continue;
+                    }
+
+                    AddEdit(builder, seen, range, newName);
+                }
+            }
         }
 
         return BuildSingleDocumentWorkspaceEdit(uri, builder.ToImmutable());
@@ -2007,6 +2145,62 @@ internal sealed class XamlRenameService
             text,
             new SourcePosition(Math.Max(0, lineInfo.LineNumber - 1), Math.Max(0, lineInfo.LinePosition - 1)),
             out range);
+    }
+
+    private static bool TryCreateElementNameRange(string text, XElement element, out SourceRange range)
+    {
+        range = default;
+        if (element is not IXmlLineInfo lineInfo || !lineInfo.HasLineInfo())
+        {
+            return false;
+        }
+
+        var startPosition = new SourcePosition(
+            Math.Max(0, lineInfo.LineNumber - 1),
+            Math.Max(0, lineInfo.LinePosition - 1));
+        var offset = TextCoordinateHelper.GetOffset(text, startPosition);
+        if (offset < 0 || offset >= text.Length)
+        {
+            return false;
+        }
+
+        var openTagIndex = text.LastIndexOf('<', Math.Min(offset, text.Length - 1));
+        if (openTagIndex < 0)
+        {
+            openTagIndex = text.IndexOf('<', offset);
+        }
+
+        if (openTagIndex < 0)
+        {
+            return false;
+        }
+
+        var nameStart = openTagIndex + 1;
+        if (nameStart < text.Length && text[nameStart] == '/')
+        {
+            nameStart++;
+        }
+
+        while (nameStart < text.Length && char.IsWhiteSpace(text[nameStart]))
+        {
+            nameStart++;
+        }
+
+        var length = 0;
+        while (nameStart + length < text.Length && IsIdentifierCharacter(text[nameStart + length]))
+        {
+            length++;
+        }
+
+        if (length <= 0)
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, nameStart),
+            TextCoordinateHelper.GetPosition(text, nameStart + length));
+        return true;
     }
 
     private static string ReadRangeText(string text, SourceRange range)

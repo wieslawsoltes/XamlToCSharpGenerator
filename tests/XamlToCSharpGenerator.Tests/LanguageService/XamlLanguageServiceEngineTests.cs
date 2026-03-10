@@ -11,6 +11,7 @@ using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.LanguageService.Workspace;
 
 namespace XamlToCSharpGenerator.Tests.LanguageService;
@@ -56,6 +57,53 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Completion_InQualifiedPropertyElementContext_ReturnsOwnerProperties()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.O\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("<Path.O", StringComparison.Ordinal) + "<Path.O".Length),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "Opacity", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.InsertText, "Path.Opacity", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "Opacity", StringComparison.Ordinal) &&
+                                             item.ReplaceRange is not null &&
+                                             GetRangeText(xaml, item.ReplaceRange.Value) == "Path.O");
+    }
+
+    [Fact]
+    public async Task Completion_InQualifiedPropertyElementContext_WithPrefixedOwner_ReturnsOwnerProperties()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/PrefixedQualifiedPropertyElementCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:controls=\"https://github.com/avaloniaui\">\n" +
+                            "  <controls:Path.Op></controls:Path.Op>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("<controls:Path.Op", StringComparison.Ordinal) + "<controls:Path.Op".Length),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "Opacity", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.InsertText, "controls:Path.Opacity", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_InBindingPathContext_ReturnsSourcePropertiesAndMethods()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -66,6 +114,53 @@ public sealed class XamlLanguageServiceEngineTests
                             "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
                             "  <TextBlock Text=\"{Binding }\"/>\n" +
                             "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{Binding }", StringComparison.Ordinal) + "{Binding ".Length);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(bindingCaret.Line, bindingCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "FirstName", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "GetCustomer", StringComparison.Ordinal));
+        Assert.Contains(completions, item => item.Kind == XamlCompletionItemKind.Method && string.Equals(item.InsertText, "GetCustomer()", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_ForMarkupExtension_ReplacesTypedOpeningBrace()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/MarkupExtensionCompletion.axaml";
+        const string xaml = "<Window xmlns=\"https://github.com/avaloniaui\" Title=\"{\" />";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{", StringComparison.Ordinal) + 1);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(caret.Line, caret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item =>
+            string.Equals(item.Label, "Binding", StringComparison.Ordinal) &&
+            string.Equals(item.InsertText, "{Binding $0}", StringComparison.Ordinal) &&
+            item.ReplaceRange is not null &&
+            GetRangeText(xaml, item.ReplaceRange.Value) == "{");
+    }
+
+    [Fact]
+    public async Task Completion_InBindingPathContext_OnNonStringTarget_ReturnsSourcePropertiesAndMethods()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingCompletionWidth.axaml";
+        const string xaml = "<Window xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\" Width=\"{Binding }\">\n" +
+                            "</Window>";
 
         await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
         var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{Binding }", StringComparison.Ordinal) + "{Binding ".Length);
@@ -437,6 +532,54 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.NotNull(hover);
         Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
         Assert.Contains("CustomerViewModel.DisplayName", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForQualifiedPropertyElement_ReturnsPropertyDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverQualifiedPropertyElement.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("Path.Opacity", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForQualifiedPropertyElementOwner_ReturnsTypeDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverQualifiedPropertyElementOwner.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Path.Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Type", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("TestApp.Controls.Path", hover.Markdown, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -967,6 +1110,111 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Definition_ForQualifiedPropertyElement_ResolvesPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForQualifiedPropertyElementOwner_ResolvesTypeSource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementOwnerDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Path.Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForStyleIncludeSource_Resolves_Target_Xaml_File()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-ls-include-def-" + Guid.NewGuid().ToString("N"));
+        var projectDir = Path.Combine(tempRoot, "project");
+        var themesDir = Path.Combine(projectDir, "Themes");
+        Directory.CreateDirectory(themesDir);
+
+        var projectPath = Path.Combine(projectDir, "TestApp.csproj");
+        var openFilePath = Path.Combine(projectDir, "MainView.axaml");
+        var targetFilePath = Path.Combine(themesDir, "Fluent.xaml");
+        var openUri = new Uri(openFilePath).AbsoluteUri;
+        const string xaml = """
+<UserControl xmlns="https://github.com/avaloniaui">
+  <UserControl.Styles>
+    <StyleInclude Source="/Themes/Fluent.xaml" />
+  </UserControl.Styles>
+</UserControl>
+""";
+
+        await File.WriteAllTextAsync(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="MainView.axaml" />
+                <AvaloniaXaml Include="Themes/Fluent.xaml" />
+              </ItemGroup>
+            </Project>
+            """);
+        await File.WriteAllTextAsync(openFilePath, xaml);
+        await File.WriteAllTextAsync(targetFilePath, "<Styles xmlns=\"https://github.com/avaloniaui\" />");
+
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(
+                new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+            var options = new XamlLanguageServiceOptions(projectPath, IncludeSemanticDiagnostics: false);
+            await engine.OpenDocumentAsync(openUri, xaml, version: 1, options, CancellationToken.None);
+
+            var definitions = await engine.GetDefinitionsAsync(
+                openUri,
+                new SourcePosition(2, xaml.Split('\n')[2].IndexOf("Fluent.xaml", StringComparison.Ordinal) + 2),
+                options,
+                CancellationToken.None);
+
+            Assert.Single(definitions);
+            Assert.Equal(new Uri(targetFilePath).AbsoluteUri, definitions[0].Uri);
+            Assert.Equal(0, definitions[0].Range.Start.Line);
+            Assert.Equal(0, definitions[0].Range.Start.Character);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Definition_ForStyleSelectorType_ResolvesTypeSource()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -1107,6 +1355,118 @@ public sealed class XamlLanguageServiceEngineTests
 
         Assert.NotEmpty(definitions);
         Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForSelectorNamedElement_WithPseudoClass_ResolvesNamedElementDeclaration()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectorNamedElementDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <ToggleButton x:Name=\"ThemeToggle\"/>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"ToggleButton#ThemeToggle:checked\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var nameOffset = xaml.IndexOf("ThemeToggle", xaml.IndexOf("Selector=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(nameOffset >= 0, "Expected selector named element token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, nameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Equal(uri, definitions[0].Uri);
+        Assert.Equal(1, definitions[0].Range.Start.Line);
+    }
+
+    [Fact]
+    public async Task Definition_ForQualifiedElementPrefix_ResolvesXmlnsDeclaration()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedElementPrefixDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:pages=\"clr-namespace:TestApp.Controls\">\n" +
+                            "  <pages:Button />\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var prefixOffset = xaml.IndexOf("pages:Button", StringComparison.Ordinal);
+        Assert.True(prefixOffset >= 0, "Expected qualified element token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, prefixOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Equal(uri, definitions[0].Uri);
+        Assert.Equal(0, definitions[0].Range.Start.Line);
+        var startOffset = TextCoordinateHelper.GetOffset(xaml, definitions[0].Range.Start);
+        var endOffset = TextCoordinateHelper.GetOffset(xaml, definitions[0].Range.End);
+        Assert.Equal("pages", xaml.Substring(startOffset, endOffset - startOffset));
+    }
+
+    [Fact]
+    public async Task References_ForSelectorNamedElement_WithPseudoClass_IncludeDeclarationAndSelectorUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectorNamedElementReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <ToggleButton x:Name=\"ThemeToggle\"/>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"ToggleButton#ThemeToggle:checked\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var nameOffset = xaml.IndexOf("ThemeToggle", xaml.IndexOf("Selector=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(nameOffset >= 0, "Expected selector named element token not found.");
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, nameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 2);
+        Assert.Contains(references, reference => reference.IsDeclaration && reference.Range.Start.Line == 1);
+        Assert.Contains(references, reference => !reference.IsDeclaration && reference.Range.Start.Line == 3);
+    }
+
+    [Fact]
+    public async Task References_FromNamedElementDeclaration_IncludeSelectorUsage_WithPseudoClass()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectorNamedElementDeclarationReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <ToggleButton x:Name=\"ThemeToggle\"/>\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"ToggleButton#ThemeToggle:checked\"/>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var declarationOffset = xaml.IndexOf("ThemeToggle", xaml.IndexOf("x:Name=", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.True(declarationOffset >= 0, "Expected x:Name declaration token not found.");
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, declarationOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 2);
+        Assert.Contains(references, reference => reference.IsDeclaration && reference.Range.Start.Line == 1);
+        Assert.Contains(references, reference => !reference.IsDeclaration && reference.Range.Start.Line == 3);
     }
 
     [Fact]
@@ -1523,6 +1883,56 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.True(references.Length >= 3);
         Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 1);
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+    }
+
+    [Fact]
+    public async Task References_ForQualifiedPropertyElement_ReturnDeclarationAndUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 2);
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
+    }
+
+    [Fact]
+    public async Task References_ForQualifiedPropertyElementOwner_ReturnTypeDeclarationAndUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/QualifiedPropertyElementOwnerReferencesView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Path>\n" +
+                            "    <Path.Opacity>0.5</Path.Opacity>\n" +
+                            "  </Path>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Path.Opacity", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.True(references.Length >= 2);
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, StringComparison.OrdinalIgnoreCase));
         Assert.Contains(references, item => !item.IsDeclaration && item.Range.Start.Line == 2);
     }
 
@@ -3659,5 +4069,13 @@ public sealed class XamlLanguageServiceEngineTests
         {
             _inner.Dispose();
         }
+    }
+
+    private static string GetRangeText(string text, SourceRange range)
+    {
+        var sourceText = SourceText.From(text);
+        var start = sourceText.Lines.GetPosition(new LinePosition(range.Start.Line, range.Start.Character));
+        var end = sourceText.Lines.GetPosition(new LinePosition(range.End.Line, range.End.Character));
+        return text.Substring(start, end - start);
     }
 }

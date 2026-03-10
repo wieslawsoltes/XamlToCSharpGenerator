@@ -27,6 +27,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         new Dictionary<string, string>(StringComparer.Ordinal);
     private static readonly IReadOnlyDictionary<string, string> EmptyGeneratedMethodNameMap =
         new Dictionary<string, string>(StringComparer.Ordinal);
+    private static readonly IReadOnlyDictionary<int, string> EmptyGeneratedMethodIndexMap =
+        new Dictionary<int, string>();
 
     public (string HintName, string Source) Emit(ResolvedViewModel viewModel)
     {
@@ -53,6 +55,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var emittedEventBindingMethodNames = eventBindingDefinitions.IsDefaultOrEmpty
             ? EmptyGeneratedMethodNameMap
             : BuildStableEventBindingMethodNameMap(eventBindingDefinitions);
+        var compiledBindingAccessorEmissionPlan = viewModel.CompiledBindings.IsDefaultOrEmpty
+            ? CompiledBindingAccessorEmissionPlan.Empty
+            : BuildCompiledBindingAccessorEmissionPlan(viewModel.CompiledBindings);
 
         if (emitReloadStateTracking)
         {
@@ -162,8 +167,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         for (var index = 0; index < viewModel.CompiledBindings.Length; index++)
         {
             var compiledBinding = viewModel.CompiledBindings[index];
+            var compiledBindingMethodName = ResolveCompiledBindingObjectAccessorMethodName(index, compiledBindingAccessorEmissionPlan);
             sourceBuilder.AppendLine(
-                $"            global::XamlToCSharpGenerator.Runtime.XamlCompiledBindingRegistry.Register(new global::XamlToCSharpGenerator.Runtime.SourceGenCompiledBindingDescriptor(\"{escapedUri}\", \"{Escape(compiledBinding.TargetTypeName)}\", \"{Escape(compiledBinding.TargetPropertyName)}\", \"{Escape(compiledBinding.Path)}\", \"{Escape(compiledBinding.SourceTypeName)}\", static source => __CompiledBindingAccessor({index}, source)));");
+                $"            global::XamlToCSharpGenerator.Runtime.XamlCompiledBindingRegistry.Register(new global::XamlToCSharpGenerator.Runtime.SourceGenCompiledBindingDescriptor(\"{escapedUri}\", \"{Escape(compiledBinding.TargetTypeName)}\", \"{Escape(compiledBinding.TargetPropertyName)}\", \"{Escape(compiledBinding.Path)}\", \"{Escape(compiledBinding.SourceTypeName)}\", {compiledBindingMethodName}));");
         }
 
         sourceBuilder.AppendLine("        }");
@@ -280,6 +286,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine();
         }
 
+        EmitCompiledBindingAccessorMethods(sourceBuilder, compiledBindingAccessorEmissionPlan);
         sourceBuilder.AppendLine("        private static object? __CompiledBindingAccessor(int __index, object __source)");
         sourceBuilder.AppendLine("        {");
         sourceBuilder.AppendLine("            switch (__index)");
@@ -441,7 +448,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("}");
 
         var hintName = BuildHintName(viewModel);
-        return (hintName, sourceBuilder.ToString());
+        var source = sourceBuilder.ToString();
+        source = RewriteCompiledBindingExpressionInvocations(source, viewModel.CompiledBindings, compiledBindingAccessorEmissionPlan);
+        return (hintName, source);
     }
 
     private static int EstimateSourceCapacity(ResolvedViewModel viewModel)
@@ -2651,6 +2660,81 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         return ReplaceOrdinal(template, TopDownAttachValueToken, valueExpression);
     }
 
+    private static void EmitCompiledBindingAccessorMethods(
+        StringBuilder sourceBuilder,
+        CompiledBindingAccessorEmissionPlan compiledBindingAccessorEmissionPlan)
+    {
+        if (compiledBindingAccessorEmissionPlan.Methods.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        for (var index = 0; index < compiledBindingAccessorEmissionPlan.Methods.Length; index++)
+        {
+            var method = compiledBindingAccessorEmissionPlan.Methods[index];
+            sourceBuilder.AppendLine(
+                $"        private static object? {method.MethodName}({method.SourceTypeName} source)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine(
+                $"            return __CompiledBindingAccessor({method.CompiledBindingIndex}, source);");
+            sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine(
+                $"        private static object? {method.ObjectMethodName}(object source)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine(
+                $"            return __CompiledBindingAccessor({method.CompiledBindingIndex}, source);");
+            sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+        }
+    }
+
+    private static string RewriteCompiledBindingExpressionInvocations(
+        string source,
+        ImmutableArray<ResolvedCompiledBindingDefinition> compiledBindings,
+        CompiledBindingAccessorEmissionPlan compiledBindingAccessorEmissionPlan)
+    {
+        if (compiledBindings.IsDefaultOrEmpty ||
+            compiledBindingAccessorEmissionPlan.MethodNamesByIndex.Count == 0 ||
+            string.IsNullOrEmpty(source))
+        {
+            return source;
+        }
+
+        var rewritten = source;
+        for (var index = 0; index < compiledBindings.Length; index++)
+        {
+            if (!compiledBindingAccessorEmissionPlan.MethodNamesByIndex.TryGetValue(index, out var methodName) ||
+                string.IsNullOrWhiteSpace(methodName))
+            {
+                continue;
+            }
+
+            var compiledBinding = compiledBindings[index];
+            var inlineEvaluatorPattern = BuildCompiledBindingInlineEvaluatorPattern(compiledBinding);
+            if (inlineEvaluatorPattern.Length == 0)
+            {
+                continue;
+            }
+
+            rewritten = ReplaceOrdinal(rewritten, inlineEvaluatorPattern, methodName + ",");
+        }
+
+        return rewritten;
+    }
+
+    private static string BuildCompiledBindingInlineEvaluatorPattern(ResolvedCompiledBindingDefinition compiledBinding)
+    {
+        if (string.IsNullOrWhiteSpace(compiledBinding.AccessorExpression))
+        {
+            return string.Empty;
+        }
+
+        return "static source => (object?)(" +
+               compiledBinding.AccessorExpression +
+               "),";
+    }
+
     private static string ReplaceOrdinal(string source, string oldValue, string newValue)
     {
         if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(oldValue))
@@ -3092,6 +3176,96 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         return builder.Count == 0
             ? ImmutableArray<ResolvedEventBindingDefinition>.Empty
             : builder.ToImmutable();
+    }
+
+    private static CompiledBindingAccessorEmissionPlan BuildCompiledBindingAccessorEmissionPlan(
+        ImmutableArray<ResolvedCompiledBindingDefinition> compiledBindings)
+    {
+        var methodBuilder = ImmutableArray.CreateBuilder<CompiledBindingAccessorMethod>();
+        var methodNamesByIndex = new Dictionary<int, string>();
+        var signatureMethodNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = 0; index < compiledBindings.Length; index++)
+        {
+            var compiledBinding = compiledBindings[index];
+            var signature = BuildStableCompiledBindingSignature(compiledBinding);
+            if (!signatureMethodNames.TryGetValue(signature, out var methodName))
+            {
+                methodName = "__AXSG_CompiledBinding_" + ComputeStableEventBindingSignatureHash(signature);
+                if (!usedNames.Add(methodName))
+                {
+                    var collisionIndex = 1;
+                    var collisionName = methodName + "_" + collisionIndex.ToString(CultureInfo.InvariantCulture);
+                    while (!usedNames.Add(collisionName))
+                    {
+                        collisionIndex++;
+                        collisionName = methodName + "_" + collisionIndex.ToString(CultureInfo.InvariantCulture);
+                    }
+
+                    methodName = collisionName;
+                }
+
+                signatureMethodNames[signature] = methodName;
+                methodBuilder.Add(new CompiledBindingAccessorMethod(
+                    methodName,
+                    methodName + "_Object",
+                    compiledBinding.SourceTypeName,
+                    index));
+            }
+
+            methodNamesByIndex[index] = methodName;
+        }
+
+        return methodBuilder.Count == 0
+            ? CompiledBindingAccessorEmissionPlan.Empty
+            : new CompiledBindingAccessorEmissionPlan(
+                methodBuilder.ToImmutable(),
+                methodNamesByIndex,
+                EmptyGeneratedMethodNameMap);
+    }
+
+    private static string BuildStableCompiledBindingSignature(ResolvedCompiledBindingDefinition compiledBinding)
+    {
+        var builder = new StringBuilder();
+        AppendSignaturePart(builder, compiledBinding.TargetTypeName);
+        AppendSignaturePart(builder, compiledBinding.TargetPropertyName);
+        AppendSignaturePart(builder, compiledBinding.Path);
+        AppendSignaturePart(builder, compiledBinding.SourceTypeName);
+        AppendSignaturePart(builder, compiledBinding.ResultTypeName);
+        AppendSignaturePart(builder, compiledBinding.AccessorExpression);
+        AppendSignaturePart(builder, compiledBinding.IsSetterBinding ? "1" : "0");
+        return builder.ToString();
+    }
+
+    private static string ResolveCompiledBindingAccessorMethodName(
+        int index,
+        CompiledBindingAccessorEmissionPlan compiledBindingAccessorEmissionPlan)
+    {
+        if (compiledBindingAccessorEmissionPlan.MethodNamesByIndex.TryGetValue(index, out var methodName) &&
+            !string.IsNullOrWhiteSpace(methodName))
+        {
+            return methodName;
+        }
+
+        return "static source => __CompiledBindingAccessor(" +
+               index.ToString(CultureInfo.InvariantCulture) +
+               ", source)";
+    }
+
+    private static string ResolveCompiledBindingObjectAccessorMethodName(
+        int index,
+        CompiledBindingAccessorEmissionPlan compiledBindingAccessorEmissionPlan)
+    {
+        if (compiledBindingAccessorEmissionPlan.MethodNamesByIndex.TryGetValue(index, out var methodName) &&
+            !string.IsNullOrWhiteSpace(methodName))
+        {
+            return methodName + "_Object";
+        }
+
+        return "static source => __CompiledBindingAccessor(" +
+               index.ToString(CultureInfo.InvariantCulture) +
+               ", source)";
     }
 
     private static IReadOnlyDictionary<string, string> BuildStableEventBindingMethodNameMap(
@@ -4867,6 +5041,23 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var baseName = viewModel.Document.ClassFullName ?? (viewModel.Document.ClassNamespace + "." + viewModel.Document.ClassName);
         var sanitizedBaseName = SanitizeHintSegment(baseName);
         return sanitizedBaseName + "." + hash + ".XamlSourceGen.g.cs";
+    }
+
+    private sealed record CompiledBindingAccessorMethod(
+        string MethodName,
+        string ObjectMethodName,
+        string SourceTypeName,
+        int CompiledBindingIndex);
+
+    private sealed record CompiledBindingAccessorEmissionPlan(
+        ImmutableArray<CompiledBindingAccessorMethod> Methods,
+        IReadOnlyDictionary<int, string> MethodNamesByIndex,
+        IReadOnlyDictionary<string, string> MethodNamesByLocationKey)
+    {
+        public static readonly CompiledBindingAccessorEmissionPlan Empty = new(
+            ImmutableArray<CompiledBindingAccessorMethod>.Empty,
+            EmptyGeneratedMethodIndexMap,
+            EmptyGeneratedMethodNameMap);
     }
 
     private static string SanitizeHintSegment(string value)

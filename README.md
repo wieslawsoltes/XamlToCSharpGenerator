@@ -239,6 +239,7 @@ Behavior:
 - artifacts are uploaded to the workflow run
 - GitHub Releases are created automatically for tag builds
 - NuGet publishing runs automatically when `NUGET_API_KEY` is configured
+- VS Code Marketplace publishing runs automatically when `VSCE_PAT` is configured
 
 Release assets include:
 

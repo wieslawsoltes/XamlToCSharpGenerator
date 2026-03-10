@@ -7,10 +7,10 @@ namespace XamlToCSharpGenerator.LanguageService.Text;
 
 internal static class XamlXmlSourceRangeService
 {
-    public static bool TryCreateAttributeNameRange(string text, XAttribute attribute, out SourceRange range)
+    public static bool TryCreateElementNameRange(string text, XElement element, out SourceRange range)
     {
         range = default;
-        if (attribute is not IXmlLineInfo lineInfo || !lineInfo.HasLineInfo())
+        if (element is not IXmlLineInfo lineInfo || !lineInfo.HasLineInfo())
         {
             return false;
         }
@@ -24,10 +24,50 @@ internal static class XamlXmlSourceRangeService
             return false;
         }
 
-        var name = attribute.Name.ToString();
+        if (!TryGetElementNameBounds(text, offset, out var nameStart, out var nameLength))
+        {
+            return false;
+        }
+
         range = new SourceRange(
-            start,
-            TextCoordinateHelper.GetPosition(text, Math.Min(text.Length, offset + name.Length)));
+            TextCoordinateHelper.GetPosition(text, nameStart),
+            TextCoordinateHelper.GetPosition(text, nameStart + nameLength));
+        return true;
+    }
+
+    public static bool TryCreateAttributeNameRange(string text, XAttribute attribute, out SourceRange range)
+    {
+        range = default;
+        if (!TryGetAttributeNameBounds(text, attribute, out var nameStart, out var nameLength))
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, nameStart),
+            TextCoordinateHelper.GetPosition(text, nameStart + nameLength));
+        return true;
+    }
+
+    public static bool TryCreateNamespaceDeclarationPrefixRange(string text, XAttribute attribute, out SourceRange range)
+    {
+        range = default;
+        if (!attribute.IsNamespaceDeclaration ||
+            !TryGetAttributeNameBounds(text, attribute, out var nameStart, out var nameLength))
+        {
+            return false;
+        }
+
+        const string xmlnsPrefix = "xmlns:";
+        if (nameLength <= xmlnsPrefix.Length ||
+            !text.AsSpan(nameStart, Math.Min(nameLength, xmlnsPrefix.Length)).SequenceEqual(xmlnsPrefix.AsSpan()))
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, nameStart + xmlnsPrefix.Length),
+            TextCoordinateHelper.GetPosition(text, nameStart + nameLength));
         return true;
     }
 
@@ -125,6 +165,56 @@ internal static class XamlXmlSourceRangeService
         return false;
     }
 
+    public static bool TryFindElementNameAtPosition(
+        string text,
+        XDocument? xmlDocument,
+        SourcePosition position,
+        out XElement element,
+        out SourceRange elementNameRange)
+    {
+        element = null!;
+        elementNameRange = default;
+
+        if (xmlDocument?.Root is null)
+        {
+            return false;
+        }
+
+        XElement? bestElement = null;
+        SourceRange bestRange = default;
+        var bestSpanLength = int.MaxValue;
+
+        foreach (var candidateElement in xmlDocument.Root.DescendantsAndSelf())
+        {
+            if (!TryCreateElementNameRange(text, candidateElement, out var candidateRange) ||
+                !ContainsPosition(text, candidateRange, position))
+            {
+                continue;
+            }
+
+            var startOffset = TextCoordinateHelper.GetOffset(text, candidateRange.Start);
+            var endOffset = TextCoordinateHelper.GetOffset(text, candidateRange.End);
+            var spanLength = Math.Max(0, endOffset - startOffset);
+            if (spanLength >= bestSpanLength)
+            {
+                continue;
+            }
+
+            bestElement = candidateElement;
+            bestRange = candidateRange;
+            bestSpanLength = spanLength;
+        }
+
+        if (bestElement is null)
+        {
+            return false;
+        }
+
+        element = bestElement;
+        elementNameRange = bestRange;
+        return true;
+    }
+
     public static bool TryCreateElementContentRange(
         string text,
         XElement element,
@@ -181,6 +271,95 @@ internal static class XamlXmlSourceRangeService
         var startOffset = TextCoordinateHelper.GetOffset(text, range.Start);
         var endOffset = TextCoordinateHelper.GetOffset(text, range.End);
         return offset >= startOffset && offset <= endOffset;
+    }
+
+    private static bool TryGetAttributeNameBounds(string text, XAttribute attribute, out int nameStart, out int nameLength)
+    {
+        nameStart = 0;
+        nameLength = 0;
+        if (attribute is not IXmlLineInfo lineInfo || !lineInfo.HasLineInfo())
+        {
+            return false;
+        }
+
+        var start = new SourcePosition(
+            Math.Max(0, lineInfo.LineNumber - 1),
+            Math.Max(0, lineInfo.LinePosition - 1));
+        var offset = TextCoordinateHelper.GetOffset(text, start);
+        if (offset < 0 || offset >= text.Length)
+        {
+            return false;
+        }
+
+        var cursor = offset;
+        while (cursor < text.Length && char.IsWhiteSpace(text[cursor]))
+        {
+            cursor++;
+        }
+
+        var end = cursor;
+        while (end < text.Length &&
+               !char.IsWhiteSpace(text[end]) &&
+               text[end] != '=' &&
+               text[end] != '>' &&
+               text[end] != '/')
+        {
+            end++;
+        }
+
+        if (end <= cursor)
+        {
+            return false;
+        }
+
+        nameStart = cursor;
+        nameLength = end - cursor;
+        return true;
+    }
+
+    private static bool TryGetElementNameBounds(string text, int offset, out int nameStart, out int nameLength)
+    {
+        nameStart = 0;
+        nameLength = 0;
+
+        var cursor = offset;
+        while (cursor < text.Length && char.IsWhiteSpace(text[cursor]))
+        {
+            cursor++;
+        }
+
+        if (cursor < text.Length && text[cursor] == '<')
+        {
+            cursor++;
+        }
+
+        if (cursor < text.Length && text[cursor] == '/')
+        {
+            cursor++;
+        }
+
+        while (cursor < text.Length && char.IsWhiteSpace(text[cursor]))
+        {
+            cursor++;
+        }
+
+        var end = cursor;
+        while (end < text.Length &&
+               !char.IsWhiteSpace(text[end]) &&
+               text[end] != '>' &&
+               text[end] != '/')
+        {
+            end++;
+        }
+
+        if (end <= cursor)
+        {
+            return false;
+        }
+
+        nameStart = cursor;
+        nameLength = end - cursor;
+        return true;
     }
 
     private static int FindElementStartTagEnd(string text, int startOffset)

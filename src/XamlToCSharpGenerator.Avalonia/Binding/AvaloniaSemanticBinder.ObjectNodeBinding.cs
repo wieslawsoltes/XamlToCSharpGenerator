@@ -437,26 +437,24 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         continue;
                     }
 
-                    var shouldCompileBinding = CanUseCompiledBinding(bindingMarkup) &&
-                                               (bindingMarkup.IsCompiledBinding || compileBindingsEnabled);
+                    var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
+                    INamedTypeSymbol? compiledBindingSourceType = null;
+                    var requiresAmbientDataType = false;
+                    var shouldCompileBinding = wantsCompiledBinding &&
+                                               TryResolveCompiledBindingSourceType(
+                                                   compilation,
+                                                   document,
+                                                   bindingMarkup,
+                                                   nodeDataType,
+                                                   currentSetterTargetType ?? symbol,
+                                                   out compiledBindingSourceType,
+                                                   out requiresAmbientDataType);
                     if (shouldCompileBinding)
                     {
-                        if (nodeDataType is null)
-                        {
-                            diagnostics.Add(new DiagnosticInfo(
-                                "AXSG0110",
-                                $"Compiled binding for '{property.Name}' requires x:DataType in scope.",
-                                document.FilePath,
-                                assignment.Line,
-                                assignment.Column,
-                                options.StrictMode));
-                            continue;
-                        }
-
                         if (!TryBuildCompiledBindingAccessorExpression(
                                 compilation,
                                 document,
-                                nodeDataType,
+                                compiledBindingSourceType!,
                                 bindingMarkup.Path,
                                 out var accessorExpression,
                                 out var normalizedPath,
@@ -465,7 +463,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         {
                             diagnostics.Add(new DiagnosticInfo(
                                 "AXSG0111",
-                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{nodeDataType.ToDisplayString()}': {errorMessage}",
+                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{compiledBindingSourceType!.ToDisplayString()}': {errorMessage}",
                                 document.FilePath,
                                 assignment.Line,
                                 assignment.Column,
@@ -477,12 +475,23 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             TargetTypeName: typeName,
                             TargetPropertyName: property.Name,
                             Path: normalizedPath,
-                            SourceTypeName: nodeDataType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            SourceTypeName: compiledBindingSourceType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                             ResultTypeName: resultTypeName,
                             AccessorExpression: accessorExpression,
                             IsSetterBinding: false,
                             Line: assignment.Line,
                             Column: assignment.Column));
+                    }
+                    else if (wantsCompiledBinding && requiresAmbientDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for '{property.Name}' requires x:DataType in scope.",
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                        continue;
                     }
 
                     if (TryBindAvaloniaPropertyAssignment(

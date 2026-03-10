@@ -4,6 +4,7 @@ public enum XamlCompletionContextKind
 {
     Unknown,
     ElementName,
+    QualifiedPropertyElement,
     AttributeName,
     AttributeValue,
     MarkupExtension
