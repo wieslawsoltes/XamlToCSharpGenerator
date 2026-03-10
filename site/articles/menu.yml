@@ -1,0 +1,6 @@
+articles:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: getting-started/readme.md, title: "Getting Started", folder: true}
+  - {path: guides/readme.md, title: "Guides", folder: true}
+  - {path: architecture/readme.md, title: "Architecture", folder: true}
+  - {path: reference/readme.md, title: "Reference", folder: true}

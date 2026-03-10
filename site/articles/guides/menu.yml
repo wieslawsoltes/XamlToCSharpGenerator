@@ -1,0 +1,6 @@
+guides:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: csharp-expressions.md, title: "C# Expressions"}
+  - {path: inline-csharp-code.md, title: "Inline C# Code"}
+  - {path: hot-reload-ios.md, title: "iOS Hot Reload"}
+  - {path: packaging-and-release.md, title: "Packaging and Release"}

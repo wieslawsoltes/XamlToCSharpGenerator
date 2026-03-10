@@ -1,0 +1,5 @@
+architecture:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: compiler-pipeline.md, title: "Compiler Pipeline"}
+  - {path: runtime-and-hot-reload.md, title: "Runtime and Hot Reload"}
+  - {path: language-service-and-vscode.md, title: "Language Service and VS Code"}
