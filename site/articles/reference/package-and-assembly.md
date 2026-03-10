@@ -6,6 +6,8 @@ title: "Package and Assembly"
 
 AXSG ships a mix of package shells, code-bearing libraries, build payloads, a .NET tool, and a VS Code extension. This page maps each install identity to its primary shipped payload and generated API coverage.
 
+When you already know the assembly or tool package name and need the direct generated API route, use [Assembly Catalog](assembly-catalog).
+
 ## Distribution overview
 
 | Artifact | Kind | Primary payload | Target framework / host | Generated API |
@@ -20,7 +22,7 @@ AXSG ships a mix of package shells, code-bearing libraries, build payloads, a .N
 | `XamlToCSharpGenerator.MiniLanguageParsing` | NuGet package | `XamlToCSharpGenerator.MiniLanguageParsing.dll` | `netstandard2.0` | yes |
 | `XamlToCSharpGenerator.NoUi` | NuGet package | `XamlToCSharpGenerator.NoUi.dll` | `netstandard2.0` | yes |
 | `XamlToCSharpGenerator.Generator` | NuGet package | analyzer/source generator payload | analyzer payload (`netstandard2.0`) | yes |
-| `XamlToCSharpGenerator.Runtime` | NuGet package | runtime umbrella composition | NuGet package | yes |
+| `XamlToCSharpGenerator.Runtime` | NuGet package | runtime umbrella composition | NuGet package | narrative only |
 | `XamlToCSharpGenerator.Runtime.Core` | NuGet package | `XamlToCSharpGenerator.Runtime.Core.dll` | `net10.0` | yes |
 | `XamlToCSharpGenerator.Runtime.Avalonia` | NuGet package | `XamlToCSharpGenerator.Runtime.Avalonia.dll` | `net10.0` | yes |
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | `XamlToCSharpGenerator.LanguageService.dll` | `net10.0` | yes |
@@ -30,7 +32,7 @@ AXSG ships a mix of package shells, code-bearing libraries, build payloads, a .N
 
 ## Why some artifacts are narrative-only
 
-Two shipped package IDs are intentionally documented only through narrative pages instead of generated API:
+Three shipped package IDs are intentionally documented only through narrative pages instead of generated API:
 
 - `XamlToCSharpGenerator`
   - this is the application-facing package shell
@@ -38,6 +40,9 @@ Two shipped package IDs are intentionally documented only through narrative page
 - `XamlToCSharpGenerator.Build`
   - this ships MSBuild props/targets
   - generated namespace pages from this project only expose assembly attributes and do not help users
+- `XamlToCSharpGenerator.Runtime`
+  - this composes the runtime layers for app authors
+  - the useful public API lives in `Runtime.Core` and `Runtime.Avalonia`
 
 These packages are still fully documented through:
 
@@ -58,4 +63,3 @@ One repo component is important operationally but is not a shipped package:
 - Use [Package Catalog](package-catalog) to choose the right artifact.
 - Use [API Coverage Index](api-coverage-index) to jump into the generated API and namespace summaries.
 - Use [Package Guides](packages/readme) when you need install guidance and package-specific narrative.
-

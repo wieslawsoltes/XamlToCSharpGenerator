@@ -2,4 +2,5 @@ getting-started:
   - {path: readme.md, title: "Overview", self: true}
   - {path: overview.md, title: "Why AXSG"}
   - {path: installation.md, title: "Installation"}
+  - {path: samples-and-feature-tour.md, title: "Samples and Feature Tour"}
   - {path: quickstart.md, title: "Quickstart"}

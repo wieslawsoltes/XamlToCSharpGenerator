@@ -10,4 +10,5 @@ Start here:
 
 - [Overview](overview)
 - [Installation](installation)
+- [Samples and Feature Tour](samples-and-feature-tour)
 - [Quickstart](quickstart)

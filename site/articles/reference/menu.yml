@@ -1,7 +1,10 @@
 reference:
   - {path: readme.md, title: "Overview", self: true}
   - {path: package-and-assembly.md, title: "Package and Assembly"}
+  - {path: assembly-catalog.md, title: "Assembly Catalog"}
+  - {path: api-navigation-guide.md, title: "API Navigation Guide"}
   - {path: api-coverage-index.md, title: "API Coverage Index"}
+  - {path: feature-coverage-matrix.md, title: "Feature Coverage Matrix"}
   - {path: package-catalog.md, title: "Package Catalog"}
   - {path: internal-support-components.md, title: "Internal Support Components"}
   - {path: packages/readme.md, title: "Package Guides", folder: true}

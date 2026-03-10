@@ -2,5 +2,9 @@ xaml:
   - {path: readme.md, title: "XAML Usage"}
   - {path: compiled-bindings.md, title: "Compiled Bindings"}
   - {path: csharp-expressions.md, title: "C# Expressions"}
+  - {path: event-bindings.md, title: "Event Bindings"}
   - {path: inline-csharp.md, title: "Inline C#"}
+  - {path: resources-includes-and-uris.md, title: "Resources, Includes, and URIs"}
+  - {path: property-elements-templatebinding-and-attached-properties.md, title: "Property Elements and TemplateBinding"}
+  - {path: global-xmlns-and-project-configuration.md, title: "Global XML Namespaces and Configuration"}
   - {path: styles-templates-and-themes.md, title: "Styles, Templates, and Themes"}
