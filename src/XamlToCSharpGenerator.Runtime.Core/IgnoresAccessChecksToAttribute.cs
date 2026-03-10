@@ -7,7 +7,7 @@ namespace System.Runtime.CompilerServices;
 
 /// <exclude />
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
-internal sealed class IgnoresAccessChecksToAttribute : Attribute
+public sealed class IgnoresAccessChecksToAttribute : Attribute
 {
     public IgnoresAccessChecksToAttribute(string assemblyName)
     {
