@@ -59,3 +59,14 @@ if rg -n 'Creative Commons <a href="https://github.com/wieslawsoltes/XamlToCShar
     echo "Generated docs contain incorrect Creative Commons MIT footer text."
     exit 1
 fi
+
+EDITOR_API_PAGE="${DOC_ROOT}/api/XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor/index.html"
+if ! test -f "${EDITOR_API_PAGE}"; then
+    echo "Expected editor API page is missing: ${EDITOR_API_PAGE}"
+    exit 1
+fi
+
+if ! rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' "${EDITOR_API_PAGE}" >/dev/null; then
+    echo "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
+    exit 1
+fi

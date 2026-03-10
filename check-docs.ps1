@@ -69,3 +69,13 @@ $badFooterText = rg -n 'Creative Commons <a href="https://github.com/wieslawsolt
 if ($LASTEXITCODE -eq 0 -and $badFooterText) {
     throw "Generated docs contain incorrect Creative Commons MIT footer text.`n$badFooterText"
 }
+
+$editorApiPage = Join-Path $docRoot 'api/XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor/index.html'
+if (-not (Test-Path $editorApiPage)) {
+    throw "Expected editor API page is missing: $editorApiPage"
+}
+
+$missingAvaloniaEditLink = rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' $editorApiPage
+if ($LASTEXITCODE -ne 0) {
+    throw "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
+}
