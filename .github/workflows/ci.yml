@@ -31,7 +31,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Determine CI artifact version
         id: version
@@ -61,7 +61,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore XamlToCSharpGenerator.CI.slnf
@@ -101,8 +101,8 @@ jobs:
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
         with:
+          global-json-file: global.json
           dotnet-version: |
-            10.0.x
             8.0.x
 
       - name: Restore local tools
@@ -130,7 +130,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -179,7 +179,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Setup Xcode 26.0
         uses: maxim-lobanov/setup-xcode@v1
@@ -228,7 +228,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore tests/XamlToCSharpGenerator.Tests/XamlToCSharpGenerator.Tests.csproj --nologo
