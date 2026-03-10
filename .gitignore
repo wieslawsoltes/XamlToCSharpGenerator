@@ -406,3 +406,4 @@ FodyWeavers.xsd
 /tools/vscode/axsg-language-server/server
 *.vsix
 site/.lunet/build/
+/.playwright-cli
