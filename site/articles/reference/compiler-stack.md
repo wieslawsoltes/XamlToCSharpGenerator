@@ -22,8 +22,8 @@ This guide explains how the compiler-facing packages fit together, which layer o
 
 Use:
 
-- [Package: XamlToCSharpGenerator](packages/xamltocsharpgenerator)
-- [Package: XamlToCSharpGenerator.Build](packages/build)
+- [Package: XamlToCSharpGenerator](packages/xamltocsharpgenerator.md)
+- [Package: XamlToCSharpGenerator.Build](packages/build.md)
 
 Do not start from `Compiler` or `Generator` unless you are deliberately composing the lower-level pieces yourself.
 
@@ -31,22 +31,22 @@ Do not start from `Compiler` or `Generator` unless you are deliberately composin
 
 Use:
 
-- [Package: XamlToCSharpGenerator.Compiler](packages/compiler)
-- [Package: XamlToCSharpGenerator.Core](packages/core)
-- [Package: XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions)
+- [Package: XamlToCSharpGenerator.Compiler](packages/compiler.md)
+- [Package: XamlToCSharpGenerator.Core](packages/core.md)
+- [Package: XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions.md)
 
 Add a concrete profile package such as:
 
-- [Package: XamlToCSharpGenerator.Avalonia](packages/avalonia)
-- [Package: XamlToCSharpGenerator.NoUi](packages/noui)
+- [Package: XamlToCSharpGenerator.Avalonia](packages/avalonia.md)
+- [Package: XamlToCSharpGenerator.NoUi](packages/noui.md)
 
 ### Custom framework profile work
 
 Start from:
 
-- [Package: XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions)
-- [Package: XamlToCSharpGenerator.NoUi](packages/noui)
-- [Custom Framework Profiles](../advanced/custom-framework-profiles)
+- [Package: XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions.md)
+- [Package: XamlToCSharpGenerator.NoUi](packages/noui.md)
+- [Custom Framework Profiles](../advanced/custom-framework-profiles.md)
 
 `NoUi` is the leanest end-to-end reference profile in the repo and is the right place to learn the profile seams before touching the Avalonia implementation.
 
@@ -128,7 +128,7 @@ Primary APIs:
 
 ## Related docs
 
-- [Compiler and Core Namespaces](namespace-compiler-and-core)
-- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework)
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
-- [Compiler Pipeline](../architecture/compiler-pipeline)
+- [Compiler and Core Namespaces](namespace-compiler-and-core.md)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
+- [Compiler Pipeline](../architecture/compiler-pipeline.md)

@@ -46,7 +46,7 @@ Theme and style edits matter for hot reload because they affect visual state bro
 
 ## Related docs
 
-- [Property Elements, TemplateBinding, and Attached Properties](property-elements-templatebinding-and-attached-properties)
-- [Resources, Includes, and URIs](resources-includes-and-uris)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
-- [Expression, Parsing, and Framework Namespaces](../reference/namespace-expression-and-framework)
+- [Property Elements, TemplateBinding, and Attached Properties](property-elements-templatebinding-and-attached-properties.md)
+- [Resources, Includes, and URIs](resources-includes-and-uris.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Expression, Parsing, and Framework Namespaces](../reference/namespace-expression-and-framework.md)

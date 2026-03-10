@@ -21,7 +21,7 @@ This guide explains how the editor/tooling artifacts relate to one another and w
 
 Use:
 
-- [Artifact: VS Code Extension](packages/vscode-extension)
+- [Artifact: VS Code Extension](packages/vscode-extension.md)
 
 This is the supported packaged experience. It bundles the client and uses the managed server plus editor-specific behaviors.
 
@@ -29,7 +29,7 @@ This is the supported packaged experience. It bundles the client and uses the ma
 
 Use:
 
-- [Package: XamlToCSharpGenerator.LanguageServer.Tool](packages/language-server-tool)
+- [Package: XamlToCSharpGenerator.LanguageServer.Tool](packages/language-server-tool.md)
 
 This is the correct entry point when you want a process-based server rather than embedding the semantic engine.
 
@@ -37,11 +37,11 @@ This is the correct entry point when you want a process-based server rather than
 
 Use:
 
-- [Package: XamlToCSharpGenerator.LanguageService](packages/language-service)
+- [Package: XamlToCSharpGenerator.LanguageService](packages/language-service.md)
 
 and optionally:
 
-- [Package: XamlToCSharpGenerator.Editor.Avalonia](packages/editor-avalonia)
+- [Package: XamlToCSharpGenerator.Editor.Avalonia](packages/editor-avalonia.md)
 
 if the host is an Avalonia app and you want an editor surface as well.
 
@@ -104,7 +104,7 @@ Primary API entry point:
 
 ## Related docs
 
-- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling)
-- [Tooling Surface](../concepts/tooling-surface)
-- [Language Service and VS Code](../architecture/language-service-and-vscode)
-- [VS Code and Language Service](../guides/vscode-language-service)
+- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling.md)
+- [Tooling Surface](../concepts/tooling-surface.md)
+- [Language Service and VS Code](../architecture/language-service-and-vscode.md)
+- [VS Code and Language Service](../guides/vscode-language-service.md)

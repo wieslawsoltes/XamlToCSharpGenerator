@@ -57,11 +57,11 @@ The umbrella package is the right default for applications. Start with lower-lev
 - embedding the language service/editor pieces separately
 - consuming only runtime or build integration surfaces
 
-Use [Package Selection and Integration](../guides/package-selection-and-integration) when you need that split.
+Use [Package Selection and Integration](../guides/package-selection-and-integration.md) when you need that split.
 
 ## Next steps
 
-- [Installation](installation)
-- [Quickstart](quickstart)
-- [Artifact Matrix](../reference/artifact-matrix)
-- [Compiler Pipeline](../architecture/compiler-pipeline)
+- [Installation](installation.md)
+- [Quickstart](quickstart.md)
+- [Artifact Matrix](../reference/artifact-matrix.md)
+- [Compiler Pipeline](../architecture/compiler-pipeline.md)

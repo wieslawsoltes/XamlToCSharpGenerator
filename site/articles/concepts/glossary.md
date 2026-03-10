@@ -170,7 +170,7 @@ The internal `csharp`-typed VS Code document generated for inline code interop s
 
 ## Related
 
-- [Compiler Host and Project Model](compiler-host-and-project-model)
-- [Binding and Expression Model](binding-and-expression-model)
-- [Tooling Surface](tooling-surface)
-- [Troubleshooting](../guides/troubleshooting)
+- [Compiler Host and Project Model](compiler-host-and-project-model.md)
+- [Binding and Expression Model](binding-and-expression-model.md)
+- [Tooling Surface](tooling-surface.md)
+- [Troubleshooting](../guides/troubleshooting.md)

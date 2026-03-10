@@ -50,6 +50,11 @@ if rg -n 'href="[^"]*\.md"' "${DOC_ROOT}" >/dev/null; then
     exit 1
 fi
 
+if rg -n 'href="[^"]*/readme(?:[?#"][^"]*)?"' "${DOC_ROOT}" >/dev/null; then
+    echo "Generated docs contain /readme routes instead of directory routes."
+    exit 1
+fi
+
 if find "${DOC_ROOT}/articles" -name '*.md' -print -quit | grep -q .; then
     echo "Generated docs still contain raw .md article outputs."
     find "${DOC_ROOT}/articles" -name '*.md' -print

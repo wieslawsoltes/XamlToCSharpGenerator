@@ -81,7 +81,7 @@ Prefer view-model or service code when:
 
 ## Related docs
 
-- [Guides: Inline C# Code](../guides/inline-csharp-code)
-- [Event Bindings](event-bindings)
-- [Language Service and VS Code](../architecture/language-service-and-vscode)
+- [Guides: Inline C# Code](../guides/inline-csharp-code.md)
+- [Event Bindings](event-bindings.md)
+- [Language Service and VS Code](../architecture/language-service-and-vscode.md)
 - API: <xref:XamlToCSharpGenerator.Runtime.Markup.CSharp>

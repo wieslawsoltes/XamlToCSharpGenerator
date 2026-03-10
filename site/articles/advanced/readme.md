@@ -19,12 +19,12 @@ Use these articles when you need to move beyond the default application-facing i
 
 ## Recommended reading order
 
-1. [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules)
-2. [Custom Framework Profiles](custom-framework-profiles)
-3. [Hot Reload and Hot Design Internals](hot-reload-and-hot-design)
-4. [Language Service and Compiler Performance](language-service-and-compiler-performance)
-5. [Testing and Validation](testing-and-validation)
-6. [Docs and Release Infrastructure](docs-and-release-infrastructure)
+1. [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules.md)
+2. [Custom Framework Profiles](custom-framework-profiles.md)
+3. [Hot Reload and Hot Design Internals](hot-reload-and-hot-design.md)
+4. [Language Service and Compiler Performance](language-service-and-compiler-performance.md)
+5. [Testing and Validation](testing-and-validation.md)
+6. [Docs and Release Infrastructure](docs-and-release-infrastructure.md)
 
 ## Typical scenarios
 
@@ -32,44 +32,44 @@ Use these articles when you need to move beyond the default application-facing i
 
 Start with:
 
-- [Custom Framework Profiles](custom-framework-profiles)
-- [Compiler Pipeline](../architecture/compiler-pipeline)
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
+- [Custom Framework Profiles](custom-framework-profiles.md)
+- [Compiler Pipeline](../architecture/compiler-pipeline.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
 
 ### You are changing build/configuration behavior
 
 Start with:
 
-- [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules)
-- [Configuration Model](../reference/configuration-model)
-- [Configuration Migration](../reference/configuration-migration)
+- [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules.md)
+- [Configuration Model](../reference/configuration-model.md)
+- [Configuration Migration](../reference/configuration-migration.md)
 
 ### You are debugging hot reload or runtime state transfer
 
 Start with:
 
-- [Hot Reload and Hot Design Internals](hot-reload-and-hot-design)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback)
+- [Hot Reload and Hot Design Internals](hot-reload-and-hot-design.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
 
 ### You are tuning performance or CI throughput
 
 Start with:
 
-- [Language Service and Compiler Performance](language-service-and-compiler-performance)
-- [Performance and Benchmarking](performance-and-benchmarking)
-- [Testing and Validation](testing-and-validation)
+- [Language Service and Compiler Performance](language-service-and-compiler-performance.md)
+- [Performance and Benchmarking](performance-and-benchmarking.md)
+- [Testing and Validation](testing-and-validation.md)
 
 ### You are maintaining docs or the release pipeline
 
 Start with:
 
-- [Docs and Release Infrastructure](docs-and-release-infrastructure)
-- [Packaging and Release](../guides/packaging-and-release)
-- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline)
+- [Docs and Release Infrastructure](docs-and-release-infrastructure.md)
+- [Packaging and Release](../guides/packaging-and-release.md)
+- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline.md)
 
 ## Cross-links
 
-- [Architecture](../architecture/readme)
-- [Reference](../reference/readme)
-- [Package Guides](../reference/packages/readme)
+- [Architecture](../architecture/)
+- [Reference](../reference/)
+- [Package Guides](../reference/packages/)

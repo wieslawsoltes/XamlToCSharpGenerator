@@ -10,39 +10,39 @@ This index maps the shipped AXSG package surface to the narrative docs and gener
 
 | Group | Packages | Primary docs |
 | --- | --- | --- |
-| Compiler host and contracts | `XamlToCSharpGenerator.Compiler`, `XamlToCSharpGenerator.Core`, `XamlToCSharpGenerator.Framework.Abstractions` | [Compiler Host and Project Model](../concepts/compiler-host-and-project-model), [Compiler and Core Namespaces](namespace-compiler-and-core) |
-| Framework profiles and parsers | `XamlToCSharpGenerator.Avalonia`, `XamlToCSharpGenerator.NoUi`, `XamlToCSharpGenerator.ExpressionSemantics`, `XamlToCSharpGenerator.MiniLanguageParsing`, `XamlToCSharpGenerator.Generator` | [Binding and Expression Model](../concepts/binding-and-expression-model), [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework) |
-| Runtime and editor | `XamlToCSharpGenerator.Runtime`, `XamlToCSharpGenerator.Runtime.Core`, `XamlToCSharpGenerator.Runtime.Avalonia`, `XamlToCSharpGenerator.Editor.Avalonia` | [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime), [Runtime and Editor Namespaces](namespace-runtime-and-editor) |
-| Tooling and integration | `XamlToCSharpGenerator.LanguageService`, `XamlToCSharpGenerator.LanguageServer.Tool`, `XamlToCSharpGenerator.Build`, `XamlToCSharpGenerator` | [Tooling Surface](../concepts/tooling-surface), [Language Service and Tooling Namespaces](namespace-language-service-and-tooling) |
+| Compiler host and contracts | `XamlToCSharpGenerator.Compiler`, `XamlToCSharpGenerator.Core`, `XamlToCSharpGenerator.Framework.Abstractions` | [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md), [Compiler and Core Namespaces](namespace-compiler-and-core.md) |
+| Framework profiles and parsers | `XamlToCSharpGenerator.Avalonia`, `XamlToCSharpGenerator.NoUi`, `XamlToCSharpGenerator.ExpressionSemantics`, `XamlToCSharpGenerator.MiniLanguageParsing`, `XamlToCSharpGenerator.Generator` | [Binding and Expression Model](../concepts/binding-and-expression-model.md), [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework.md) |
+| Runtime and editor | `XamlToCSharpGenerator.Runtime`, `XamlToCSharpGenerator.Runtime.Core`, `XamlToCSharpGenerator.Runtime.Avalonia`, `XamlToCSharpGenerator.Editor.Avalonia` | [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime.md), [Runtime and Editor Namespaces](namespace-runtime-and-editor.md) |
+| Tooling and integration | `XamlToCSharpGenerator.LanguageService`, `XamlToCSharpGenerator.LanguageServer.Tool`, `XamlToCSharpGenerator.Build`, `XamlToCSharpGenerator` | [Tooling Surface](../concepts/tooling-surface.md), [Language Service and Tooling Namespaces](namespace-language-service-and-tooling.md) |
 
 ## Package and assembly mapping
 
-Use [Package and Assembly](package-and-assembly) when you need the installation identity, shipped payload, and generated API status for each artifact.
-Use [Assembly Catalog](assembly-catalog) when you already know the assembly or shipped artifact name and want the direct generated API route plus the matching narrative guide.
-Use [Feature Coverage Matrix](feature-coverage-matrix) when you know the feature area but need to map it to the right package and namespace entry point.
+Use [Package and Assembly](package-and-assembly.md) when you need the installation identity, shipped payload, and generated API status for each artifact.
+Use [Assembly Catalog](assembly-catalog.md) when you already know the assembly or shipped artifact name and want the direct generated API route plus the matching narrative guide.
+Use [Feature Coverage Matrix](feature-coverage-matrix.md) when you know the feature area but need to map it to the right package and namespace entry point.
 
 ## Package guide coverage
 
 Every shipped package and editor/tool surface now has a dedicated narrative page:
 
-- [Package Guides](packages/readme)
-- [XamlToCSharpGenerator](packages/xamltocsharpgenerator)
-- [XamlToCSharpGenerator.Build](packages/build)
-- [XamlToCSharpGenerator.Compiler](packages/compiler)
-- [XamlToCSharpGenerator.Core](packages/core)
-- [XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions)
-- [XamlToCSharpGenerator.Avalonia](packages/avalonia)
-- [XamlToCSharpGenerator.ExpressionSemantics](packages/expression-semantics)
-- [XamlToCSharpGenerator.MiniLanguageParsing](packages/mini-language-parsing)
-- [XamlToCSharpGenerator.NoUi](packages/noui)
-- [XamlToCSharpGenerator.Generator](packages/generator)
-- [XamlToCSharpGenerator.Runtime](packages/runtime)
-- [XamlToCSharpGenerator.Runtime.Core](packages/runtime-core)
-- [XamlToCSharpGenerator.Runtime.Avalonia](packages/runtime-avalonia)
-- [XamlToCSharpGenerator.LanguageService](packages/language-service)
-- [XamlToCSharpGenerator.LanguageServer.Tool](packages/language-server-tool)
-- [XamlToCSharpGenerator.Editor.Avalonia](packages/editor-avalonia)
-- [VS Code Extension](packages/vscode-extension)
+- [Package Guides](packages/)
+- [XamlToCSharpGenerator](packages/xamltocsharpgenerator.md)
+- [XamlToCSharpGenerator.Build](packages/build.md)
+- [XamlToCSharpGenerator.Compiler](packages/compiler.md)
+- [XamlToCSharpGenerator.Core](packages/core.md)
+- [XamlToCSharpGenerator.Framework.Abstractions](packages/framework-abstractions.md)
+- [XamlToCSharpGenerator.Avalonia](packages/avalonia.md)
+- [XamlToCSharpGenerator.ExpressionSemantics](packages/expression-semantics.md)
+- [XamlToCSharpGenerator.MiniLanguageParsing](packages/mini-language-parsing.md)
+- [XamlToCSharpGenerator.NoUi](packages/noui.md)
+- [XamlToCSharpGenerator.Generator](packages/generator.md)
+- [XamlToCSharpGenerator.Runtime](packages/runtime.md)
+- [XamlToCSharpGenerator.Runtime.Core](packages/runtime-core.md)
+- [XamlToCSharpGenerator.Runtime.Avalonia](packages/runtime-avalonia.md)
+- [XamlToCSharpGenerator.LanguageService](packages/language-service.md)
+- [XamlToCSharpGenerator.LanguageServer.Tool](packages/language-server-tool.md)
+- [XamlToCSharpGenerator.Editor.Avalonia](packages/editor-avalonia.md)
+- [VS Code Extension](packages/vscode-extension.md)
 
 ## Generated API scope
 
@@ -62,23 +62,23 @@ The Lunet `api.dotnet` build on this branch covers these projects:
 - `XamlToCSharpGenerator.LanguageServer.Tool`
 - `XamlToCSharpGenerator.Editor.Avalonia`
 
-For a direct assembly-to-API route map, use [Assembly Catalog](assembly-catalog).
+For a direct assembly-to-API route map, use [Assembly Catalog](assembly-catalog.md).
 
 Narrative-only shipped/internal artifacts are documented outside generated API when a package is primarily a package shell, MSBuild targets layer, or operational executable. The main examples are:
 
-- `XamlToCSharpGenerator` via [Package Guides](packages/readme) and [Package and Assembly](package-and-assembly)
-- `XamlToCSharpGenerator.Build` via [Package Guides](packages/readme) and [Package and Assembly](package-and-assembly)
-- `XamlToCSharpGenerator.Runtime` via [Package Guides](packages/readme) and [Package and Assembly](package-and-assembly)
-- `XamlToCSharpGenerator.DotNetWatch.Proxy` via [Internal Support Components](internal-support-components)
+- `XamlToCSharpGenerator` via [Package Guides](packages/) and [Package and Assembly](package-and-assembly.md)
+- `XamlToCSharpGenerator.Build` via [Package Guides](packages/) and [Package and Assembly](package-and-assembly.md)
+- `XamlToCSharpGenerator.Runtime` via [Package Guides](packages/) and [Package and Assembly](package-and-assembly.md)
+- `XamlToCSharpGenerator.DotNetWatch.Proxy` via [Internal Support Components](internal-support-components.md)
 
 These are intentionally excluded from generated API because they do not provide a stable, useful public namespace surface on their own.
 
 ## Namespace entry points
 
-- [Compiler and Core Namespaces](namespace-compiler-and-core)
-- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework)
-- [Runtime and Editor Namespaces](namespace-runtime-and-editor)
-- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling)
+- [Compiler and Core Namespaces](namespace-compiler-and-core.md)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework.md)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor.md)
+- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling.md)
 
 ## Notes
 

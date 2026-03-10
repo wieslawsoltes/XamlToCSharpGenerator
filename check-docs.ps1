@@ -55,6 +55,11 @@ if ($LASTEXITCODE -eq 0 -and $rawMarkdownLinks) {
     throw "Generated docs contain raw .md links.`n$rawMarkdownLinks"
 }
 
+$readmeRoutes = rg -n 'href="[^"]*/readme(?:[?#"][^"]*)?"' $docRoot
+if ($LASTEXITCODE -eq 0 -and $readmeRoutes) {
+    throw "Generated docs contain /readme routes instead of directory routes.`n$readmeRoutes"
+}
+
 $rawMarkdownOutputs = Get-ChildItem -Path (Join-Path $docRoot 'articles') -Filter *.md -Recurse -ErrorAction SilentlyContinue
 if ($rawMarkdownOutputs.Count -gt 0) {
     $paths = ($rawMarkdownOutputs | ForEach-Object { $_.FullName }) -join "`n"

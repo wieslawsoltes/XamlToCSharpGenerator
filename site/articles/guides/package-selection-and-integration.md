@@ -70,7 +70,7 @@ Pick tooling packages when you need editor/language infrastructure:
 
 ## Related reference pages
 
-- [Package Catalog](../reference/package-catalog)
-- [Package and Assembly](../reference/package-and-assembly)
-- [Assembly Catalog](../reference/assembly-catalog)
-- [Package Guides](../reference/packages/readme)
+- [Package Catalog](../reference/package-catalog.md)
+- [Package and Assembly](../reference/package-and-assembly.md)
+- [Assembly Catalog](../reference/assembly-catalog.md)
+- [Package Guides](../reference/packages/)

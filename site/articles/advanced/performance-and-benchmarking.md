@@ -38,6 +38,6 @@ That keeps the project honest: speculative “optimizations” without measureme
 
 ## Related docs
 
-- [Language Service and Compiler Performance](language-service-and-compiler-performance)
-- [Testing and Validation](testing-and-validation)
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
+- [Language Service and Compiler Performance](language-service-and-compiler-performance.md)
+- [Testing and Validation](testing-and-validation.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)

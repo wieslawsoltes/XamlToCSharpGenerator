@@ -37,6 +37,6 @@ Tooling layers coordinate the runtime and compiler through:
 
 ## Related docs
 
-- [Docs and Release Infrastructure](docs-and-release-infrastructure)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback)
-- [iOS Hot Reload](../guides/hot-reload-ios)
+- [Docs and Release Infrastructure](docs-and-release-infrastructure.md)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
+- [iOS Hot Reload](../guides/hot-reload-ios.md)

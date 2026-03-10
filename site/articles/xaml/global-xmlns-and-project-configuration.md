@@ -52,7 +52,7 @@ Examples:
 
 ## Related docs
 
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
-- [Configuration Model](../reference/configuration-model)
-- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
+- [Configuration Model](../reference/configuration-model.md)
+- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules.md)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)

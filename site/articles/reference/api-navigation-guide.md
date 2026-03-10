@@ -10,19 +10,19 @@ The generated API is large. This page tells you how to enter it without guessing
 
 Use:
 
-- [Package Catalog](package-catalog) when you know the package name
-- [Package and Assembly](package-and-assembly) when you need the install-to-assembly mapping
-- [Assembly Catalog](assembly-catalog) when you already know the assembly
-- [Feature Coverage Matrix](feature-coverage-matrix) when you know the feature area but not the package
+- [Package Catalog](package-catalog.md) when you know the package name
+- [Package and Assembly](package-and-assembly.md) when you need the install-to-assembly mapping
+- [Assembly Catalog](assembly-catalog.md) when you already know the assembly
+- [Feature Coverage Matrix](feature-coverage-matrix.md) when you know the feature area but not the package
 
 ## Namespace entry strategy
 
 The generated API tree is easiest to navigate by subsystem:
 
-- [Compiler and Core Namespaces](namespace-compiler-and-core)
-- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework)
-- [Runtime and Editor Namespaces](namespace-runtime-and-editor)
-- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling)
+- [Compiler and Core Namespaces](namespace-compiler-and-core.md)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework.md)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor.md)
+- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling.md)
 
 These narrative pages exist because the raw generated API tree does not explain responsibility boundaries.
 

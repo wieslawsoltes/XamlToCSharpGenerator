@@ -41,6 +41,6 @@ Inline C# in attribute form, object-element form, and CDATA form participates in
 
 ## Related docs
 
-- [VS Code and Language Service](vscode-language-service)
-- [Inline C# Code](inline-csharp-code)
-- [C# Expressions](csharp-expressions)
+- [VS Code and Language Service](vscode-language-service.md)
+- [Inline C# Code](inline-csharp-code.md)
+- [C# Expressions](csharp-expressions.md)

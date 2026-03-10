@@ -110,7 +110,7 @@ Prefer the standalone language-server tool when you want:
 
 ## Related docs
 
-- [Language Service and VS Code](../architecture/language-service-and-vscode)
-- [Navigation and Refactorings](navigation-and-refactorings)
-- [Inline C# Code](inline-csharp-code)
-- [Troubleshooting](troubleshooting)
+- [Language Service and VS Code](../architecture/language-service-and-vscode.md)
+- [Navigation and Refactorings](navigation-and-refactorings.md)
+- [Inline C# Code](inline-csharp-code.md)
+- [Troubleshooting](troubleshooting.md)

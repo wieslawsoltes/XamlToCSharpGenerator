@@ -49,6 +49,6 @@ The same semantic models are also reused by the language service, which is why e
 
 ## Related docs
 
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
-- [Binding and Expression Model](../concepts/binding-and-expression-model)
-- [Generated Artifacts and Runtime Contracts](../concepts/generated-artifacts-and-runtime)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
+- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
+- [Generated Artifacts and Runtime Contracts](../concepts/generated-artifacts-and-runtime.md)

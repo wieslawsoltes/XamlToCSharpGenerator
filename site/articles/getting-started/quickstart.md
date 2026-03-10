@@ -14,7 +14,7 @@ For most applications:
 <PackageReference Include="XamlToCSharpGenerator" Version="0.1.0-alpha.3" />
 ```
 
-If your repo already has custom SDK logic, generator composition rules, or a non-standard runtime host, stop here and read [Package Selection and Integration](../guides/package-selection-and-integration). The umbrella package is the right default for app projects, but it is not the only supported integration model.
+If your repo already has custom SDK logic, generator composition rules, or a non-standard runtime host, stop here and read [Package Selection and Integration](../guides/package-selection-and-integration.md). The umbrella package is the right default for app projects, but it is not the only supported integration model.
 
 ## 2. Annotate binding scopes
 
@@ -56,7 +56,7 @@ At this point you should be able to:
 - use the language service in supported editors
 - exercise runtime features such as hot reload if your host is configured for them
 
-If any of those are missing, move to [Troubleshooting](../guides/troubleshooting) before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.
+If any of those are missing, move to [Troubleshooting](../guides/troubleshooting.md) before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.
 
 ## 5. Explore feature areas
 
@@ -91,7 +91,7 @@ If the generated output shape looks wrong, start with the build/package docs bef
 
 ## Where to go next
 
-- [Samples and Feature Tour](samples-and-feature-tour)
-- [XAML feature docs](../xaml/readme)
-- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules)
-- [VS Code and Language Service](../guides/vscode-language-service)
+- [Samples and Feature Tour](samples-and-feature-tour.md)
+- [XAML feature docs](../xaml/)
+- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules.md)
+- [VS Code and Language Service](../guides/vscode-language-service.md)

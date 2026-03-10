@@ -17,46 +17,46 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 ### Language features and editor workflows
 
-- [C# Expressions](csharp-expressions)
-- [Inline C# Code](inline-csharp-code)
-- [Navigation and Refactorings](navigation-and-refactorings)
-- [VS Code and Language Service](vscode-language-service)
+- [C# Expressions](csharp-expressions.md)
+- [Inline C# Code](inline-csharp-code.md)
+- [Navigation and Refactorings](navigation-and-refactorings.md)
+- [VS Code and Language Service](vscode-language-service.md)
 
 ### Runtime and hot reload workflows
 
-- [Hot Reload and Hot Design](hot-reload-and-hot-design)
-- [iOS Hot Reload](hot-reload-ios)
-- [Runtime Loader and Fallback](runtime-loader-and-fallback)
+- [Hot Reload and Hot Design](hot-reload-and-hot-design.md)
+- [iOS Hot Reload](hot-reload-ios.md)
+- [Runtime Loader and Fallback](runtime-loader-and-fallback.md)
 
 ### Packaging and maintenance workflows
 
-- [Package Selection and Integration](package-selection-and-integration)
-- [Packaging and Release](packaging-and-release)
-- [Troubleshooting](troubleshooting)
+- [Package Selection and Integration](package-selection-and-integration.md)
+- [Packaging and Release](packaging-and-release.md)
+- [Troubleshooting](troubleshooting.md)
 
 ## Suggested paths
 
 ### New application integration
 
-1. [Package Selection and Integration](package-selection-and-integration)
-2. [C# Expressions](csharp-expressions)
-3. [Inline C# Code](inline-csharp-code)
-4. [Hot Reload and Hot Design](hot-reload-and-hot-design)
+1. [Package Selection and Integration](package-selection-and-integration.md)
+2. [C# Expressions](csharp-expressions.md)
+3. [Inline C# Code](inline-csharp-code.md)
+4. [Hot Reload and Hot Design](hot-reload-and-hot-design.md)
 
 ### Editor or tooling integration
 
-1. [VS Code and Language Service](vscode-language-service)
-2. [Navigation and Refactorings](navigation-and-refactorings)
-3. [Runtime Loader and Fallback](runtime-loader-and-fallback)
+1. [VS Code and Language Service](vscode-language-service.md)
+2. [Navigation and Refactorings](navigation-and-refactorings.md)
+3. [Runtime Loader and Fallback](runtime-loader-and-fallback.md)
 
 ### CI, release, and maintenance work
 
-1. [Packaging and Release](packaging-and-release)
-2. [Troubleshooting](troubleshooting)
-3. [Lunet Docs Pipeline](../reference/lunet-docs-pipeline)
+1. [Packaging and Release](packaging-and-release.md)
+2. [Troubleshooting](troubleshooting.md)
+3. [Lunet Docs Pipeline](../reference/lunet-docs-pipeline.md)
 
 ## Related sections
 
-- [Getting Started](../getting-started/readme)
-- [XAML Usage](../xaml/readme)
-- [Reference](../reference/readme)
+- [Getting Started](../getting-started/)
+- [XAML Usage](../xaml/)
+- [Reference](../reference/)

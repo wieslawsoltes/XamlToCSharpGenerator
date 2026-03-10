@@ -58,6 +58,6 @@ These surfaces are easy to get wrong if the editor only tokenizes XML text. AXSG
 
 ## Related docs
 
-- [Styles, Templates, and Themes](styles-templates-and-themes)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
+- [Styles, Templates, and Themes](styles-templates-and-themes.md)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)

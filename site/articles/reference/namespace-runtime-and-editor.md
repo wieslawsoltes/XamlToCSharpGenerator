@@ -49,7 +49,7 @@ This namespace family covers generated-object runtime support, source-info and r
 
 ## Related docs
 
-- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback)
-- [Package: XamlToCSharpGenerator.Runtime.Avalonia](packages/runtime-avalonia)
+- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
+- [Package: XamlToCSharpGenerator.Runtime.Avalonia](packages/runtime-avalonia.md)

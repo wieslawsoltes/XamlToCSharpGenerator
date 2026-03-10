@@ -37,6 +37,6 @@ Do not use conditional XAML to replace ordinary runtime state or view-model-driv
 
 ## Related docs
 
-- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules)
-- [Configuration Model](../reference/configuration-model)
-- [Compiler Pipeline](../architecture/compiler-pipeline)
+- [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules.md)
+- [Configuration Model](../reference/configuration-model.md)
+- [Compiler Pipeline](../architecture/compiler-pipeline.md)

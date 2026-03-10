@@ -67,7 +67,7 @@ The concrete server host `AxsgLanguageServer` is intentionally internal. Treat t
 
 ## Related docs
 
-- [Tooling Surface](../concepts/tooling-surface)
-- [Language Service and VS Code](../architecture/language-service-and-vscode)
-- [VS Code and Language Service](../guides/vscode-language-service)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings)
+- [Tooling Surface](../concepts/tooling-surface.md)
+- [Language Service and VS Code](../architecture/language-service-and-vscode.md)
+- [VS Code and Language Service](../guides/vscode-language-service.md)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)

@@ -39,6 +39,6 @@ If you are changing AXSG or integrating deeply with it, the test suite tells you
 
 ## Related docs
 
-- [Performance and Benchmarking](performance-and-benchmarking)
-- [Compiler Pipeline](../architecture/compiler-pipeline)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
+- [Performance and Benchmarking](performance-and-benchmarking.md)
+- [Compiler Pipeline](../architecture/compiler-pipeline.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)

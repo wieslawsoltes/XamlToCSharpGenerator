@@ -11,5 +11,5 @@ This project is licensed under MIT.
 
 For shipped artifacts and the docs pipeline that publishes them, see:
 
-- [Package and Assembly](package-and-assembly)
-- [Lunet Docs Pipeline](lunet-docs-pipeline)
+- [Package and Assembly](package-and-assembly.md)
+- [Lunet Docs Pipeline](lunet-docs-pipeline.md)

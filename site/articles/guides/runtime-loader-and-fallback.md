@@ -42,6 +42,6 @@ Fallback should never become the default design for normal compiler behavior. If
 
 ## Related docs
 
-- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload)
-- [Resources, Includes, and URIs](../xaml/resources-includes-and-uris)
+- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime.md)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Resources, Includes, and URIs](../xaml/resources-includes-and-uris.md)
