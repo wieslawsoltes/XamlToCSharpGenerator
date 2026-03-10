@@ -4246,7 +4246,8 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
-        Assert.Contains("static source => (object?)(source.FirstName + \" - \" + source.LastName)", generated);
+        Assert.Contains("__AXSG_CompiledBinding_", generated);
+        Assert.DoesNotContain("static source => (object?)(source.FirstName + \" - \" + source.LastName)", generated);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
             generated);
@@ -4333,7 +4334,8 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
-        Assert.Contains("static source => (object?)(source.FirstName + '!')", generated);
+        Assert.Contains("__AXSG_CompiledBinding_", generated);
+        Assert.DoesNotContain("static source => (object?)(source.FirstName + '!')", generated);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
             generated);
