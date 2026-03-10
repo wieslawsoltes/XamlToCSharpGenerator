@@ -15,6 +15,9 @@ site_project_owner_name = "Wieslaw Soltes"
 site_project_owner_alias = "wieslawsoltes"
 site_project_owner_url = "https://github.com/wieslawsoltes"
 site_project_twitter_user = "wieslawsoltes"
+site_project_content_license_name = "MIT"
+site_project_content_license_url = "https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE"
+template_footer_content_license_html = $"- Content licensed under the <a href=\"{site_project_content_license_url}\">MIT license</a>"
 
 site_project_init
 
@@ -67,9 +70,10 @@ with api.dotnet
     menu_name = "api"
     menu_title = "API Reference"
     config = "Release"
+    properties = {
+        ApiDocumentationBuild: "true"
+    }
     projects = [
-        { name: "TopLevel", path: "../src/XamlToCSharpGenerator/XamlToCSharpGenerator.csproj" },
-        { name: "Build", path: "../src/XamlToCSharpGenerator.Build/XamlToCSharpGenerator.Build.csproj" },
         { name: "Compiler", path: "../src/XamlToCSharpGenerator.Compiler/XamlToCSharpGenerator.Compiler.csproj" },
         { name: "Core", path: "../src/XamlToCSharpGenerator.Core/XamlToCSharpGenerator.Core.csproj" },
         { name: "Framework.Abstractions", path: "../src/XamlToCSharpGenerator.Framework.Abstractions/XamlToCSharpGenerator.Framework.Abstractions.csproj" },
