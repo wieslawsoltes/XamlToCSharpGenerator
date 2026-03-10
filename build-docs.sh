@@ -2,8 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCK_DIR="${SCRIPT_DIR}/site/.lunet/.build-lock"
 
 cd "${SCRIPT_DIR}"
+while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
+    sleep 1
+done
+trap 'rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT
+
 dotnet tool restore
 dotnet build "${SCRIPT_DIR}/XamlToCSharpGenerator.CI.slnf" -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
 
@@ -16,7 +22,7 @@ rm -rf "${SCRIPT_DIR}/site/.lunet/build/cache/api/dotnet" \
 
 cd site
 LUNET_LOG="$(mktemp)"
-trap 'rm -f "${LUNET_LOG}"' EXIT
+trap 'rm -f "${LUNET_LOG}"; rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT
 
 dotnet tool run lunet --stacktrace build 2>&1 | tee "${LUNET_LOG}"
 

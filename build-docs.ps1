@@ -2,6 +2,22 @@ $ErrorActionPreference = 'Stop'
 
 Push-Location $PSScriptRoot
 try {
+    $lockDir = Join-Path $PSScriptRoot 'site/.lunet/.build-lock'
+    while ($true) {
+        if (Test-Path $lockDir) {
+            Start-Sleep -Seconds 1
+            continue
+        }
+
+        try {
+            New-Item -ItemType Directory -Path $lockDir -ErrorAction Stop | Out-Null
+            break
+        }
+        catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+
     dotnet tool restore
     dotnet build (Join-Path $PSScriptRoot 'XamlToCSharpGenerator.CI.slnf') -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
 
@@ -38,5 +54,6 @@ try {
     }
 }
 finally {
+    Remove-Item (Join-Path $PSScriptRoot 'site/.lunet/.build-lock') -Force -Recurse -ErrorAction SilentlyContinue
     Pop-Location
 }
