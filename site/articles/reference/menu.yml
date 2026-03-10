@@ -10,7 +10,23 @@ reference:
   - {path: tooling-stack.md, title: "Tooling Stack Packages"}
   - {path: package-catalog.md, title: "Package Catalog"}
   - {path: internal-support-components.md, title: "Internal Support Components"}
-  - {path: packages/readme.md, title: "Package Guides", folder: true}
+  - {path: packages/xamltocsharpgenerator.md, title: "Package: XamlToCSharpGenerator"}
+  - {path: packages/build.md, title: "Package: XamlToCSharpGenerator.Build"}
+  - {path: packages/compiler.md, title: "Package: XamlToCSharpGenerator.Compiler"}
+  - {path: packages/core.md, title: "Package: XamlToCSharpGenerator.Core"}
+  - {path: packages/framework-abstractions.md, title: "Package: XamlToCSharpGenerator.Framework.Abstractions"}
+  - {path: packages/avalonia.md, title: "Package: XamlToCSharpGenerator.Avalonia"}
+  - {path: packages/expression-semantics.md, title: "Package: XamlToCSharpGenerator.ExpressionSemantics"}
+  - {path: packages/mini-language-parsing.md, title: "Package: XamlToCSharpGenerator.MiniLanguageParsing"}
+  - {path: packages/noui.md, title: "Package: XamlToCSharpGenerator.NoUi"}
+  - {path: packages/generator.md, title: "Package: XamlToCSharpGenerator.Generator"}
+  - {path: packages/runtime.md, title: "Package: XamlToCSharpGenerator.Runtime"}
+  - {path: packages/runtime-core.md, title: "Package: XamlToCSharpGenerator.Runtime.Core"}
+  - {path: packages/runtime-avalonia.md, title: "Package: XamlToCSharpGenerator.Runtime.Avalonia"}
+  - {path: packages/language-service.md, title: "Package: XamlToCSharpGenerator.LanguageService"}
+  - {path: packages/language-server-tool.md, title: "Package: XamlToCSharpGenerator.LanguageServer.Tool"}
+  - {path: packages/editor-avalonia.md, title: "Package: XamlToCSharpGenerator.Editor.Avalonia"}
+  - {path: packages/vscode-extension.md, title: "Package: VS Code Extension"}
   - {path: namespace-compiler-and-core.md, title: "Compiler and Core Namespaces"}
   - {path: namespace-expression-and-framework.md, title: "Expression, Parsing, and Framework Namespaces"}
   - {path: namespace-runtime-and-editor.md, title: "Runtime and Editor Namespaces"}
