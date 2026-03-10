@@ -9,13 +9,40 @@ $requiredFiles = @(
     (Join-Path $docRoot 'articles/reference/index.html'),
     (Join-Path $docRoot 'articles/reference/packages/index.html'),
     (Join-Path $docRoot 'articles/reference/package-and-assembly/index.html'),
+    (Join-Path $docRoot 'articles/reference/assembly-catalog/index.html'),
+    (Join-Path $docRoot 'articles/reference/api-navigation-guide/index.html'),
+    (Join-Path $docRoot 'articles/reference/feature-coverage-matrix/index.html'),
     (Join-Path $docRoot 'articles/reference/license/index.html'),
+    (Join-Path $docRoot 'articles/getting-started/samples-and-feature-tour/index.html'),
+    (Join-Path $docRoot 'articles/guides/package-selection-and-integration/index.html'),
+    (Join-Path $docRoot 'articles/guides/vscode-language-service/index.html'),
+    (Join-Path $docRoot 'articles/guides/navigation-and-refactorings/index.html'),
+    (Join-Path $docRoot 'articles/guides/runtime-loader-and-fallback/index.html'),
+    (Join-Path $docRoot 'articles/guides/hot-reload-and-hot-design/index.html'),
+    (Join-Path $docRoot 'articles/xaml/event-bindings/index.html'),
+    (Join-Path $docRoot 'articles/xaml/resources-includes-and-uris/index.html'),
+    (Join-Path $docRoot 'articles/xaml/property-elements-templatebinding-and-attached-properties/index.html'),
+    (Join-Path $docRoot 'articles/xaml/global-xmlns-and-project-configuration/index.html'),
+    (Join-Path $docRoot 'articles/advanced/compiler-configuration-and-transform-rules/index.html'),
+    (Join-Path $docRoot 'articles/advanced/language-service-and-compiler-performance/index.html'),
+    (Join-Path $docRoot 'articles/advanced/hot-reload-and-hot-design/index.html'),
     (Join-Path $docRoot 'css/lite.css')
 )
 
 foreach ($file in $requiredFiles) {
     if (-not (Test-Path $file)) {
         throw "Required docs output missing: $file"
+    }
+}
+
+$packagePages = Get-ChildItem -Path (Join-Path $PSScriptRoot 'site/articles/reference/packages') -Filter *.md -File |
+    Where-Object { $_.Name -notin @('menu.yml', 'readme.md') } |
+    Sort-Object Name
+
+foreach ($packagePage in $packagePages) {
+    $outputPage = Join-Path $docRoot ("articles/reference/packages/" + [System.IO.Path]::GetFileNameWithoutExtension($packagePage.Name) + "/index.html")
+    if (-not (Test-Path $outputPage)) {
+        throw "Generated package guide output missing: $outputPage"
     }
 }
 

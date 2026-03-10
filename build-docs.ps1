@@ -20,7 +20,18 @@ try {
 
     Push-Location site
     try {
-        dotnet tool run lunet --stacktrace build
+        $lunetLog = [System.IO.Path]::GetTempFileName()
+        try {
+            dotnet tool run lunet --stacktrace build 2>&1 | Tee-Object -FilePath $lunetLog
+
+            $lunetErrors = rg -n 'ERR lunet|Error while building api dotnet|Unable to select the api dotnet output' $lunetLog
+            if ($LASTEXITCODE -eq 0 -and $lunetErrors) {
+                throw "Lunet reported API/site build errors.`n$lunetErrors"
+            }
+        }
+        finally {
+            Remove-Item $lunetLog -Force -ErrorAction SilentlyContinue
+        }
     }
     finally {
         Pop-Location

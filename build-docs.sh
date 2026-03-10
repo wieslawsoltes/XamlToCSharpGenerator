@@ -15,4 +15,12 @@ rm -rf "${SCRIPT_DIR}/site/.lunet/build/cache/api/dotnet" \
        "${SCRIPT_DIR}/site/.lunet/build/www/partials/menus"
 
 cd site
-dotnet tool run lunet --stacktrace build
+LUNET_LOG="$(mktemp)"
+trap 'rm -f "${LUNET_LOG}"' EXIT
+
+dotnet tool run lunet --stacktrace build 2>&1 | tee "${LUNET_LOG}"
+
+if rg -n 'ERR lunet|Error while building api dotnet|Unable to select the api dotnet output' "${LUNET_LOG}" >/dev/null; then
+    echo "Lunet reported API/site build errors."
+    exit 1
+fi
