@@ -131,9 +131,20 @@ Use:
 
 Both scripts fail when generated output still contains raw `.md` article links.
 
-### Lunet warns about unresolved `AvaloniaEdit.*` xrefs
+### AvaloniaEdit API links do not resolve
 
-This is currently external API coverage, not an AXSG docs-build failure. The site should still build and render correctly. Treat it as a cross-reference quality issue unless it blocks actual page generation.
+`AvaloniaEdit.*` links are expected to resolve through the external Avalonia API site:
+
+- `https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/`
+- `https://api-docs.avaloniaui.net/docs/AvaloniaEdit.Document.TextDocument/`
+
+If editor-package links regress:
+
+- verify `site/config.scriban` still maps the `AvaloniaEdit` assembly under `external_apis`
+- rebuild the site with `./build-docs.sh` or `./build-docs.ps1`
+- check the target URL directly before changing the Lunet API graph
+
+Do not add a docs-only project that merely references the package. Lunet documents the output assembly of the configured project, not arbitrary referenced package assemblies, so that approach does not generate `AvaloniaEdit` API pages.
 
 ## Build and package selection
 
