@@ -346,6 +346,21 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 - `tests`: compiler, runtime, and language-service test suite
 - `samples`: sample apps used to validate compiler/runtime/tooling behavior
 - `docs`: focused documentation for configuration and platform-specific flows
+- `site`: Lunet documentation site content, navigation, and API-doc generation
+
+Build docs locally:
+
+```bash
+./build-docs.sh
+./serve-docs.sh
+```
+
+```powershell
+./build-docs.ps1
+./serve-docs.ps1
+```
+
+Generated docs output is written to `site/.lunet/build/www`.
 - `.github/workflows`: CI and release pipelines
 
 ## License
