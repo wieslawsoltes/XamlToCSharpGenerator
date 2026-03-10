@@ -5,6 +5,9 @@ reference:
   - {path: api-navigation-guide.md, title: "API Navigation Guide"}
   - {path: api-coverage-index.md, title: "API Coverage Index"}
   - {path: feature-coverage-matrix.md, title: "Feature Coverage Matrix"}
+  - {path: compiler-stack.md, title: "Compiler Stack Packages"}
+  - {path: runtime-stack.md, title: "Runtime Stack Packages"}
+  - {path: tooling-stack.md, title: "Tooling Stack Packages"}
   - {path: package-catalog.md, title: "Package Catalog"}
   - {path: internal-support-components.md, title: "Internal Support Components"}
   - {path: packages/readme.md, title: "Package Guides", folder: true}

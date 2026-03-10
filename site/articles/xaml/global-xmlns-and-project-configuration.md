@@ -4,7 +4,7 @@ title: "Global XML Namespaces and Project Configuration"
 
 # Global XML Namespaces and Project Configuration
 
-AXSG supports both local `xmlns` declarations and project-wide XML namespace mappings.
+AXSG supports local `xmlns` declarations, project-wide namespace mappings, and assembly-exported namespace definitions that make authored XAML shorter and tooling-aware.
 
 ## Namespace declaration forms
 
@@ -14,27 +14,45 @@ Supported forms include:
 - `xmlns:controls="using:MyApp.Controls"`
 - assembly-level XML namespace exports used by default-namespaced features such as `CSharp`
 
-## Global namespace mappings
+## Why project configuration matters
 
-Project-level namespace mapping matters when you want reusable XAML without repeating local aliases in every file.
+Namespace configuration is not only about parser convenience. It affects:
 
-AXSG can consume namespace and transform configuration from:
+- type resolution during compilation
+- prefix completion and definition navigation in the language service
+- shorthand/default-namespace features that depend on assembly metadata exports
+- transform and migration scenarios where projects remap namespace usage gradually
+
+## Configuration sources
+
+AXSG can read namespace and transform configuration from:
 
 - MSBuild properties/items
-- repo or project configuration files
-- compiler-host configuration sources merged by precedence
+- file-based configuration documents
+- transform-rule documents
+- framework/profile defaults
 
-## Why this matters
+These sources are merged by explicit precedence rules in the compiler host.
 
-Namespace configuration feeds both:
+## Tooling behavior
 
-- compilation/binding resolution
-- editor tooling such as prefix definitions, type completion, hover, and rename
+The language service understands namespace declarations as semantic navigation targets.
 
-This is why Ctrl/Cmd-click on a prefix can resolve back to the `xmlns:` declaration and why the same prefix can still map to the correct CLR type on the qualified element/member token.
+Examples:
+
+- Ctrl/Cmd-click on `pages:` in `<pages:SomePage />` resolves to the `xmlns:pages` declaration
+- Ctrl/Cmd-click on `SomePage` resolves to the CLR type
+- default-namespace surfaces such as `<CSharp>` resolve without requiring a prefixed custom XML namespace in every file
+
+## Design guidance
+
+- use local aliases for clarity when the same file mixes several CLR namespaces
+- use project-level mappings when the same aliases or default exports repeat across many files
+- keep transform rules deterministic so the same authored prefix resolves consistently in both compiler and editor tooling
 
 ## Related docs
 
 - [Compiler Host and Project Model](../concepts/compiler-host-and-project-model)
 - [Configuration Model](../reference/configuration-model)
 - [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings)

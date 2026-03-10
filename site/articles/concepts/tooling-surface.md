@@ -4,26 +4,57 @@ title: "Tooling Surface"
 
 # Tooling Surface
 
-AXSG ships more than a source generator. The tooling surface is split so editor and automation scenarios can reuse the same semantic model.
+AXSG ships multiple tooling layers because editor integrations, in-process editors, and build-time compiler analysis have different hosting constraints.
 
-## Main tooling packages
+## Tooling layers
 
-- `XamlToCSharpGenerator.LanguageService`
-- `XamlToCSharpGenerator.LanguageServer.Tool`
-- `XamlToCSharpGenerator.Editor.Avalonia`
-- VS Code extension `xamltocsharpgenerator.axsg-language-server`
+### Language service core
 
-Related internal support component:
+`XamlToCSharpGenerator.LanguageService` is the shared semantic engine. It owns:
 
-- `XamlToCSharpGenerator.DotNetWatch.Proxy` for the dotnet-watch named-pipe bridge used by the mobile/watch hot reload path
-
-## Shared semantics
-
-The language service uses the same compiler and framework semantic model to provide:
-
+- analysis over XAML + project compilations
 - completion
 - hover
-- definitions/declarations/references
+- definitions, declarations, and references
 - rename/refactoring propagation
 - semantic tokens and inlay hints
-- inline C# and C#-expression support inside XAML
+- inline C# projection support
+
+### Standalone language server
+
+`XamlToCSharpGenerator.LanguageServer.Tool` hosts the language service over LSP and is the server surface used by the VS Code extension and other editor integrations.
+
+### VS Code extension
+
+The VSIX bundles:
+
+- the client middleware
+- activation strategy and virtual-document interop
+- startup and projection management
+- fallback logic around AXSG and editor-native providers
+
+### Embedded editor control
+
+`XamlToCSharpGenerator.Editor.Avalonia` packages an in-process editor surface for Avalonia applications using AvaloniaEdit and the AXSG language service.
+
+## Why these are separate
+
+- build-time semantics need Roslyn/MSBuild access
+- LSP hosting needs process boundaries and transport concerns
+- embedded editors need in-process APIs rather than LSP
+- VS Code needs client-side middleware and activation rules that do not belong in the server
+
+## Choose the right surface
+
+- use the VSIX if you are a VS Code user
+- use the .NET tool if you are integrating another editor
+- use `LanguageService` directly if you are embedding editor features in-process
+- use `Editor.Avalonia` if you need a product-quality AXAML editor inside an Avalonia app
+
+## Related docs
+
+- [Language Service and VS Code](../architecture/language-service-and-vscode)
+- [VS Code Language Service](../guides/vscode-language-service)
+- [Package: XamlToCSharpGenerator.LanguageService](../reference/packages/language-service)
+- [Package: XamlToCSharpGenerator.LanguageServer.Tool](../reference/packages/language-server-tool)
+- [Package: XamlToCSharpGenerator.Editor.Avalonia](../reference/packages/editor-avalonia)

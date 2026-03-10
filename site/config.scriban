@@ -94,6 +94,7 @@ with api.dotnet
         { assembly: "Avalonia.Controls", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.DesignerSupport", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Dialogs", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "AvaloniaEdit", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Markup", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Markup.Xaml", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.MicroCom", url: "https://api-docs.avaloniaui.net/docs" },

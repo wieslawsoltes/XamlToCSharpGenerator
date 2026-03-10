@@ -9,3 +9,4 @@ guides:
   - {path: hot-reload-and-hot-design.md, title: "Hot Reload and Hot Design"}
   - {path: hot-reload-ios.md, title: "iOS Hot Reload"}
   - {path: packaging-and-release.md, title: "Packaging and Release"}
+  - {path: troubleshooting.md, title: "Troubleshooting"}

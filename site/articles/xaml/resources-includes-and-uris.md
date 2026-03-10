@@ -4,7 +4,7 @@ title: "Resources, Includes, and URIs"
 
 # Resources, Includes, and URIs
 
-AXSG tracks XAML resource usage and include graphs as part of compilation and language-service analysis.
+AXSG tracks XAML resources, include graphs, and URI-valued properties as part of compilation and language-service analysis.
 
 ## Resource keys
 
@@ -36,13 +36,22 @@ Example:
 <StyleInclude Source="/Themes/Fluent.xaml" />
 ```
 
-Definition/declaration navigation on the URI resolves to the included XAML file.
+Definition/declaration navigation on the URI resolves to the included XAML file, not just the raw string value.
 
-## Control theme and style includes
+## Why include graphs matter
 
-Include graphs are also used to validate:
+Include graph analysis is used for more than file opening. It also feeds:
 
-- duplicated generated URIs
+- generated URI registration
+- cycle and duplicate detection
+- resource and theme resolution
+- hot reload targeting for included/linked XAML
+
+## Control themes and resource dictionaries
+
+AXSG uses include/resource knowledge to validate:
+
+- duplicate generated URIs
 - missing included documents
 - include cycles
 - local control-theme `BasedOn` chains versus normal external override patterns
@@ -54,10 +63,11 @@ The language service resolves:
 - resource key definitions and references
 - URI definitions for include sources
 - linked-XAML references across the project graph
-- selector/resource interactions in themes and styles
+- resource-key rename/refactoring across declarations and usages
 
 ## Related docs
 
 - [Styles, Templates, and Themes](styles-templates-and-themes)
 - [Compiled Bindings](compiled-bindings)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback)
+- [Troubleshooting](../guides/troubleshooting)
