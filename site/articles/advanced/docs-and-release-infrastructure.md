@@ -15,5 +15,5 @@ The release pipeline publishes:
 
 See also:
 
-- [Reference: Lunet Docs Pipeline](../reference/lunet-docs-pipeline.md)
-- [Guides: Packaging and Release](../guides/packaging-and-release.md)
+- [Reference: Lunet Docs Pipeline](../reference/lunet-docs-pipeline)
+- [Guides: Packaging and Release](../guides/packaging-and-release)

@@ -6,18 +6,18 @@ title: "Reference"
 
 Reference material for every shipped package, tool, namespace group, configuration document, and docs/release artifact.
 
-- [API Coverage Index](api-coverage-index.md)
-- [Package Catalog](package-catalog.md)
-- [Internal Support Components](internal-support-components.md)
-- [Package Guides](packages/readme.md)
-- [Compiler and Core Namespaces](namespace-compiler-and-core.md)
-- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework.md)
-- [Runtime and Editor Namespaces](namespace-runtime-and-editor.md)
-- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling.md)
-- [Configuration Model](configuration-model.md)
-- [Configuration Migration](configuration-migration.md)
-- [Artifact Matrix](artifact-matrix.md)
-- [Lunet Docs Pipeline](lunet-docs-pipeline.md)
+- [API Coverage Index](api-coverage-index)
+- [Package Catalog](package-catalog)
+- [Internal Support Components](internal-support-components)
+- [Package Guides](packages/readme)
+- [Compiler and Core Namespaces](namespace-compiler-and-core)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor)
+- [Language Service and Tooling Namespaces](namespace-language-service-and-tooling)
+- [Configuration Model](configuration-model)
+- [Configuration Migration](configuration-migration)
+- [Artifact Matrix](artifact-matrix)
+- [Lunet Docs Pipeline](lunet-docs-pipeline)
 
 ## Use this section when
 

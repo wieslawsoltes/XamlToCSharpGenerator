@@ -37,6 +37,6 @@ This component sits beside, not inside, the public package surface:
 
 See also:
 
-- [Guides: iOS Hot Reload](../guides/hot-reload-ios.md)
-- [Concepts: Tooling Surface](../concepts/tooling-surface.md)
-- [Reference: API Coverage Index](api-coverage-index.md)
+- [Guides: iOS Hot Reload](../guides/hot-reload-ios)
+- [Concepts: Tooling Surface](../concepts/tooling-surface)
+- [Reference: API Coverage Index](api-coverage-index)

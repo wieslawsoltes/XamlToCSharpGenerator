@@ -12,4 +12,4 @@ The runtime layer provides:
 - remote/device transports where needed
 - hot design support for inspection and live editing scenarios
 
-Start with the platform guide for iOS in [iOS Hot Reload](../guides/hot-reload-ios.md).
+Start with the platform guide for iOS in [iOS Hot Reload](../guides/hot-reload-ios).

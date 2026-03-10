@@ -21,4 +21,4 @@ This is the shared semantic layer behind the VS Code extension, LSP host, rename
 
 Related internal support tooling:
 
-- [Internal Support Components](internal-support-components.md)
+- [Internal Support Components](internal-support-components)

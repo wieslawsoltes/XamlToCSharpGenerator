@@ -13,4 +13,4 @@ Core differentiators:
 - runtime hot reload and design tooling that use generated artifacts
 - a language service that understands generator semantics instead of treating XAML as plain XML
 
-See also the [Artifact Matrix](../reference/artifact-matrix.md) and the [Compiler Pipeline](../architecture/compiler-pipeline.md).
+See also the [Artifact Matrix](../reference/artifact-matrix) and the [Compiler Pipeline](../architecture/compiler-pipeline).

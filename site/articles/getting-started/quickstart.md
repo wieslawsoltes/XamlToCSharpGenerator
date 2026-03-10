@@ -11,4 +11,4 @@ Typical setup for an Avalonia app:
 3. Add `x:DataType` where you want compiled binding semantics.
 4. Build once and inspect generated output if needed.
 
-For configuration details, see [Configuration Model](../reference/configuration-model.md).
+For configuration details, see [Configuration Model](../reference/configuration-model).

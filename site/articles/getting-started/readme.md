@@ -8,6 +8,6 @@ Use AXSG when you want Avalonia XAML compiled into deterministic generated C# in
 
 Start here:
 
-- [Overview](overview.md)
-- [Installation](installation.md)
-- [Quickstart](quickstart.md)
+- [Overview](overview)
+- [Installation](installation)
+- [Quickstart](quickstart)

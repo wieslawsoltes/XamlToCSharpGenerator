@@ -14,5 +14,5 @@ Inline code participates in language-service features and can use the current XA
 
 See:
 
-- [Guides: Inline C# Code](../guides/inline-csharp-code.md)
+- [Guides: Inline C# Code](../guides/inline-csharp-code)
 - API: <xref:XamlToCSharpGenerator.Runtime.Markup.CSharp>

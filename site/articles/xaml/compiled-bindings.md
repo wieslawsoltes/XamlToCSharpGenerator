@@ -14,6 +14,6 @@ They provide:
 
 See also:
 
-- [Guides: C# Expressions](../guides/csharp-expressions.md)
-- [Concepts: Binding and Expression Model](../concepts/binding-and-expression-model.md)
+- [Guides: C# Expressions](../guides/csharp-expressions)
+- [Concepts: Binding and Expression Model](../concepts/binding-and-expression-model)
 - API: <xref:XamlToCSharpGenerator.Avalonia.Binding>

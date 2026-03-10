@@ -2,7 +2,7 @@
 
 This guide maps legacy configuration surface (`AvaloniaSourceGen*`, transform-rule properties/items) to the unified configuration model.
 
-See the full schema in [Configuration Model](configuration-model.md).
+See the full schema in [Configuration Model](configuration-model).
 
 ## What stays compatible
 

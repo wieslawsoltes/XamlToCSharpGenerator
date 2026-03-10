@@ -6,7 +6,7 @@ title: "XAML Usage"
 
 These pages cover the XAML-level language features AXSG adds on top of standard Avalonia markup.
 
-- [Compiled Bindings](compiled-bindings.md)
-- [C# Expressions](csharp-expressions.md)
-- [Inline C#](inline-csharp.md)
-- [Styles, Templates, and Themes](styles-templates-and-themes.md)
+- [Compiled Bindings](compiled-bindings)
+- [C# Expressions](csharp-expressions)
+- [Inline C#](inline-csharp)
+- [Styles, Templates, and Themes](styles-templates-and-themes)

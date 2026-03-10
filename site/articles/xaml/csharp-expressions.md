@@ -8,7 +8,7 @@ AXSG supports C# expression syntax in valid XAML forms, including shorthand expr
 
 This site-level overview complements the full feature guide:
 
-- [Guides: C# Expressions](../guides/csharp-expressions.md)
+- [Guides: C# Expressions](../guides/csharp-expressions)
 
 Relevant implementation packages:
 

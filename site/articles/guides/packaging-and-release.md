@@ -26,4 +26,4 @@ pwsh eng/release/package-artifacts.ps1 -Version 0.1.0-local
 - `Release` packs and publishes NuGet packages and the VS Code extension
 - `Docs` publishes the Lunet site to GitHub Pages
 
-See the [Artifact Matrix](../reference/artifact-matrix.md) for shipped packages and the [Installation](../getting-started/installation.md) guide for local setup.
+See the [Artifact Matrix](../reference/artifact-matrix) for shipped packages and the [Installation](../getting-started/installation) guide for local setup.

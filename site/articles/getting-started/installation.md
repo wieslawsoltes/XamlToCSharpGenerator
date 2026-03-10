@@ -10,4 +10,4 @@ The project ships multiple artifacts:
 - a .NET CLI tool
 - a VS Code extension
 
-Use the local [Artifact Matrix](../reference/artifact-matrix.md) for the current package groups and install paths.
+Use the local [Artifact Matrix](../reference/artifact-matrix) for the current package groups and install paths.

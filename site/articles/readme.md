@@ -8,19 +8,19 @@ This site documents the AXSG compiler, runtime, language service, editor surface
 
 ## Reading order
 
-- [Getting Started](getting-started/readme.md)
-- [Concepts](concepts/readme.md)
-- [Guides](guides/readme.md)
-- [XAML Usage](xaml/readme.md)
-- [Architecture](architecture/readme.md)
-- [Advanced](advanced/readme.md)
-- [Reference](reference/readme.md)
+- [Getting Started](getting-started/readme)
+- [Concepts](concepts/readme)
+- [Guides](guides/readme)
+- [XAML Usage](xaml/readme)
+- [Architecture](architecture/readme)
+- [Advanced](advanced/readme)
+- [Reference](reference/readme)
 
 ## Package-first entry points
 
-- [Package Catalog](reference/package-catalog.md)
-- [Package Guides](reference/packages/readme.md)
-- [API Coverage Index](reference/api-coverage-index.md)
+- [Package Catalog](reference/package-catalog)
+- [Package Guides](reference/packages/readme)
+- [API Coverage Index](reference/api-coverage-index)
 
 ## Major artifact families
 
