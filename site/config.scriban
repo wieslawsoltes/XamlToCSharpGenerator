@@ -18,6 +18,8 @@ site_project_twitter_user = "wieslawsoltes"
 
 site_project_init
 
+# macOS 15 + lunet 1.0.10 has a Dart Sass platform detection bug.
+# Use a custom precompiled bundle until SCSS processing is fixed upstream.
 with bundle "lite"
     bootstrap = resource "npm:bootstrap" "5.3.8"
     bootstrap_icons = resource "npm:bootstrap-icons" "1.13.1"
@@ -26,6 +28,8 @@ with bundle "lite"
     prismjs = resource "npm:prismjs" "1.30.0"
 
     css tocbot "/dist/tocbot.css"
+    css "/css/prism.css"
+    css "/css/template-main.css"
     css "/css/site-overrides.css"
 
     js "/modules/menus/lunet-menu-async.js"
