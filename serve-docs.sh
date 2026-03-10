@@ -6,11 +6,14 @@ HOST="${DOCS_HOST:-127.0.0.1}"
 PORT="${DOCS_PORT:-8080}"
 
 clean_docs_outputs() {
-    rm -rf "${SCRIPT_DIR}/site/.lunet/build/www"
+    find "${SCRIPT_DIR}/src" -path '*/obj/Release/*/*.api.json' -delete
+    rm -rf "${SCRIPT_DIR}/site/.lunet/build/cache/api/dotnet" \
+           "${SCRIPT_DIR}/site/.lunet/build/www"
 }
 
 cd "${SCRIPT_DIR}"
 dotnet tool restore
+dotnet build "${SCRIPT_DIR}/XamlToCSharpGenerator.CI.slnf" -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
 clean_docs_outputs
 cd site
 

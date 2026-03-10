@@ -7,7 +7,7 @@ $requiredFiles = @(
     (Join-Path $docRoot 'index.html'),
     (Join-Path $docRoot 'api/index.html'),
     (Join-Path $docRoot 'articles/reference/index.html'),
-    (Join-Path $docRoot 'articles/reference/packages/index.html'),
+    (Join-Path $docRoot 'articles/reference/package-guides/index.html'),
     (Join-Path $docRoot 'articles/reference/package-and-assembly/index.html'),
     (Join-Path $docRoot 'articles/reference/assembly-catalog/index.html'),
     (Join-Path $docRoot 'articles/reference/api-navigation-guide/index.html'),
@@ -39,12 +39,28 @@ foreach ($file in $requiredFiles) {
     }
 }
 
-$packagePages = Get-ChildItem -Path (Join-Path $PSScriptRoot 'site/articles/reference/packages') -Filter *.md -File |
-    Where-Object { $_.Name -notin @('menu.yml', 'readme.md') } |
-    Sort-Object Name
+$packagePages = @(
+    'xamltocsharpgenerator',
+    'build',
+    'compiler',
+    'core',
+    'framework-abstractions',
+    'avalonia',
+    'expression-semantics',
+    'mini-language-parsing',
+    'noui',
+    'generator',
+    'runtime',
+    'runtime-core',
+    'runtime-avalonia',
+    'language-service',
+    'language-server-tool',
+    'editor-avalonia',
+    'vscode-extension'
+)
 
 foreach ($packagePage in $packagePages) {
-    $outputPage = Join-Path $docRoot ("articles/reference/packages/" + [System.IO.Path]::GetFileNameWithoutExtension($packagePage.Name) + "/index.html")
+    $outputPage = Join-Path $docRoot ("articles/reference/" + $packagePage + "/index.html")
     if (-not (Test-Path $outputPage)) {
         throw "Generated package guide output missing: $outputPage"
     }

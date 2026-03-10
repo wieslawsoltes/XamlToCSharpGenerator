@@ -10,7 +10,7 @@ DOC_ROOT="${SCRIPT_DIR}/site/.lunet/build/www"
 test -f "${DOC_ROOT}/index.html"
 test -f "${DOC_ROOT}/api/index.html"
 test -f "${DOC_ROOT}/articles/reference/index.html"
-test -f "${DOC_ROOT}/articles/reference/packages/index.html"
+test -f "${DOC_ROOT}/articles/reference/package-guides/index.html"
 test -f "${DOC_ROOT}/articles/reference/package-and-assembly/index.html"
 test -f "${DOC_ROOT}/articles/reference/assembly-catalog/index.html"
 test -f "${DOC_ROOT}/articles/reference/api-navigation-guide/index.html"
@@ -35,10 +35,29 @@ test -f "${DOC_ROOT}/articles/advanced/language-service-and-compiler-performance
 test -f "${DOC_ROOT}/articles/advanced/hot-reload-and-hot-design/index.html"
 test -f "${DOC_ROOT}/css/lite.css"
 
-while IFS= read -r package_page; do
-    package_name="$(basename "${package_page}" .md)"
-    test -f "${DOC_ROOT}/articles/reference/packages/${package_name}/index.html"
-done < <(find "${SCRIPT_DIR}/site/articles/reference/packages" -maxdepth 1 -type f -name '*.md' ! -name 'menu.yml' ! -name 'readme.md' | sort)
+PACKAGE_GUIDE_PAGES=(
+    xamltocsharpgenerator
+    build
+    compiler
+    core
+    framework-abstractions
+    avalonia
+    expression-semantics
+    mini-language-parsing
+    noui
+    generator
+    runtime
+    runtime-core
+    runtime-avalonia
+    language-service
+    language-server-tool
+    editor-avalonia
+    vscode-extension
+)
+
+for package_name in "${PACKAGE_GUIDE_PAGES[@]}"; do
+    test -f "${DOC_ROOT}/articles/reference/${package_name}/index.html"
+done
 
 if test -e "${DOC_ROOT}/api/System.Runtime.CompilerServices/index.html"; then
     echo "Generated docs unexpectedly expose System.Runtime.CompilerServices namespace."

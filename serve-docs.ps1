@@ -3,13 +3,21 @@ $hostAddress = if ($env:DOCS_HOST) { $env:DOCS_HOST } else { '127.0.0.1' }
 $port = if ($env:DOCS_PORT) { $env:DOCS_PORT } else { '8080' }
 
 function Clear-ServeDocsOutputs {
+    Get-ChildItem (Join-Path $PSScriptRoot 'src') -Filter '*.api.json' -Recurse -File |
+        Where-Object { $_.FullName.Replace('\', '/') -like '*/obj/Release/*' } |
+        Remove-Item -Force
+
+    $apiCache = Join-Path $PSScriptRoot 'site/.lunet/build/cache/api/dotnet'
     $wwwRoot = Join-Path $PSScriptRoot 'site/.lunet/build/www'
-    Remove-Item $wwwRoot -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($path in @($apiCache, $wwwRoot)) {
+        Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Push-Location $PSScriptRoot
 try {
     dotnet tool restore
+    dotnet build (Join-Path $PSScriptRoot 'XamlToCSharpGenerator.CI.slnf') -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
     Clear-ServeDocsOutputs
     Push-Location site
     try {

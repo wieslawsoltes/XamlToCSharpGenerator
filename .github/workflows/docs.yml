@@ -31,8 +31,8 @@ jobs:
       - name: Restore local tools
         run: dotnet tool restore
 
-      - name: Build docs
-        run: bash ./build-docs.sh
+      - name: Check docs
+        run: bash ./check-docs.sh
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

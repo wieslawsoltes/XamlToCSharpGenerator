@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 function Clear-DocsOutputs {
     Get-ChildItem (Join-Path $PSScriptRoot 'src') -Filter '*.api.json' -Recurse -File |
-        Where-Object { $_.FullName -like '*\obj\Release\*' } |
+        Where-Object { $_.FullName.Replace('\', '/') -like '*/obj/Release/*' } |
         Remove-Item -Force
 
     $apiCache = Join-Path $PSScriptRoot 'site/.lunet/build/cache/api/dotnet'
