@@ -6,6 +6,8 @@ title: "Package Catalog"
 
 This page covers the full shipped package set and when to use each artifact. The linked package guides go deeper and point at the correct narrative/API entry points.
 
+Use [Package and Assembly](package-and-assembly) when you need the concrete mapping from install identity to runtime assembly, targets payload, tool command, or generated API coverage.
+
 | Package | Role | Use it when | Guide |
 | --- | --- | --- |
 | `XamlToCSharpGenerator` | umbrella package | you want the standard app-facing install surface | [Guide](packages/xamltocsharpgenerator) |
@@ -28,6 +30,7 @@ This page covers the full shipped package set and when to use each artifact. The
 
 Related:
 
+- [Package and Assembly](package-and-assembly)
 - [Artifact Matrix](artifact-matrix)
 - [Internal Support Components](internal-support-components)
 - [Package Guides](packages/readme)

@@ -1,3 +1,7 @@
+---
+title: "C# Expressions"
+---
+
 # C# Expressions in XAML
 
 ## Purpose

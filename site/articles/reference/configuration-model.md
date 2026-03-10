@@ -1,3 +1,7 @@
+---
+title: "Configuration Model"
+---
+
 # Source Generator Configuration Model
 
 This document describes the unified configuration model used by `XamlToCSharpGenerator`.
@@ -194,4 +198,3 @@ using System.Reflection;
 ```
 
 Section/key names are case-insensitive. Invalid keys/values produce warnings `AXSG0930`-`AXSG0932`.
-

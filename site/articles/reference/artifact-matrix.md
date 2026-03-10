@@ -44,3 +44,5 @@ For custom compiler, runtime, or tooling integration, AXSG also ships:
 - `XamlToCSharpGenerator.NoUi`
 
 For the full current matrix with badges and marketplace links, see the repository [README](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/README.md#what-ships).
+
+For the docs-specific mapping between package identity, shipped payload, and generated API coverage, see [Package and Assembly](package-and-assembly).

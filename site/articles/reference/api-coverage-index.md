@@ -15,6 +15,10 @@ This index maps the shipped AXSG package surface to the narrative docs and gener
 | Runtime and editor | `XamlToCSharpGenerator.Runtime`, `XamlToCSharpGenerator.Runtime.Core`, `XamlToCSharpGenerator.Runtime.Avalonia`, `XamlToCSharpGenerator.Editor.Avalonia` | [concepts/generated-artifacts-and-runtime.md](../concepts/generated-artifacts-and-runtime), [reference/namespace-runtime-and-editor.md](namespace-runtime-and-editor) |
 | Tooling and integration | `XamlToCSharpGenerator.LanguageService`, `XamlToCSharpGenerator.LanguageServer.Tool`, `XamlToCSharpGenerator.Build`, `XamlToCSharpGenerator` | [concepts/tooling-surface.md](../concepts/tooling-surface), [reference/namespace-language-service-and-tooling.md](namespace-language-service-and-tooling) |
 
+## Package and assembly mapping
+
+Use [Package and Assembly](package-and-assembly) when you need the installation identity, shipped payload, and generated API status for each artifact.
+
 ## Package guide coverage
 
 Every shipped package and editor/tool surface now has a dedicated narrative page:
@@ -42,8 +46,6 @@ Every shipped package and editor/tool surface now has a dedicated narrative page
 
 The Lunet `api.dotnet` build on this branch covers these projects:
 
-- `XamlToCSharpGenerator`
-- `XamlToCSharpGenerator.Build`
 - `XamlToCSharpGenerator.Compiler`
 - `XamlToCSharpGenerator.Core`
 - `XamlToCSharpGenerator.Framework.Abstractions`
@@ -59,9 +61,13 @@ The Lunet `api.dotnet` build on this branch covers these projects:
 - `XamlToCSharpGenerator.LanguageServer.Tool`
 - `XamlToCSharpGenerator.Editor.Avalonia`
 
-Non-packable/internal support projects are documented narratively when generated API would add little value or no stable namespace surface. The main example is:
+Narrative-only shipped/internal artifacts are documented outside generated API when a package is primarily a package shell, MSBuild targets layer, or operational executable. The main examples are:
 
+- `XamlToCSharpGenerator` via [Package Guides](packages/readme) and [Package and Assembly](package-and-assembly)
+- `XamlToCSharpGenerator.Build` via [Package Guides](packages/readme) and [Package and Assembly](package-and-assembly)
 - `XamlToCSharpGenerator.DotNetWatch.Proxy` via [Internal Support Components](internal-support-components)
+
+These are intentionally excluded from generated API because they do not provide a stable, useful public namespace surface on their own.
 
 ## Namespace entry points
 

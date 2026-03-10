@@ -1,3 +1,7 @@
+---
+title: "iOS Hot Reload"
+---
+
 # iOS Hot Reload Guide (AXSG + `dotnet watch`)
 
 This guide covers SourceGen hot reload setup for iOS simulator and physical devices.

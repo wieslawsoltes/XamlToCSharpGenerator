@@ -1,5 +1,6 @@
 reference:
   - {path: readme.md, title: "Overview", self: true}
+  - {path: package-and-assembly.md, title: "Package and Assembly"}
   - {path: api-coverage-index.md, title: "API Coverage Index"}
   - {path: package-catalog.md, title: "Package Catalog"}
   - {path: internal-support-components.md, title: "Internal Support Components"}
@@ -12,3 +13,4 @@ reference:
   - {path: configuration-migration.md, title: "Configuration Migration"}
   - {path: artifact-matrix.md, title: "Artifact Matrix"}
   - {path: lunet-docs-pipeline.md, title: "Lunet Docs Pipeline"}
+  - {path: license.md, title: "License"}

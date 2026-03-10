@@ -1,3 +1,7 @@
+---
+title: "Inline C#"
+---
+
 # Inline C# in XAML
 
 ## Overview
