@@ -16,3 +16,8 @@ foreach ($file in $requiredFiles) {
         throw "Required docs output missing: $file"
     }
 }
+
+$rawMarkdownLinks = rg -n 'href="[^"]*\.md"' $docRoot
+if ($LASTEXITCODE -eq 0 -and $rawMarkdownLinks) {
+    throw "Generated docs contain raw .md links.`n$rawMarkdownLinks"
+}

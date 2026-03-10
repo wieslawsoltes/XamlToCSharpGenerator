@@ -12,3 +12,8 @@ test -f "${DOC_ROOT}/api/index.html"
 test -f "${DOC_ROOT}/articles/reference/index.html"
 test -f "${DOC_ROOT}/articles/reference/packages/index.html"
 test -f "${DOC_ROOT}/css/lite.css"
+
+if rg -n 'href="[^"]*\.md"' "${DOC_ROOT}" >/dev/null; then
+    echo "Generated docs contain raw .md links."
+    exit 1
+fi
