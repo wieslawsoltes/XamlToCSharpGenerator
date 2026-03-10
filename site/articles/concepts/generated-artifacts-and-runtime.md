@@ -47,8 +47,8 @@ The runtime should support generated output; it should not replace the compiler.
 
 ## Related docs
 
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
-- [Package: XamlToCSharpGenerator.Runtime](../reference/packages/runtime.md)
-- [Package: XamlToCSharpGenerator.Runtime.Core](../reference/packages/runtime-core.md)
-- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/packages/runtime-avalonia.md)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
+- [Package: XamlToCSharpGenerator.Runtime](../reference/runtime/)
+- [Package: XamlToCSharpGenerator.Runtime.Core](../reference/runtime-core/)
+- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/runtime-avalonia/)

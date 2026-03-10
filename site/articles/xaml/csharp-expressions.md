@@ -30,7 +30,7 @@ In many cases AXSG can lower a shorthand expression to a compiled binding path o
 
 ## Where to look next
 
-- [Guides: C# Expressions](../guides/csharp-expressions.md)
-- [Inline C#](inline-csharp.md) for statement-capable code forms
-- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
+- [Guides: C# Expressions](../guides/csharp-expressions/)
+- [Inline C#](inline-csharp/) for statement-capable code forms
+- [Binding and Expression Model](../concepts/binding-and-expression-model/)
 - APIs: <xref:XamlToCSharpGenerator.ExpressionSemantics>, <xref:XamlToCSharpGenerator.Avalonia.Binding>

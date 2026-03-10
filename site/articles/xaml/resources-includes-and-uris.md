@@ -67,7 +67,7 @@ The language service resolves:
 
 ## Related docs
 
-- [Styles, Templates, and Themes](styles-templates-and-themes.md)
-- [Compiled Bindings](compiled-bindings.md)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
-- [Troubleshooting](../guides/troubleshooting.md)
+- [Styles, Templates, and Themes](styles-templates-and-themes/)
+- [Compiled Bindings](compiled-bindings/)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
+- [Troubleshooting](../guides/troubleshooting/)

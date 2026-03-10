@@ -19,15 +19,15 @@ If you only read package or API pages, those moving parts can look unrelated. Th
 
 ## Recommended reading order
 
-1. [Compiler Host and Project Model](compiler-host-and-project-model.md)
+1. [Compiler Host and Project Model](compiler-host-and-project-model/)
    : how AXSG discovers XAML, configuration, includes, and transform inputs.
-2. [Binding and Expression Model](binding-and-expression-model.md)
+2. [Binding and Expression Model](binding-and-expression-model/)
    : how bindings, shorthand, inline C#, and event semantics are lowered.
-3. [Generated Artifacts and Runtime Contracts](generated-artifacts-and-runtime.md)
+3. [Generated Artifacts and Runtime Contracts](generated-artifacts-and-runtime/)
    : what the compiler emits and why the runtime needs registries and descriptors.
-4. [Tooling Surface](tooling-surface.md)
+4. [Tooling Surface](tooling-surface/)
    : how compiler semantics are projected into the language service, LSP host, and editors.
-5. [Glossary](glossary.md)
+5. [Glossary](glossary/)
    : the common terms used across docs, diagnostics, tests, and API summaries.
 
 ## Use this section when

@@ -59,7 +59,7 @@ The language service understands event bindings for:
 
 ## Related docs
 
-- [Inline C#](inline-csharp.md)
-- [C# Expressions](csharp-expressions.md)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
+- [Inline C#](inline-csharp/)
+- [C# Expressions](csharp-expressions/)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings/)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)

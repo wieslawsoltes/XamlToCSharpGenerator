@@ -47,6 +47,6 @@ AXSG does not accept performance work without validation. Each accepted optimiza
 
 See also:
 
-- [Performance and Benchmarking](performance-and-benchmarking.md)
-- [Testing and Validation](testing-and-validation.md)
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
+- [Performance and Benchmarking](performance-and-benchmarking/)
+- [Testing and Validation](testing-and-validation/)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)

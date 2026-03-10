@@ -10,23 +10,23 @@ These pages document the language-level surface AXSG adds or strengthens on top 
 
 ### Binding and expression features
 
-- [Compiled Bindings](compiled-bindings.md)
-- [C# Expressions](csharp-expressions.md)
-- [Inline C#](inline-csharp.md)
-- [Event Bindings](event-bindings.md)
+- [Compiled Bindings](compiled-bindings/)
+- [C# Expressions](csharp-expressions/)
+- [Inline C#](inline-csharp/)
+- [Event Bindings](event-bindings/)
 
 ### Structural and configuration features
 
-- [Conditional XAML](conditional-xaml.md)
-- [Resources, Includes, and URIs](resources-includes-and-uris.md)
-- [Property Elements, TemplateBinding, and Attached Properties](property-elements-templatebinding-and-attached-properties.md)
-- [Global XML Namespaces and Project Configuration](global-xmlns-and-project-configuration.md)
-- [Styles, Templates, and Themes](styles-templates-and-themes.md)
+- [Conditional XAML](conditional-xaml/)
+- [Resources, Includes, and URIs](resources-includes-and-uris/)
+- [Property Elements, TemplateBinding, and Attached Properties](property-elements-templatebinding-and-attached-properties/)
+- [Global XML Namespaces and Project Configuration](global-xmlns-and-project-configuration/)
+- [Styles, Templates, and Themes](styles-templates-and-themes/)
 
 ## How to use this section
 
-- Start with [Compiled Bindings](compiled-bindings.md) if you are new to AXSG semantics.
-- Use [C# Expressions](csharp-expressions.md) and [Inline C#](inline-csharp.md) for the main language extensions.
+- Start with [Compiled Bindings](compiled-bindings/) if you are new to AXSG semantics.
+- Use [C# Expressions](csharp-expressions/) and [Inline C#](inline-csharp/) for the main language extensions.
 - Use the structural pages when you are working in themes, resources, includes, or selector-heavy XAML.
 - Use [Guides](../guides/) when you need an operational workflow instead of language semantics.
 
@@ -39,6 +39,6 @@ These pages document the language-level surface AXSG adds or strengthens on top 
 
 ## Related docs
 
-- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
-- [Feature Coverage Matrix](../reference/feature-coverage-matrix.md)
-- [Samples and Feature Tour](../getting-started/samples-and-feature-tour.md)
+- [Binding and Expression Model](../concepts/binding-and-expression-model/)
+- [Feature Coverage Matrix](../reference/feature-coverage-matrix/)
+- [Samples and Feature Tour](../getting-started/samples-and-feature-tour/)

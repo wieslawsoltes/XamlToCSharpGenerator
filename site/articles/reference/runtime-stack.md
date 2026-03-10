@@ -20,8 +20,8 @@ This guide explains the runtime-side package split, what lives in the neutral ru
 
 Use:
 
-- [Package: XamlToCSharpGenerator](packages/xamltocsharpgenerator.md)
-- [Package: XamlToCSharpGenerator.Runtime](packages/runtime.md)
+- [Package: XamlToCSharpGenerator](xamltocsharpgenerator/)
+- [Package: XamlToCSharpGenerator.Runtime](runtime/)
 
 This is the default install story. It keeps the runtime stack aligned with the build/generator stack without making you compose the pieces manually.
 
@@ -29,7 +29,7 @@ This is the default install story. It keeps the runtime stack aligned with the b
 
 Use:
 
-- [Package: XamlToCSharpGenerator.Runtime.Core](packages/runtime-core.md)
+- [Package: XamlToCSharpGenerator.Runtime.Core](runtime-core/)
 
 when you need only neutral registries/contracts and do not want the Avalonia layer.
 
@@ -37,7 +37,7 @@ when you need only neutral registries/contracts and do not want the Avalonia lay
 
 Use:
 
-- [Package: XamlToCSharpGenerator.Runtime.Avalonia](packages/runtime-avalonia.md)
+- [Package: XamlToCSharpGenerator.Runtime.Avalonia](runtime-avalonia/)
 
 when you need Avalonia loader behavior, resource/include resolution, inline-code runtime helpers, or hot reload integration directly.
 
@@ -78,7 +78,7 @@ Is intentionally narrative-first. It is the package-level install surface, not t
 
 ## Related docs
 
-- [Runtime and Editor Namespaces](namespace-runtime-and-editor.md)
-- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime.md)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor/)
+- [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)

@@ -71,7 +71,7 @@ A profile is not complete until it has:
 
 ## Related docs
 
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
-- [Compiler Pipeline](../architecture/compiler-pipeline.md)
-- [Package: XamlToCSharpGenerator.Framework.Abstractions](../reference/packages/framework-abstractions.md)
-- [Package: XamlToCSharpGenerator.NoUi](../reference/packages/noui.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
+- [Compiler Pipeline](../architecture/compiler-pipeline/)
+- [Package: XamlToCSharpGenerator.Framework.Abstractions](../reference/framework-abstractions/)
+- [Package: XamlToCSharpGenerator.NoUi](../reference/noui/)

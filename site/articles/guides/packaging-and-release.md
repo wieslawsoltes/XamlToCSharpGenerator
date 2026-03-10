@@ -70,7 +70,7 @@ The release workflow is expected to:
 
 ## Related docs
 
-- [Artifact Matrix](../reference/artifact-matrix.md)
-- [Package and Assembly](../reference/package-and-assembly.md)
-- [Docs and Release Infrastructure](../advanced/docs-and-release-infrastructure.md)
-- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline.md)
+- [Artifact Matrix](../reference/artifact-matrix/)
+- [Package and Assembly](../reference/package-and-assembly/)
+- [Docs and Release Infrastructure](../advanced/docs-and-release-infrastructure/)
+- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline/)

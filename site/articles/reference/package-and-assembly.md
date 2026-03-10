@@ -6,7 +6,7 @@ title: "Package and Assembly"
 
 AXSG ships a mix of package shells, code-bearing libraries, build payloads, a .NET tool, and a VS Code extension. This page maps each install identity to its primary shipped payload and generated API coverage.
 
-When you already know the assembly or tool package name and need the direct generated API route, use [Assembly Catalog](assembly-catalog.md).
+When you already know the assembly or tool package name and need the direct generated API route, use [Assembly Catalog](assembly-catalog/).
 
 ## Distribution overview
 
@@ -46,9 +46,9 @@ Three shipped package IDs are intentionally documented only through narrative pa
 
 These packages are still fully documented through:
 
-- [Package Catalog](package-catalog.md)
-- [Package Guides](packages/)
-- [Artifact Matrix](artifact-matrix.md)
+- [Package Catalog](package-catalog/)
+- [Package Guides](package-guides/)
+- [Artifact Matrix](artifact-matrix/)
 
 ## Internal support executable
 
@@ -56,10 +56,10 @@ One repo component is important operationally but is not a shipped package:
 
 | Component | Role | Docs |
 | --- | --- | --- |
-| `XamlToCSharpGenerator.DotNetWatch.Proxy` | `dotnet watch` / hot-reload proxy process | [Internal Support Components](internal-support-components.md) |
+| `XamlToCSharpGenerator.DotNetWatch.Proxy` | `dotnet watch` / hot-reload proxy process | [Internal Support Components](internal-support-components/) |
 
 ## Guidance
 
-- Use [Package Catalog](package-catalog.md) to choose the right artifact.
-- Use [API Coverage Index](api-coverage-index.md) to jump into the generated API and namespace summaries.
-- Use [Package Guides](packages/) when you need install guidance and package-specific narrative.
+- Use [Package Catalog](package-catalog/) to choose the right artifact.
+- Use [API Coverage Index](api-coverage-index/) to jump into the generated API and namespace summaries.
+- Use [Package Guides](package-guides/) when you need install guidance and package-specific narrative.

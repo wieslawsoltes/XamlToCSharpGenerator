@@ -40,9 +40,9 @@ The language service and VS Code extension project compiler semantics back into 
 
 ## How to use this section
 
-- Start with [Compiler Pipeline](compiler-pipeline.md) if you want the end-to-end flow from XAML file to generated output.
-- Use [Runtime and Hot Reload](runtime-and-hot-reload.md) if you are debugging live update behavior or generated runtime helpers.
-- Use [Language Service and VS Code](language-service-and-vscode.md) if the issue shows up in the editor before build output changes.
+- Start with [Compiler Pipeline](compiler-pipeline/) if you want the end-to-end flow from XAML file to generated output.
+- Use [Runtime and Hot Reload](runtime-and-hot-reload/) if you are debugging live update behavior or generated runtime helpers.
+- Use [Language Service and VS Code](language-service-and-vscode/) if the issue shows up in the editor before build output changes.
 
 ## Cross-reference map
 
@@ -50,6 +50,6 @@ The language service and VS Code extension project compiler semantics back into 
 - [Reference](../reference/) for package and assembly mapping
 - [Guides](../guides/) for task-oriented workflows
 
-- [Compiler Pipeline](compiler-pipeline.md)
-- [Runtime and Hot Reload](runtime-and-hot-reload.md)
-- [Language Service and VS Code](language-service-and-vscode.md)
+- [Compiler Pipeline](compiler-pipeline/)
+- [Runtime and Hot Reload](runtime-and-hot-reload/)
+- [Language Service and VS Code](language-service-and-vscode/)

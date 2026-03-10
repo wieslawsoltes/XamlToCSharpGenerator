@@ -66,7 +66,7 @@ This namespace family covers expression analysis, low-allocation mini-language p
 
 ## Related docs
 
-- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
-- [C# Expressions](../xaml/csharp-expressions.md)
-- [Inline C#](../xaml/inline-csharp.md)
-- [Styles, Templates, and Themes](../xaml/styles-templates-and-themes.md)
+- [Binding and Expression Model](../concepts/binding-and-expression-model/)
+- [C# Expressions](../xaml/csharp-expressions/)
+- [Inline C#](../xaml/inline-csharp/)
+- [Styles, Templates, and Themes](../xaml/styles-templates-and-themes/)

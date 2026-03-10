@@ -55,8 +55,8 @@ The editor stack has explicit performance work in:
 
 ## Related docs
 
-- [Tooling Surface](../concepts/tooling-surface.md)
-- [VS Code Language Service](../guides/vscode-language-service.md)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)
-- [Package: XamlToCSharpGenerator.LanguageService](../reference/packages/language-service.md)
-- [Package: VS Code Extension](../reference/packages/vscode-extension.md)
+- [Tooling Surface](../concepts/tooling-surface/)
+- [VS Code Language Service](../guides/vscode-language-service/)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings/)
+- [Package: XamlToCSharpGenerator.LanguageService](../reference/language-service/)
+- [Package: VS Code Extension](../reference/vscode-extension/)

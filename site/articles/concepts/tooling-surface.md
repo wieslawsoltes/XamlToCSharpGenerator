@@ -53,8 +53,8 @@ The VSIX bundles:
 
 ## Related docs
 
-- [Language Service and VS Code](../architecture/language-service-and-vscode.md)
-- [VS Code Language Service](../guides/vscode-language-service.md)
-- [Package: XamlToCSharpGenerator.LanguageService](../reference/packages/language-service.md)
-- [Package: XamlToCSharpGenerator.LanguageServer.Tool](../reference/packages/language-server-tool.md)
-- [Package: XamlToCSharpGenerator.Editor.Avalonia](../reference/packages/editor-avalonia.md)
+- [Language Service and VS Code](../architecture/language-service-and-vscode/)
+- [VS Code Language Service](../guides/vscode-language-service/)
+- [Package: XamlToCSharpGenerator.LanguageService](../reference/language-service/)
+- [Package: XamlToCSharpGenerator.LanguageServer.Tool](../reference/language-server-tool/)
+- [Package: XamlToCSharpGenerator.Editor.Avalonia](../reference/editor-avalonia/)

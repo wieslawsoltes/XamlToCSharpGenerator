@@ -55,6 +55,6 @@ After installing:
 
 ## Related docs
 
-- [Quickstart](quickstart.md)
-- [Package and Assembly](../reference/package-and-assembly.md)
-- [Package Catalog](../reference/package-catalog.md)
+- [Quickstart](quickstart/)
+- [Package and Assembly](../reference/package-and-assembly/)
+- [Package Catalog](../reference/package-catalog/)

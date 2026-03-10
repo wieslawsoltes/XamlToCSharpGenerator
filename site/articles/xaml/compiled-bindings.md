@@ -39,7 +39,7 @@ The language service reuses the compiler binding model for:
 
 ## Related docs
 
-- [C# Expressions](csharp-expressions.md)
-- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
-- [Navigation and Refactorings](../guides/navigation-and-refactorings.md)
+- [C# Expressions](csharp-expressions/)
+- [Binding and Expression Model](../concepts/binding-and-expression-model/)
+- [Navigation and Refactorings](../guides/navigation-and-refactorings/)
 - API: <xref:XamlToCSharpGenerator.Avalonia.Binding>

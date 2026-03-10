@@ -48,7 +48,7 @@ Without that, harmless XAML edits can destabilize Roslyn delta metadata and cras
 
 ## Related docs
 
-- [Hot Reload and Hot Design](../guides/hot-reload-and-hot-design.md)
-- [iOS Hot Reload](../guides/hot-reload-ios.md)
-- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
-- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/packages/runtime-avalonia.md)
+- [Hot Reload and Hot Design](../guides/hot-reload-and-hot-design/)
+- [iOS Hot Reload](../guides/hot-reload-ios/)
+- [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
+- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/runtime-avalonia/)

@@ -64,6 +64,6 @@ When you change docs or release plumbing:
 
 ## Related docs
 
-- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline.md)
-- [Packaging and Release](../guides/packaging-and-release.md)
-- [Artifact Matrix](../reference/artifact-matrix.md)
+- [Lunet Docs Pipeline](../reference/lunet-docs-pipeline/)
+- [Packaging and Release](../guides/packaging-and-release/)
+- [Artifact Matrix](../reference/artifact-matrix/)

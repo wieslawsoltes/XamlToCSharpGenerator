@@ -39,26 +39,26 @@ Start with:
 
 ## Package-first entry points
 
-- [Package Catalog](reference/package-catalog.md)
-- [Package Guides](reference/packages/)
-- [Package Selection and Integration](guides/package-selection-and-integration.md)
-- [API Coverage Index](reference/api-coverage-index.md)
-- [Assembly Catalog](reference/assembly-catalog.md)
+- [Package Catalog](reference/package-catalog/)
+- [Package Guides](reference/package-guides/)
+- [Package Selection and Integration](guides/package-selection-and-integration/)
+- [API Coverage Index](reference/api-coverage-index/)
+- [Assembly Catalog](reference/assembly-catalog/)
 
 ## Feature-first entry points
 
-- [Compiled Bindings](xaml/compiled-bindings.md)
-- [C# Expressions](xaml/csharp-expressions.md)
-- [Inline C#](xaml/inline-csharp.md)
-- [Hot Reload and Hot Design](guides/hot-reload-and-hot-design.md)
-- [VS Code and Language Service](guides/vscode-language-service.md)
-- [Navigation and Refactorings](guides/navigation-and-refactorings.md)
+- [Compiled Bindings](xaml/compiled-bindings/)
+- [C# Expressions](xaml/csharp-expressions/)
+- [Inline C#](xaml/inline-csharp/)
+- [Hot Reload and Hot Design](guides/hot-reload-and-hot-design/)
+- [VS Code and Language Service](guides/vscode-language-service/)
+- [Navigation and Refactorings](guides/navigation-and-refactorings/)
 
 ## Operational entry points
 
-- [Troubleshooting](guides/troubleshooting.md)
-- [Packaging and Release](guides/packaging-and-release.md)
-- [Lunet Docs Pipeline](reference/lunet-docs-pipeline.md)
+- [Troubleshooting](guides/troubleshooting/)
+- [Packaging and Release](guides/packaging-and-release/)
+- [Lunet Docs Pipeline](reference/lunet-docs-pipeline/)
 
 ## Artifact families
 

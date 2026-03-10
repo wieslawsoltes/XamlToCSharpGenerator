@@ -80,7 +80,7 @@ This is usually a runtime replacement/state-transfer issue, not a parser or lang
 
 ## Related docs
 
-- [iOS Hot Reload](hot-reload-ios.md)
-- [Runtime Loader and Fallback](runtime-loader-and-fallback.md)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
-- [Troubleshooting](troubleshooting.md)
+- [iOS Hot Reload](hot-reload-ios/)
+- [Runtime Loader and Fallback](runtime-loader-and-fallback/)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
+- [Troubleshooting](troubleshooting/)

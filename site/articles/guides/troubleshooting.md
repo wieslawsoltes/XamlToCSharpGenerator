@@ -32,8 +32,8 @@ Check:
 
 Relevant docs:
 
-- [Compiled Bindings](../xaml/compiled-bindings.md)
-- [Binding and Expression Model](../concepts/binding-and-expression-model.md)
+- [Compiled Bindings](../xaml/compiled-bindings/)
+- [Binding and Expression Model](../concepts/binding-and-expression-model/)
 
 ### Control-theme `BasedOn` cycle diagnostics
 
@@ -65,8 +65,8 @@ Checklist:
 
 Relevant docs:
 
-- [Hot Reload and Hot Design](hot-reload-and-hot-design.md)
-- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload.md)
+- [Hot Reload and Hot Design](hot-reload-and-hot-design/)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
 
 ### `dotnet watch` metadata-reference or named-pipe issues
 
@@ -76,7 +76,7 @@ Check:
 - `Runtime.Avalonia` is not accidentally pulling incompatible compiler-only dependencies
 - mobile/remote runs have the correct transport configuration
 
-For iOS-specific workflows, use [iOS Hot Reload](hot-reload-ios.md).
+For iOS-specific workflows, use [iOS Hot Reload](hot-reload-ios/).
 
 ## VS Code and language service
 
@@ -152,17 +152,17 @@ Do not add a docs-only project that merely references the package. Lunet documen
 
 Start with:
 
-- [Package Selection and Integration](package-selection-and-integration.md)
-- [Package Catalog](../reference/package-catalog.md)
-- [Package Guides](../reference/packages/)
+- [Package Selection and Integration](package-selection-and-integration/)
+- [Package Catalog](../reference/package-catalog/)
+- [Package Guides](../reference/package-guides/)
 
 ### I need runtime support but not the full app package
 
 Start with:
 
-- [Runtime Loader and Fallback](runtime-loader-and-fallback.md)
-- [Package: XamlToCSharpGenerator.Runtime](../reference/packages/runtime.md)
-- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/packages/runtime-avalonia.md)
+- [Runtime Loader and Fallback](runtime-loader-and-fallback/)
+- [Package: XamlToCSharpGenerator.Runtime](../reference/runtime/)
+- [Package: XamlToCSharpGenerator.Runtime.Avalonia](../reference/runtime-avalonia/)
 
 ## When to open the API docs
 
@@ -170,13 +170,13 @@ Go to the generated API when you already know the subsystem and want member-leve
 
 Start with:
 
-- [API Coverage Index](../reference/api-coverage-index.md)
-- [Assembly Catalog](../reference/assembly-catalog.md)
+- [API Coverage Index](../reference/api-coverage-index/)
+- [Assembly Catalog](../reference/assembly-catalog/)
 - the relevant namespace summary page in [Reference](../reference/)
 
 ## Related
 
-- [Glossary](../concepts/glossary.md)
-- [VS Code and Language Service](vscode-language-service.md)
-- [Hot Reload and Hot Design](hot-reload-and-hot-design.md)
-- [Package Selection and Integration](package-selection-and-integration.md)
+- [Glossary](../concepts/glossary/)
+- [VS Code and Language Service](vscode-language-service/)
+- [Hot Reload and Hot Design](hot-reload-and-hot-design/)
+- [Package Selection and Integration](package-selection-and-integration/)

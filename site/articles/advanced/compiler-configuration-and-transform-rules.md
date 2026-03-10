@@ -39,6 +39,6 @@ This is the main extension point for:
 
 ## Related docs
 
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
-- [Configuration Model](../reference/configuration-model.md)
-- [Configuration Migration](../reference/configuration-migration.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
+- [Configuration Model](../reference/configuration-model/)
+- [Configuration Migration](../reference/configuration-migration/)

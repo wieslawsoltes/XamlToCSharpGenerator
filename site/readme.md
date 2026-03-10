@@ -76,19 +76,19 @@ og_type: website
 ## Shipped Artifact Families
 
 <div class="axsg-link-grid axsg-link-grid--wide">
-  <a class="axsg-link-card" href="articles/reference/packages/xamltocsharpgenerator">
+  <a class="axsg-link-card" href="articles/reference/xamltocsharpgenerator/">
     <span class="axsg-link-card-title"><i class="bi bi-box-seam" aria-hidden="true"></i> App and Build Packages</span>
     <p>`XamlToCSharpGenerator`, `Build`, and the standard app-facing install surface for generated Avalonia XAML.</p>
   </a>
-  <a class="axsg-link-card" href="articles/reference/packages/compiler">
+  <a class="axsg-link-card" href="articles/reference/compiler/">
     <span class="axsg-link-card-title"><i class="bi bi-gear-wide-connected" aria-hidden="true"></i> Compiler Packages</span>
     <p>`Compiler`, `Core`, `Framework.Abstractions`, `Avalonia`, `NoUi`, and `Generator` for compiler composition.</p>
   </a>
-  <a class="axsg-link-card" href="articles/reference/packages/runtime">
+  <a class="axsg-link-card" href="articles/reference/runtime/">
     <span class="axsg-link-card-title"><i class="bi bi-lightning" aria-hidden="true"></i> Runtime Packages</span>
     <p>`Runtime`, `Runtime.Core`, and `Runtime.Avalonia` for generated view bootstrap, registries, and hot reload.</p>
   </a>
-  <a class="axsg-link-card" href="articles/reference/packages/language-service">
+  <a class="axsg-link-card" href="articles/reference/language-service/">
     <span class="axsg-link-card-title"><i class="bi bi-search" aria-hidden="true"></i> Tooling Packages</span>
     <p>`LanguageService`, `LanguageServer.Tool`, `Editor.Avalonia`, and the bundled VS Code extension.</p>
   </a>

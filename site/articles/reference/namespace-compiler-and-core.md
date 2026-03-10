@@ -58,7 +58,7 @@ The `Core` namespaces define the semantic contracts reused across compiler, runt
 
 ## Related docs
 
-- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model.md)
-- [Compiler Pipeline](../architecture/compiler-pipeline.md)
-- [Configuration Model](configuration-model.md)
-- [Package: XamlToCSharpGenerator.Compiler](packages/compiler.md)
+- [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
+- [Compiler Pipeline](../architecture/compiler-pipeline/)
+- [Configuration Model](configuration-model/)
+- [Package: XamlToCSharpGenerator.Compiler](compiler/)

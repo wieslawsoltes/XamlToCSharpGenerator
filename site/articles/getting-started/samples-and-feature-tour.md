@@ -30,12 +30,12 @@ Start in `SourceGenXamlCatalogSample` when you need to see a feature in isolatio
 
 ## Suggested reading flow
 
-1. [Quickstart](quickstart.md)
-2. [C# Expressions](../guides/csharp-expressions.md)
-3. [Inline C# Code](../guides/inline-csharp-code.md)
-4. [Styles, Templates, and Themes](../xaml/styles-templates-and-themes.md)
-5. [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback.md)
-6. [VS Code and Language Service](../guides/vscode-language-service.md)
+1. [Quickstart](quickstart/)
+2. [C# Expressions](../guides/csharp-expressions/)
+3. [Inline C# Code](../guides/inline-csharp-code/)
+4. [Styles, Templates, and Themes](../xaml/styles-templates-and-themes/)
+5. [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
+6. [VS Code and Language Service](../guides/vscode-language-service/)
 
 ## Why sample-first matters here
 

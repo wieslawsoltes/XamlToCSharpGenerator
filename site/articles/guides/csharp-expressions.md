@@ -104,7 +104,7 @@ that can be matched by the provided lambda shape.
 ```
 
 Statement-style event logic that exceeds a single expression should use the inline C#
-surface documented in [Inline C# Code](inline-csharp-code.md).
+surface documented in [Inline C# Code](inline-csharp-code/).
 
 ## Validity rules
 
@@ -166,4 +166,4 @@ Use inline C# blocks when you need:
 - CDATA content blocks
 - explicit control over the inline code payload
 
-See [Inline C# Code](inline-csharp-code.md) for that surface.
+See [Inline C# Code](inline-csharp-code/) for that surface.
