@@ -1,0 +1,6 @@
+xaml:
+  - {path: readme.md, title: "XAML Usage"}
+  - {path: compiled-bindings.md, title: "Compiled Bindings"}
+  - {path: csharp-expressions.md, title: "C# Expressions"}
+  - {path: inline-csharp.md, title: "Inline C#"}
+  - {path: styles-templates-and-themes.md, title: "Styles, Templates, and Themes"}

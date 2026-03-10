@@ -1,0 +1,6 @@
+advanced:
+  - {path: readme.md, title: "Advanced"}
+  - {path: custom-framework-profiles.md, title: "Custom Framework Profiles"}
+  - {path: performance-and-benchmarking.md, title: "Performance and Benchmarking"}
+  - {path: testing-and-validation.md, title: "Testing and Validation"}
+  - {path: docs-and-release-infrastructure.md, title: "Docs and Release Infrastructure"}
