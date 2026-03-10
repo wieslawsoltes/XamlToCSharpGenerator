@@ -1,0 +1,14 @@
+:root {
+  --bs-primary: #005f73;
+  --bs-link-color: #0a7c8c;
+  --bs-link-hover-color: #084f59;
+}
+
+.navbar-brand img {
+  max-height: 2rem;
+}
+
+.table td code,
+.table th code {
+  white-space: nowrap;
+}

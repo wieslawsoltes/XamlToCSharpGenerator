@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "lunet": {
+      "version": "1.0.10",
+      "commands": [
+        "lunet"
+      ],
+      "rollForward": false
+    }
+  }
+}

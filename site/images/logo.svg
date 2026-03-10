@@ -1,0 +1,40 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="28" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1830"/>
+      <stop offset="0.52" stop-color="#124A8D"/>
+      <stop offset="1" stop-color="#0AA4F6"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="52" y1="48" x2="204" y2="208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#173964" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#0D203C" stop-opacity="0.82"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="70" y1="62" x2="194" y2="194" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4DD7FF"/>
+      <stop offset="1" stop-color="#B4F6FF"/>
+    </linearGradient>
+    <filter id="glow" x="36" y="34" width="184" height="188" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.301961 0 0 0 0 0.843137 0 0 0 0 1 0 0 0 0.45 0"/>
+      <feBlend in="SourceGraphic" mode="normal"/>
+    </filter>
+  </defs>
+
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="url(#bg)"/>
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="black" fill-opacity="0.08"/>
+
+  <rect x="38" y="38" width="180" height="180" rx="40" fill="url(#panel)" stroke="rgba(255,255,255,0.16)" stroke-width="2"/>
+
+  <g opacity="0.18">
+    <path d="M64 98H192" stroke="#D7F9FF" stroke-width="2"/>
+    <path d="M64 128H192" stroke="#D7F9FF" stroke-width="2"/>
+    <path d="M64 158H192" stroke="#D7F9FF" stroke-width="2"/>
+  </g>
+
+  <g filter="url(#glow)">
+    <path d="M95 82L63 127L95 174" stroke="url(#accent)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M161 82L193 127L161 174" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M129 92L115 164" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+  </g>
+
+</svg>
