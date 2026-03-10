@@ -68,23 +68,37 @@ with api.dotnet
     menu_title = "API Reference"
     config = "Release"
     projects = [
+        { name: "TopLevel", path: "../src/XamlToCSharpGenerator/XamlToCSharpGenerator.csproj" },
+        { name: "Build", path: "../src/XamlToCSharpGenerator.Build/XamlToCSharpGenerator.Build.csproj" },
         { name: "Compiler", path: "../src/XamlToCSharpGenerator.Compiler/XamlToCSharpGenerator.Compiler.csproj" },
         { name: "Core", path: "../src/XamlToCSharpGenerator.Core/XamlToCSharpGenerator.Core.csproj" },
         { name: "Framework.Abstractions", path: "../src/XamlToCSharpGenerator.Framework.Abstractions/XamlToCSharpGenerator.Framework.Abstractions.csproj" },
         { name: "Avalonia", path: "../src/XamlToCSharpGenerator.Avalonia/XamlToCSharpGenerator.Avalonia.csproj" },
+        { name: "ExpressionSemantics", path: "../src/XamlToCSharpGenerator.ExpressionSemantics/XamlToCSharpGenerator.ExpressionSemantics.csproj" },
+        { name: "MiniLanguageParsing", path: "../src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" },
+        { name: "NoUi", path: "../src/XamlToCSharpGenerator.NoUi/XamlToCSharpGenerator.NoUi.csproj" },
+        { name: "Generator", path: "../src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" },
         { name: "Runtime", path: "../src/XamlToCSharpGenerator.Runtime/XamlToCSharpGenerator.Runtime.csproj" },
         { name: "Runtime.Avalonia", path: "../src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" },
         { name: "Runtime.Core", path: "../src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" },
         { name: "LanguageService", path: "../src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" },
+        { name: "LanguageServer", path: "../src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" },
         { name: "Editor.Avalonia", path: "../src/XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj" }
     ]
     external_apis = [
         { assembly: "Avalonia", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Base", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Controls", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "Avalonia.DesignerSupport", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "Avalonia.Dialogs", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Markup", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Avalonia.Markup.Xaml", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "Avalonia.MicroCom", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "Avalonia.OpenGL", url: "https://api-docs.avaloniaui.net/docs" },
+        { assembly: "Avalonia.Remote.Protocol", url: "https://api-docs.avaloniaui.net/docs" },
         { assembly: "Microsoft.CodeAnalysis", url: "https://learn.microsoft.com/dotnet/api" },
-        { assembly: "Microsoft.CodeAnalysis.CSharp", url: "https://learn.microsoft.com/dotnet/api" }
+        { assembly: "Microsoft.CodeAnalysis.CSharp", url: "https://learn.microsoft.com/dotnet/api" },
+        { assembly: "Microsoft.Build.Framework", url: "https://learn.microsoft.com/dotnet/api" },
+        { assembly: "Microsoft.Build.Utilities.Core", url: "https://learn.microsoft.com/dotnet/api" }
     ]
 end
