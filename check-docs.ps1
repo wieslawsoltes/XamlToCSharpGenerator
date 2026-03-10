@@ -21,6 +21,7 @@ $requiredFiles = @(
     (Join-Path $docRoot 'articles/guides/runtime-loader-and-fallback/index.html'),
     (Join-Path $docRoot 'articles/guides/hot-reload-and-hot-design/index.html'),
     (Join-Path $docRoot 'articles/guides/troubleshooting/index.html'),
+    (Join-Path $docRoot 'articles/xaml/index.html'),
     (Join-Path $docRoot 'articles/xaml/event-bindings/index.html'),
     (Join-Path $docRoot 'articles/xaml/conditional-xaml/index.html'),
     (Join-Path $docRoot 'articles/xaml/resources-includes-and-uris/index.html'),
@@ -78,4 +79,15 @@ if (-not (Test-Path $editorApiPage)) {
 $missingAvaloniaEditLink = rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' $editorApiPage
 if ($LASTEXITCODE -ne 0) {
     throw "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
+}
+
+$xamlIndexPage = Join-Path $docRoot 'articles/xaml/index.html'
+$missingBasepathCss = rg -F '/XamlToCSharpGenerator/css/lite.css' $xamlIndexPage
+if ($LASTEXITCODE -ne 0) {
+    throw "Production XAML docs page is missing the project-basepath-prefixed lite.css URL."
+}
+
+$missingMenuPartial = rg -F '/XamlToCSharpGenerator/partials/menus/menu-xaml.' $xamlIndexPage
+if ($LASTEXITCODE -ne 0) {
+    throw "Production XAML docs page is missing the project-basepath-prefixed async menu partial URL."
 }

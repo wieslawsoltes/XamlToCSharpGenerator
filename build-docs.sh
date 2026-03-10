@@ -4,6 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCK_DIR="${SCRIPT_DIR}/site/.lunet/.build-lock"
 
+clean_docs_outputs() {
+    find "${SCRIPT_DIR}/src" -path '*/obj/Release/*/*.api.json' -delete
+    rm -rf "${SCRIPT_DIR}/site/.lunet/build/cache/api/dotnet" \
+           "${SCRIPT_DIR}/site/.lunet/build/www"
+}
+
 cd "${SCRIPT_DIR}"
 while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
     sleep 1
@@ -12,13 +18,7 @@ trap 'rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT
 
 dotnet tool restore
 dotnet build "${SCRIPT_DIR}/XamlToCSharpGenerator.CI.slnf" -c Release --nologo -m:1 /nodeReuse:false --disable-build-servers
-
-# Lunet caches generated api.json files aggressively. Clear API-specific outputs so
-# docs reflect current project configuration and namespace visibility.
-find "${SCRIPT_DIR}/src" -path '*/obj/Release/*/*.api.json' -delete
-rm -rf "${SCRIPT_DIR}/site/.lunet/build/cache/api/dotnet" \
-       "${SCRIPT_DIR}/site/.lunet/build/www/api" \
-       "${SCRIPT_DIR}/site/.lunet/build/www/partials/menus"
+clean_docs_outputs
 
 cd site
 LUNET_LOG="$(mktemp)"

@@ -2,9 +2,15 @@ $ErrorActionPreference = 'Stop'
 $hostAddress = if ($env:DOCS_HOST) { $env:DOCS_HOST } else { '127.0.0.1' }
 $port = if ($env:DOCS_PORT) { $env:DOCS_PORT } else { '8080' }
 
+function Clear-ServeDocsOutputs {
+    $wwwRoot = Join-Path $PSScriptRoot 'site/.lunet/build/www'
+    Remove-Item $wwwRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Push-Location $PSScriptRoot
 try {
     dotnet tool restore
+    Clear-ServeDocsOutputs
     Push-Location site
     try {
     $python = $null

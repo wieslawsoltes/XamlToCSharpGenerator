@@ -25,6 +25,7 @@ test -f "${DOC_ROOT}/articles/guides/runtime-loader-and-fallback/index.html"
 test -f "${DOC_ROOT}/articles/guides/hot-reload-and-hot-design/index.html"
 test -f "${DOC_ROOT}/articles/guides/troubleshooting/index.html"
 test -f "${DOC_ROOT}/articles/xaml/event-bindings/index.html"
+test -f "${DOC_ROOT}/articles/xaml/index.html"
 test -f "${DOC_ROOT}/articles/xaml/conditional-xaml/index.html"
 test -f "${DOC_ROOT}/articles/xaml/resources-includes-and-uris/index.html"
 test -f "${DOC_ROOT}/articles/xaml/property-elements-templatebinding-and-attached-properties/index.html"
@@ -68,5 +69,16 @@ fi
 
 if ! rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' "${EDITOR_API_PAGE}" >/dev/null; then
     echo "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
+    exit 1
+fi
+
+XAML_INDEX_PAGE="${DOC_ROOT}/articles/xaml/index.html"
+if ! rg -F '/XamlToCSharpGenerator/css/lite.css' "${XAML_INDEX_PAGE}" >/dev/null; then
+    echo "Production XAML docs page is missing the project-basepath-prefixed lite.css URL."
+    exit 1
+fi
+
+if ! rg -F "/XamlToCSharpGenerator/partials/menus/menu-xaml." "${XAML_INDEX_PAGE}" >/dev/null; then
+    echo "Production XAML docs page is missing the project-basepath-prefixed async menu partial URL."
     exit 1
 fi

@@ -28,6 +28,8 @@ This repository uses Lunet for the documentation site.
 
 Generated output is written to `site/.lunet/build/www`.
 
+Production and local preview builds intentionally use the same output folder, so the scripts clear generated site output before switching between production and `--dev` builds. This avoids stale mixed output where pages are rendered from one environment but menu partials and bundles are left behind from another.
+
 ## Styling pipeline note
 
 Lunet `1.0.10` on macOS 15 has a Dart Sass platform detection issue.
@@ -36,6 +38,7 @@ To keep the full template visual quality:
 - docs pages are assigned `bundle: "lite"` via `with attributes`
 - a local `/_builtins/bundle.sbn-html` override resolves bundle links safely
 - `template-main.css` is precompiled and committed, then loaded by the `lite` bundle
+- `check-docs` verifies that production article pages emit project-basepath-prefixed asset and async-menu URLs
 
 To refresh `template-main.css` locally after template updates:
 
