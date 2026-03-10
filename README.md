@@ -163,7 +163,7 @@ For Avalonia, `XamlX` is the compiler foundation behind the default `XamlIl` bac
 
 - .NET 10 SDK
 - Node.js 20+ for the VS Code extension
-- Xcode 26.0 for the iOS sample and iOS hot-reload validation
+- Xcode 26.2 for the iOS sample and iOS hot-reload validation
 - Android SDK for the Android sample
 
 ### Fast CI-equivalent build
