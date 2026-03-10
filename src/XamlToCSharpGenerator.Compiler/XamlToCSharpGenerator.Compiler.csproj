@@ -7,9 +7,18 @@
     <PackageTags>$(PackageTags);compiler;incremental;roslyn</PackageTags>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

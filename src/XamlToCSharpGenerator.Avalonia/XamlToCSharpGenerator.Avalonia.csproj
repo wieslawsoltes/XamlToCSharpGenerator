@@ -7,11 +7,26 @@
     <PackageTags>$(PackageTags);avalonia;binder;compiler;emitter</PackageTags>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.ExpressionSemantics">
+      <HintPath>..\XamlToCSharpGenerator.ExpressionSemantics\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.ExpressionSemantics.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

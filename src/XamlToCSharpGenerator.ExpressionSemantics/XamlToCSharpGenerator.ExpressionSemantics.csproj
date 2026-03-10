@@ -11,8 +11,17 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

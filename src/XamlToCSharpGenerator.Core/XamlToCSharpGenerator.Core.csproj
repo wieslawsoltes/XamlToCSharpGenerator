@@ -7,8 +7,14 @@
     <PackageTags>$(PackageTags);compiler;parser;semantics</PackageTags>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

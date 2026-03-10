@@ -11,10 +11,35 @@
     <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Avalonia">
+      <HintPath>..\XamlToCSharpGenerator.Avalonia\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Avalonia.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.ExpressionSemantics">
+      <HintPath>..\XamlToCSharpGenerator.ExpressionSemantics\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.ExpressionSemantics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

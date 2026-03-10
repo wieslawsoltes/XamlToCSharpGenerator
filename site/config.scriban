@@ -82,7 +82,6 @@ with api.dotnet
         { name: "MiniLanguageParsing", path: "../src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" },
         { name: "NoUi", path: "../src/XamlToCSharpGenerator.NoUi/XamlToCSharpGenerator.NoUi.csproj" },
         { name: "Generator", path: "../src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" },
-        { name: "Runtime", path: "../src/XamlToCSharpGenerator.Runtime/XamlToCSharpGenerator.Runtime.csproj" },
         { name: "Runtime.Avalonia", path: "../src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" },
         { name: "Runtime.Core", path: "../src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" },
         { name: "LanguageService", path: "../src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" },
