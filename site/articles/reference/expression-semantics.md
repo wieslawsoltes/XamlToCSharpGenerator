@@ -11,7 +11,7 @@ Roslyn-based analysis for expressions, lambdas, shorthand forms, inline C#, and 
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.ExpressionSemantics" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator.ExpressionSemantics" Version="x.y.z" />
 ```
 
 ## Related namespaces

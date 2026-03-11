@@ -13,7 +13,7 @@ AXSG ships multiple install surfaces because different users need different entr
 Use the umbrella package when you want the normal app-facing install path:
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator" Version="x.y.z" />
 ```
 
 This is the recommended starting point for Avalonia applications.
@@ -23,7 +23,7 @@ This is the recommended starting point for Avalonia applications.
 If you need explicit control over the imported build layer, start from:
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.Build" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator.Build" Version="x.y.z" />
 ```
 
 ### Editor/tooling integration
@@ -31,7 +31,7 @@ If you need explicit control over the imported build layer, start from:
 Use the .NET tool when you need the standalone language server:
 
 ```bash
-dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version 0.1.0-alpha.3
+dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version x.y.z
 ```
 
 Use the VS Code extension when you want the bundled editor experience instead of wiring the tool manually.

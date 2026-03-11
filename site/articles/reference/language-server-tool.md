@@ -11,7 +11,7 @@ The packaged `dotnet tool` host for the AXSG language server.
 ## Install
 
 ```bash
-dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version 0.1.0-alpha.3
+dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version x.y.z
 ```
 
 ## Use it when

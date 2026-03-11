@@ -1499,18 +1499,21 @@ public static class XamlSourceGenHotReloadManager
 
         lock (Sync)
         {
-            if (ReplacementTypeMap.TryGetValue(normalizedType, out var mappedType))
+            if (TryResolveMappedTypeLocked(normalizedType, out var mappedType))
             {
+                if (TryResolveRegisteredTypeKeyLocked(Instances, mappedType, out var resolvedTrackedType))
+                {
+                    ReplacementTypeMap[normalizedType] = resolvedTrackedType;
+                    ReplacementTypeMap[mappedType] = resolvedTrackedType;
+                    ReplacementTypeMap[resolvedTrackedType] = resolvedTrackedType;
+                    return resolvedTrackedType;
+                }
+
                 return mappedType;
             }
 
-            foreach (var trackedType in Instances.Keys)
+            if (TryResolveRegisteredTypeKeyLocked(Instances, normalizedType, out var trackedType))
             {
-                if (!string.Equals(trackedType.FullName, normalizedType.FullName, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
                 ReplacementTypeMap[normalizedType] = trackedType;
                 ReplacementTypeMap[trackedType] = trackedType;
                 return trackedType;
@@ -1621,13 +1624,15 @@ public static class XamlSourceGenHotReloadManager
 
     private static bool TryGetBuildUriForTypeLocked(Type normalizedType, out string buildUri)
     {
-        if (BuildUrisByType.TryGetValue(normalizedType, out buildUri!))
+        if (TryResolveRegisteredTypeKeyLocked(BuildUrisByType, normalizedType, out var buildUriType) &&
+            BuildUrisByType.TryGetValue(buildUriType, out buildUri!))
         {
             return true;
         }
 
-        if (ReplacementTypeMap.TryGetValue(normalizedType, out var mappedType) &&
-            BuildUrisByType.TryGetValue(mappedType, out buildUri!))
+        if (TryResolveMappedTypeLocked(normalizedType, out var mappedType) &&
+            TryResolveRegisteredTypeKeyLocked(BuildUrisByType, mappedType, out buildUriType) &&
+            BuildUrisByType.TryGetValue(buildUriType, out buildUri!))
         {
             return true;
         }
@@ -1638,7 +1643,7 @@ public static class XamlSourceGenHotReloadManager
             return !string.IsNullOrWhiteSpace(buildUri);
         }
 
-        if (ReplacementTypeMap.TryGetValue(normalizedType, out mappedType) &&
+        if (TryResolveMappedTypeLocked(normalizedType, out mappedType) &&
             XamlSourceGenTypeUriRegistry.TryGetUri(mappedType, out buildUri!))
         {
             buildUri = UriMapper.Normalize(buildUri);
@@ -1677,15 +1682,15 @@ public static class XamlSourceGenHotReloadManager
     private static bool TryResolveTrackedTypeLocked(Type normalizedType, out Type trackedType)
     {
         trackedType = normalizedType;
-        if (Instances.ContainsKey(normalizedType))
+        if (TryResolveRegisteredTypeKeyLocked(Instances, normalizedType, out trackedType))
         {
             return true;
         }
 
-        if (ReplacementTypeMap.TryGetValue(normalizedType, out var mappedType) &&
-            Instances.ContainsKey(mappedType))
+        if (TryResolveMappedTypeLocked(normalizedType, out var mappedType) &&
+            TryResolveRegisteredTypeKeyLocked(Instances, mappedType, out trackedType))
         {
-            trackedType = mappedType;
+            ReplacementTypeMap[normalizedType] = trackedType;
             return true;
         }
 
@@ -2034,14 +2039,16 @@ public static class XamlSourceGenHotReloadManager
 
     private static bool TryGetRegisteredSourcePathLocked(Type type, out string sourcePath)
     {
-        if (IdeSourcePathWatchers.TryGetValue(type, out var state))
+        if (TryResolveRegisteredTypeKeyLocked(IdeSourcePathWatchers, type, out var sourcePathType) &&
+            IdeSourcePathWatchers.TryGetValue(sourcePathType, out var state))
         {
             sourcePath = state.SourcePath;
             return true;
         }
 
-        if (ReplacementTypeMap.TryGetValue(type, out var mappedType) &&
-            IdeSourcePathWatchers.TryGetValue(mappedType, out state))
+        if (TryResolveMappedTypeLocked(type, out var mappedType) &&
+            TryResolveRegisteredTypeKeyLocked(IdeSourcePathWatchers, mappedType, out sourcePathType) &&
+            IdeSourcePathWatchers.TryGetValue(sourcePathType, out state))
         {
             sourcePath = state.SourcePath;
             return true;
@@ -2249,6 +2256,124 @@ public static class XamlSourceGenHotReloadManager
     private static Type NormalizeType(Type type)
     {
         return type.IsGenericType ? type.GetGenericTypeDefinition() : type;
+    }
+
+    private static bool TryResolveMappedTypeLocked(Type normalizedType, out Type mappedType)
+    {
+        mappedType = default!;
+        if (ReplacementTypeMap.TryGetValue(normalizedType, out var resolvedMappedType))
+        {
+            mappedType = resolvedMappedType;
+            return true;
+        }
+
+        if (TryResolveEquivalentTypeFromCollectionLocked(ReplacementTypeMap.Keys, normalizedType, out var mappedKey) &&
+            ReplacementTypeMap.TryGetValue(mappedKey, out resolvedMappedType))
+        {
+            mappedType = resolvedMappedType;
+            ReplacementTypeMap[normalizedType] = mappedType;
+            return true;
+        }
+
+        mappedType = default!;
+        return false;
+    }
+
+    private static bool TryResolveRegisteredTypeKeyLocked<TValue>(
+        Dictionary<Type, TValue> registrations,
+        Type requestedType,
+        out Type resolvedType)
+    {
+        if (registrations.ContainsKey(requestedType))
+        {
+            resolvedType = requestedType;
+            return true;
+        }
+
+        return TryResolveEquivalentTypeFromCollectionLocked(registrations.Keys, requestedType, out resolvedType);
+    }
+
+    private static bool TryResolveEquivalentTypeFromCollectionLocked(
+        IEnumerable<Type> candidates,
+        Type requestedType,
+        out Type resolvedType)
+    {
+        Type? bestMatch = null;
+        var bestScore = 0;
+
+        foreach (var candidate in candidates)
+        {
+            var score = GetTypeIdentityMatchScore(candidate, requestedType);
+            if (score == 0)
+            {
+                continue;
+            }
+
+            if (score > bestScore ||
+                (score == bestScore && CompareTypeIdentity(candidate, bestMatch) < 0))
+            {
+                bestMatch = candidate;
+                bestScore = score;
+            }
+        }
+
+        if (bestMatch is not null)
+        {
+            resolvedType = bestMatch;
+            return true;
+        }
+
+        resolvedType = default!;
+        return false;
+    }
+
+    private static int GetTypeIdentityMatchScore(Type candidate, Type requestedType)
+    {
+        if (ReferenceEquals(candidate, requestedType))
+        {
+            return 4;
+        }
+
+        var candidateFullName = candidate.FullName;
+        var requestedFullName = requestedType.FullName;
+        if (!string.IsNullOrWhiteSpace(candidateFullName) &&
+            !string.IsNullOrWhiteSpace(requestedFullName) &&
+            string.Equals(candidateFullName, requestedFullName, StringComparison.Ordinal))
+        {
+            var candidateAssemblyName = candidate.Assembly.GetName().Name;
+            var requestedAssemblyName = requestedType.Assembly.GetName().Name;
+            if (!string.IsNullOrWhiteSpace(candidateAssemblyName) &&
+                string.Equals(candidateAssemblyName, requestedAssemblyName, StringComparison.Ordinal))
+            {
+                return 3;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(candidateFullName) ||
+            string.IsNullOrWhiteSpace(requestedFullName))
+        {
+            var candidateAssemblyName = candidate.Assembly.GetName().Name;
+            var requestedAssemblyName = requestedType.Assembly.GetName().Name;
+            if (string.Equals(candidate.Name, requestedType.Name, StringComparison.Ordinal) &&
+                string.Equals(candidateAssemblyName, requestedAssemblyName, StringComparison.Ordinal))
+            {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int CompareTypeIdentity(Type left, Type? right)
+    {
+        if (right is null)
+        {
+            return -1;
+        }
+
+        var leftKey = left.AssemblyQualifiedName ?? left.FullName ?? left.Name;
+        var rightKey = right.AssemblyQualifiedName ?? right.FullName ?? right.Name;
+        return string.Compare(leftKey, rightKey, StringComparison.Ordinal);
     }
 
     private static bool ContainsReference(List<WeakReference<object>> references, object candidate)
