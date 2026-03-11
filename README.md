@@ -130,11 +130,11 @@ The remaining NuGet packages exist for advanced composition:
 
 For feature-specific details:
 
-- configuration model: [`docs/configuration-model.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-model.md)
-- configuration migration: [`docs/configuration-migration.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/configuration-migration.md)
-- C# expressions: [`docs/csharp-expressions.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/csharp-expressions.md)
-- inline C# code blocks: [`docs/inline-csharp-code.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/inline-csharp-code.md)
-- iOS hot reload: [`docs/hot-reload-ios.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/docs/hot-reload-ios.md)
+- configuration model: [`site/articles/reference/configuration-model.md`](site/articles/reference/configuration-model.md)
+- configuration migration: [`site/articles/reference/configuration-migration.md`](site/articles/reference/configuration-migration.md)
+- C# expressions: [`site/articles/xaml/csharp-expressions.md`](site/articles/xaml/csharp-expressions.md)
+- inline C# code blocks: [`site/articles/guides/inline-csharp-code.md`](site/articles/guides/inline-csharp-code.md)
+- iOS hot reload: [`site/articles/guides/hot-reload-ios.md`](site/articles/guides/hot-reload-ios.md)
 
 ## AXSG vs XamlX
 
