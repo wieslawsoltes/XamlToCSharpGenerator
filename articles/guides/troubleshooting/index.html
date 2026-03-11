@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Troubleshooting | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Troubleshooting | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Troubleshooting Use this guide when AXSG behavior is wrong, slow, or inconsistent across build, runtime, hot reload, or editor tooling. Quick triage checklist Confirm you are on a build that actually contains the change you expect. Rebuild the affected sample or app in Release once before blaming the language service or hot reload. If the issue is in VS Code, reload the window so the extension and server are rebuilt...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Troubleshooting | XamlToCSharpGenerator">
+<meta property="og:title" content="Troubleshooting | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Troubleshooting Use this guide when AXSG behavior is wrong, slow, or inconsistent across build, runtime, hot reload, or editor tooling. Quick triage checklist Confirm you are on a build that actually contains the change you expect. Rebuild the affected sample or app in Release once before blaming the language service or hot reload. If the issue is in VS Code, reload the window so the extension and server are rebuilt...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Troubleshooting | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.7b51d4e5b11666823ec1d8462cf2befb.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-11,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Troubleshooting  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="troubleshooting">Troubleshooting</h1>
+<p>Use this guide when AXSG behavior is wrong, slow, or inconsistent across build, runtime, hot reload, or editor tooling.</p>
+<h2 id="quick-triage-checklist">Quick triage checklist</h2>
+<ol>
+<li>Confirm you are on a build that actually contains the change you expect.</li>
+<li>Rebuild the affected sample or app in <code>Release</code> once before blaming the language service or hot reload.</li>
+<li>If the issue is in VS Code, reload the window so the extension and server are rebuilt and restarted.</li>
+<li>If the issue is in <code>dotnet watch</code>, reproduce with <code>AXSG_HOTRELOAD_TRACE=1</code>.</li>
+<li>If the issue is in docs, run <code>bash ./check-docs.sh</code> or <code>pwsh ./check-docs.ps1</code> serially, not in parallel shells against the same output tree.</li>
+</ol>
+<h2 id="compiler-and-binding-diagnostics">Compiler and binding diagnostics</h2>
+<h3 id="compiled-binding--requires-xdatatype-in-scope"><code>Compiled binding ... requires x:DataType in scope</code></h3>
+<p>Likely causes:</p>
+<ul>
+<li>there is no ambient <code>x:DataType</code></li>
+<li>the binding source is not explicitly typed</li>
+<li>shorthand or relative-source lowering did not resolve to a known source type</li>
+</ul>
+<p>Check:</p>
+<ul>
+<li><code>x:DataType</code> on the nearest binding scope</li>
+<li>typed <code>$parent[...]</code>, <code>$self</code>, <code>#name</code>, or <code>RelativeSource</code> source expressions</li>
+<li>whether the binding is inside a style, control theme, template, or resource dictionary where scope differs from the root view</li>
+</ul>
+<p>Relevant docs:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/compiled-bindings">Compiled Bindings</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/concepts/binding-and-expression-model">Binding and Expression Model</a></li>
+</ul>
+<h3 id="control-theme-basedon-cycle-diagnostics">Control-theme <code>BasedOn</code> cycle diagnostics</h3>
+<p>If a theme uses the same key as a base theme and <code>BasedOn</code> points to the same key, AXSG now treats that as the normal override pattern unless there is an actual earlier local cycle.</p>
+<p>If you still see a cycle:</p>
+<ul>
+<li>check for multiple local themes with the same key in the same document chain</li>
+<li>inspect merged dictionary/include order</li>
+<li>verify the reference does not truly resolve back into the same local node set</li>
+</ul>
+<h2 id="hot-reload-and-dotnet-watch">Hot reload and <code>dotnet watch</code></h2>
+<h3 id="roslyn-emitdifference-duplicate-key-or-duplicate-row-crashes">Roslyn <code>EmitDifference</code> duplicate-key or duplicate-row crashes</h3>
+<p>These usually mean generated helper identities are unstable between edits.</p>
+<p>Typical surfaces that can destabilize EnC:</p>
+<ul>
+<li>inline event wrapper methods</li>
+<li>expression helper lambdas</li>
+<li>generated local functions or closure-heavy emission</li>
+</ul>
+<p>Checklist:</p>
+<ul>
+<li>reproduce on the latest branch head</li>
+<li>edit only the target XAML file, not generated outputs</li>
+<li>check for deterministic helper naming in the generated file under <code>obj</code></li>
+</ul>
+<p>Relevant docs:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
+</ul>
+<h3 id="dotnet-watch-metadata-reference-or-named-pipe-issues"><code>dotnet watch</code> metadata-reference or named-pipe issues</h3>
+<p>Check:</p>
+<ul>
+<li>local analyzer/generator restore completed</li>
+<li><code>Runtime.Avalonia</code> is not accidentally pulling incompatible compiler-only dependencies</li>
+<li>mobile/remote runs have the correct transport configuration</li>
+</ul>
+<p>For iOS-specific workflows, use <a href="/XamlToCSharpGenerator/articles/guides/hot-reload-ios">iOS Hot Reload</a>.</p>
+<h2 id="vs-code-and-language-service">VS Code and language service</h2>
+<h3 id="extension-startup-is-slow">Extension startup is slow</h3>
+<p>Check:</p>
+<ul>
+<li>whether the workspace actually contains XAML files</li>
+<li>whether AXSG is being activated by stale extension state from an older install</li>
+<li>whether <code>MSBuildWorkspace</code> initialization is happening eagerly because the server has already serviced a compilation-backed request</li>
+</ul>
+<p>Useful actions:</p>
+<ul>
+<li>reload the VS Code window</li>
+<li>restart the AXSG language server</li>
+<li>check whether the issue only happens on the first compilation-backed request</li>
+</ul>
+<h3 id="completion-or-references-are-slow-in-inline-c">Completion or references are slow in inline C#</h3>
+<p>AXSG answers inline code directly first and only falls back to projected C# providers when needed. If inline requests are still slow:</p>
+<ul>
+<li>confirm the window was reloaded after updating the extension</li>
+<li>verify the position is actually inside an inline <code>CSharp</code> region and not plain XAML text</li>
+<li>compare AXSG-first behavior with projected-provider fallback behavior</li>
+</ul>
+<h3 id="ctrlcmd-click-goes-to-the-wrong-token">Ctrl/Cmd-click goes to the wrong token</h3>
+<p>AXSG differentiates several split-token surfaces:</p>
+<ul>
+<li><code>pages:TypeName</code> -&gt; prefix vs type token</li>
+<li><code>Window.IsVisible</code> -&gt; owner type vs property token</li>
+<li><code>ToggleButton#ThemeToggle:checked</code> -&gt; type vs <code>#name</code> vs pseudoclass token</li>
+</ul>
+<p>If navigation chooses the wrong side, reproduce with the exact cursor position because token-side behavior is deliberate and separately tested.</p>
+<h2 id="docs-and-lunet">Docs and Lunet</h2>
+<h3 id="the-docs-site-renders-but-api-pages-are-broken-or-raw-assets-are-missing">The docs site renders but API pages are broken or raw assets are missing</h3>
+<p>Check:</p>
+<ul>
+<li><code>site/config.scriban</code> bundle configuration</li>
+<li><code>site/.lunet/includes/_builtins/bundle.sbn-html</code></li>
+<li>committed <code>site/.lunet/css/template-main.css</code></li>
+</ul>
+<h3 id="generated-docs-serve-raw-md-links">Generated docs serve raw <code>.md</code> links</h3>
+<p>Use:</p>
+<ul>
+<li><code>bash ./check-docs.sh</code></li>
+<li><code>pwsh ./check-docs.ps1</code></li>
+</ul>
+<p>Both scripts fail when generated output still contains raw <code>.md</code> article links.</p>
+<h3 id="avaloniaedit-api-links-do-not-resolve">AvaloniaEdit API links do not resolve</h3>
+<p><code>AvaloniaEdit.*</code> links are expected to resolve through the external Avalonia API site:</p>
+<ul>
+<li><code>https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/</code></li>
+<li><code>https://api-docs.avaloniaui.net/docs/AvaloniaEdit.Document.TextDocument/</code></li>
+</ul>
+<p>If editor-package links regress:</p>
+<ul>
+<li>verify <code>site/config.scriban</code> still maps the <code>AvaloniaEdit</code> assembly under <code>external_apis</code></li>
+<li>rebuild the site with <code>./build-docs.sh</code> or <code>./build-docs.ps1</code></li>
+<li>check the target URL directly before changing the Lunet API graph</li>
+</ul>
+<p>Do not add a docs-only project that merely references the package. Lunet documents the output assembly of the configured project, not arbitrary referenced package assemblies, so that approach does not generate <code>AvaloniaEdit</code> API pages.</p>
+<h2 id="build-and-package-selection">Build and package selection</h2>
+<h3 id="i-do-not-know-which-package-to-install">I do not know which package to install</h3>
+<p>Start with:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/package-catalog">Package Catalog</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/package-guides">Package Guides</a></li>
+</ul>
+<h3 id="i-need-runtime-support-but-not-the-full-app-package">I need runtime support but not the full app package</h3>
+<p>Start with:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/runtime">Package: XamlToCSharpGenerator.Runtime</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/runtime-avalonia">Package: XamlToCSharpGenerator.Runtime.Avalonia</a></li>
+</ul>
+<h2 id="when-to-open-the-api-docs">When to open the API docs</h2>
+<p>Go to the generated API when you already know the subsystem and want member-level details.</p>
+<p>Start with:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/reference/api-coverage-index">API Coverage Index</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/assembly-catalog">Assembly Catalog</a></li>
+<li>the relevant namespace summary page in <a href="/XamlToCSharpGenerator/articles/reference">Reference</a></li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/concepts/glossary">Glossary</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

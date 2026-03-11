@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Package: XamlToCSharpGenerator.Avalonia | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Package: XamlToCSharpGenerator.Avalonia | XamlToCSharpGenerator">
+<meta name="twitter:description" content="XamlToCSharpGenerator.Avalonia Role Avalonia-specific binder, emitter, parsing enrichment, and framework-profile implementation. Install &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Avalonia&quot; Version=&quot;0.1.0-alpha.3&quot; /> Related namespaces XamlToCSharpGenerator.Avalonia.Binding XamlToCSharpGenerator.Avalonia.Emission XamlToCSharpGenerator.Avalonia.Framework XamlToCSharpGenerator.Avalonia.Parsing Use it when you want the Avalonia compiler profile directly you are extending Avalonia-specific compile-time behavior What lives here This package owns the Avalonia-specific translation layer: binding lowering for compiled bindings, shorthand expressions, event bindings, and inline code...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Package: XamlToCSharpGenerator.Avalonia | XamlToCSharpGenerator">
+<meta property="og:title" content="Package: XamlToCSharpGenerator.Avalonia | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="XamlToCSharpGenerator.Avalonia Role Avalonia-specific binder, emitter, parsing enrichment, and framework-profile implementation. Install &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Avalonia&quot; Version=&quot;0.1.0-alpha.3&quot; /> Related namespaces XamlToCSharpGenerator.Avalonia.Binding XamlToCSharpGenerator.Avalonia.Emission XamlToCSharpGenerator.Avalonia.Framework XamlToCSharpGenerator.Avalonia.Parsing Use it when you want the Avalonia compiler profile directly you are extending Avalonia-specific compile-time behavior What lives here This package owns the Avalonia-specific translation layer: binding lowering for compiled bindings, shorthand expressions, event bindings, and inline code...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Package: XamlToCSharpGenerator.Avalonia | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-18,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/reference/' class='breadcrumb-link  '>Reference</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Package: XamlToCSharpGenerator.Avalonia  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="xamltocsharpgeneratoravalonia">XamlToCSharpGenerator.Avalonia</h1>
+<h2 id="role">Role</h2>
+<p>Avalonia-specific binder, emitter, parsing enrichment, and framework-profile implementation.</p>
+<h2 id="install">Install</h2>
+<pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator.Avalonia&quot; Version=&quot;0.1.0-alpha.3&quot; /&gt;
+</code></pre>
+<h2 id="related-namespaces">Related namespaces</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Binding/" title="XamlToCSharpGenerator.Avalonia.Binding">XamlToCSharpGenerator.Avalonia.Binding</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Emission/" title="XamlToCSharpGenerator.Avalonia.Emission">XamlToCSharpGenerator.Avalonia.Emission</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Framework/" title="XamlToCSharpGenerator.Avalonia.Framework">XamlToCSharpGenerator.Avalonia.Framework</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Parsing/" title="XamlToCSharpGenerator.Avalonia.Parsing">XamlToCSharpGenerator.Avalonia.Parsing</a></li>
+</ul>
+<h2 id="use-it-when">Use it when</h2>
+<ul>
+<li>you want the Avalonia compiler profile directly</li>
+<li>you are extending Avalonia-specific compile-time behavior</li>
+</ul>
+<h2 id="what-lives-here">What lives here</h2>
+<p>This package owns the Avalonia-specific translation layer:</p>
+<ul>
+<li>binding lowering for compiled bindings, shorthand expressions, event bindings, and inline code</li>
+<li>control-theme, template, style, and resource semantics</li>
+<li>code emission for generated object graphs, helper methods, and runtime descriptors</li>
+<li>Avalonia-specific feature enrichment over the generic compiler host</li>
+</ul>
+<p>This is where most user-visible language features become concrete Avalonia behavior. If authored XAML is valid in principle but lowers or emits incorrectly for Avalonia, this is usually the first package to inspect.</p>
+<h2 id="typical-companions">Typical companions</h2>
+<ul>
+<li><code>XamlToCSharpGenerator.Compiler</code></li>
+<li><code>XamlToCSharpGenerator.Core</code></li>
+<li><code>XamlToCSharpGenerator.ExpressionSemantics</code></li>
+<li><code>XamlToCSharpGenerator.Framework.Abstractions</code></li>
+<li><code>XamlToCSharpGenerator.MiniLanguageParsing</code></li>
+</ul>
+<h2 id="common-change-categories">Common change categories</h2>
+<p>Most work in this package falls into:</p>
+<ul>
+<li>binding and expression lowering</li>
+<li>selector, template, theme, and resource semantics</li>
+<li>generated helper and object-graph emission</li>
+<li>framework-specific diagnostics and runtime descriptors</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/concepts/binding-and-expression-model">Binding and Expression Model</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/styles-templates-and-themes">Styles, Templates, and Themes</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/namespace-expression-and-framework">Expression, Parsing, and Framework Namespaces</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

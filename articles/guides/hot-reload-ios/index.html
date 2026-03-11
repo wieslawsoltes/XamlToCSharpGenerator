@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>iOS Hot Reload | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="iOS Hot Reload | XamlToCSharpGenerator">
+<meta name="twitter:description" content="iOS Hot Reload Guide (AXSG + dotnet watch) This guide covers SourceGen hot reload setup for iOS simulator and physical devices. 1) Prerequisites iOS workload is installed. Xcode and simulator are installed. Project uses:&lt;AvaloniaXamlCompilerBackend>SourceGen&lt;/AvaloniaXamlCompilerBackend> &lt;AvaloniaSourceGenHotReloadEnabled>true&lt;/AvaloniaSourceGenHotReloadEnabled> Run from Debug configuration. 2) Simulator quickstart Run these commands from the repository root. cd samples/ControlCatalog.iOS AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj Expected startup signals:...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="iOS Hot Reload | XamlToCSharpGenerator">
+<meta property="og:title" content="iOS Hot Reload | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="iOS Hot Reload Guide (AXSG + dotnet watch) This guide covers SourceGen hot reload setup for iOS simulator and physical devices. 1) Prerequisites iOS workload is installed. Xcode and simulator are installed. Project uses:&lt;AvaloniaXamlCompilerBackend>SourceGen&lt;/AvaloniaXamlCompilerBackend> &lt;AvaloniaSourceGenHotReloadEnabled>true&lt;/AvaloniaSourceGenHotReloadEnabled> Run from Debug configuration. 2) Simulator quickstart Run these commands from the repository root. cd samples/ControlCatalog.iOS AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj Expected startup signals:...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="iOS Hot Reload | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.7b51d4e5b11666823ec1d8462cf2befb.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-9,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            iOS Hot Reload  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="ios-hot-reload-guide-axsg--dotnet-watch">iOS Hot Reload Guide (AXSG + <code>dotnet watch</code>)</h1>
+<p>This guide covers SourceGen hot reload setup for iOS simulator and physical devices.</p>
+<h2 id="1-prerequisites">1) Prerequisites</h2>
+<ol>
+<li>iOS workload is installed.</li>
+<li>Xcode and simulator are installed.</li>
+<li>Project uses:
+<ul>
+<li><code>&lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;</code></li>
+<li><code>&lt;AvaloniaSourceGenHotReloadEnabled&gt;true&lt;/AvaloniaSourceGenHotReloadEnabled&gt;</code></li>
+</ul>
+</li>
+<li>Run from Debug configuration.</li>
+</ol>
+<h2 id="2-simulator-quickstart">2) Simulator quickstart</h2>
+<p>Run these commands from the repository root.</p>
+<pre><code class="language-bash">cd samples/ControlCatalog.iOS
+AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
+</code></pre>
+<p>Expected startup signals:</p>
+<ol>
+<li><code>dotnet watch 🔨 Build succeeded</code></li>
+<li><code>xcrun simctl launch ... Avalonia.ControlCatalog</code></li>
+<li>App process id line, for example: <code>Avalonia.ControlCatalog: 96930</code></li>
+</ol>
+<p>During iOS watch runs, AXSG build targets forward/derive:</p>
+<ol>
+<li><code>AXSG_HOTRELOAD_TRANSPORT_MODE</code></li>
+<li><code>AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS</code></li>
+<li><code>AXSG_HOTRELOAD_REMOTE_ENDPOINT</code> (when configured or auto-selected for simulator)</li>
+</ol>
+<h2 id="3-device-quickstart">3) Device quickstart</h2>
+<p>For physical devices, set an explicit remote endpoint reachable from device.</p>
+<pre><code class="language-xml">&lt;PropertyGroup&gt;
+  &lt;AvaloniaSourceGenIosHotReloadTransportMode&gt;RemoteOnly&lt;/AvaloniaSourceGenIosHotReloadTransportMode&gt;
+  &lt;AvaloniaSourceGenHotReloadRemoteEndpoint&gt;tcp://192.168.1.10:45820&lt;/AvaloniaSourceGenHotReloadRemoteEndpoint&gt;
+  &lt;AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint&gt;true&lt;/AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint&gt;
+&lt;/PropertyGroup&gt;
+</code></pre>
+<p>Then run:</p>
+<pre><code class="language-bash">AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
+</code></pre>
+<p>Requirements:</p>
+<ol>
+<li>Device and host are on the same network.</li>
+<li>Endpoint host/IP is reachable from device.</li>
+<li>Endpoint service accepts AXSG remote protocol payloads.</li>
+</ol>
+<h2 id="4-key-configuration-surface">4) Key configuration surface</h2>
+<p>MSBuild properties:</p>
+<ol>
+<li><code>AvaloniaSourceGenIosHotReloadEnabled</code> (<code>true</code> by default for Debug iOS)</li>
+<li><code>AvaloniaSourceGenIosHotReloadUseInterpreter</code> (<code>true</code> by default for Debug iOS)</li>
+<li><code>AvaloniaSourceGenIosHotReloadTransportMode</code> (<code>Auto|MetadataOnly|RemoteOnly</code>)</li>
+<li><code>AvaloniaSourceGenIosHotReloadHandshakeTimeoutMs</code> (default <code>3000</code>)</li>
+<li><code>AvaloniaSourceGenHotReloadRemoteEndpoint</code></li>
+<li><code>AvaloniaSourceGenHotReloadRemotePort</code> (default <code>45820</code>)</li>
+<li><code>AvaloniaSourceGenHotReloadRemoteAutoSimulatorEndpointEnabled</code> (default <code>true</code>)</li>
+<li><code>AvaloniaSourceGenHotReloadRemoteRequireExplicitDeviceEndpoint</code> (default <code>true</code>)</li>
+<li><code>AvaloniaSourceGenIosHotReloadForwardStartupHooks</code> (default <code>false</code>)</li>
+<li><code>AvaloniaSourceGenIosHotReloadForwardWatchEnvironment</code> (default <code>true</code>)</li>
+</ol>
+<p>Environment overrides:</p>
+<ol>
+<li><code>AXSG_HOTRELOAD_TRACE=1</code></li>
+<li><code>AXSG_HOTRELOAD_TRANSPORT_MODE=Auto|MetadataOnly|RemoteOnly</code></li>
+<li><code>AXSG_HOTRELOAD_HANDSHAKE_TIMEOUT_MS=&lt;milliseconds&gt;</code></li>
+<li><code>AXSG_HOTRELOAD_REMOTE_ENDPOINT=&lt;endpoint&gt;</code></li>
+</ol>
+<h2 id="5-remote-endpoint-formats">5) Remote endpoint formats</h2>
+<p>Accepted <code>AXSG_HOTRELOAD_REMOTE_ENDPOINT</code> formats:</p>
+<ol>
+<li><code>host:port</code></li>
+<li><code>tcp://host:port</code></li>
+<li><code>ws://host:port/path</code></li>
+<li><code>wss://host:port/path</code></li>
+</ol>
+<p>Port is required for all formats.</p>
+<h2 id="6-troubleshooting-matrix">6) Troubleshooting matrix</h2>
+<table class="table">
+<thead>
+<tr>
+<th>Startup signal</th>
+<th>Meaning</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Waiting for application to connect to pipe ...</code></td>
+<td>Metadata hot reload channel not established yet</td>
+<td>Keep <code>TransportMode=Auto</code> for simulator fallback or set explicit remote endpoint and <code>RemoteOnly</code>.</td>
+</tr>
+<tr>
+<td><code>[AXSG.HotReload.iOS] Physical-device remote fallback requires a reachable host endpoint.</code></td>
+<td>Device run without endpoint while endpoint is required</td>
+<td>Set <code>AvaloniaSourceGenHotReloadRemoteEndpoint</code> (or <code>AXSG_HOTRELOAD_REMOTE_ENDPOINT</code>) to reachable host:port.</td>
+</tr>
+<tr>
+<td><code>Invalid AXSG_HOTRELOAD_REMOTE_ENDPOINT value ...</code></td>
+<td>Endpoint format rejected</td>
+<td>Use one of: <code>host:port</code>, <code>tcp://host:port</code>, <code>ws://host:port/path</code>, <code>wss://host:port/path</code>.</td>
+</tr>
+<tr>
+<td><code>No precompiled XAML found for avares://...</code> during startup</td>
+<td>Include resolved before source-generated registry entry became available or stale outputs</td>
+<td>Clean <code>bin/obj</code>, rebuild, and ensure referenced project is part of build graph; if recurring, capture <code>AXSG_HOTRELOAD_TRACE=1</code> logs.</td>
+</tr>
+<tr>
+<td><code>Failed to load AOT module ... while running in aot-only mode</code></td>
+<td>Debug build/runtime mismatch or stale AOT artifacts</td>
+<td>Ensure Debug iOS with interpreter enabled, clean <code>bin/obj</code>, rebuild/redeploy simulator app.</td>
+</tr>
+<tr>
+<td><code>Microsoft.iOS: Socket error while connecting to IDE on 127.0.0.1:10000: Connection refused</code></td>
+<td>IDE debugging channel not attached</td>
+<td>Usually non-blocking for <code>dotnet watch</code>; if needed, start from IDE debugger instead of pure CLI run.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-sample-project">7) Sample project</h2>
+<p>See:</p>
+<ul>
+<li><code>samples/ControlCatalog.iOS/README.md</code></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

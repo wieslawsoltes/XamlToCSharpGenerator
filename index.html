@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>XamlToCSharpGenerator | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler. Start Getting Started Browse Packages Browse API Start Here Overview Choose the right install surface and understand the compiler/runtime split before you wire AXSG into an app. Quickstart Install the standard package, enable source-generated views, and validate the...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
+<meta property="og:title" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler. Start Getting Started Browse Packages Browse API Start Here Overview Choose the right install surface and understand the compiler/runtime split before you wire AXSG into an app. Quickstart Install the standard package, enable source-generated views, and validate the...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md ">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-home">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container">
+<!-- lunet:summarize -->
+<div class="axsg-hero">
+  <div class="axsg-eyebrow"><i class="bi bi-code-square" aria-hidden="true"></i> Avalonia XAML Compiler and Tooling</div>
+  <h1>XamlToCSharpGenerator</h1>
+  <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler.</p>
+  <div class="axsg-hero-actions">
+    <a class="btn btn-primary btn-lg" href="articles/getting-started/overview"><i class="bi bi-rocket-takeoff" aria-hidden="true"></i> Start Getting Started</a>
+    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/package-guides/"><i class="bi bi-box-seam" aria-hidden="true"></i> Browse Packages</a>
+    <a class="btn btn-outline-secondary btn-lg" href="api"><i class="bi bi-braces-asterisk" aria-hidden="true"></i> Browse API</a>
+  </div>
+</div>
+<h2 id="start-here">Start Here</h2>
+<div class="axsg-link-grid">
+  <a class="axsg-link-card" href="articles/getting-started/overview">
+    <span class="axsg-link-card-title"><i class="bi bi-signpost-split" aria-hidden="true"></i> Overview</span>
+    <p>Choose the right install surface and understand the compiler/runtime split before you wire AXSG into an app.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/getting-started/quickstart">
+    <span class="axsg-link-card-title"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Quickstart</span>
+    <p>Install the standard package, enable source-generated views, and validate the first generated build.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/xaml/csharp-expressions">
+    <span class="axsg-link-card-title"><i class="bi bi-braces" aria-hidden="true"></i> C# Expressions</span>
+    <p>Use shorthand expressions, interpolation, typed sources, and expression-aware tooling inside valid XAML.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/xaml/inline-csharp">
+    <span class="axsg-link-card-title"><i class="bi bi-filetype-cs" aria-hidden="true"></i> Inline C#</span>
+    <p>Author `CSharp` markup, CDATA blocks, and inline event code while keeping the document valid XAML.</p>
+  </a>
+</div>
+<h2 id="documentation-sections">Documentation Sections</h2>
+<div class="axsg-link-grid axsg-link-grid--wide">
+  <a class="axsg-link-card" href="articles/getting-started">
+    <span class="axsg-link-card-title"><i class="bi bi-play-circle" aria-hidden="true"></i> Getting Started</span>
+    <p>Installation, first integration, and quickstart paths for the standard AXSG app workflow.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/concepts">
+    <span class="axsg-link-card-title"><i class="bi bi-diagram-3" aria-hidden="true"></i> Concepts</span>
+    <p>Compiler host, configuration precedence, generated artifacts, binding semantics, and tooling surface.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/guides">
+    <span class="axsg-link-card-title"><i class="bi bi-journal-code" aria-hidden="true"></i> Guides</span>
+    <p>Task-oriented walkthroughs for packaging, release, hot reload, runtime operation, and deployment.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/xaml">
+    <span class="axsg-link-card-title"><i class="bi bi-filetype-xml" aria-hidden="true"></i> XAML Usage</span>
+    <p>Compiled bindings, shorthand expressions, inline C#, templates, styles, control themes, and theme resources.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/architecture">
+    <span class="axsg-link-card-title"><i class="bi bi-cpu" aria-hidden="true"></i> Architecture</span>
+    <p>Compiler pipeline internals, runtime/bootstrap behavior, and the language-service/editor stack.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/advanced">
+    <span class="axsg-link-card-title"><i class="bi bi-speedometer2" aria-hidden="true"></i> Advanced</span>
+    <p>Performance work, testing strategy, docs/release plumbing, and custom framework-profile extension points.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/reference">
+    <span class="axsg-link-card-title"><i class="bi bi-collection" aria-hidden="true"></i> Reference</span>
+    <p>Package guides, namespace entry points, configuration reference, artifact matrix, and API coverage maps.</p>
+  </a>
+  <a class="axsg-link-card" href="api">
+    <span class="axsg-link-card-title"><i class="bi bi-braces-asterisk" aria-hidden="true"></i> API Reference</span>
+    <p>Generated .NET API pages for the shipped compiler, runtime, language service, and editor assemblies.</p>
+  </a>
+</div>
+<h2 id="shipped-artifact-families">Shipped Artifact Families</h2>
+<div class="axsg-link-grid axsg-link-grid--wide">
+  <a class="axsg-link-card" href="articles/reference/xamltocsharpgenerator/">
+    <span class="axsg-link-card-title"><i class="bi bi-box-seam" aria-hidden="true"></i> App and Build Packages</span>
+    <p>`XamlToCSharpGenerator`, `Build`, and the standard app-facing install surface for generated Avalonia XAML.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/reference/compiler/">
+    <span class="axsg-link-card-title"><i class="bi bi-gear-wide-connected" aria-hidden="true"></i> Compiler Packages</span>
+    <p>`Compiler`, `Core`, `Framework.Abstractions`, `Avalonia`, `NoUi`, and `Generator` for compiler composition.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/reference/runtime/">
+    <span class="axsg-link-card-title"><i class="bi bi-lightning" aria-hidden="true"></i> Runtime Packages</span>
+    <p>`Runtime`, `Runtime.Core`, and `Runtime.Avalonia` for generated view bootstrap, registries, and hot reload.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/reference/language-service/">
+    <span class="axsg-link-card-title"><i class="bi bi-search" aria-hidden="true"></i> Tooling Packages</span>
+    <p>`LanguageService`, `LanguageServer.Tool`, `Editor.Avalonia`, and the bundled VS Code extension.</p>
+  </a>
+</div>
+
+</div>
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

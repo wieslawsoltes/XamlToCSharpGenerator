@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Inline C# | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Inline C# | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Inline C# in XAML Overview AXSG supports valid-XAML inline C# through an explicit CSharp surface in the default Avalonia XML namespace. This feature is intended for cases where compact binding or event syntax is no longer expressive enough and the author needs normal C# expressions or event statements with access to the local XAML context. The feature is deliberately explicit: The XAML stays valid XML and valid XAML. Inline code...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Inline C# | XamlToCSharpGenerator">
+<meta property="og:title" content="Inline C# | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Inline C# in XAML Overview AXSG supports valid-XAML inline C# through an explicit CSharp surface in the default Avalonia XML namespace. This feature is intended for cases where compact binding or event syntax is no longer expressive enough and the author needs normal C# expressions or event statements with access to the local XAML context. The feature is deliberately explicit: The XAML stays valid XML and valid XAML. Inline code...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Inline C# | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.7b51d4e5b11666823ec1d8462cf2befb.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-3,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Inline C# Code  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="inline-c-in-xaml">Inline C# in XAML</h1>
+<h2 id="overview">Overview</h2>
+<p>AXSG supports valid-XAML inline C# through an explicit <code>CSharp</code> surface in the
+default Avalonia XML namespace.
+This feature is intended for cases where compact binding or event syntax is no
+longer expressive enough and the author needs normal C# expressions or event
+statements with access to the local XAML context.</p>
+<p>The feature is deliberately explicit:</p>
+<ul>
+<li>The XAML stays valid XML and valid XAML.</li>
+<li>Inline code is opt-in through <code>CSharp</code>.</li>
+<li>Existing shorthand expression forms remain supported, but <code>CSharp</code> is the
+canonical form for multi-line or context-rich code.</li>
+</ul>
+<h2 id="namespace">Namespace</h2>
+<p><code>CSharp</code> is available directly in the default Avalonia XML namespace. No
+additional <code>xmlns</code> prefix is required.</p>
+<h2 id="supported-forms">Supported forms</h2>
+<h3 id="compact-attribute-form">Compact attribute form</h3>
+<p>Use this form for short expressions or short event lambdas.</p>
+<pre><code class="language-xaml">&lt;TextBlock Text=&quot;{CSharp Code=source.ProductName}&quot; /&gt;
+&lt;Button Click=&quot;{CSharp Code='(sender, e) =&gt; source.ClickCount++'}&quot; /&gt;
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li>The compact form is best for short single-line code.</li>
+<li>Complex expressions with commas, nested braces, or long interpolated strings
+should use the object-element form below.</li>
+</ul>
+<h3 id="object-element-form">Object-element form</h3>
+<p>Use this form for multi-line expressions or event statement blocks.</p>
+<pre><code class="language-xaml">&lt;TextBlock.Text&gt;
+  &lt;CSharp&gt;&lt;![CDATA[
+source.ProductName + &quot; #&quot; + source.ClickCount
+  ]]&gt;&lt;/CSharp&gt;
+&lt;/TextBlock.Text&gt;
+
+&lt;Button.Click&gt;
+  &lt;CSharp&gt;&lt;![CDATA[
+source.ClickCount++;
+source.LastAction = &quot;inline code&quot;;
+  ]]&gt;&lt;/CSharp&gt;
+&lt;/Button.Click&gt;
+</code></pre>
+<h2 id="context-variables">Context variables</h2>
+<p>Inline C# is compiled against explicit context variables.</p>
+<h3 id="value-code">Value code</h3>
+<p>Value code is compiled as a C# expression and can access:</p>
+<ul>
+<li><code>source</code>: the ambient <code>x:DataType</code> instance when available, otherwise <code>object</code></li>
+<li><code>root</code>: the root <code>x:Class</code> instance when available, otherwise <code>object</code></li>
+<li><code>target</code>: the current target object for the assignment</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-xaml">&lt;TextBlock.Text&gt;
+  &lt;CSharp&gt;&lt;![CDATA[
+$&quot;{source.Quantity}x {source.ProductName}&quot;
+  ]]&gt;&lt;/CSharp&gt;
+&lt;/TextBlock.Text&gt;
+</code></pre>
+<h3 id="event-code">Event code</h3>
+<p>Event code can be either:</p>
+<ul>
+<li>a lambda expression, or</li>
+<li>a statement block body</li>
+</ul>
+<p>Event code can access:</p>
+<ul>
+<li><code>source</code></li>
+<li><code>root</code></li>
+<li><code>target</code></li>
+<li><code>sender</code></li>
+<li><code>e</code></li>
+<li><code>arg0</code>, <code>arg1</code>, ... for delegate parameters beyond the common two-parameter form</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-xaml">&lt;Button.Click&gt;
+  &lt;CSharp&gt;&lt;![CDATA[
+source.ClickCount++;
+source.LastAction = $&quot;Clicked by {sender}&quot;;
+  ]]&gt;&lt;/CSharp&gt;
+&lt;/Button.Click&gt;
+</code></pre>
+<h2 id="semantics">Semantics</h2>
+<h3 id="value-positions">Value positions</h3>
+<ul>
+<li>Value code must evaluate to a value compatible with the target property.</li>
+<li>AXSG emits a generated binding expression and reevaluates it when tracked
+<code>source</code> members change.</li>
+<li>Dependency tracking is based on instance property and field reads from
+<code>source</code>.</li>
+<li><code>root</code> and <code>target</code> are available to the code, but they are treated as
+contextual values, not dependency-tracked binding inputs.</li>
+</ul>
+<h3 id="event-positions">Event positions</h3>
+<ul>
+<li>Event code is compiled into a generated wrapper method.</li>
+<li>For lambda form, the lambda is compiled against the event delegate type.</li>
+<li>For statement-block form, AXSG generates a method body with the context
+variables in scope.</li>
+<li>Async lambdas or async statement handlers are not supported in this feature.</li>
+</ul>
+<h2 id="valid-placement">Valid placement</h2>
+<p>Supported placements:</p>
+<ul>
+<li>property attributes through the compact form</li>
+<li>property elements through the object-element form</li>
+<li>event attributes through the compact form</li>
+<li>event property elements through the object-element form</li>
+<li>style and control-theme setter values through property elements or compact form</li>
+</ul>
+<p>Unsupported placements:</p>
+<ul>
+<li>inline code as a standalone object in the visual tree</li>
+<li>inline code inside selector strings</li>
+<li>inline code inside resource keys</li>
+</ul>
+<h2 id="language-service-behavior">Language service behavior</h2>
+<p>The language service treats <code>CSharp</code> content as real C#.</p>
+<p>Supported tooling:</p>
+<ul>
+<li>completion</li>
+<li>hover</li>
+<li>semantic colorization</li>
+<li>go to definition</li>
+<li>find references</li>
+<li>inlay type hints where applicable</li>
+</ul>
+<p>For object-element code blocks, the language service resolves the local XAML
+context first and then analyzes the block against the generated C# context.</p>
+<h2 id="diagnostics">Diagnostics</h2>
+<p>Representative diagnostics:</p>
+<ul>
+<li>invalid value expression for the target property</li>
+<li>event code that does not match the event delegate shape</li>
+<li>async event code not supported</li>
+<li>inline code block used outside a value or event property context</li>
+<li>inline code that depends on unresolved <code>source</code>, <code>root</code>, or <code>target</code> members</li>
+</ul>
+<h2 id="design-constraints">Design constraints</h2>
+<ul>
+<li>The feature must not require invalid XAML syntax.</li>
+<li>Runtime fallback paths may skip direct runtime reload when inline C# is present;
+generated reload remains the supported path.</li>
+<li>The compiler, runtime, and language service must share the same context model
+so navigation and generated code stay consistent.</li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

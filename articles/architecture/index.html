@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Architecture | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Architecture | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Architecture AXSG is not a single library. It is a layered system made of a compiler host, framework-specific binding and emission layers, runtime services, and editor tooling. This section explains how those layers fit together so you can choose the right package, debug problems in the right subsystem, and understand where a feature actually lives. Architectural goals The project is built around a few explicit goals: compile Avalonia XAML into...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Architecture | XamlToCSharpGenerator">
+<meta property="og:title" content="Architecture | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Architecture AXSG is not a single library. It is a layered system made of a compiler host, framework-specific binding and emission layers, runtime services, and editor tooling. This section explains how those layers fit together so you can choose the right package, debug problems in the right subsystem, and understand where a feature actually lives. Architectural goals The project is built around a few explicit goals: compile Avalonia XAML into...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Architecture | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <ol id='menu-id-architecture-0' class='menu menu-level0 show '>
+            <li id='menu-item-architecture-1' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/' class='menu-link  '>Overview</a></span>  </li>
+            <li id='menu-item-architecture-2' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/compiler-pipeline/' class='menu-link  '>Compiler Pipeline</a></span>  </li>
+            <li id='menu-item-architecture-3' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload/' class='menu-link  '>Runtime and Hot Reload</a></span>  </li>
+            <li id='menu-item-architecture-4' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode/' class='menu-link  '>Language Service and VS Code</a></span>  </li>
+          </ol>
+
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Architecture  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="architecture">Architecture</h1>
+<p>AXSG is not a single library. It is a layered system made of a compiler host, framework-specific binding and emission layers, runtime services, and editor tooling. This section explains how those layers fit together so you can choose the right package, debug problems in the right subsystem, and understand where a feature actually lives.</p>
+<h2 id="architectural-goals">Architectural goals</h2>
+<p>The project is built around a few explicit goals:</p>
+<ul>
+<li>compile Avalonia XAML into generated C# that can be inspected, debugged, and diffed</li>
+<li>keep framework-specific behavior in dedicated binder/emitter layers instead of leaking it into the host</li>
+<li>support advanced language features such as compiled bindings, shorthand expressions, inline C#, and event bindings without falling back to reflection</li>
+<li>keep runtime responsibilities small and focused on executing generated artifacts, hot reload, and design-time services</li>
+<li>expose the same semantics through editor tooling so diagnostics, navigation, and refactorings behave like the compiler</li>
+</ul>
+<h2 id="main-layers">Main layers</h2>
+<h3 id="compiler-host">Compiler host</h3>
+<p>The host discovers XAML inputs, configuration documents, transform rules, and project metadata. It normalizes inputs, resolves document identity, runs global include/theme analysis, and invokes the selected framework profile.</p>
+<h3 id="framework-profile">Framework profile</h3>
+<p>The framework profile translates generic parsed XAML into framework-specific semantics. For Avalonia that includes compiled binding lowering, control themes, selector semantics, <code>TemplateBinding</code>, resource/include handling, and generated object-graph construction.</p>
+<h3 id="emission">Emission</h3>
+<p>Emission turns the bound document model into generated C#. This layer is responsible for stable generated members, helper methods, runtime registration records, and hot-reload-friendly output shapes.</p>
+<h3 id="runtime">Runtime</h3>
+<p>The runtime executes generated bindings, markup helpers, hot reload, hot design, and registry lookups. It also provides fallback behavior where generated code hands off to runtime services.</p>
+<h3 id="tooling">Tooling</h3>
+<p>The language service and VS Code extension project compiler semantics back into the editor. Completion, hover, definitions, references, rename, semantic coloring, inlay hints, and projected inline-C# interop all live here.</p>
+<h2 id="how-to-use-this-section">How to use this section</h2>
+<ul>
+<li>Start with <a href="/XamlToCSharpGenerator/articles/architecture/compiler-pipeline">Compiler Pipeline</a> if you want the end-to-end flow from XAML file to generated output.</li>
+<li>Use <a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a> if you are debugging live update behavior or generated runtime helpers.</li>
+<li>Use <a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a> if the issue shows up in the editor before build output changes.</li>
+</ul>
+<h2 id="cross-reference-map">Cross-reference map</h2>
+<ul>
+<li><p><a href="/XamlToCSharpGenerator/articles/concepts">Concepts</a> for the core mental model behind the compiler and runtime contracts</p>
+</li>
+<li><p><a href="/XamlToCSharpGenerator/articles/reference">Reference</a> for package and assembly mapping</p>
+</li>
+<li><p><a href="/XamlToCSharpGenerator/articles/guides">Guides</a> for task-oriented workflows</p>
+</li>
+<li><p><a href="/XamlToCSharpGenerator/articles/architecture/compiler-pipeline">Compiler Pipeline</a></p>
+</li>
+<li><p><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></p>
+</li>
+<li><p><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></p>
+</li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

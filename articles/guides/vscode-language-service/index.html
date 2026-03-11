@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>VS Code and Language Service | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="VS Code and Language Service | XamlToCSharpGenerator">
+<meta name="twitter:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. Main components The editing stack is split into three parts: XamlToCSharpGenerator.LanguageServicesemantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens XamlToCSharpGenerator.LanguageServer.Toolstandalone LSP host...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="VS Code and Language Service | XamlToCSharpGenerator">
+<meta property="og:title" content="VS Code and Language Service | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. Main components The editing stack is split into three parts: XamlToCSharpGenerator.LanguageServicesemantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens XamlToCSharpGenerator.LanguageServer.Toolstandalone LSP host...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="VS Code and Language Service | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.7b51d4e5b11666823ec1d8462cf2befb.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-5,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            VS Code and Language Service  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="vs-code-and-language-service">VS Code and Language Service</h1>
+<p>This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output.</p>
+<h2 id="main-components">Main components</h2>
+<p>The editing stack is split into three parts:</p>
+<ol>
+<li><code>XamlToCSharpGenerator.LanguageService</code>
+<ul>
+<li>semantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens</li>
+</ul>
+</li>
+<li><code>XamlToCSharpGenerator.LanguageServer.Tool</code>
+<ul>
+<li>standalone LSP host</li>
+</ul>
+</li>
+<li><code>xamltocsharpgenerator.axsg-language-server</code>
+<ul>
+<li>VS Code extension that hosts the client, starts the server lazily, and adds editor-specific behaviors</li>
+</ul>
+</li>
+</ol>
+<h2 id="request-flow">Request flow</h2>
+<p>For normal XAML requests, the stack works like this:</p>
+<ol>
+<li>the extension activates for XAML-capable workspaces</li>
+<li>the language client starts lazily on the first server-backed request</li>
+<li>the language server forwards the request into <code>XamlToCSharpGenerator.LanguageService</code></li>
+<li>the language service loads project/compilation state only when the request actually needs it</li>
+<li>the result is mapped back into editor-friendly LSP payloads</li>
+</ol>
+<p>That separation matters when debugging startup cost, first-request latency, or differences between build semantics and editor semantics.</p>
+<h2 id="what-is-supported">What is supported</h2>
+<p>The extension and server cover:</p>
+<ul>
+<li>compiled bindings, runtime bindings, and shorthand expressions</li>
+<li>inline C# and CDATA code blocks</li>
+<li>selector tokens such as style classes, pseudoclasses, and <code>#name</code></li>
+<li><code>xmlns</code> prefixes and include URIs</li>
+<li>cross-language navigation between XAML and C#</li>
+</ul>
+<p>More concretely, that includes:</p>
+<ul>
+<li>qualified element prefixes vs type-name navigation</li>
+<li>property elements and owner-qualified property tokens</li>
+<li>template bindings and resource keys</li>
+<li>C#-driven rename propagation into XAML for supported symbols</li>
+<li>inline-C# completion, hover, references, and projected-C# interop where it is beneficial</li>
+</ul>
+<h2 id="startup-and-performance">Startup and performance</h2>
+<p>The current implementation defers heavy workspace construction until the first real semantic request.</p>
+<p>That means:</p>
+<ul>
+<li>opening arbitrary C# files does not eagerly start the AXSG server</li>
+<li>inline C# interop only falls back to projected C# provider calls when AXSG cannot answer directly</li>
+<li>normal XAML navigation is not forced through projected C# documents</li>
+</ul>
+<p>If performance is poor, separate the issue into:</p>
+<ul>
+<li>extension activation and first usable request</li>
+<li>first compilation-backed request</li>
+<li>repeated warm requests</li>
+<li>projected inline-C# interop requests</li>
+</ul>
+<p>Those are different paths with different caches and different fallback behavior.</p>
+<h2 id="inline-c-interop-boundary">Inline C# interop boundary</h2>
+<p>The extension can reuse existing C# editor providers for:</p>
+<ul>
+<li>completion</li>
+<li>hover</li>
+<li>definition/declaration</li>
+<li>references</li>
+</ul>
+<p>AXSG still owns semantic coloring inside XAML because the external C# semantic-token legend cannot be safely remapped into the XAML document legend.</p>
+<p>That boundary is deliberate. AXSG remains the semantic owner for the XAML document. Projected C# provider reuse is opportunistic and only used where it materially improves the editing experience without taking control away from XAML semantics.</p>
+<h2 id="typical-debugging-workflow">Typical debugging workflow</h2>
+<p>When editor behavior looks wrong, use this order:</p>
+<ol>
+<li>confirm the project builds</li>
+<li>confirm AXSG diagnostics in the XAML file are sane</li>
+<li>reload the VS Code window or restart the AXSG language server</li>
+<li>isolate whether the issue is:
+<ul>
+<li>compiler semantics</li>
+<li>language-service semantics</li>
+<li>VS Code extension middleware</li>
+<li>projected inline-C# fallback</li>
+</ul>
+</li>
+</ol>
+<p>This keeps you from treating every editor issue as a VS Code integration bug when the root cause often lives earlier.</p>
+<h2 id="choosing-the-right-host">Choosing the right host</h2>
+<p>Prefer the bundled VS Code extension when you want:</p>
+<ul>
+<li>the full client/server pairing</li>
+<li>AXSG-first handling for XAML-native semantics</li>
+<li>inline-C# projection and editor middleware already wired</li>
+</ul>
+<p>Prefer the standalone language-server tool when you want:</p>
+<ul>
+<li>another editor integration</li>
+<li>direct process control over the server</li>
+<li>transport/protocol debugging independent of VS Code</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/inline-csharp-code">Inline C# Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/troubleshooting">Troubleshooting</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

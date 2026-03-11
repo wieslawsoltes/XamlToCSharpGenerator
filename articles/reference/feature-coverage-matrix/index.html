@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Feature Coverage Matrix | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Feature Coverage Matrix | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Feature Coverage Matrix Use this matrix when you know the feature but not the package, runtime layer, or API entry point. It ties the language surface, runtime behavior, tooling coverage, and package ownership together. Feature area Authoring docs Primary packages Runtime/tooling impact API entry points Compiled bindings Compiled Bindings, C# Expressions XamlToCSharpGenerator.Avalonia, XamlToCSharpGenerator.ExpressionSemantics result-type hints, references, rename, runtime binding descriptors XamlToCSharpGenerator.Avalonia.Binding, XamlToCSharpGenerator.ExpressionSemantics Shorthand expressions...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Feature Coverage Matrix | XamlToCSharpGenerator">
+<meta property="og:title" content="Feature Coverage Matrix | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Feature Coverage Matrix Use this matrix when you know the feature but not the package, runtime layer, or API entry point. It ties the language surface, runtime behavior, tooling coverage, and package ownership together. Feature area Authoring docs Primary packages Runtime/tooling impact API entry points Compiled bindings Compiled Bindings, C# Expressions XamlToCSharpGenerator.Avalonia, XamlToCSharpGenerator.ExpressionSemantics result-type hints, references, rename, runtime binding descriptors XamlToCSharpGenerator.Avalonia.Binding, XamlToCSharpGenerator.ExpressionSemantics Shorthand expressions...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Feature Coverage Matrix | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-6,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/reference/' class='breadcrumb-link  '>Reference</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Feature Coverage Matrix  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="feature-coverage-matrix">Feature Coverage Matrix</h1>
+<p>Use this matrix when you know the feature but not the package, runtime layer, or API entry point. It ties the language surface, runtime behavior, tooling coverage, and package ownership together.</p>
+<table class="table">
+<thead>
+<tr>
+<th>Feature area</th>
+<th>Authoring docs</th>
+<th>Primary packages</th>
+<th>Runtime/tooling impact</th>
+<th>API entry points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compiled bindings</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/compiled-bindings">Compiled Bindings</a>, <a href="/XamlToCSharpGenerator/articles/guides/csharp-expressions">C# Expressions</a></td>
+<td><code>XamlToCSharpGenerator.Avalonia</code>, <code>XamlToCSharpGenerator.ExpressionSemantics</code></td>
+<td>result-type hints, references, rename, runtime binding descriptors</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Binding/" title="XamlToCSharpGenerator.Avalonia.Binding">XamlToCSharpGenerator.Avalonia.Binding</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.ExpressionSemantics/" title="XamlToCSharpGenerator.ExpressionSemantics">XamlToCSharpGenerator.ExpressionSemantics</a></td>
+</tr>
+<tr>
+<td>Shorthand expressions</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/csharp-expressions">C# Expressions</a></td>
+<td><code>XamlToCSharpGenerator.ExpressionSemantics</code>, <code>XamlToCSharpGenerator.Avalonia</code></td>
+<td>language-service completion/navigation, lowering to cheaper binding forms</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.ExpressionSemantics/" title="XamlToCSharpGenerator.ExpressionSemantics">XamlToCSharpGenerator.ExpressionSemantics</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Binding/" title="XamlToCSharpGenerator.Avalonia.Binding">XamlToCSharpGenerator.Avalonia.Binding</a></td>
+</tr>
+<tr>
+<td>Event bindings and inline lambdas</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/event-bindings">Event Bindings</a>, <a href="/XamlToCSharpGenerator/articles/guides/inline-csharp-code">Inline C# Code</a></td>
+<td><code>XamlToCSharpGenerator.Avalonia</code>, <code>XamlToCSharpGenerator.Runtime.Avalonia</code></td>
+<td>stable generated handlers, hot-reload-safe emission, inline navigation</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Binding/" title="XamlToCSharpGenerator.Avalonia.Binding">XamlToCSharpGenerator.Avalonia.Binding</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime.Markup/" title="XamlToCSharpGenerator.Runtime.Markup">XamlToCSharpGenerator.Runtime.Markup</a></td>
+</tr>
+<tr>
+<td>Inline C# and CDATA</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/inline-csharp">Inline C#</a>, <a href="/XamlToCSharpGenerator/articles/guides/inline-csharp-code">Inline C# Code</a></td>
+<td><code>XamlToCSharpGenerator.ExpressionSemantics</code>, <code>XamlToCSharpGenerator.Runtime.Avalonia</code>, <code>XamlToCSharpGenerator.LanguageService</code></td>
+<td>projected C# interop, semantic tokens, inline runtime helpers</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.ExpressionSemantics/" title="XamlToCSharpGenerator.ExpressionSemantics">XamlToCSharpGenerator.ExpressionSemantics</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime.Markup/" title="XamlToCSharpGenerator.Runtime.Markup">XamlToCSharpGenerator.Runtime.Markup</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.InlineCode/" title="XamlToCSharpGenerator.LanguageService.InlineCode">XamlToCSharpGenerator.LanguageService.InlineCode</a></td>
+</tr>
+<tr>
+<td>Property elements, <code>TemplateBinding</code>, attached properties</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/property-elements-templatebinding-and-attached-properties">Property Elements and TemplateBinding</a></td>
+<td><code>XamlToCSharpGenerator.Core</code>, <code>XamlToCSharpGenerator.LanguageService</code>, <code>XamlToCSharpGenerator.Avalonia</code></td>
+<td>owner-vs-property navigation, references, rename</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Core.Parsing/" title="XamlToCSharpGenerator.Core.Parsing">XamlToCSharpGenerator.Core.Parsing</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Definitions/" title="XamlToCSharpGenerator.LanguageService.Definitions">XamlToCSharpGenerator.LanguageService.Definitions</a></td>
+</tr>
+<tr>
+<td>Resources, includes, and URI navigation</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/resources-includes-and-uris">Resources, Includes, and URIs</a></td>
+<td><code>XamlToCSharpGenerator.Avalonia</code>, <code>XamlToCSharpGenerator.Runtime.Avalonia</code>, <code>XamlToCSharpGenerator.LanguageService</code></td>
+<td>include graph validation, file navigation, runtime resource lookup</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Binding/" title="XamlToCSharpGenerator.Avalonia.Binding">XamlToCSharpGenerator.Avalonia.Binding</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime/" title="XamlToCSharpGenerator.Runtime">XamlToCSharpGenerator.Runtime</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Definitions/" title="XamlToCSharpGenerator.LanguageService.Definitions">XamlToCSharpGenerator.LanguageService.Definitions</a></td>
+</tr>
+<tr>
+<td>Selectors, styles, templates, control themes</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/styles-templates-and-themes">Styles, Templates, and Themes</a></td>
+<td><code>XamlToCSharpGenerator.Avalonia</code>, <code>XamlToCSharpGenerator.MiniLanguageParsing</code></td>
+<td>selector token navigation, theme graph validation, pseudoclass/class refs</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Parsing/" title="XamlToCSharpGenerator.Avalonia.Parsing">XamlToCSharpGenerator.Avalonia.Parsing</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.MiniLanguageParsing.Selectors/" title="XamlToCSharpGenerator.MiniLanguageParsing.Selectors">XamlToCSharpGenerator.MiniLanguageParsing.Selectors</a></td>
+</tr>
+<tr>
+<td>Conditional XAML</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/conditional-xaml">Conditional XAML</a></td>
+<td><code>XamlToCSharpGenerator.Compiler</code>, <code>XamlToCSharpGenerator.Avalonia</code></td>
+<td>surviving-tree semantics affect later binding/style/runtime stages</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Compiler/" title="XamlToCSharpGenerator.Compiler">XamlToCSharpGenerator.Compiler</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Avalonia.Parsing/" title="XamlToCSharpGenerator.Avalonia.Parsing">XamlToCSharpGenerator.Avalonia.Parsing</a></td>
+</tr>
+<tr>
+<td>Global <code>xmlns</code> and project configuration</td>
+<td><a href="/XamlToCSharpGenerator/articles/xaml/global-xmlns-and-project-configuration">Global XML Namespaces and Project Configuration</a>, <a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></td>
+<td><code>XamlToCSharpGenerator.Compiler</code>, <code>XamlToCSharpGenerator.Core</code>, <code>XamlToCSharpGenerator.Build</code></td>
+<td>prefix definitions, namespace resolution, transform convergence</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Compiler/" title="XamlToCSharpGenerator.Compiler">XamlToCSharpGenerator.Compiler</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Core.Configuration/" title="XamlToCSharpGenerator.Core.Configuration">XamlToCSharpGenerator.Core.Configuration</a></td>
+</tr>
+<tr>
+<td>Language service and VS Code</td>
+<td><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a>, <a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></td>
+<td><code>XamlToCSharpGenerator.LanguageService</code>, <code>XamlToCSharpGenerator.LanguageServer.Tool</code>, VS Code extension</td>
+<td>completion, hover, refs, rename, inline C# projection, semantic tokens</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService/" title="XamlToCSharpGenerator.LanguageService">XamlToCSharpGenerator.LanguageService</a>, <a href="/XamlToCSharpGenerator/articles/reference/language-server-tool">LanguageServer.Tool package guide</a></td>
+</tr>
+<tr>
+<td>Runtime loader and fallback</td>
+<td><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a>, <a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></td>
+<td><code>XamlToCSharpGenerator.Runtime</code>, <code>XamlToCSharpGenerator.Runtime.Core</code>, <code>XamlToCSharpGenerator.Runtime.Avalonia</code></td>
+<td>generated registry lookup, fallback loading, include/resource runtime resolution</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime/" title="XamlToCSharpGenerator.Runtime">XamlToCSharpGenerator.Runtime</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime.Markup/" title="XamlToCSharpGenerator.Runtime.Markup">XamlToCSharpGenerator.Runtime.Markup</a></td>
+</tr>
+<tr>
+<td>Hot reload and hot design</td>
+<td><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a>, <a href="/XamlToCSharpGenerator/articles/guides/hot-reload-ios">iOS Hot Reload</a>, <a href="/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design">Hot Reload and Hot Design Internals</a></td>
+<td><code>XamlToCSharpGenerator.Runtime.Avalonia</code>, <code>XamlToCSharpGenerator.Runtime.Core</code>, <code>XamlToCSharpGenerator.Build</code></td>
+<td>metadata updates, runtime registries, transport/proxy coordination</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime/" title="XamlToCSharpGenerator.Runtime">XamlToCSharpGenerator.Runtime</a>, <a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime.Markup/" title="XamlToCSharpGenerator.Runtime.Markup">XamlToCSharpGenerator.Runtime.Markup</a></td>
+</tr>
+<tr>
+<td>Embedded editor hosting</td>
+<td><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></td>
+<td><code>XamlToCSharpGenerator.Editor.Avalonia</code></td>
+<td>in-app editor host, diagnostics, semantic highlighting</td>
+<td><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Editor.Avalonia/" title="XamlToCSharpGenerator.Editor.Avalonia">XamlToCSharpGenerator.Editor.Avalonia</a></td>
+</tr>
+<tr>
+<td>Packaging, docs, and release</td>
+<td><a href="/XamlToCSharpGenerator/articles/guides/packaging-and-release">Packaging and Release</a>, <a href="/XamlToCSharpGenerator/articles/advanced/docs-and-release-infrastructure">Docs and Release Infrastructure</a></td>
+<td><code>XamlToCSharpGenerator</code>, <code>XamlToCSharpGenerator.Build</code>, <code>XamlToCSharpGenerator.LanguageServer.Tool</code>, VS Code extension</td>
+<td>package publishing, VSIX release, Lunet docs, GitHub Pages</td>
+<td><a href="/XamlToCSharpGenerator/articles/reference/package-and-assembly">Package and Assembly</a>, <a href="/XamlToCSharpGenerator/articles/reference/lunet-docs-pipeline">Lunet Docs Pipeline</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-to-use-this-page">How to use this page</h2>
+<ul>
+<li>Start here when you know the feature but not the owning package.</li>
+<li>Use <a href="/XamlToCSharpGenerator/articles/reference/package-catalog">Package Catalog</a> when you need install decisions.</li>
+<li>Use <a href="/XamlToCSharpGenerator/articles/reference/assembly-catalog">Assembly Catalog</a> when you need the direct generated API route.</li>
+<li>Use the namespace summary pages when the generated API tree is too low-level to start from directly.</li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>
