@@ -224,7 +224,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private readonly record struct CompiledBindingAccessorResolution(
         string AccessorExpression,
         string NormalizedPath,
-        string? ResultTypeName);
+        string? ResultTypeName,
+        ITypeSymbol? ResultTypeSymbol);
 
     private static bool TryResolveCompiledBindingSourceType(
         Compilation compilation,
@@ -293,7 +294,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         resolution = new CompiledBindingAccessorResolution(
             accessorExpression,
             normalizedPath,
-            resultTypeName);
+            resultTypeName,
+            sourceType);
         errorMessage = string.Empty;
 
         if (normalizedPath == ".")
@@ -301,7 +303,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             resolution = new CompiledBindingAccessorResolution(
                 accessorExpression,
                 normalizedPath,
-                resultTypeName);
+                resultTypeName,
+                sourceType);
             return true;
         }
 
@@ -316,7 +319,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             resolution = new CompiledBindingAccessorResolution(
                 accessorExpression,
                 normalizedPath,
-                resultTypeName);
+                resultTypeName,
+                sourceType);
             return true;
         }
 
@@ -453,7 +457,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 resolution = new CompiledBindingAccessorResolution(
                     commandAccessorExpression,
                     normalizedPath,
-                    resultTypeName);
+                    resultTypeName,
+                    commandType);
                 return true;
             }
 
@@ -608,7 +613,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         resolution = new CompiledBindingAccessorResolution(
             accessorExpression,
             normalizedPath,
-            resultTypeName);
+            resultTypeName,
+            currentType);
         return true;
     }
 

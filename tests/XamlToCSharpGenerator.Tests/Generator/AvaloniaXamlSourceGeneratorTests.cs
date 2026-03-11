@@ -6227,6 +6227,169 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Uses_Explicit_DataContext_Binding_Assignment_As_Compiled_Binding_Scope()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Panel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty<global::System.Windows.Input.ICommand?> CommandProperty = new();
+
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public interface IRootDock
+                {
+                    global::System.Windows.Input.ICommand ExitWindows { get; }
+
+                    global::System.Windows.Input.ICommand ShowWindows { get; }
+                }
+
+                public class MainVm
+                {
+                    public IRootDock Layout { get; set; } = null!;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Panel DataContext="{Binding Layout}">
+                    <Button Command="{Binding ExitWindows}" />
+                    <Button Command="{Binding ShowWindows}" />
+                </Panel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = string.Join("\n", updatedCompilation.SyntaxTrees.Select(static syntaxTree => syntaxTree.ToString()));
+        Assert.Contains("source.Layout", generated);
+        Assert.Contains("source.ExitWindows", generated);
+        Assert.Contains("source.ShowWindows", generated);
+    }
+
+    [Fact]
+    public void Uses_Parent_Scope_For_DataContext_Assignment_And_Node_Scope_For_Sibling_Bindings()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty<global::System.Windows.Input.ICommand?> CommandProperty = new();
+
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public interface IRootDock
+                {
+                    global::System.Windows.Input.ICommand Navigate { get; }
+                }
+
+                public class MainVm
+                {
+                    public IRootDock Layout { get; set; } = null!;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Button DataContext="{Binding Layout}"
+                        x:DataType="vm:IRootDock"
+                        Command="{Binding Navigate}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = string.Join("\n", updatedCompilation.SyntaxTrees.Select(static syntaxTree => syntaxTree.ToString()));
+        Assert.Contains("source.Layout", generated);
+        Assert.Contains("source.Navigate", generated);
+    }
+
+    [Fact]
     public void Materializes_DataTemplate_XDataType_To_Runtime_DataType_Assignment()
     {
         const string code = """
