@@ -67,21 +67,13 @@ function resolveVsCodeExtensionVersion(version) {
   const prerelease = match.groups.prerelease;
 
   if (prerelease === undefined) {
-    return `${major}.${minor * 2}.${patch}`;
+    return `${major}.${minor}.${patch + 1}`;
   }
 
   const identifiers = prerelease.split(".");
   const simpleChannelMatch = /^(alpha|a|beta|b|rc)\.(\d+)$/i.exec(prerelease);
   if (simpleChannelMatch !== null) {
-    const channel = simpleChannelMatch[1].toLowerCase();
-    const sequence = Number.parseInt(simpleChannelMatch[2], 10);
-    const channelOffset =
-      channel === "alpha" || channel === "a"
-        ? 0
-        : channel === "beta" || channel === "b"
-          ? 100
-          : 200;
-    return `${major}.${minor * 2 + 1}.${patch * 1000 + channelOffset + sequence}`;
+    return `${major}.${minor}.${patch}`;
   }
 
   const stageIdentifier = resolveStageIdentifier(identifiers);

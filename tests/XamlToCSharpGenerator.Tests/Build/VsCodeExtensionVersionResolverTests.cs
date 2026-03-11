@@ -8,10 +8,10 @@ namespace XamlToCSharpGenerator.Tests.Build;
 public class VsCodeExtensionVersionResolverTests
 {
     [Theory]
-    [InlineData("0.1.0", "0.2.0")]
-    [InlineData("0.1.0-alpha.4", "0.3.4")]
-    [InlineData("0.1.0-beta.1", "0.3.101")]
-    [InlineData("0.1.0-rc.1", "0.3.201")]
+    [InlineData("0.1.0", "0.1.1")]
+    [InlineData("0.1.0-alpha.4", "0.1.0")]
+    [InlineData("0.1.0-beta.1", "0.1.0")]
+    [InlineData("0.1.0-rc.1", "0.1.0")]
     public void Resolver_Maps_Common_Release_Channels(string version, string expected)
     {
         var result = RunResolver(version);
@@ -21,14 +21,18 @@ public class VsCodeExtensionVersionResolverTests
     }
 
     [Fact]
-    public void Resolver_Assigns_Distinct_Versions_For_Different_Prerelease_Channels()
+    public void Resolver_Maps_Simple_Prerelease_Channels_To_Base_Version()
     {
         var alpha = RunResolver("0.1.0-alpha.1");
         var beta = RunResolver("0.1.0-beta.1");
+        var releaseCandidate = RunResolver("0.1.0-rc.1");
 
         Assert.True(alpha.ExitCode == 0, alpha.CombinedOutput);
         Assert.True(beta.ExitCode == 0, beta.CombinedOutput);
-        Assert.NotEqual(alpha.StandardOutput.Trim(), beta.StandardOutput.Trim());
+        Assert.True(releaseCandidate.ExitCode == 0, releaseCandidate.CombinedOutput);
+        Assert.Equal("0.1.0", alpha.StandardOutput.Trim());
+        Assert.Equal("0.1.0", beta.StandardOutput.Trim());
+        Assert.Equal("0.1.0", releaseCandidate.StandardOutput.Trim());
     }
 
     [Fact]
@@ -40,7 +44,7 @@ public class VsCodeExtensionVersionResolverTests
         Assert.True(releaseCandidate.ExitCode == 0, releaseCandidate.CombinedOutput);
         Assert.True(ciBuild.ExitCode == 0, ciBuild.CombinedOutput);
         Assert.NotEqual(releaseCandidate.StandardOutput.Trim(), ciBuild.StandardOutput.Trim());
-        Assert.StartsWith("0.3.", ciBuild.StandardOutput.Trim(), StringComparison.Ordinal);
+        Assert.StartsWith("0.", ciBuild.StandardOutput.Trim(), StringComparison.Ordinal);
     }
 
     [Fact]
