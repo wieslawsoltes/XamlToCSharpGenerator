@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Installation | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;0.1.0-alpha.3&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;0.1.0-alpha.3&quot; />...">
+<meta name="twitter:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; />...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Installation | XamlToCSharpGenerator">
 <meta property="og:title" content="Installation | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;0.1.0-alpha.3&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;0.1.0-alpha.3&quot; />...">
+<meta property="og:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; />...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Installation | XamlToCSharpGenerator">
   </head>
@@ -160,16 +160,16 @@
 <h2 id="choose-the-right-artifact">Choose the right artifact</h2>
 <h3 id="application-author">Application author</h3>
 <p>Use the umbrella package when you want the normal app-facing install path:</p>
-<pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;0.1.0-alpha.3&quot; /&gt;
+<pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /&gt;
 </code></pre>
 <p>This is the recommended starting point for Avalonia applications.</p>
 <h3 id="buildpackage-integrator">Build/package integrator</h3>
 <p>If you need explicit control over the imported build layer, start from:</p>
-<pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;0.1.0-alpha.3&quot; /&gt;
+<pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; /&gt;
 </code></pre>
 <h3 id="editortooling-integration">Editor/tooling integration</h3>
 <p>Use the .NET tool when you need the standalone language server:</p>
-<pre><code class="language-bash">dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version 0.1.0-alpha.3
+<pre><code class="language-bash">dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool --version x.y.z
 </code></pre>
 <p>Use the VS Code extension when you want the bundled editor experience instead of wiring the tool manually.</p>
 <h2 id="minimum-project-expectations">Minimum project expectations</h2>
