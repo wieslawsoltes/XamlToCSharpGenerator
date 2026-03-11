@@ -6390,6 +6390,124 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Uses_ElementName_DataContext_Assignment_As_Compiled_Binding_Scope()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class DockPanel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class TextBox : Control
+                {
+                    public string? Text { get; set; }
+                }
+
+                public class ListBox : Control
+                {
+                    public object? ItemsSource { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class RootView : global::Avalonia.Controls.UserControl
+                {
+                    public string? Filter { get; set; }
+
+                    public global::System.Collections.Generic.IReadOnlyList<string>? FilteredEvents { get; set; }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.RootView"
+                         x:Name="Root"
+                         x:CompileBindings="True">
+                <DockPanel DataContext="{Binding #Root}">
+                    <TextBox Text="{Binding Filter}" />
+                    <ListBox ItemsSource="{Binding FilteredEvents}" />
+                </DockPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = string.Join("\n", updatedCompilation.SyntaxTrees.Select(static syntaxTree => syntaxTree.ToString()));
+        Assert.Contains("source.Filter", generated);
+        Assert.Contains("source.FilteredEvents", generated);
+    }
+
+    [Fact]
+    public void Does_Not_Infer_DataContext_Scope_From_NonRoot_ElementName_Without_NameScope_Analysis()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control
+                {
+                    public object? DataContext { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Panel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class TextBox : Control
+                {
+                    public string? Text { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class RootView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.RootView"
+                         x:CompileBindings="True">
+                <Panel>
+                    <TextBox x:Name="Visible" Text="hello" />
+                    <Panel DataContext="{Binding #Visible}">
+                        <TextBox Text="{Binding Text}" />
+                    </Panel>
+                </Panel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0110");
+    }
+
+    [Fact]
     public void Materializes_DataTemplate_XDataType_To_Runtime_DataType_Assignment()
     {
         const string code = """

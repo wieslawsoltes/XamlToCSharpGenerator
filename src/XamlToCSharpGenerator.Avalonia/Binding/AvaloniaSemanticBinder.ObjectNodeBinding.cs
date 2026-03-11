@@ -1823,7 +1823,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
-            if (!TryResolveCompiledBindingSourceType(
+            if (!TryResolveBindingSourceTypeForScopeInference(
                     compilation,
                     document,
                     bindingMarkup,

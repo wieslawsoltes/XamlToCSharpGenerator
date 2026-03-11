@@ -279,6 +279,75 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return sourceType is not null;
     }
 
+    private static bool TryResolveBindingSourceTypeForScopeInference(
+        Compilation compilation,
+        XamlDocumentModel document,
+        BindingMarkup bindingMarkup,
+        INamedTypeSymbol? ambientDataType,
+        INamedTypeSymbol? bindingTargetType,
+        out INamedTypeSymbol? sourceType,
+        out bool requiresAmbientDataType)
+    {
+        sourceType = null;
+        requiresAmbientDataType = false;
+
+        if (bindingMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingMarkup.ElementName))
+        {
+            sourceType = ResolveNamedElementBindingSourceType(
+                compilation,
+                document,
+                bindingMarkup.ElementName!);
+            return sourceType is not null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingMarkup.Source))
+        {
+            return false;
+        }
+
+        return TryResolveCompiledBindingSourceType(
+            compilation,
+            document,
+            bindingMarkup,
+            ambientDataType,
+            bindingTargetType,
+            out sourceType,
+            out requiresAmbientDataType);
+    }
+
+    private static INamedTypeSymbol? ResolveNamedElementBindingSourceType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string elementName)
+    {
+        // Binding ElementName resolution is namescope-scoped at runtime.
+        // The current document model only exposes a flat name list, so only the root
+        // element can be inferred safely here without cross-template false positives.
+        if (!string.Equals(document.RootObject.Name, elementName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (document.IsClassBacked)
+        {
+            var classSymbol = compilation.GetTypeByMetadataName(document.ClassFullName!);
+            if (classSymbol is not null)
+            {
+                return classSymbol;
+            }
+        }
+
+        return ResolveTypeSymbol(
+            compilation,
+            document.RootObject.XmlNamespace,
+            document.RootObject.XmlTypeName);
+    }
+
     private static bool TryBuildCompiledBindingAccessorExpression(
         Compilation compilation,
         XamlDocumentModel document,
