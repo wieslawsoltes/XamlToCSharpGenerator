@@ -160,6 +160,29 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void UpdateApplication_Does_Not_Map_Same_FullName_From_Different_Assembly_Name()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new MetadataOriginalReloadTarget();
+        XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+
+        const string typeFullName = "Axsg.Dynamic.MetadataReplacementReloadTarget";
+        var registeredReplacementType = CreateDynamicType("Axsg.Dynamic.MetadataUpdateMapping.A", typeFullName);
+        var incomingReplacementType = CreateDynamicType("Axsg.Dynamic.MetadataUpdateMapping.B", typeFullName);
+
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            registeredReplacementType,
+            typeof(MetadataOriginalReloadTarget));
+
+        XamlSourceGenHotReloadManager.UpdateApplication([incomingReplacementType]);
+
+        Assert.Equal(0, reloadCount);
+    }
+
+    [Fact]
     public void UpdateApplication_Queues_Reentrant_Update_And_Replays_It_After_Current_Pass()
     {
         ResetManager();

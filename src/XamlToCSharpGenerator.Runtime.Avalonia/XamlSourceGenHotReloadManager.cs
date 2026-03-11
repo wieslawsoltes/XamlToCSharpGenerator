@@ -2347,8 +2347,6 @@ public static class XamlSourceGenHotReloadManager
             {
                 return 3;
             }
-
-            return 2;
         }
 
         if (string.IsNullOrWhiteSpace(candidateFullName) ||
