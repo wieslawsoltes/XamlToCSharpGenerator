@@ -2351,7 +2351,19 @@ public static class XamlSourceGenHotReloadManager
             return 2;
         }
 
-        return string.Equals(candidate.Name, requestedType.Name, StringComparison.Ordinal) ? 1 : 0;
+        if (string.IsNullOrWhiteSpace(candidateFullName) ||
+            string.IsNullOrWhiteSpace(requestedFullName))
+        {
+            var candidateAssemblyName = candidate.Assembly.GetName().Name;
+            var requestedAssemblyName = requestedType.Assembly.GetName().Name;
+            if (string.Equals(candidate.Name, requestedType.Name, StringComparison.Ordinal) &&
+                string.Equals(candidateAssemblyName, requestedAssemblyName, StringComparison.Ordinal))
+            {
+                return 1;
+            }
+        }
+
+        return 0;
     }
 
     private static int CompareTypeIdentity(Type left, Type? right)
