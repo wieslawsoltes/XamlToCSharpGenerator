@@ -17,8 +17,10 @@ This guide covers SourceGen hot reload setup for iOS simulator and physical devi
 
 ## 2) Simulator quickstart
 
+Run these commands from the repository root.
+
 ```bash
-cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS
+cd samples/ControlCatalog.iOS
 AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
 ```
 
@@ -106,4 +108,4 @@ Port is required for all formats.
 
 See:
 
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS/README.md`
+- `samples/ControlCatalog.iOS/README.md`

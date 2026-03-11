@@ -20,7 +20,7 @@ Use it when you need to understand:
 
 Source entry point:
 
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/src/XamlToCSharpGenerator.DotNetWatch.Proxy/Program.cs`
+- `src/XamlToCSharpGenerator.DotNetWatch.Proxy/Program.cs`
 
 Why it is documented here instead of in generated API:
 

@@ -10,14 +10,17 @@ AXSG ships sample applications that exercise the compiler, runtime, hot reload p
 
 | Sample | Path | Use it for |
 | --- | --- | --- |
-| Source-generated catalog | `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenXamlCatalogSample` | language features, bindings, inline C#, templates, styles, runtime loader, and hot reload |
-| Control catalog | `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog` | large-scale app integration, theme overrides, selector-heavy styling, mobile hot reload |
-| NoUi framework pilot | `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/NoUiFrameworkPilotSample` | framework-host reuse outside Avalonia |
-| CRUD sample | `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample` | app-facing install path and generated runtime behavior |
+| Source-generated catalog | `samples/SourceGenXamlCatalogSample` | language features, bindings, inline C#, templates, styles, runtime loader, and hot reload |
+| Control catalog | `samples/ControlCatalog` | larger Avalonia app integration, theme overrides, selector-heavy styling, and broad control coverage |
+| iOS hot reload host | `samples/ControlCatalog.iOS` | AXSG + `dotnet watch` simulator/device validation for the control catalog |
+| NoUi framework pilot | `samples/NoUiFrameworkPilotSample` | framework-host reuse outside Avalonia |
+| CRUD sample | `samples/SourceGenCrudSample` | app-facing install path and generated runtime behavior |
+
+All sample paths are shown relative to the repository root.
 
 ## Feature tour
 
-Start in `SourceGenXamlCatalogSample` when you need to see a feature in isolation:
+Start in `samples/SourceGenXamlCatalogSample` when you need to see a feature in isolation:
 
 - bindings and compiled bindings
 - C# expressions and shorthand expressions
