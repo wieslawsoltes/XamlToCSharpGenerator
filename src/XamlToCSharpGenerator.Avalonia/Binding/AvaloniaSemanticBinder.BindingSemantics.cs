@@ -705,7 +705,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        if (!TryResolveMethodCommandCanExecuteMethod(executeMethod, out var canExecuteMethod, out var canExecuteErrorMessage))
+        if (!TryResolveMethodCommandCanExecuteMethod(targetType, executeMethod, out var canExecuteMethod, out var canExecuteErrorMessage))
         {
             resultTypeName = null;
             errorMessage = canExecuteErrorMessage;
@@ -737,35 +737,23 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out IMethodSymbol executeMethod,
         out string errorMessage)
     {
-        var candidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
-        var seen = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        var candidates = ResolveMethodCommandCandidates(
+            targetType,
+            methodName,
+            static method => !method.IsStatic &&
+                             method.MethodKind == MethodKind.Ordinary &&
+                             !method.IsGenericMethod &&
+                             method.Parameters.Length <= 1 &&
+                             method.Parameters.All(static parameter => parameter.RefKind == RefKind.None));
 
-        foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
-        {
-            foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
-            {
-                if (!seen.Add(method) ||
-                    method.IsStatic ||
-                    method.MethodKind != MethodKind.Ordinary ||
-                    method.IsGenericMethod ||
-                    method.Parameters.Length > 1 ||
-                    method.Parameters.Any(static parameter => parameter.RefKind != RefKind.None))
-                {
-                    continue;
-                }
-
-                candidates.Add(method);
-            }
-        }
-
-        if (candidates.Count == 0)
+        if (candidates.Length == 0)
         {
             executeMethod = null!;
             errorMessage = string.Empty;
             return false;
         }
 
-        if (candidates.Count > 1)
+        if (candidates.Length > 1)
         {
             executeMethod = null!;
             errorMessage =
@@ -784,6 +772,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     }
 
     private static bool TryResolveMethodCommandCanExecuteMethod(
+        INamedTypeSymbol targetType,
         IMethodSymbol executeMethod,
         out IMethodSymbol? canExecuteMethod,
         out string errorMessage)
@@ -791,38 +780,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         canExecuteMethod = null;
         errorMessage = string.Empty;
 
-        var containingType = executeMethod.ContainingType;
-        if (containingType is null)
+        var canExecuteCandidates = ResolveMethodCommandCandidates(
+            targetType,
+            "Can" + executeMethod.Name,
+            static method => !method.IsStatic &&
+                             method.MethodKind == MethodKind.Ordinary &&
+                             !method.IsGenericMethod &&
+                             method.ReturnType.SpecialType == SpecialType.System_Boolean &&
+                             method.Parameters.Length == 1 &&
+                             method.Parameters[0].Type.SpecialType == SpecialType.System_Object &&
+                             method.Parameters[0].RefKind == RefKind.None);
+
+        if (canExecuteCandidates.Length <= 1)
         {
-            return true;
-        }
-
-        var canExecuteCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
-        var seen = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
-
-        foreach (var current in EnumerateInstanceMemberLookupTypes(containingType))
-        {
-            foreach (var method in current.GetMembers("Can" + executeMethod.Name).OfType<IMethodSymbol>())
-            {
-                if (!seen.Add(method) ||
-                    method.IsStatic ||
-                    method.MethodKind != MethodKind.Ordinary ||
-                    method.IsGenericMethod ||
-                    method.ReturnType.SpecialType != SpecialType.System_Boolean ||
-                    method.Parameters.Length != 1 ||
-                    method.Parameters[0].Type.SpecialType != SpecialType.System_Object ||
-                    method.Parameters[0].RefKind != RefKind.None)
-                {
-                    continue;
-                }
-
-                canExecuteCandidates.Add(method);
-            }
-        }
-
-        if (canExecuteCandidates.Count <= 1)
-        {
-            canExecuteMethod = canExecuteCandidates.Count == 0 ? null : canExecuteCandidates[0];
+            canExecuteMethod = canExecuteCandidates.Length == 0 ? null : canExecuteCandidates[0];
             return true;
         }
 
@@ -834,6 +805,52 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     .OrderBy(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
                     .Select(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
         return false;
+    }
+
+    private static ImmutableArray<IMethodSymbol> ResolveMethodCommandCandidates(
+        INamedTypeSymbol targetType,
+        string methodName,
+        Func<IMethodSymbol, bool> predicate)
+    {
+        if (targetType.TypeKind != TypeKind.Interface)
+        {
+            for (INamedTypeSymbol? current = targetType; current is not null; current = current.BaseType)
+            {
+                var candidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+                foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
+                {
+                    if (predicate(method))
+                    {
+                        candidates.Add(method);
+                    }
+                }
+
+                if (candidates.Count > 0)
+                {
+                    return candidates.ToImmutable();
+                }
+            }
+
+            return ImmutableArray<IMethodSymbol>.Empty;
+        }
+
+        var interfaceCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+        var seenMethods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+
+        foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
+        {
+            foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
+            {
+                if (!seenMethods.Add(method) || !predicate(method))
+                {
+                    continue;
+                }
+
+                interfaceCandidates.Add(method);
+            }
+        }
+
+        return interfaceCandidates.ToImmutable();
     }
 
     private static ImmutableArray<string> GetDependsOnPropertyNames(IMethodSymbol method)

@@ -6152,6 +6152,183 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Resolves_Method_Command_For_Overridden_Base_Method_Without_Ambiguity()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty<global::System.Windows.Input.ICommand?> CommandProperty = new();
+
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class BaseActions
+                {
+                    public virtual void Execute()
+                    {
+                    }
+                }
+
+                public class DerivedActions : BaseActions
+                {
+                    public override void Execute()
+                    {
+                    }
+                }
+
+                public class MainVm
+                {
+                    public DerivedActions Actions { get; set; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Button Command="{CompiledBinding Actions.Execute}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source.Actions)", generated);
+        Assert.Contains("\"Actions.Execute()\"", generated);
+    }
+
+    [Fact]
+    public void Resolves_Derived_CanExecute_For_Inherited_Method_Command()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Method, AllowMultiple = true)]
+                public sealed class DependsOnAttribute : global::System.Attribute
+                {
+                    public DependsOnAttribute(string name)
+                    {
+                        Name = name;
+                    }
+
+                    public string Name { get; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty<global::System.Windows.Input.ICommand?> CommandProperty = new();
+
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class BaseActions
+                {
+                    public void Execute()
+                    {
+                    }
+                }
+
+                public class DerivedActions : BaseActions
+                {
+                    [global::Avalonia.Metadata.DependsOn(nameof(IsEnabled))]
+                    public bool CanExecute(object? parameter) => parameter is not null;
+
+                    public bool IsEnabled { get; set; }
+                }
+
+                public class MainVm
+                {
+                    public DerivedActions Actions { get; set; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Button Command="{CompiledBinding Actions.Execute}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("CanExecute(parameter)", generated);
+        Assert.Contains("new string[] { \"IsEnabled\" }", generated);
+    }
+
+    [Fact]
     public void Does_Not_Treat_NonICommand_Command_Property_As_Method_Command_Target()
     {
         const string code = """
