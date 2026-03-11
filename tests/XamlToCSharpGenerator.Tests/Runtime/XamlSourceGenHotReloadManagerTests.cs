@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -102,6 +104,30 @@ public class XamlSourceGenHotReloadManagerTests
             typeof(MetadataOriginalReloadTarget));
 
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(MetadataReplacementReloadTarget)]);
+
+        Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Maps_Equivalent_Replacement_Type_Instance_To_Original_Type()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var reloadCount = 0;
+        var instance = new MetadataOriginalReloadTarget();
+        XamlSourceGenHotReloadManager.Register(instance, _ => reloadCount++);
+
+        const string assemblyName = "Axsg.Dynamic.MetadataUpdateMapping";
+        const string typeFullName = "Axsg.Dynamic.MetadataReplacementReloadTarget";
+        var registeredReplacementType = CreateDynamicType(assemblyName, typeFullName);
+        var incomingReplacementType = CreateDynamicType(assemblyName, typeFullName);
+
+        XamlSourceGenHotReloadManager.RegisterReplacementTypeMapping(
+            registeredReplacementType,
+            typeof(MetadataOriginalReloadTarget));
+
+        XamlSourceGenHotReloadManager.UpdateApplication([incomingReplacementType]);
 
         Assert.Equal(1, reloadCount);
     }
@@ -1151,6 +1177,19 @@ public class XamlSourceGenHotReloadManagerTests
         XamlIncludeGraphRegistry.Clear();
         XamlSourceGenArtifactRefreshRegistry.Clear();
         XamlSourceGenTypeUriRegistry.Clear();
+    }
+
+    private static Type CreateDynamicType(string assemblyName, string typeFullName)
+    {
+        var dynamicAssembly = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName(assemblyName),
+            AssemblyBuilderAccess.Run);
+        var moduleBuilder = dynamicAssembly.DefineDynamicModule(assemblyName);
+        var typeBuilder = moduleBuilder.DefineType(
+            typeFullName,
+            TypeAttributes.Class | TypeAttributes.Public | TypeAttributes.Sealed);
+        typeBuilder.DefineDefaultConstructor(MethodAttributes.Public);
+        return typeBuilder.CreateType() ?? throw new InvalidOperationException("Failed to create dynamic type.");
     }
 
     private static bool ContainsStatus(
