@@ -71,6 +71,19 @@ function resolveVsCodeExtensionVersion(version) {
   }
 
   const identifiers = prerelease.split(".");
+  const simpleChannelMatch = /^(alpha|a|beta|b|rc)\.(\d+)$/i.exec(prerelease);
+  if (simpleChannelMatch !== null) {
+    const channel = simpleChannelMatch[1].toLowerCase();
+    const sequence = Number.parseInt(simpleChannelMatch[2], 10);
+    const channelOffset =
+      channel === "alpha" || channel === "a"
+        ? 0
+        : channel === "beta" || channel === "b"
+          ? 100
+          : 200;
+    return `${major}.${minor * 2 + 1}.${patch * 1000 + channelOffset + sequence}`;
+  }
+
   const stageIdentifier = resolveStageIdentifier(identifiers);
   const stageRank = resolveStageRank(stageIdentifier);
   const sequence = resolveSequence(identifiers);

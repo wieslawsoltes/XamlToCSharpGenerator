@@ -9,9 +9,9 @@ public class VsCodeExtensionVersionResolverTests
 {
     [Theory]
     [InlineData("0.1.0", "0.2.0")]
-    [InlineData("0.1.0-alpha.4", "0.3.200400")]
-    [InlineData("0.1.0-beta.1", "0.3.300100")]
-    [InlineData("0.1.0-rc.1", "0.3.400100")]
+    [InlineData("0.1.0-alpha.4", "0.3.4")]
+    [InlineData("0.1.0-beta.1", "0.3.101")]
+    [InlineData("0.1.0-rc.1", "0.3.201")]
     public void Resolver_Maps_Common_Release_Channels(string version, string expected)
     {
         var result = RunResolver(version);

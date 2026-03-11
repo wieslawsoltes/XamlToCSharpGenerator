@@ -34,4 +34,18 @@ if [[ "${is_prerelease}" == "true" ]]; then
   cmd+=(--pre-release)
 fi
 
-"${cmd[@]}"
+set +e
+output="$("${cmd[@]}" 2>&1)"
+status=$?
+set -e
+
+if [[ $status -ne 0 ]]; then
+  printf '%s\n' "${output}" >&2
+  if [[ "${output}" == *"Failed request: (401)"* || "${output}" == *"TF400813"* || "${output}" == *"not authorized"* ]]; then
+    echo "VS Code Marketplace authentication failed." >&2
+    echo "Rotate VSCE_PAT and ensure it has publisher access for 'xamltocsharpgenerator' with Marketplace Manage permissions." >&2
+  fi
+  exit $status
+fi
+
+printf '%s\n' "${output}"
