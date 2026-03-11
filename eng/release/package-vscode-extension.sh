@@ -52,5 +52,9 @@ vsce_args=(
   "${output_vsix}"
 )
 
+if [[ "${version}" == *-* ]]; then
+  vsce_args+=(--pre-release)
+fi
+
 npx "${vsce_args[@]}"
 popd >/dev/null

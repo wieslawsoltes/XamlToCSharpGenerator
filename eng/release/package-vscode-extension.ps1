@@ -97,6 +97,10 @@ try {
             $resolvedOutputVsixPath
         )
 
+        if ($Version.Contains('-')) {
+            $vsceArguments += '--pre-release'
+        }
+
         Invoke-ExternalCommand npx @vsceArguments
     }
     finally {
