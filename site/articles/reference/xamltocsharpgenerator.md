@@ -11,7 +11,7 @@ The umbrella package for application authors. It brings in the standard build, c
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator" Version="<VERSION>" />
+<PackageReference Include="XamlToCSharpGenerator" Version="x.y.z" />
 ```
 
 ## Use it when

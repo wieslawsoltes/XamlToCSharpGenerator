@@ -16,7 +16,7 @@ The repository ships both a recommended end-user install surface and the lower-l
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Editor.Avalonia?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Editor.Avalonia?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | Editor/tool authors | `dotnet add package XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based AXAML editor control backed by the AXSG language-service core. |
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageService?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageService?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | Tooling authors | `dotnet add package XamlToCSharpGenerator.LanguageService` | Shared semantic language-service layer used by LSP and in-app editors. |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageServer.Tool?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageServer.Tool?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | CLI and editor integration | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` | Packs the `axsg-lsp` command for LSP hosting outside VS Code. |
-| `AXSG XAML Language Service` | VS Code extension (`.vsix`) | [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/xamltocsharpgenerator.axsg-language-server?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | [![Downloads](https://img.shields.io/visual-studio-marketplace/d/xamltocsharpgenerator.axsg-language-server?label=Downloads)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | VS Code users | `code --install-extension ./axsg-language-server-<VERSION>.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, semantic highlighting, and inline C# editor support. |
+| `AXSG XAML Language Service` | VS Code extension (`.vsix`) | [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/xamltocsharpgenerator.axsg-language-server?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | [![Downloads](https://img.shields.io/visual-studio-marketplace/d/xamltocsharpgenerator.axsg-language-server?label=Downloads)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | VS Code users | `code --install-extension ./axsg-language-server-x.y.z.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, semantic highlighting, and inline C# editor support. |
 | `XamlToCSharpGenerator.Generator` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Generator?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Generator?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Generator` | Standalone Roslyn generator backend. Use when you need the generator without the umbrella package. |
 | `XamlToCSharpGenerator.Core` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Core?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Core?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Core` | Immutable parser model, diagnostics, configuration contracts, and shared semantic core. |
 | `XamlToCSharpGenerator.Compiler` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Compiler?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Compiler/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Compiler?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Compiler/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Compiler` | Incremental host orchestration and generator pipeline entry points. |
@@ -32,7 +32,7 @@ The repository ships both a recommended end-user install surface and the lower-l
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="XamlToCSharpGenerator" Version="<VERSION>" />
+  <PackageReference Include="XamlToCSharpGenerator" Version="x.y.z" />
 </ItemGroup>
 
 <PropertyGroup>
@@ -56,7 +56,7 @@ public static AppBuilder BuildAvaloniaApp() =>
 The release pipeline produces a `.vsix` asset. Install it with:
 
 ```bash
-code --install-extension ./axsg-language-server-<VERSION>.vsix
+code --install-extension ./axsg-language-server-x.y.z.vsix
 ```
 
 The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
@@ -244,7 +244,7 @@ Behavior:
 Release assets include:
 
 - `*.nupkg` for every shipped package/tool
-- `axsg-language-server-<VERSION>.vsix`
+- `axsg-language-server-x.y.z.vsix`
 
 ## Development Flags
 

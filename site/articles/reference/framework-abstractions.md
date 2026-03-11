@@ -11,7 +11,7 @@ Contracts for framework-specific profiles: binder/emitter/profile interfaces and
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.Framework.Abstractions" Version="<VERSION>" />
+<PackageReference Include="XamlToCSharpGenerator.Framework.Abstractions" Version="x.y.z" />
 ```
 
 ## Related namespaces

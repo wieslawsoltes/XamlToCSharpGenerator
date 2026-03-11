@@ -11,7 +11,7 @@ Core abstractions, diagnostics, models, and XAML token semantics shared by every
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.Core" Version="<VERSION>" />
+<PackageReference Include="XamlToCSharpGenerator.Core" Version="x.y.z" />
 ```
 
 ## Related namespaces

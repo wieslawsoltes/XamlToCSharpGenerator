@@ -11,7 +11,7 @@ Low-allocation parsers and tokenizers for selectors, binding paths, markup fragm
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.MiniLanguageParsing" Version="<VERSION>" />
+<PackageReference Include="XamlToCSharpGenerator.MiniLanguageParsing" Version="x.y.z" />
 ```
 
 ## Related namespaces
