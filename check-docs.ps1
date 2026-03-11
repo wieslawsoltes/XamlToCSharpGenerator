@@ -1,4 +1,112 @@
 $ErrorActionPreference = 'Stop'
+
+$script:HasRipgrep = $null -ne (Get-Command rg -ErrorAction SilentlyContinue)
+
+function Find-TreeRegex {
+    param(
+        [Parameter(Mandatory = $true)][string]$Pattern,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ($script:HasRipgrep) {
+        & rg -n -e $Pattern $Path
+        return
+    }
+
+    Get-ChildItem -Path $Path -Recurse -File -ErrorAction SilentlyContinue |
+        Select-String -Pattern $Pattern |
+        ForEach-Object {
+            "{0}:{1}:{2}" -f $_.Path, $_.LineNumber, $_.Line.TrimEnd()
+        }
+}
+
+function Test-FileFixedText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ($script:HasRipgrep) {
+        & rg -F -- $Text $Path *> $null
+        return $LASTEXITCODE -eq 0
+    }
+
+    return $null -ne (Select-String -Path $Path -SimpleMatch -Pattern $Text -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+
+function Assert-SourceMarkdownLinks {
+    $siteRoot = Join-Path $PSScriptRoot 'site'
+    $sourceFiles = @((Join-Path $siteRoot 'readme.md')) + @(
+        Get-ChildItem -Path (Join-Path $siteRoot 'articles') -Filter *.md -Recurse -File
+    )
+
+    $linkPattern = [regex]'(?<!!)\[[^\]]+\]\(([^)]+)\)'
+    $brokenLinks = New-Object 'System.Collections.Generic.List[string]'
+
+    foreach ($sourceFile in $sourceFiles) {
+        $sourcePath = if ($sourceFile -is [string]) { $sourceFile } else { $sourceFile.FullName }
+        $sourceText = Get-Content -Path $sourcePath -Raw
+        $matches = $linkPattern.Matches($sourceText)
+
+        foreach ($match in $matches) {
+            $url = $match.Groups[1].Value.Trim()
+            if (
+                [string]::IsNullOrWhiteSpace($url) -or
+                $url.StartsWith('#') -or
+                $url.StartsWith('http://') -or
+                $url.StartsWith('https://') -or
+                $url.StartsWith('mailto:') -or
+                $url.StartsWith('tel:') -or
+                $url.StartsWith('javascript:') -or
+                $url.StartsWith('xref:') -or
+                $url.StartsWith('<xref:') -or
+                $url -eq '/api' -or
+                $url.StartsWith('/api/') -or
+                $url -eq 'api' -or
+                $url.StartsWith('api/') -or
+                $url.StartsWith('/images/') -or
+                $url.StartsWith('/css/') -or
+                $url.StartsWith('/js/') -or
+                $url.StartsWith('/fonts/') -or
+                $url.StartsWith('/modules/') -or
+                $url.StartsWith('/partials/')
+            ) {
+                continue
+            }
+
+            $pathPart = ($url -replace '[?#].*$', '').TrimEnd('/', '\')
+            if ([string]::IsNullOrWhiteSpace($pathPart)) {
+                continue
+            }
+
+            if ([System.IO.Path]::IsPathRooted($pathPart) -or $pathPart.StartsWith('/')) {
+                $candidate = Join-Path $siteRoot $pathPart.TrimStart('/')
+            }
+            else {
+                $candidate = [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Path $sourcePath -Parent) $pathPart))
+            }
+
+            if (
+                (Test-Path -Path $candidate) -or
+                (Test-Path -Path ($candidate + '.md')) -or
+                (Test-Path -Path (Join-Path $candidate 'readme.md'))
+            ) {
+                continue
+            }
+
+            $lineNumber = ($sourceText.Substring(0, $match.Index) -split "`n").Count
+            $displayPath = $sourcePath.Replace(($PSScriptRoot + [System.IO.Path]::DirectorySeparatorChar), '')
+            $brokenLinks.Add("${displayPath}:${lineNumber}: $url")
+        }
+    }
+
+    if ($brokenLinks.Count -gt 0) {
+        $issues = $brokenLinks -join "`n"
+        throw "Source docs contain broken internal Markdown links.`n$issues"
+    }
+}
+
+Assert-SourceMarkdownLinks
 & (Join-Path $PSScriptRoot 'build-docs.ps1')
 
 $docRoot = Join-Path $PSScriptRoot 'site/.lunet/build/www'
@@ -66,18 +174,18 @@ foreach ($packagePage in $packagePages) {
     }
 }
 
-$rawMarkdownLinks = rg -n 'href="[^"]*\.md"' $docRoot
-if ($LASTEXITCODE -eq 0 -and $rawMarkdownLinks) {
+$rawMarkdownLinks = Find-TreeRegex -Pattern 'href="[^"]*\.md"' -Path $docRoot
+if ($rawMarkdownLinks) {
     throw "Generated docs contain raw .md links.`n$rawMarkdownLinks"
 }
 
-$readmeRoutes = rg -n 'href="[^"]*/readme(?:[?#"][^"]*)?"' $docRoot
-if ($LASTEXITCODE -eq 0 -and $readmeRoutes) {
+$readmeRoutes = Find-TreeRegex -Pattern 'href="[^"]*/readme(?:[?#"][^"]*)?"' -Path $docRoot
+if ($readmeRoutes) {
     throw "Generated docs contain /readme routes instead of directory routes.`n$readmeRoutes"
 }
 
-$stalePackageRoutes = rg -n 'href="[^"]*/articles/reference/packages(?:/|["?#])' $docRoot
-if ($LASTEXITCODE -eq 0 -and $stalePackageRoutes) {
+$stalePackageRoutes = Find-TreeRegex -Pattern 'href="[^"]*/articles/reference/packages(?:/|["?#])' -Path $docRoot
+if ($stalePackageRoutes) {
     throw "Generated docs contain stale /articles/reference/packages routes.`n$stalePackageRoutes"
 }
 
@@ -92,8 +200,8 @@ if (Test-Path $compilerServicesIndex) {
     throw "Generated docs unexpectedly expose System.Runtime.CompilerServices namespace."
 }
 
-$badFooterText = rg -n 'Creative Commons <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT</a>|Creative Commons MIT' $docRoot
-if ($LASTEXITCODE -eq 0 -and $badFooterText) {
+$badFooterText = Find-TreeRegex -Pattern 'Creative Commons <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT</a>|Creative Commons MIT' -Path $docRoot
+if ($badFooterText) {
     throw "Generated docs contain incorrect Creative Commons MIT footer text.`n$badFooterText"
 }
 
@@ -102,18 +210,15 @@ if (-not (Test-Path $editorApiPage)) {
     throw "Expected editor API page is missing: $editorApiPage"
 }
 
-$missingAvaloniaEditLink = rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' $editorApiPage
-if ($LASTEXITCODE -ne 0) {
+if (-not (Test-FileFixedText -Text 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' -Path $editorApiPage)) {
     throw "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
 }
 
 $xamlIndexPage = Join-Path $docRoot 'articles/xaml/index.html'
-$missingBasepathCss = rg -F '/XamlToCSharpGenerator/css/lite.css' $xamlIndexPage
-if ($LASTEXITCODE -ne 0) {
+if (-not (Test-FileFixedText -Text '/XamlToCSharpGenerator/css/lite.css' -Path $xamlIndexPage)) {
     throw "Production XAML docs page is missing the project-basepath-prefixed lite.css URL."
 }
 
-$missingMenuPartial = rg -F '/XamlToCSharpGenerator/partials/menus/menu-xaml.' $xamlIndexPage
-if ($LASTEXITCODE -ne 0) {
+if (-not (Test-FileFixedText -Text '/XamlToCSharpGenerator/partials/menus/menu-xaml.' -Path $xamlIndexPage)) {
     throw "Production XAML docs page is missing the project-basepath-prefixed async menu partial URL."
 }

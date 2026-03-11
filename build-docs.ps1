@@ -1,5 +1,21 @@
 $ErrorActionPreference = 'Stop'
 
+function Find-FileRegex {
+    param(
+        [Parameter(Mandatory = $true)][string]$Pattern,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if (Get-Command rg -ErrorAction SilentlyContinue) {
+        & rg -n -e $Pattern $Path
+        return
+    }
+
+    Select-String -Path $Path -Pattern $Pattern | ForEach-Object {
+        "{0}:{1}:{2}" -f $_.Path, $_.LineNumber, $_.Line.TrimEnd()
+    }
+}
+
 function Clear-DocsOutputs {
     Get-ChildItem (Join-Path $PSScriptRoot 'src') -Filter '*.api.json' -Recurse -File |
         Where-Object { $_.FullName.Replace('\', '/') -like '*/obj/Release/*' } |
@@ -40,8 +56,8 @@ try {
         try {
             dotnet tool run lunet --stacktrace build 2>&1 | Tee-Object -FilePath $lunetLog
 
-            $lunetErrors = rg -n 'ERR lunet|Error while building api dotnet|Unable to select the api dotnet output' $lunetLog
-            if ($LASTEXITCODE -eq 0 -and $lunetErrors) {
+            $lunetErrors = Find-FileRegex -Pattern 'ERR lunet|Error while building api dotnet|Unable to select the api dotnet output' -Path $lunetLog
+            if ($lunetErrors) {
                 throw "Lunet reported API/site build errors.`n$lunetErrors"
             }
         }

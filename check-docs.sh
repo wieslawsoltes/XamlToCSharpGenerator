@@ -3,6 +3,79 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+have_rg() {
+    command -v rg >/dev/null 2>&1
+}
+
+search_tree_regex() {
+    local pattern="$1"
+    local root_path="$2"
+
+    if have_rg; then
+        rg -n -e "$pattern" "$root_path"
+    else
+        grep -RInE -- "$pattern" "$root_path"
+    fi
+}
+
+search_file_fixed() {
+    local text="$1"
+    local file_path="$2"
+
+    if have_rg; then
+        rg -F -- "$text" "$file_path"
+    else
+        grep -F -- "$text" "$file_path"
+    fi
+}
+
+normalize_source_path() {
+    local target="$1"
+    local base_dir="$2"
+    perl -MFile::Spec -e 'print File::Spec->canonpath(File::Spec->rel2abs($ARGV[0], $ARGV[1]))' "$target" "$base_dir"
+}
+
+check_source_markdown_links() {
+    local file_path line_number url path_part candidate source_display
+    local -a broken_links=()
+
+    while IFS= read -r -d '' file_path; do
+        while IFS=$'\t' read -r line_number url; do
+            if [[ -z "$url" || "$url" == \#* || "$url" == http://* || "$url" == https://* || "$url" == mailto:* || "$url" == tel:* || "$url" == javascript:* || "$url" == xref:* || "$url" == \<xref:* || "$url" == /api || "$url" == /api/* || "$url" == api || "$url" == api/* || "$url" == /images/* || "$url" == /css/* || "$url" == /js/* || "$url" == /fonts/* || "$url" == /modules/* || "$url" == /partials/* ]]; then
+                continue
+            fi
+
+            path_part="${url%%[?#]*}"
+            if [[ -z "$path_part" ]]; then
+                continue
+            fi
+
+            if [[ "$path_part" == /* ]]; then
+                candidate="${SCRIPT_DIR}/site/${path_part#/}"
+            else
+                candidate="$(normalize_source_path "$path_part" "$(dirname "$file_path")")"
+            fi
+
+            if [[ -e "$candidate" || -e "${candidate}.md" || -e "${candidate}/readme.md" ]]; then
+                continue
+            fi
+
+            source_display="${file_path#${SCRIPT_DIR}/}"
+            broken_links+=("${source_display}:${line_number}: ${url}")
+        done < <(perl -ne 'while (/(?<!!)\[[^\]]+\]\(([^)]+)\)/g) { print $.,"\t",$1,"\n"; }' "$file_path")
+    done < <(
+        printf '%s\0' "${SCRIPT_DIR}/site/readme.md"
+        find "${SCRIPT_DIR}/site/articles" -name '*.md' -print0
+    )
+
+    if ((${#broken_links[@]} > 0)); then
+        echo "Source docs contain broken internal Markdown links." >&2
+        printf '%s\n' "${broken_links[@]}" >&2
+        exit 1
+    fi
+}
+
+check_source_markdown_links
 "${SCRIPT_DIR}/build-docs.sh"
 
 DOC_ROOT="${SCRIPT_DIR}/site/.lunet/build/www"
@@ -64,17 +137,17 @@ if test -e "${DOC_ROOT}/api/System.Runtime.CompilerServices/index.html"; then
     exit 1
 fi
 
-if rg -n 'href="[^"]*\.md"' "${DOC_ROOT}" >/dev/null; then
+if search_tree_regex 'href="[^"]*\.md"' "${DOC_ROOT}" >/dev/null; then
     echo "Generated docs contain raw .md links."
     exit 1
 fi
 
-if rg -n 'href="[^"]*/readme(?:[?#"][^"]*)?"' "${DOC_ROOT}" >/dev/null; then
+if search_tree_regex 'href="[^"]*/readme(?:[?#"][^"]*)?"' "${DOC_ROOT}" >/dev/null; then
     echo "Generated docs contain /readme routes instead of directory routes."
     exit 1
 fi
 
-if rg -n 'href="[^"]*/articles/reference/packages(?:/|["?#])' "${DOC_ROOT}" >/dev/null; then
+if search_tree_regex 'href="[^"]*/articles/reference/packages(?:/|["?#])' "${DOC_ROOT}" >/dev/null; then
     echo "Generated docs contain stale /articles/reference/packages routes."
     exit 1
 fi
@@ -85,7 +158,7 @@ if find "${DOC_ROOT}/articles" -name '*.md' -print -quit | grep -q .; then
     exit 1
 fi
 
-if rg -n 'Creative Commons <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT</a>|Creative Commons MIT' "${DOC_ROOT}" >/dev/null; then
+if search_tree_regex 'Creative Commons <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT</a>|Creative Commons MIT' "${DOC_ROOT}" >/dev/null; then
     echo "Generated docs contain incorrect Creative Commons MIT footer text."
     exit 1
 fi
@@ -96,18 +169,18 @@ if ! test -f "${EDITOR_API_PAGE}"; then
     exit 1
 fi
 
-if ! rg -F 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' "${EDITOR_API_PAGE}" >/dev/null; then
+if ! search_file_fixed 'https://api-docs.avaloniaui.net/docs/AvaloniaEdit.TextEditor/' "${EDITOR_API_PAGE}" >/dev/null; then
     echo "Generated editor API page is missing the external AvaloniaEdit.TextEditor link."
     exit 1
 fi
 
 XAML_INDEX_PAGE="${DOC_ROOT}/articles/xaml/index.html"
-if ! rg -F '/XamlToCSharpGenerator/css/lite.css' "${XAML_INDEX_PAGE}" >/dev/null; then
+if ! search_file_fixed '/XamlToCSharpGenerator/css/lite.css' "${XAML_INDEX_PAGE}" >/dev/null; then
     echo "Production XAML docs page is missing the project-basepath-prefixed lite.css URL."
     exit 1
 fi
 
-if ! rg -F "/XamlToCSharpGenerator/partials/menus/menu-xaml." "${XAML_INDEX_PAGE}" >/dev/null; then
+if ! search_file_fixed "/XamlToCSharpGenerator/partials/menus/menu-xaml." "${XAML_INDEX_PAGE}" >/dev/null; then
     echo "Production XAML docs page is missing the project-basepath-prefixed async menu partial URL."
     exit 1
 fi
