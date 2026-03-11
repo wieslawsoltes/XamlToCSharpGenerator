@@ -18,6 +18,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_vsix="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "${output_vsix}")"
 extension_dir="${repo_root}/tools/vscode/axsg-language-server"
 package_json="${extension_dir}/package.json"
+vscode_version="$(node "${repo_root}/eng/release/resolve-vscode-extension-version.mjs" "${version}")"
 backup_file="$(mktemp)"
 
 cp "${package_json}" "${backup_file}"
@@ -29,7 +30,7 @@ trap restore_package_json EXIT
 
 mkdir -p "$(dirname "${output_vsix}")"
 
-python3 - "${package_json}" "${version}" <<'PY'
+python3 - "${package_json}" "${vscode_version}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ package_json.write_text(json.dumps(data, indent=2) + "\n")
 PY
 
 pushd "${extension_dir}" >/dev/null
+echo "Packaging VS Code extension release ${version} as Marketplace version ${vscode_version}"
 npm ci
 vsce_args=(
   @vscode/vsce
@@ -49,10 +51,6 @@ vsce_args=(
   --out
   "${output_vsix}"
 )
-
-if [[ "${version}" == *-* ]]; then
-  vsce_args+=(--pre-release)
-fi
 
 npx "${vsce_args[@]}"
 popd >/dev/null
