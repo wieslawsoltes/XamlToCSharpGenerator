@@ -1,0 +1,4 @@
+interface:
+  display_name: "Avalonia XAML Source Generator"
+  short_description: "Use AXSG packages in Avalonia projects"
+  default_prompt: "Use $avalonia-xaml-source-generator to choose and wire the right XamlToCSharpGenerator packages for this Avalonia project."
