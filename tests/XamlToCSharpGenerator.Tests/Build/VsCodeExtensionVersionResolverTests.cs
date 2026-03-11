@@ -8,10 +8,10 @@ namespace XamlToCSharpGenerator.Tests.Build;
 public class VsCodeExtensionVersionResolverTests
 {
     [Theory]
-    [InlineData("0.1.0", "0.1.1")]
-    [InlineData("0.1.0-alpha.4", "0.1.0")]
-    [InlineData("0.1.0-beta.1", "0.1.0")]
-    [InlineData("0.1.0-rc.1", "0.1.0")]
+    [InlineData("0.1.0", "0.1.0")]
+    [InlineData("0.1.0-alpha.4", "0.1.4")]
+    [InlineData("0.1.0-beta.1", "0.1.1")]
+    [InlineData("0.1.0-rc.1", "0.1.1")]
     public void Resolver_Maps_Common_Release_Channels(string version, string expected)
     {
         var result = RunResolver(version);
@@ -21,7 +21,7 @@ public class VsCodeExtensionVersionResolverTests
     }
 
     [Fact]
-    public void Resolver_Maps_Simple_Prerelease_Channels_To_Base_Version()
+    public void Resolver_Maps_Simple_Prerelease_Channels_To_Sequence_Version()
     {
         var alpha = RunResolver("0.1.0-alpha.1");
         var beta = RunResolver("0.1.0-beta.1");
@@ -30,9 +30,9 @@ public class VsCodeExtensionVersionResolverTests
         Assert.True(alpha.ExitCode == 0, alpha.CombinedOutput);
         Assert.True(beta.ExitCode == 0, beta.CombinedOutput);
         Assert.True(releaseCandidate.ExitCode == 0, releaseCandidate.CombinedOutput);
-        Assert.Equal("0.1.0", alpha.StandardOutput.Trim());
-        Assert.Equal("0.1.0", beta.StandardOutput.Trim());
-        Assert.Equal("0.1.0", releaseCandidate.StandardOutput.Trim());
+        Assert.Equal("0.1.1", alpha.StandardOutput.Trim());
+        Assert.Equal("0.1.1", beta.StandardOutput.Trim());
+        Assert.Equal("0.1.1", releaseCandidate.StandardOutput.Trim());
     }
 
     [Fact]

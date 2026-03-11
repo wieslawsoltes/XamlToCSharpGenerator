@@ -67,13 +67,14 @@ function resolveVsCodeExtensionVersion(version) {
   const prerelease = match.groups.prerelease;
 
   if (prerelease === undefined) {
-    return `${major}.${minor}.${patch + 1}`;
+    return `${major}.${minor}.${patch}`;
   }
 
   const identifiers = prerelease.split(".");
   const simpleChannelMatch = /^(alpha|a|beta|b|rc)\.(\d+)$/i.exec(prerelease);
   if (simpleChannelMatch !== null) {
-    return `${major}.${minor}.${patch}`;
+    const sequence = Number.parseInt(simpleChannelMatch[2], 10);
+    return `${major}.${minor}.${patch + sequence}`;
   }
 
   const stageIdentifier = resolveStageIdentifier(identifiers);
