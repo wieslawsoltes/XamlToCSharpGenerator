@@ -11,7 +11,7 @@ A framework-neutral pilot profile used to validate compiler-host reuse outside A
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.NoUi" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator.NoUi" Version="<VERSION>" />
 ```
 
 ## Related namespaces

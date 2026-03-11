@@ -11,7 +11,7 @@ Avalonia-specific binder, emitter, parsing enrichment, and framework-profile imp
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.Avalonia" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator.Avalonia" Version="<VERSION>" />
 ```
 
 ## Related namespaces

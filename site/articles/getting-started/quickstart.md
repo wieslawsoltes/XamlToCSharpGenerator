@@ -11,7 +11,7 @@ This is the shortest path from an Avalonia project to generated AXSG output. It 
 For most applications:
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator" Version="<VERSION>" />
 ```
 
 If your repo already has custom SDK logic, generator composition rules, or a non-standard runtime host, stop here and read [Package Selection and Integration](../guides/package-selection-and-integration/). The umbrella package is the right default for app projects, but it is not the only supported integration model.

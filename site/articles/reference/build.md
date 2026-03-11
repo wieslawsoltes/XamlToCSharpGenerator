@@ -28,7 +28,7 @@ This package is where package selection becomes real build behavior. It is the i
 ## Install
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator.Build" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator.Build" Version="<VERSION>" />
 ```
 
 ## Typical consumers

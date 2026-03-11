@@ -5,7 +5,7 @@ Basic Avalonia desktop CRUD app wired to this repository's source-generator back
 For shipping consumption, use a single package reference:
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator" Version="0.1.0-alpha.3" />
+<PackageReference Include="XamlToCSharpGenerator" Version="<VERSION>" />
 ```
 
 ## What this sample demonstrates

@@ -22,7 +22,7 @@ Use these first unless you are composing a custom toolchain:
 | --- | --- | --- |
 | `XamlToCSharpGenerator` | Application NuGet package | `dotnet add package XamlToCSharpGenerator` |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` |
-| `AXSG XAML Language Service` | VS Code extension | `code --install-extension ./axsg-language-server-<version>.vsix` |
+| `AXSG XAML Language Service` | VS Code extension | `code --install-extension ./axsg-language-server-<VERSION>.vsix` |
 
 ## Advanced composition
 
