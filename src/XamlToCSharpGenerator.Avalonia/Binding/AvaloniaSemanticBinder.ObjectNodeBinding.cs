@@ -58,7 +58,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var compileBindingsEnabled = node.CompileBindings ?? inheritedCompileBindingsEnabled;
-        var nodeDataType = ResolveTypeFromTypeExpression(compilation, document, node.DataType, document.ClassNamespace) ?? inheritedDataType;
+        var nodeDataType = ResolveNodeDataType(compilation, document, node, inheritedDataType);
         var currentSetterTargetType = ResolveCurrentSetterTargetType(
             symbol,
             node,
@@ -456,9 +456,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                 document,
                                 compiledBindingSourceType!,
                                 bindingMarkup.Path,
-                                out var accessorExpression,
-                                out var normalizedPath,
-                                out var resultTypeName,
+                                property.Type,
+                                out var compiledBindingResolution,
                                 out var errorMessage))
                         {
                             diagnostics.Add(new DiagnosticInfo(
@@ -474,10 +473,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings.Add(new ResolvedCompiledBindingDefinition(
                             TargetTypeName: typeName,
                             TargetPropertyName: property.Name,
-                            Path: normalizedPath,
+                            Path: compiledBindingResolution.NormalizedPath,
                             SourceTypeName: compiledBindingSourceType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                            ResultTypeName: resultTypeName,
-                            AccessorExpression: accessorExpression,
+                            ResultTypeName: compiledBindingResolution.ResultTypeName,
+                            AccessorExpression: compiledBindingResolution.AccessorExpression,
                             IsSetterBinding: false,
                             Line: assignment.Line,
                             Column: assignment.Column));
@@ -1733,6 +1732,47 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             Line: node.Line,
             Column: node.Column,
             Condition: node.Condition));
+    }
+
+    private static INamedTypeSymbol? ResolveNodeDataType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        XamlObjectNode node,
+        INamedTypeSymbol? inheritedDataType)
+    {
+        var resolvedNodeDataType = ResolveTypeFromTypeExpression(
+            compilation,
+            document,
+            node.DataType,
+            document.ClassNamespace);
+        if (resolvedNodeDataType is not null)
+        {
+            return resolvedNodeDataType;
+        }
+
+        if (IsDataTemplateNode(node))
+        {
+            foreach (var assignment in node.PropertyAssignments)
+            {
+                if (assignment.IsAttached ||
+                    !NormalizePropertyName(assignment.PropertyName).Equals("DataType", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var resolvedTemplateDataType = ResolveTypeFromTypeExpression(
+                    compilation,
+                    document,
+                    assignment.Value,
+                    document.ClassNamespace);
+                if (resolvedTemplateDataType is not null)
+                {
+                    return resolvedTemplateDataType;
+                }
+            }
+        }
+
+        return inheritedDataType;
     }
 
     private static bool IsXamlArrayNode(XamlObjectNode node)

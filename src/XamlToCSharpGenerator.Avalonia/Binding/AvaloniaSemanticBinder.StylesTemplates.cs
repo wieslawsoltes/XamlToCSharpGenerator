@@ -445,9 +445,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      document,
                                      compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
-                                     out var accessorExpression,
-                                     out var normalizedPath,
-                                     out var resultTypeName,
+                                     setterValueType,
+                                     out var compiledBindingResolution,
                                      out var errorMessage))
                         {
                             diagnostics.Add(new DiagnosticInfo(
@@ -464,16 +463,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindings.Add(new ResolvedCompiledBindingDefinition(
                                 TargetTypeName: targetTypeName,
                                 TargetPropertyName: resolvedPropertyName,
-                                Path: normalizedPath,
+                                Path: compiledBindingResolution.NormalizedPath,
                                 SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                                ResultTypeName: resultTypeName,
-                                AccessorExpression: accessorExpression,
+                                ResultTypeName: compiledBindingResolution.ResultTypeName,
+                                AccessorExpression: compiledBindingResolution.AccessorExpression,
                                 IsSetterBinding: true,
                                 Line: setter.Line,
                                 Column: setter.Column));
 
                             isCompiledBinding = true;
-                            compiledBindingPath = normalizedPath;
+                            compiledBindingPath = compiledBindingResolution.NormalizedPath;
                             compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
                     }
@@ -966,9 +965,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      document,
                                      compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
-                                     out var accessorExpression,
-                                     out var normalizedPath,
-                                     out var resultTypeName,
+                                     setterValueType,
+                                     out var compiledBindingResolution,
                                      out var errorMessage))
                         {
                             diagnostics.Add(new DiagnosticInfo(
@@ -985,16 +983,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindings.Add(new ResolvedCompiledBindingDefinition(
                                 TargetTypeName: targetTypeName,
                                 TargetPropertyName: resolvedPropertyName,
-                                Path: normalizedPath,
+                                Path: compiledBindingResolution.NormalizedPath,
                                 SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                                ResultTypeName: resultTypeName,
-                                AccessorExpression: accessorExpression,
+                                ResultTypeName: compiledBindingResolution.ResultTypeName,
+                                AccessorExpression: compiledBindingResolution.AccessorExpression,
                                 IsSetterBinding: true,
                                 Line: setter.Line,
                                 Column: setter.Column));
 
                             isCompiledBinding = true;
-                            compiledBindingPath = normalizedPath;
+                            compiledBindingPath = compiledBindingResolution.NormalizedPath;
                             compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
                     }

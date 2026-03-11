@@ -213,18 +213,17 @@ public sealed partial class AvaloniaSemanticBinder
                         document,
                         sourceType,
                         shorthand.Path,
-                        out var forcedBindingAccessor,
-                        out var forcedBindingPath,
-                        out var forcedBindingResultTypeName,
+                        targetPropertyType: null,
+                        out var forcedBindingResolution,
                         out _))
                 {
                     result = new CSharpShorthandResolutionResult(
                         CSharpShorthandResolutionKind.BindingPath,
-                        forcedBindingPath,
+                        forcedBindingResolution.NormalizedPath,
                         null,
-                        forcedBindingAccessor,
+                        forcedBindingResolution.AccessorExpression,
                         sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        forcedBindingResultTypeName,
+                        forcedBindingResolution.ResultTypeName,
                         null,
                         null);
                     return true;
@@ -261,9 +260,8 @@ public sealed partial class AvaloniaSemanticBinder
                         document,
                         rootTypeSymbol,
                         shorthand.Path,
-                        out _,
-                        out var normalizedRootPath,
-                        out var rootResultTypeName,
+                        targetPropertyType: null,
+                        out var rootResolution,
                         out _))
                 {
                     result = new CSharpShorthandResolutionResult(
@@ -283,7 +281,7 @@ public sealed partial class AvaloniaSemanticBinder
                         sourceType,
                         rootTypeSymbol,
                         targetType,
-                        "root." + normalizedRootPath,
+                        "root." + rootResolution.NormalizedPath,
                         out var rootValueExpression,
                         out _,
                         out _,
@@ -303,11 +301,11 @@ public sealed partial class AvaloniaSemanticBinder
 
                 result = new CSharpShorthandResolutionResult(
                     CSharpShorthandResolutionKind.RootExpression,
-                    normalizedRootPath,
+                    rootResolution.NormalizedPath,
                     rootValueExpression,
-                    "root." + normalizedRootPath,
+                    "root." + rootResolution.NormalizedPath,
                     rootTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    rootResultTypeName,
+                    rootResolution.ResultTypeName,
                     null,
                     null);
                 return true;
@@ -317,29 +315,40 @@ public sealed partial class AvaloniaSemanticBinder
                 var sourceAccessor = string.Empty;
                 var sourcePath = string.Empty;
                 string? sourceResultTypeName = null;
+                var sourceResolution = default(CompiledBindingAccessorResolution);
                 var sourceResolved = sourceType is not null &&
                                      TryBuildCompiledBindingAccessorExpression(
                                          compilation,
                                          document,
                                          sourceType,
                                          shorthand.Path,
-                                         out sourceAccessor,
-                                         out sourcePath,
-                                         out sourceResultTypeName,
+                                         targetPropertyType: null,
+                                         out sourceResolution,
                                          out _);
+                if (sourceResolved)
+                {
+                    sourceAccessor = sourceResolution.AccessorExpression;
+                    sourcePath = sourceResolution.NormalizedPath;
+                    sourceResultTypeName = sourceResolution.ResultTypeName;
+                }
 
                 var rootPath = string.Empty;
                 string? rootResolvedResultTypeName = null;
+                var autoRootResolution = default(CompiledBindingAccessorResolution);
                 var rootResolved = rootTypeSymbol is not null &&
                                    TryBuildCompiledBindingAccessorExpression(
                                        compilation,
                                        document,
                                        rootTypeSymbol,
                                        shorthand.Path,
-                                       out _,
-                                       out rootPath,
-                                       out rootResolvedResultTypeName,
+                                       targetPropertyType: null,
+                                       out autoRootResolution,
                                        out _);
+                if (rootResolved)
+                {
+                    rootPath = autoRootResolution.NormalizedPath;
+                    rootResolvedResultTypeName = autoRootResolution.ResultTypeName;
+                }
 
                 if (sourceResolved && rootResolved && sourceType is not null && rootTypeSymbol is not null)
                 {
