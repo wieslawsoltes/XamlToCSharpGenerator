@@ -45,5 +45,5 @@ Reach for this package when you are:
 ## Related docs
 
 - [Custom Framework Profiles](../advanced/custom-framework-profiles/)
-- [Expression, Parsing, and Framework Namespaces](../namespace-expression-and-framework/)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework/)
 - [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)

@@ -54,6 +54,6 @@ If you only need the semantic engine, use `XamlToCSharpGenerator.LanguageService
 ## Related docs
 
 - [Tooling Surface](../concepts/tooling-surface/)
-- [Language Service and VS Code](../../architecture/language-service-and-vscode/)
+- [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
-- [Runtime and Editor Namespaces](../namespace-runtime-and-editor/)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor/)

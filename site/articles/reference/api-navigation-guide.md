@@ -36,7 +36,7 @@ These narrative pages exist because the raw generated API tree does not explain 
 | expression analysis and inline C# | `/api/XamlToCSharpGenerator.ExpressionSemantics/index.html` |
 | runtime helpers and markup support | `/api/XamlToCSharpGenerator.Runtime.Avalonia/index.html` |
 | completion/definition/reference pipeline | `/api/XamlToCSharpGenerator.LanguageService/index.html` |
-| standalone server hosting | `/api/XamlToCSharpGenerator.LanguageServer/index.html` |
+| standalone server hosting | `language-server-tool/` package guide (the server host has no generated namespace landing page) |
 | embedded editor control | `/api/XamlToCSharpGenerator.Editor.Avalonia/index.html` |
 
 ## What is intentionally narrative-only

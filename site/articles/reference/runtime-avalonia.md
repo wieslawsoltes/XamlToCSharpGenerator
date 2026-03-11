@@ -45,7 +45,7 @@ If generated code is correct but the running application still behaves incorrect
 
 ## Related docs
 
-- [Inline C#](../../xaml/inline-csharp/)
+- [Inline C#](../xaml/inline-csharp/)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
-- [Runtime and Hot Reload](../../architecture/runtime-and-hot-reload/)
+- [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
 - [Hot Reload and Hot Design](../guides/hot-reload-and-hot-design/)

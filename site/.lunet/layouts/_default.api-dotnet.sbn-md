@@ -12,7 +12,7 @@ Start with the narrative reference pages when you need package or subsystem orie
 
 - [Reference Overview]({{ site_project_basepath }}/articles/reference/)
 - [Package Catalog]({{ site_project_basepath }}/articles/reference/package-catalog)
-- [Package Guides]({{ site_project_basepath }}/articles/reference/packages/)
+- [Package Guides]({{ site_project_basepath }}/articles/reference/package-guides/)
 - [API Coverage Index]({{ site_project_basepath }}/articles/reference/api-coverage-index)
 
 Coverage includes:

@@ -32,7 +32,7 @@ It also owns editor-specific concerns such as activation strategy, virtual-docum
 
 ## Related docs
 
-- [Language Service and VS Code](../../architecture/language-service-and-vscode/)
+- [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)
 - [Artifact Matrix](artifact-matrix/)

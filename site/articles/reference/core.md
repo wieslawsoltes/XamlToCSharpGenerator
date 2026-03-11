@@ -51,5 +51,5 @@ Reach for `Core` when you need:
 ## Related docs
 
 - [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
-- [Compiler and Core Namespaces](../namespace-compiler-and-core/)
-- [Configuration Model](../configuration-model/)
+- [Compiler and Core Namespaces](namespace-compiler-and-core/)
+- [Configuration Model](configuration-model/)

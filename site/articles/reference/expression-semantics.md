@@ -45,6 +45,6 @@ Use this package directly when you need:
 
 ## Related docs
 
-- [C# Expressions](../../xaml/csharp-expressions/)
-- [Inline C#](../../xaml/inline-csharp/)
+- [C# Expressions](../xaml/csharp-expressions/)
+- [Inline C#](../xaml/inline-csharp/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)

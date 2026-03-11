@@ -44,4 +44,4 @@ This layer keeps the runtime contract stable even when the Avalonia-facing runti
 
 - [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
-- [Internal Support Components](../internal-support-components/)
+- [Internal Support Components](internal-support-components/)

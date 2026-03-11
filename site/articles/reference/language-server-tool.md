@@ -48,6 +48,6 @@ Those remain in the VS Code extension because they are client responsibilities.
 ## Related docs
 
 - [Tooling Surface](../concepts/tooling-surface/)
-- [Language Service and VS Code](../../architecture/language-service-and-vscode/)
+- [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)

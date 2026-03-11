@@ -51,6 +51,6 @@ You work in this package when you are changing project discovery, configuration 
 ## Related docs
 
 - [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
-- [Configuration Model](../configuration-model/)
+- [Configuration Model](configuration-model/)
 - [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules/)
-- [Compiler and Core Namespaces](../namespace-compiler-and-core/)
+- [Compiler and Core Namespaces](namespace-compiler-and-core/)

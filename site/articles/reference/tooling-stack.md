@@ -72,9 +72,9 @@ Owns:
 - metadata document and projection endpoints
 - standalone server packaging via `dotnet tool`
 
-Use the generated namespace root for public API browsing:
+Use the package guide for the standalone host surface:
 
-- [Language server generated API](/api/XamlToCSharpGenerator.LanguageServer/)
+- [LanguageServer.Tool package guide](language-server-tool/)
 
 The concrete host implementation is intentionally internal.
 

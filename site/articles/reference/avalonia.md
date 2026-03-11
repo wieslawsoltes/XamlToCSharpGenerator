@@ -57,6 +57,6 @@ Most work in this package falls into:
 ## Related docs
 
 - [Binding and Expression Model](../concepts/binding-and-expression-model/)
-- [Styles, Templates, and Themes](../../xaml/styles-templates-and-themes/)
+- [Styles, Templates, and Themes](../xaml/styles-templates-and-themes/)
 - [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules/)
-- [Expression, Parsing, and Framework Namespaces](../namespace-expression-and-framework/)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework/)

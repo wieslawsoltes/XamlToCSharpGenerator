@@ -47,5 +47,5 @@ Move down to the runtime subpackages when you are debugging:
 
 - [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
-- [Runtime and Editor Namespaces](../namespace-runtime-and-editor/)
+- [Runtime and Editor Namespaces](namespace-runtime-and-editor/)
 - [Package Selection and Integration](../guides/package-selection-and-integration/)

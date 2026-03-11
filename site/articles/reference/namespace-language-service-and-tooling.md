@@ -28,7 +28,7 @@ This namespace family covers editor semantics, LSP request handling, projected i
 - <xref:XamlToCSharpGenerator.LanguageService.Symbols>
 - <xref:XamlToCSharpGenerator.LanguageService.Workspace>
 - <xref:XamlToCSharpGenerator.Editor.Avalonia>
-- [Language server generated API](/api/XamlToCSharpGenerator.LanguageServer/)
+- [LanguageServer.Tool package guide](language-server-tool/)
 
 ## What lives here
 
@@ -61,9 +61,9 @@ The `LanguageService` namespaces own completion, hover, navigation, references, 
 - <xref:XamlToCSharpGenerator.LanguageService.Definitions.XamlReferenceService>
 - <xref:XamlToCSharpGenerator.LanguageService.Completion.XamlCompletionService>
 - <xref:XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor>
-- [Language server generated API root](/api/XamlToCSharpGenerator.LanguageServer/)
+- [LanguageServer.Tool package guide](language-server-tool/)
 
-The concrete server host `AxsgLanguageServer` is intentionally internal. Treat the package guide and generated namespace root as the supported documentation surface for that host.
+The concrete server host `AxsgLanguageServer` is intentionally internal. Treat the package guide as the supported documentation surface for that host.
 
 ## Related docs
 

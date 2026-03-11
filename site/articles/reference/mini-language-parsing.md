@@ -41,5 +41,5 @@ It exists separately so selector, binding-fragment, and markup parsing can be op
 ## Related docs
 
 - [Binding and Expression Model](../concepts/binding-and-expression-model/)
-- [Expression, Parsing, and Framework Namespaces](../namespace-expression-and-framework/)
-- [Styles, Templates, and Themes](../../xaml/styles-templates-and-themes/)
+- [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework/)
+- [Styles, Templates, and Themes](../xaml/styles-templates-and-themes/)
