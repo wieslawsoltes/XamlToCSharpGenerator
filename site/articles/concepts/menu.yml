@@ -1,0 +1,7 @@
+concepts:
+  - {path: readme.md, title: "Concepts"}
+  - {path: compiler-host-and-project-model.md, title: "Compiler Host and Project Model"}
+  - {path: binding-and-expression-model.md, title: "Binding and Expression Model"}
+  - {path: generated-artifacts-and-runtime.md, title: "Generated Artifacts and Runtime Contracts"}
+  - {path: tooling-surface.md, title: "Tooling Surface"}
+  - {path: glossary.md, title: "Glossary"}

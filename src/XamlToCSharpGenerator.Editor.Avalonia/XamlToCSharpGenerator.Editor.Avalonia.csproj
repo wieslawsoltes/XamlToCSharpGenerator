@@ -12,7 +12,14 @@
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.0" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService\XamlToCSharpGenerator.LanguageService.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.LanguageService">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>

@@ -5,7 +5,7 @@ Basic Avalonia desktop CRUD app wired to this repository's source-generator back
 For shipping consumption, use a single package reference:
 
 ```xml
-<PackageReference Include="XamlToCSharpGenerator" Version="1.0.0" />
+<PackageReference Include="XamlToCSharpGenerator" Version="0.1.0-alpha.3" />
 ```
 
 ## What this sample demonstrates
@@ -27,13 +27,15 @@ For shipping consumption, use a single package reference:
 
 ## Run
 
+Run from the repository root:
+
 ```bash
-dotnet run --project /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample/SourceGenCrudSample.csproj
+dotnet run --project samples/SourceGenCrudSample/SourceGenCrudSample.csproj
 ```
 
 If the window appears empty after generator changes, force a rebuild and run without rebuilding:
 
 ```bash
-dotnet msbuild /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample/SourceGenCrudSample.csproj /t:Build /p:Restore=false /m:1 /nr:false
-dotnet run --project /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/SourceGenCrudSample/SourceGenCrudSample.csproj --no-build
+dotnet msbuild samples/SourceGenCrudSample/SourceGenCrudSample.csproj /t:Build /p:Restore=false /m:1 /nr:false
+dotnet run --project samples/SourceGenCrudSample/SourceGenCrudSample.csproj --no-build
 ```

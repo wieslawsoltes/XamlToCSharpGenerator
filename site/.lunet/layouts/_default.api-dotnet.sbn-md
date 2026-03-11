@@ -1,0 +1,26 @@
++++
+layout = site.api.dotnet.layout ?? site.layout ?? "_default"
+layout_type = site.api.dotnet.layout_type ?? "api-dotnet-base"
+bundle = "lite"
++++
+{{~ $members_class = site.api.dotnet.members_class ?? site.api.dotnet.table_class ?? "api-dotnet-members list-group list-group-flush" }}
+# .NET API Reference
+
+This section contains the generated API reference for the AXSG compiler, runtime, language service, editor integrations, and build/tooling assemblies.
+
+Start with the narrative reference pages when you need package or subsystem orientation before diving into the raw member tree:
+
+- [Reference Overview]({{ site_project_basepath }}/articles/reference/)
+- [Package Catalog]({{ site_project_basepath }}/articles/reference/package-catalog)
+- [Package Guides]({{ site_project_basepath }}/articles/reference/package-guides/)
+- [API Coverage Index]({{ site_project_basepath }}/articles/reference/api-coverage-index)
+
+Coverage includes:
+
+- app/build surface
+- compiler host and framework profiles
+- expression and mini-language parsing layers
+- runtime and hot reload infrastructure
+- language service, language server, and editor integrations
+
+{{ api_dotnet_members_render api "namespaces" "Namespaces" $members_class }}

@@ -43,5 +43,16 @@ PY
 
 pushd "${extension_dir}" >/dev/null
 npm ci
-npx @vscode/vsce package --out "${output_vsix}"
+vsce_args=(
+  @vscode/vsce
+  package
+  --out
+  "${output_vsix}"
+)
+
+if [[ "${version}" == *-* ]]; then
+  vsce_args+=(--pre-release)
+fi
+
+npx "${vsce_args[@]}"
 popd >/dev/null

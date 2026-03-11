@@ -1,0 +1,12 @@
+guides:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: csharp-expressions.md, title: "C# Expressions"}
+  - {path: inline-csharp-code.md, title: "Inline C# Code"}
+  - {path: package-selection-and-integration.md, title: "Package Selection and Integration"}
+  - {path: vscode-language-service.md, title: "VS Code and Language Service"}
+  - {path: navigation-and-refactorings.md, title: "Navigation and Refactorings"}
+  - {path: runtime-loader-and-fallback.md, title: "Runtime Loader and Fallback"}
+  - {path: hot-reload-and-hot-design.md, title: "Hot Reload and Hot Design"}
+  - {path: hot-reload-ios.md, title: "iOS Hot Reload"}
+  - {path: packaging-and-release.md, title: "Packaging and Release"}
+  - {path: troubleshooting.md, title: "Troubleshooting"}

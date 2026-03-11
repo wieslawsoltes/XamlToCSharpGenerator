@@ -1,0 +1,39 @@
+reference:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: package-and-assembly.md, title: "Package and Assembly"}
+  - {path: assembly-catalog.md, title: "Assembly Catalog"}
+  - {path: api-navigation-guide.md, title: "API Navigation Guide"}
+  - {path: api-coverage-index.md, title: "API Coverage Index"}
+  - {path: feature-coverage-matrix.md, title: "Feature Coverage Matrix"}
+  - {path: compiler-stack.md, title: "Compiler Stack Packages"}
+  - {path: runtime-stack.md, title: "Runtime Stack Packages"}
+  - {path: tooling-stack.md, title: "Tooling Stack Packages"}
+  - {path: package-catalog.md, title: "Package Catalog"}
+  - {path: package-guides.md, title: "Package Guides"}
+  - {path: internal-support-components.md, title: "Internal Support Components"}
+  - {path: xamltocsharpgenerator.md, title: "Package: XamlToCSharpGenerator"}
+  - {path: build.md, title: "Package: XamlToCSharpGenerator.Build"}
+  - {path: compiler.md, title: "Package: XamlToCSharpGenerator.Compiler"}
+  - {path: core.md, title: "Package: XamlToCSharpGenerator.Core"}
+  - {path: framework-abstractions.md, title: "Package: XamlToCSharpGenerator.Framework.Abstractions"}
+  - {path: avalonia.md, title: "Package: XamlToCSharpGenerator.Avalonia"}
+  - {path: expression-semantics.md, title: "Package: XamlToCSharpGenerator.ExpressionSemantics"}
+  - {path: mini-language-parsing.md, title: "Package: XamlToCSharpGenerator.MiniLanguageParsing"}
+  - {path: noui.md, title: "Package: XamlToCSharpGenerator.NoUi"}
+  - {path: generator.md, title: "Package: XamlToCSharpGenerator.Generator"}
+  - {path: runtime.md, title: "Package: XamlToCSharpGenerator.Runtime"}
+  - {path: runtime-core.md, title: "Package: XamlToCSharpGenerator.Runtime.Core"}
+  - {path: runtime-avalonia.md, title: "Package: XamlToCSharpGenerator.Runtime.Avalonia"}
+  - {path: language-service.md, title: "Package: XamlToCSharpGenerator.LanguageService"}
+  - {path: language-server-tool.md, title: "Package: XamlToCSharpGenerator.LanguageServer.Tool"}
+  - {path: editor-avalonia.md, title: "Package: XamlToCSharpGenerator.Editor.Avalonia"}
+  - {path: vscode-extension.md, title: "Package: VS Code Extension"}
+  - {path: namespace-compiler-and-core.md, title: "Compiler and Core Namespaces"}
+  - {path: namespace-expression-and-framework.md, title: "Expression, Parsing, and Framework Namespaces"}
+  - {path: namespace-runtime-and-editor.md, title: "Runtime and Editor Namespaces"}
+  - {path: namespace-language-service-and-tooling.md, title: "Language Service and Tooling Namespaces"}
+  - {path: configuration-model.md, title: "Configuration Model"}
+  - {path: configuration-migration.md, title: "Configuration Migration"}
+  - {path: artifact-matrix.md, title: "Artifact Matrix"}
+  - {path: lunet-docs-pipeline.md, title: "Lunet Docs Pipeline"}
+  - {path: license.md, title: "License"}

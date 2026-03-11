@@ -4,8 +4,10 @@ This sample is the iOS validation target for AXSG hot reload.
 
 ## Run on simulator with `dotnet watch`
 
+Run from the repository root:
+
 ```bash
-cd /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/samples/ControlCatalog.iOS
+cd samples/ControlCatalog.iOS
 AXSG_HOTRELOAD_TRACE=1 dotnet watch ./ControlCatalog.iOS.csproj
 ```
 
@@ -30,4 +32,4 @@ dotnet watch ./ControlCatalog.iOS.csproj
 
 ## Reference
 
-- `/Users/wieslawsoltes/GitHub/XamlToCSharpGenerator/docs/hot-reload-ios.md`
+- [`site/articles/guides/hot-reload-ios.md`](../../site/articles/guides/hot-reload-ios.md)

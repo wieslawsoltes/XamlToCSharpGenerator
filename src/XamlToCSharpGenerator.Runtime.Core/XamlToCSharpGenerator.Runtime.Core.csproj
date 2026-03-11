@@ -6,4 +6,8 @@
     <Description>Framework-agnostic runtime registries, URI mapping, and hot-reload contracts for source-generated XAML.</Description>
     <PackageTags>$(PackageTags);hot-reload;registries;runtime</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Compile Remove="IgnoresAccessChecksToAttribute.cs" />
+  </ItemGroup>
 </Project>

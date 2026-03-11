@@ -69,7 +69,19 @@ try {
     Push-Location $extensionDir
     try {
         Invoke-ExternalCommand npm ci
-        Invoke-ExternalCommand npx @vscode/vsce package --out $resolvedOutputVsixPath
+
+        $vsceArguments = @(
+            '@vscode/vsce',
+            'package',
+            '--out',
+            $resolvedOutputVsixPath
+        )
+
+        if ($Version.Contains('-')) {
+            $vsceArguments += '--pre-release'
+        }
+
+        Invoke-ExternalCommand npx @vsceArguments
     }
     finally {
         Pop-Location
