@@ -10,7 +10,7 @@ og_type: website
   <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler.</p>
   <div class="axsg-hero-actions">
     <a class="btn btn-primary btn-lg" href="articles/getting-started/overview"><i class="bi bi-rocket-takeoff" aria-hidden="true"></i> Start Getting Started</a>
-    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/packages"><i class="bi bi-box-seam" aria-hidden="true"></i> Browse Packages</a>
+    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/package-guides/"><i class="bi bi-box-seam" aria-hidden="true"></i> Browse Packages</a>
     <a class="btn btn-outline-secondary btn-lg" href="api"><i class="bi bi-braces-asterisk" aria-hidden="true"></i> Browse API</a>
   </div>
 </div>

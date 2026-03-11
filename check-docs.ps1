@@ -76,6 +76,11 @@ if ($LASTEXITCODE -eq 0 -and $readmeRoutes) {
     throw "Generated docs contain /readme routes instead of directory routes.`n$readmeRoutes"
 }
 
+$stalePackageRoutes = rg -n 'href="[^"]*/articles/reference/packages(?:/|["?#])' $docRoot
+if ($LASTEXITCODE -eq 0 -and $stalePackageRoutes) {
+    throw "Generated docs contain stale /articles/reference/packages routes.`n$stalePackageRoutes"
+}
+
 $rawMarkdownOutputs = Get-ChildItem -Path (Join-Path $docRoot 'articles') -Filter *.md -Recurse -ErrorAction SilentlyContinue
 if ($rawMarkdownOutputs.Count -gt 0) {
     $paths = ($rawMarkdownOutputs | ForEach-Object { $_.FullName }) -join "`n"
