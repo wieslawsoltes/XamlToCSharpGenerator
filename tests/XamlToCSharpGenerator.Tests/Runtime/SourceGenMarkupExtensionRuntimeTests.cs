@@ -8,12 +8,15 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Data.Core;
+using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -234,7 +237,7 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.IsType<DynamicResourceExtension>(value);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ProvideDynamicResource_Returns_InstancedBinding_For_Detached_Styled_Target()
     {
         var value = SourceGenMarkupExtensionRuntime.ProvideDynamicResource(
@@ -544,6 +547,57 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal("Close", menuItem.Header);
     }
 
+    [AvaloniaFact]
+    public void ApplyBinding_Retries_FindAncestor_When_Detached_Anchor_Attaches_To_Tree()
+    {
+        var root = new UserControl
+        {
+            DataContext = new DeferredAnchorViewModel()
+        };
+        var panel = new StackPanel();
+        root.Content = panel;
+
+        var anchor = new Border();
+        var target = new DeferredAncestorBindingTarget();
+        var binding = new Binding("DataContext.Message")
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(UserControl),
+                AncestorLevel = 1
+            }
+        };
+
+        var applyException = Record.Exception(() =>
+            SourceGenMarkupExtensionRuntime.ApplyBinding(
+                target,
+                DeferredAncestorBindingTarget.ValueProperty,
+                binding,
+                anchor));
+
+        Assert.Null(applyException);
+        Assert.Null(target.Value);
+
+        var window = new Window
+        {
+            Content = root
+        };
+
+        try
+        {
+            panel.Children.Add(anchor);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal("Close", target.Value);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
     [Fact]
     public void Deferred_Context_Menu_Resource_Resolves_Dynamic_Resources_And_Command_Bindings_When_Requested()
     {
@@ -778,6 +832,50 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void AttachBindingNameScope_Maps_Document_Prefixes_For_Nested_MultiBinding_Runtime_Type_Casts()
+    {
+        SourceGenKnownTypeRegistry.RegisterType(typeof(IDeferredDock));
+
+        var contextMenu = new ContextMenu();
+        var menuItem = new MenuItem();
+        contextMenu.Items.Add(menuItem);
+
+        var multiBinding = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(
+            new MultiBinding
+            {
+                Converter = new AllTrueMultiValueConverter(),
+                Bindings =
+                {
+                    new MultiBinding
+                    {
+                        Converter = new AllTrueMultiValueConverter(),
+                        Bindings =
+                        {
+                            new Binding("((core:IDeferredDock)Owner).CanClose"),
+                            new Binding("((core:IDeferredDock)Owner).CanClose")
+                        }
+                    }
+                }
+            },
+            nameScope: null,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["core"] = "using:XamlToCSharpGenerator.Tests.Runtime"
+            });
+        var anchor = SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(menuItem, [menuItem, contextMenu]);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            menuItem,
+            MenuItem.IsVisibleProperty,
+            multiBinding,
+            anchor);
+
+        contextMenu.DataContext = new DeferredTypedOwnerViewModel();
+
+        Assert.False(menuItem.IsVisible);
+    }
+
+    [Fact]
     public void Deferred_Resource_Flattens_Static_Resource_Alias_When_Cached()
     {
         var host = new Border();
@@ -822,6 +920,36 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal(1, buildCount);
     }
 
+    [Fact]
+    public void CreateObjectConstructionServiceProvider_Exposes_RootObject_UriContext_And_ParentStack()
+    {
+        var upstreamParent = new Border();
+        var parentProvider = new DictionaryServiceProvider(new Dictionary<Type, object>
+        {
+            [typeof(IAvaloniaXamlIlParentStackProvider)] = new TestParentStackProvider([upstreamParent])
+        });
+        var root = new UserControl();
+        var intermediateRoot = new Border();
+
+        var provider = SourceGenMarkupExtensionRuntime.CreateObjectConstructionServiceProvider(
+            parentProvider,
+            root,
+            intermediateRoot,
+            "avares://Demo/App.axaml",
+            [root]);
+
+        var rootProvider = Assert.IsAssignableFrom<IRootObjectProvider>(provider.GetService(typeof(IRootObjectProvider)));
+        Assert.Same(root, rootProvider.RootObject);
+        Assert.Same(intermediateRoot, rootProvider.IntermediateRootObject);
+
+        var uriContext = Assert.IsAssignableFrom<IUriContext>(provider.GetService(typeof(IUriContext)));
+        Assert.Equal(new Uri("avares://Demo/App.axaml"), uriContext.BaseUri);
+
+        var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
+            provider.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
+        Assert.Equal([root, upstreamParent], parentStackProvider.Parents.ToArray());
+    }
+
     private sealed class DictionaryServiceProvider : IServiceProvider
     {
         private readonly IReadOnlyDictionary<Type, object> _services;
@@ -857,6 +985,28 @@ public class SourceGenMarkupExtensionRuntimeTests
     private sealed class BorderTarget : Border
     {
         public object? Value { get; set; }
+    }
+
+    private sealed class DeferredAncestorBindingTarget : AvaloniaObject
+    {
+        public static readonly DirectProperty<DeferredAncestorBindingTarget, string?> ValueProperty =
+            AvaloniaProperty.RegisterDirect<DeferredAncestorBindingTarget, string?>(
+                nameof(Value),
+                static target => target.Value,
+                static (target, value) => target.SetValueCore(value));
+
+        private string? _value;
+
+        public string? Value
+        {
+            get => _value;
+            set => SetAndRaise(ValueProperty, ref _value, value);
+        }
+
+        private void SetValueCore(string? value)
+        {
+            SetAndRaise(ValueProperty, ref _value, value);
+        }
     }
 
     private sealed class ProbeMarkupExtension : MarkupExtension
@@ -925,6 +1075,14 @@ public class SourceGenMarkupExtensionRuntimeTests
                 "demo:IDeferredDock" => typeof(IDeferredDock),
                 _ => throw new InvalidOperationException("Unexpected type: " + qualifiedTypeName)
             };
+        }
+    }
+
+    private sealed class AllTrueMultiValueConverter : IMultiValueConverter
+    {
+        public object? Convert(IList<object?> values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return values.All(static value => value is true);
         }
     }
 

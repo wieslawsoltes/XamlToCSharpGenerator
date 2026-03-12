@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.Compiler;
@@ -1264,7 +1265,7 @@ public class AvaloniaXamlSourceGeneratorTests
             """;
 
         var compilation = CreateCompilation(code);
-        var (_, diagnostics) = RunGenerator(
+        var (updatedCompilation, diagnostics) = RunGenerator(
             compilation,
             xaml,
             additionalBuildOptions:
@@ -1274,6 +1275,13 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains(
+            "new global::Avalonia.Controls.ServiceOnlyControl(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CreateObjectConstructionServiceProvider(",
+            generated);
+        Assert.DoesNotContain(
+            "new global::Avalonia.Controls.ServiceOnlyControl(global::XamlToCSharpGenerator.Runtime.SourceGenServiceProviderUtilities.EnsureNotNull(",
+            generated);
     }
 
     [Fact]
@@ -4259,9 +4267,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
             generated);
-        Assert.Contains(
-            "global::Avalonia.Controls.TextBlock.TextProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>(",
-            generated);
+        Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty", generated);
         Assert.DoesNotContain(
             ".SetValue(global::Avalonia.Controls.TextBlock.TextProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>(",
             generated);
@@ -4347,9 +4353,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
             generated);
-        Assert.Contains(
-            "global::Avalonia.Controls.TextBlock.TextProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>(",
-            generated);
+        Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty", generated);
         Assert.DoesNotContain(
             ".SetValue(global::Avalonia.Controls.TextBlock.TextProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>(",
             generated);
@@ -7289,8 +7293,138 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("source.Title", generated);
+    }
+
+    [Fact]
+    public void Uses_Distinct_Compiled_Binding_Accessors_For_Identical_Command_Paths_Across_Source_Types()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledElement { }
+                public class AvaloniaObject : StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty CommandProperty = new();
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                    public global::Avalonia.Collections.AvaloniaList<global::Avalonia.Controls.Templates.IDataTemplate> DataTemplates { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class RootVm
+                {
+                    public global::System.Windows.Input.ICommand CancelCommand { get; } = null!;
+                }
+
+                public class ItemVm
+                {
+                    public global::System.Windows.Input.ICommand CancelCommand { get; } = null!;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:RootVm"
+                         x:CompileBindings="True">
+                <Button Command="{CompiledBinding CancelCommand}" />
+                <UserControl.DataTemplates>
+                    <DataTemplate DataType="vm:ItemVm">
+                        <Button Command="{CompiledBinding CancelCommand}" />
+                    </DataTemplate>
+                </UserControl.DataTemplates>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        var rootMatch = Regex.Match(
+            generated,
+            @"ProvideExpressionBinding<global::Demo\.ViewModels\.RootVm>\((__AXSG_CompiledBinding_[A-Za-z0-9_]+),",
+            RegexOptions.CultureInvariant);
+        var itemMatch = Regex.Match(
+            generated,
+            @"ProvideExpressionBinding<global::Demo\.ViewModels\.ItemVm>\((__AXSG_CompiledBinding_[A-Za-z0-9_]+),",
+            RegexOptions.CultureInvariant);
+
+        Assert.True(rootMatch.Success, "Expected root compiled command binding accessor.");
+        Assert.True(itemMatch.Success, "Expected template compiled command binding accessor.");
+
+        var rootMethodName = rootMatch.Groups[1].Value;
+        var itemMethodName = itemMatch.Groups[1].Value;
+
+        Assert.NotEqual(rootMethodName, itemMethodName);
+        Assert.Contains(
+            $"private static object? {rootMethodName}(global::Demo.ViewModels.RootVm source)",
+            generated);
+        Assert.Contains(
+            $"private static object? {itemMethodName}(global::Demo.ViewModels.ItemVm source)",
+            generated);
     }
 
     [Fact]
@@ -14770,6 +14904,223 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_Generic_MarkupExtension_For_KeyGesture_Target_Without_Extension_Suffix()
+    {
+        const string code = """
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0,
+                    N = 1
+                }
+
+                [global::System.Flags]
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Control = 1,
+                    Meta = 2
+                }
+
+                public sealed class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public sealed class ProbeControl : Control
+                {
+                    public global::Avalonia.Input.KeyGesture? Gesture { get; set; }
+                }
+            }
+
+            namespace Demo.Markup
+            {
+                public sealed class PlatformGesture : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public string? Text { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider)
+                    {
+                        return global::Avalonia.Input.KeyGesture.Parse(Text ?? string.Empty);
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:m="clr-namespace:Demo.Markup"
+                         x:Class="Demo.MainView">
+                <ProbeControl Gesture="{m:PlatformGesture Text=Primary+N}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
+        Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
+        Assert.DoesNotContain(
+            "global::Avalonia.Input.KeyGesture.Parse(\"{m:PlatformGesture Text=Primary+N}\")",
+            generated);
+    }
+
+    [Fact]
+    public void Emits_Generic_Markup_Extension_For_Avalonia_Property_From_Using_Namespace()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public object? this[global::Avalonia.Data.IndexerDescriptor descriptor] { set { } }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public class Binding
+                {
+                    public Binding(string path) { }
+                }
+
+                public sealed class IndexerDescriptor
+                {
+                    public IndexerDescriptor(global::System.Type type, string name, object? argument) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0
+                }
+
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Control = 1,
+                    Meta = 2
+                }
+
+                public sealed class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+
+                public class InputElement : global::Avalonia.AvaloniaObject
+                {
+                    public global::System.Collections.Generic.IList<global::Avalonia.Input.KeyBinding> KeyBindings { get; } =
+                        new global::System.Collections.Generic.List<global::Avalonia.Input.KeyBinding>();
+                }
+
+                public sealed class KeyBinding : InputElement
+                {
+                    public static global::Avalonia.AvaloniaProperty GestureProperty { get; } = new global::Avalonia.AvaloniaProperty();
+                    public global::Avalonia.Input.KeyGesture? Gesture { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl : global::Avalonia.Input.InputElement
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo.Markup
+            {
+                public sealed class PlatformGesture : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public string? Text { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider)
+                    {
+                        return global::Avalonia.Input.KeyGesture.Parse(Text ?? string.Empty);
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:m="using:Demo.Markup"
+                         x:Class="Demo.MainView">
+                <UserControl.KeyBindings>
+                    <KeyBinding Gesture="{m:PlatformGesture Text=Primary+N}" x:CompileBindings="False" />
+                </UserControl.KeyBindings>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
+        Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
+        Assert.DoesNotContain(
+            "global::Avalonia.Input.KeyGesture.Parse(\"{m:PlatformGesture Text=Primary+N}\")",
+            generated);
+    }
+
+    [Fact]
     public void Emits_Indexer_Assignment_For_Binding_PropertyElement_On_Avalonia_Property()
     {
         const string code = """
@@ -15942,6 +16293,133 @@ public class AvaloniaXamlSourceGeneratorTests
         var source = GetBinderSourceText();
         Assert.DoesNotContain("EndsWith(\"Template\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Contains(\"__ResolveStaticResource(\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Preserves_AssignBinding_Avalonia_Property_As_Binding_Object()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value, global::Avalonia.Data.BindingPriority priority) { }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+
+                public enum BindingMode
+                {
+                    Default,
+                    TwoWay
+                }
+
+                public interface IBinding { }
+
+                public class Binding : IBinding
+                {
+                    public Binding() { }
+                    public Binding(string path) { Path = path; }
+                    public string? Path { get; set; }
+                    public BindingMode Mode { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope
+                {
+                    bool IsCompleted { get; }
+                    void Complete();
+                    void Register(string name, object element);
+                }
+
+                public class NameScope : INameScope
+                {
+                    public bool IsCompleted => false;
+                    public void Complete() { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class StyledElement : global::Avalonia.AvaloniaObject
+                {
+                    public string? Name { get; set; }
+                }
+
+                public class Control : StyledElement { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.StyledProperty<object?> ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public class EditableItem : global::Avalonia.Controls.Control
+                {
+                    public static readonly global::Avalonia.StyledProperty<global::Avalonia.Data.IBinding?> TextBindingProperty = new();
+
+                    [global::Avalonia.Data.AssignBinding]
+                    public global::Avalonia.Data.IBinding? TextBinding { get; set; }
+                }
+
+                public class ItemVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         xmlns:data="clr-namespace:Avalonia.Data"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <local:EditableItem TextBinding="{Binding Name, Mode=TwoWay}" />
+                    <local:EditableItem>
+                        <local:EditableItem.TextBinding>
+                            <data:Binding Path="Name" Mode="TwoWay" />
+                        </local:EditableItem.TextBinding>
+                    </local:EditableItem>
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.DoesNotMatch(
+            @"ApplyBinding\([^;]*EditableItem\.TextBindingProperty",
+            generated);
+        Assert.Equal(2, Regex.Matches(generated, @"SetValue\(global::Demo\.EditableItem\.TextBindingProperty,").Count);
+        Assert.True(Regex.Matches(generated, @"AttachBindingNameScope\(").Count >= 2);
     }
 
     private static CSharpCompilation CreateCompilation(string code)
