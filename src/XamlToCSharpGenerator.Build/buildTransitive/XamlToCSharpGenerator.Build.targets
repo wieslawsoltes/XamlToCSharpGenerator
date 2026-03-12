@@ -6,7 +6,12 @@
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == '' and '$(AvaloniaSourceGenCompilerEnabled)' != ''">$(AvaloniaSourceGenCompilerEnabled)</XamlSourceGenEnabled>
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == ''">false</XamlSourceGenEnabled>
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenBackend)' == 'SourceGen'">true</XamlSourceGenEnabled>
+    <_XamlSourceGenRequestedAdditionalFilesSourceItemGroup Condition="'$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' == ''">$(XamlSourceGenAdditionalFilesSourceItemGroup)</_XamlSourceGenRequestedAdditionalFilesSourceItemGroup>
+    <_XamlSourceGenSupportedAdditionalFilesSourceItemGroup>AvaloniaXaml</_XamlSourceGenSupportedAdditionalFilesSourceItemGroup>
     <XamlSourceGenAdditionalFilesSourceItemGroup Condition="'$(XamlSourceGenAdditionalFilesSourceItemGroup)' == ''">AvaloniaXaml</XamlSourceGenAdditionalFilesSourceItemGroup>
+    <_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>false</_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>
+    <_XamlSourceGenAdditionalFilesSourceItemGroupGuarded Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' != '' and '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' != '$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)'">true</_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>
+    <XamlSourceGenAdditionalFilesSourceItemGroup Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true'">$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)</XamlSourceGenAdditionalFilesSourceItemGroup>
     <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == '' and '$(AvaloniaSourceGenTransformRules)' != ''">$(AvaloniaSourceGenTransformRules)</XamlSourceGenTransformRules>
     <XamlSourceGenTransformRuleItemGroup Condition="'$(XamlSourceGenTransformRuleItemGroup)' == ''">AvaloniaSourceGenTransformRule</XamlSourceGenTransformRuleItemGroup>
     <XamlSourceGenConfigurationPrecedence Condition="'$(XamlSourceGenConfigurationPrecedence)' == '' and '$(AvaloniaSourceGenConfigurationPrecedence)' != ''">$(AvaloniaSourceGenConfigurationPrecedence)</XamlSourceGenConfigurationPrecedence>
@@ -283,6 +288,12 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="XamlToCSharpGenerator_ValidateAdditionalFilesSourceItemGroup"
+          BeforeTargets="XamlToCSharpGenerator_InjectAdditionalFiles"
+          Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true'">
+    <Warning Text="[AXSG.Build] XamlSourceGenAdditionalFilesSourceItemGroup='$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' is not supported for Avalonia consumers. AXSG always tags projected AdditionalFiles as '$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)'. Keep your custom project item group in XamlSourceGenInputItemGroup and remove the AdditionalFiles override." />
+  </Target>
+
   <Target Name="XamlToCSharpGenerator_InjectAdditionalFiles"
           AfterTargets="_InjectAdditionalFiles"
           BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun"
@@ -326,6 +337,8 @@
 
       <!-- Drop any existing AXAML AdditionalFiles projections before re-adding deterministic entries. -->
       <AdditionalFiles Remove="@(AdditionalFiles)" Condition="'%(AdditionalFiles.SourceItemGroup)' == '$(XamlSourceGenAdditionalFilesSourceItemGroup)'" />
+      <AdditionalFiles Remove="@(AdditionalFiles)"
+                       Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true' and '%(AdditionalFiles.SourceItemGroup)' == '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)'" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected)" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected->'%(FullPath)')" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXaml->'%(NormalizedIdentity)')" />

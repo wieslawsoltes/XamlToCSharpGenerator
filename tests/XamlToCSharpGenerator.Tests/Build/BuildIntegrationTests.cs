@@ -174,15 +174,29 @@ public class BuildIntegrationTests
     }
 
     [Fact]
-    public void Neutral_AdditionalFiles_SourceItemGroup_Property_Overrides_Default_Group()
+    public void Neutral_AdditionalFiles_SourceItemGroup_Property_Is_Coerced_Back_To_AvaloniaXaml_With_Warning()
     {
         var output = RunEvaluation(
             sourceGenBackend: true,
             useNeutralBackendProperty: true,
             customAdditionalFilesSourceItemGroup: "CustomFrameworkXaml");
 
-        Assert.True(CountMatches(output, "AF|CustomFrameworkXaml|Views/MainView.axaml") == 1, output);
-        Assert.DoesNotContain("AF|AvaloniaXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.DoesNotContain("AF|CustomFrameworkXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
+        Assert.Contains("[AXSG.Build] XamlSourceGenAdditionalFilesSourceItemGroup='CustomFrameworkXaml' is not supported for Avalonia consumers.", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Neutral_AdditionalFiles_SourceItemGroup_Guard_Removes_Stale_Custom_Projection()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            useNeutralBackendProperty: true,
+            seedAdditionalFile: true,
+            customAdditionalFilesSourceItemGroup: "CustomFrameworkXaml");
+
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.DoesNotContain("AF|CustomFrameworkXaml|Views/MainView.axaml", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -599,8 +613,11 @@ public class BuildIntegrationTests
         var dotNetWatchBuildTriggersProperty = enableDotNetWatchXamlBuildTriggers
             ? "\n    <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>true</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>"
             : string.Empty;
+        var seededAdditionalFilesSourceItemGroup = string.IsNullOrWhiteSpace(customAdditionalFilesSourceItemGroup)
+            ? "AvaloniaXaml"
+            : customAdditionalFilesSourceItemGroup;
         var seededAdditionalFiles = seedAdditionalFile
-            ? "\n    <AdditionalFiles Include=\"MainView.axaml\" SourceItemGroup=\"AvaloniaXaml\" TargetPath=\"Views/MainView.axaml\" />"
+            ? $"\n    <AdditionalFiles Include=\"MainView.axaml\" SourceItemGroup=\"{seededAdditionalFilesSourceItemGroup}\" TargetPath=\"Views/MainView.axaml\" />"
             : string.Empty;
         var sourceItemGroupName = string.IsNullOrWhiteSpace(customInputItemGroup) ? "AvaloniaXaml" : customInputItemGroup;
         var sourceXamlItem = $"    <{sourceItemGroupName} Include=\"MainView.axaml\" Link=\"Views/MainView.axaml\" />";
