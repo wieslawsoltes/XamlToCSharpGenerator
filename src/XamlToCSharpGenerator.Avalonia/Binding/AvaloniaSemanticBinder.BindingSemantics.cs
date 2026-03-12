@@ -745,6 +745,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             static method => !method.IsStatic &&
                              method.MethodKind == MethodKind.Ordinary &&
                              !method.IsGenericMethod &&
+                             !IsCommandLikeType(method.ReturnType) &&
                              method.Parameters.Length <= 1 &&
                              method.Parameters.All(static parameter => parameter.RefKind == RefKind.None));
 
@@ -5965,6 +5966,34 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return type is INamedTypeSymbol namedType &&
                namedType.Name.Equals("ICommand", StringComparison.Ordinal) &&
                namedType.ContainingNamespace.ToDisplayString().Equals("System.Windows.Input", StringComparison.Ordinal);
+    }
+
+    private static bool IsCommandLikeType(ITypeSymbol type)
+    {
+        if (IsCommandMetadataType(type))
+        {
+            return true;
+        }
+
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        if (namedType.AllInterfaces.Any(IsCommandMetadataType))
+        {
+            return true;
+        }
+
+        for (var current = namedType.BaseType; current is not null; current = current.BaseType)
+        {
+            if (IsCommandMetadataType(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool AreEquivalentTypesIgnoringNullable(ITypeSymbol left, ITypeSymbol right)

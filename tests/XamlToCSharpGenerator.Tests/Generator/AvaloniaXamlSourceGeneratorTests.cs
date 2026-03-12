@@ -6485,6 +6485,73 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Prefers_ICommand_Returning_Method_Over_Method_Command_Wrapping()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty<global::System.Windows.Input.ICommand?> CommandProperty = new();
+
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainVm
+                {
+                    public global::System.Windows.Input.ICommand BuildCommand() => null!;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Button Command="{CompiledBinding BuildCommand}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.DoesNotContain("SourceGenMethodCommandRuntime.Create(", generated, StringComparison.Ordinal);
+        Assert.Contains("source.BuildCommand()", generated);
+    }
+
+    [Fact]
     public void Does_Not_Treat_NonICommand_Command_Property_As_Method_Command_Target()
     {
         const string code = """
