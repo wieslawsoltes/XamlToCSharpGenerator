@@ -264,6 +264,7 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 | `AvaloniaSourceGenHotReloadEnabled` | `true` | Enables SourceGen hot reload integration. |
 | `AvaloniaSourceGenHotReloadErrorResilienceEnabled` | `true` | Keeps last-known-good output during transient invalid edits. |
 | `AvaloniaSourceGenIdeHotReloadEnabled` | `true` | Enables IDE-triggered hot reload behavior. |
+| `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled` | `false` | Re-enables SDK `dotnet watch` XAML build triggers when AXSG IDE hot reload is active. |
 | `AvaloniaSourceGenHotDesignEnabled` | `false` | Enables hot design tooling support. |
 | `AvaloniaSourceGenTracePasses` | `false` | Traces compiler pass execution for diagnostics/perf investigation. |
 | `AvaloniaSourceGenMetricsEnabled` | `false` | Enables compiler metrics emission. |
@@ -277,6 +278,8 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 | `AvaloniaSourceGenImplicitProjectNamespacesEnabled` | `false` | Lets project-local namespaces participate in default type resolution. |
 | `AvaloniaSourceGenGlobalXmlnsPrefixes` | empty | Declares global namespace prefix mappings. |
 | `AvaloniaSourceGenTransformRules` | empty | Adds transform rules to the unified configuration model. |
+
+When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses XAML entries from the SDK watch/build-trigger inputs by default so theme and resource-dictionary edits flow through AXSG runtime reload instead of Roslyn EnC rebuilds. Set `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled=true` only when you explicitly want the SDK `dotnet watch` XAML trigger behavior back.
 
 ### Build-host and configuration alias properties
 

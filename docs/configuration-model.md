@@ -88,6 +88,8 @@ Unknown keys are ignored. Known keys with invalid value shape produce `AXSG0918`
 | `buildingByReSharper` | bool |
 | `additionalProperties` | object<string,string> |
 
+SDK/watch integration toggles such as `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled` remain MSBuild-only and are not part of the unified JSON schema.
+
 ### `parser`
 
 | Key | Type |
@@ -194,4 +196,3 @@ using System.Reflection;
 ```
 
 Section/key names are case-insensitive. Invalid keys/values produce warnings `AXSG0930`-`AXSG0932`.
-
