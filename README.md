@@ -287,8 +287,8 @@ When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses 
 | --- | --- | --- |
 | `XamlSourceGenBackend` | mirrors `AvaloniaXamlCompilerBackend` | Backward-compatible backend alias. |
 | `XamlSourceGenEnabled` | mirrors `AvaloniaSourceGenCompilerEnabled` | Backward-compatible enable switch alias. |
-| `XamlSourceGenInputItemGroup` | `AvaloniaXaml` | Item group used as XAML input for the generator host. |
-| `XamlSourceGenAdditionalFilesSourceItemGroup` | `AvaloniaXaml` | AdditionalFiles source item group for XAML inputs. |
+| `XamlSourceGenInputItemGroup` | `AvaloniaXaml` | Item group used as XAML input for the generator host. This is the supported way to switch AXSG to a custom project item group. |
+| `XamlSourceGenAdditionalFilesSourceItemGroup` | `AvaloniaXaml` | Reserved for Avalonia package integration. AXSG always projects Avalonia XAML into Roslyn `AdditionalFiles` as `AvaloniaXaml`; custom values are ignored with a build warning. |
 | `XamlSourceGenTransformRules` | empty | Backward-compatible transform-rule alias. |
 | `XamlSourceGenTransformRuleItemGroup` | `AvaloniaSourceGenTransformRule` | Item group used to contribute transform rules. |
 | `XamlSourceGenConfigurationPrecedence` | empty | Overrides configuration source precedence. |
