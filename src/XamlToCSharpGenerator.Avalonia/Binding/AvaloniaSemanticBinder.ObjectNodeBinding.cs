@@ -858,6 +858,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             var propertyAlias = ResolvePropertyAlias(symbol, propertyElement.PropertyName);
             var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
+            var propertyElementSetterTargetType = ResolvePropertyElementSetterTargetType(
+                symbol,
+                normalizedPropertyName,
+                currentSetterTargetType);
 
             if (propertyElement.ObjectValues.Length == 1 &&
                 TryExtractInlineCSharpObjectNodeCode(
@@ -994,7 +998,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1026,7 +1030,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1058,7 +1062,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1098,7 +1102,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compiledBindings,
                     compileBindingsEnabled,
                     nodeDataType,
-                    currentSetterTargetType,
+                    propertyElementSetterTargetType,
                     currentBindingPriorityScope,
                     rootTypeSymbol: rootTypeSymbol));
             }
@@ -1648,6 +1652,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var useServiceProviderConstructor = ShouldUseServiceProviderConstructor(symbol);
         var useTopDownInitialization = IsUsableDuringInitialization(symbol);
         var normalizedNodeName = ResolveObjectNodeNameScopeRegistration(node, symbol, compilation);
+        var resolvedAssignments = assignments.ToImmutable();
+        var resolvedPropertyElementAssignments = propertyElementAssignments.ToImmutable();
+        var resolvedEventSubscriptions = eventSubscriptions.ToImmutable();
         var resolvedChildren = children.ToImmutable();
         var childAddInstructions = ResolveChildAddInstructions(
             symbol,
@@ -1655,7 +1662,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             resolvedChildren,
             compilation,
             document);
-        var semanticFlags = ResolveObjectNodeSemanticFlags(symbol, compilation);
+        var semanticFlags = ResolveObjectNodeSemanticFlags(
+            symbol,
+            compilation,
+            normalizedNodeName,
+            resolvedChildren,
+            resolvedPropertyElementAssignments);
 
         return new ResolvedObjectNode(
             KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
@@ -1666,9 +1678,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             FactoryValueRequirements: factoryValueRequirements,
             UseServiceProviderConstructor: useServiceProviderConstructor,
             UseTopDownInitialization: useTopDownInitialization,
-            PropertyAssignments: assignments.ToImmutable(),
-            PropertyElementAssignments: propertyElementAssignments.ToImmutable(),
-            EventSubscriptions: eventSubscriptions.ToImmutable(),
+            PropertyAssignments: resolvedAssignments,
+            PropertyElementAssignments: resolvedPropertyElementAssignments,
+            EventSubscriptions: resolvedEventSubscriptions,
             Children: resolvedChildren,
             ChildAttachmentMode: attachmentMode,
             ContentPropertyName: resolvedContentPropertyName,
@@ -1972,14 +1984,130 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return "\"" + Escape(rawKey!.Trim()) + "\"";
     }
 
+    private static INamedTypeSymbol? ResolvePropertyElementSetterTargetType(
+        INamedTypeSymbol? objectType,
+        string propertyName,
+        INamedTypeSymbol? inheritedSetterTargetType)
+    {
+        if (inheritedSetterTargetType is not null || objectType is null)
+        {
+            return inheritedSetterTargetType;
+        }
+
+        var property = FindProperty(objectType, propertyName);
+        if (property is not null && IsTransitionsCollectionType(property.Type))
+        {
+            return objectType;
+        }
+
+        return null;
+    }
+
+    private static bool IsTransitionsCollectionType(ITypeSymbol type)
+    {
+        for (var current = type as INamedTypeSymbol; current is not null; current = current.BaseType)
+        {
+            if (current.Name == "Transitions" &&
+                current.ContainingNamespace.ToDisplayString() == "Avalonia.Animation")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static ResolvedObjectNodeSemanticFlags ResolveObjectNodeSemanticFlags(
         INamedTypeSymbol? symbol,
-        Compilation compilation)
+        Compilation compilation,
+        string? normalizedNodeName,
+        ImmutableArray<ResolvedObjectNode> resolvedChildren,
+        ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments)
     {
-        return ObjectNodeSemanticContractService.Classify(
+        var flags = ObjectNodeSemanticContractService.Classify(
             symbol,
             GetActiveTypeSymbolCatalog(compilation),
             IsTypeAssignableTo);
+
+        if (CanBeDeferredResourceNode(
+                symbol,
+                normalizedNodeName,
+                resolvedChildren,
+                propertyElementAssignments,
+                flags))
+        {
+            flags |= ResolvedObjectNodeSemanticFlags.CanBeDeferredResource;
+        }
+
+        return flags;
+    }
+
+    private static bool CanBeDeferredResourceNode(
+        INamedTypeSymbol? symbol,
+        string? normalizedNodeName,
+        ImmutableArray<ResolvedObjectNode> resolvedChildren,
+        ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments,
+        ResolvedObjectNodeSemanticFlags semanticFlags)
+    {
+        if (symbol is null ||
+            symbol.IsValueType ||
+            symbol.SpecialType == SpecialType.System_String ||
+            !string.IsNullOrWhiteSpace(normalizedNodeName) ||
+            semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsResourceInclude) ||
+            semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsStyleInclude))
+        {
+            return false;
+        }
+
+        foreach (var child in resolvedChildren)
+        {
+            if (ContainsNameScopeRegistration(child))
+            {
+                return false;
+            }
+        }
+
+        foreach (var propertyElementAssignment in propertyElementAssignments)
+        {
+            foreach (var objectValue in propertyElementAssignment.ObjectValues)
+            {
+                if (ContainsNameScopeRegistration(objectValue))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ContainsNameScopeRegistration(ResolvedObjectNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.Name))
+        {
+            return true;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (ContainsNameScopeRegistration(child))
+            {
+                return true;
+            }
+        }
+
+        foreach (var propertyElementAssignment in node.PropertyElementAssignments)
+        {
+            foreach (var objectValue in propertyElementAssignment.ObjectValues)
+            {
+                if (ContainsNameScopeRegistration(objectValue))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool TryExtractInlineCSharpObjectNodeCode(

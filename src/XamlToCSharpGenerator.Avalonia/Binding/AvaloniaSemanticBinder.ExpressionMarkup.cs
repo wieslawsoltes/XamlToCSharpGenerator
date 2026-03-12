@@ -499,6 +499,18 @@ public sealed partial class AvaloniaSemanticBinder
         return true;
     }
 
+    private static bool TryBuildCompiledBindingRuntimeExpression(
+        INamedTypeSymbol sourceType,
+        CompiledBindingAccessorResolution resolution,
+        out string expression)
+    {
+        return TryBuildExpressionBindingRuntimeExpression(
+            sourceType,
+            resolution.AccessorExpression,
+            resolution.DependencyNames,
+            out expression);
+    }
+
     private static bool TryParseInlineCSharpMarkupExtensionCode(
         string value,
         out string code)
