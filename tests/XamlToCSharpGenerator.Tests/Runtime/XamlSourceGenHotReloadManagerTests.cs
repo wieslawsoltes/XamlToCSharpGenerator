@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -207,6 +208,55 @@ public class XamlSourceGenHotReloadManagerTests
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReentrantReloadTarget)]);
 
         Assert.Equal(2, reloadCount);
+    }
+
+    [Fact]
+    public async Task UpdateApplication_DirectEnable_Dispatches_To_Existing_UiThread_When_PlatformSetup_Is_Not_Marked()
+    {
+        ResetManager();
+        var originalPlatformSetupCompleted = SourceGenDispatcherRuntime.IsPlatformSetupCompleted;
+        SourceGenDispatcherRuntime.ResetForTests();
+        _ = Dispatcher.UIThread;
+
+        var reloadExecuted = new ManualResetEventSlim();
+        var reloadRanOnUiThread = false;
+
+        try
+        {
+            XamlSourceGenHotReloadManager.Enable();
+
+            var instance = new Border();
+            XamlSourceGenHotReloadManager.Register(instance, _ =>
+            {
+                reloadRanOnUiThread = Dispatcher.UIThread.CheckAccess();
+                reloadExecuted.Set();
+            });
+
+            var updateTask = Task.Run(() => XamlSourceGenHotReloadManager.UpdateApplication([typeof(Border)]));
+            for (var attempt = 0; attempt < 50 && !reloadExecuted.IsSet && !updateTask.IsCompleted; attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(10);
+            }
+
+            Dispatcher.UIThread.RunJobs();
+            await updateTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.True(reloadExecuted.IsSet);
+            Assert.True(reloadRanOnUiThread);
+        }
+        finally
+        {
+            ResetManager();
+            if (originalPlatformSetupCompleted)
+            {
+                SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            }
+            else
+            {
+                SourceGenDispatcherRuntime.ResetForTests();
+            }
+        }
     }
 
     [Fact]

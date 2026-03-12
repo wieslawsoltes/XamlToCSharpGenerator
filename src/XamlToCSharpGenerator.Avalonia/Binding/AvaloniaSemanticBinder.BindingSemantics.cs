@@ -4340,7 +4340,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var valueType = fallbackValueType ?? TryGetAvaloniaPropertyValueType(propertyField.Type);
-        var preserveBindingValue = HasAssignBindingAttribute(FindProperty(targetType, propertyName));
+        var preserveBindingValue = HasAssignBindingAttribute(
+            FindProperty(explicitOwnerType ?? ownerType ?? targetType, propertyName));
 
         if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var inlineCode))
         {

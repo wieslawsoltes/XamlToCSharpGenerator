@@ -1776,7 +1776,7 @@ public static class XamlSourceGenHotReloadManager
             return;
         }
 
-        if (!SourceGenDispatcherRuntime.TryInvoke(RunPipeline, DispatcherPriority.Background))
+        if (!TryInvokeHotReloadDispatcher(RunPipeline, DispatcherPriority.Background))
         {
             RunPipeline();
         }
@@ -1793,6 +1793,45 @@ public static class XamlSourceGenHotReloadManager
         }
 
         return false;
+    }
+
+    private static bool TryInvokeHotReloadDispatcher(Action action, DispatcherPriority priority)
+    {
+        if (SourceGenDispatcherRuntime.TryInvoke(action, priority))
+        {
+            return true;
+        }
+
+        if (!IsEnabled)
+        {
+            return false;
+        }
+
+        var dispatcher = Dispatcher.UIThread;
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return true;
+        }
+
+        dispatcher.InvokeAsync(action, priority).GetAwaiter().GetResult();
+        return true;
+    }
+
+    private static bool TryPostHotReloadDispatcher(Action action, DispatcherPriority priority)
+    {
+        if (SourceGenDispatcherRuntime.TryPost(action, priority))
+        {
+            return true;
+        }
+
+        if (!IsEnabled)
+        {
+            return false;
+        }
+
+        Dispatcher.UIThread.Post(action, priority);
+        return true;
     }
 
     private static bool ShouldSuppressStatefulControlTreeStateTransfer(List<ReloadOperation> operations)
@@ -3367,7 +3406,7 @@ public static class XamlSourceGenHotReloadManager
                 return;
             }
 
-            if (!SourceGenDispatcherRuntime.TryPost(
+            if (!TryPostHotReloadDispatcher(
                     ApplyScheduledThemeRefresh,
                     global::Avalonia.Threading.DispatcherPriority.Background))
             {

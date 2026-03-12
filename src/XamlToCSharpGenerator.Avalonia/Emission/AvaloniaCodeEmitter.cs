@@ -3114,7 +3114,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         var rewritten = source;
-        foreach (var entry in compiledBindingAccessorEmissionPlan.MethodNamesByPlaceholderToken)
+        foreach (var entry in compiledBindingAccessorEmissionPlan.MethodNamesByPlaceholderToken
+                     .OrderByDescending(static entry => entry.Key.Length)
+                     .ThenByDescending(static entry => entry.Key, StringComparer.Ordinal))
         {
             rewritten = ReplaceOrdinal(rewritten, entry.Key, entry.Value);
         }

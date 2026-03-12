@@ -3011,7 +3011,8 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
-        Assert.Contains("global::Avalonia.Controls.TextBox.TextProperty, new global::Avalonia.Data.Binding(\"Name\")", generated);
+        Assert.Contains("global::Avalonia.Controls.TextBox.TextProperty", generated);
+        Assert.Contains("global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(new global::Avalonia.Data.Binding(\"Name\")", generated);
     }
 
     [Fact]
@@ -4231,7 +4232,8 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideReflectionBinding(new global::Avalonia.Markup.Xaml.MarkupExtensions.ReflectionBindingExtension(\"Message\")", generated);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
-        Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideReflectionBinding(", generated);
+        Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty", generated);
+        Assert.Contains("global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideReflectionBinding(", generated);
     }
 
     [Fact]
@@ -11101,7 +11103,8 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideDynamicResource(\"AccentBrush\"", generated);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
-        Assert.Contains("global::Avalonia.Controls.TextBlock.ForegroundProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideDynamicResource(\"AccentBrush\"", generated);
+        Assert.Contains("global::Avalonia.Controls.TextBlock.ForegroundProperty", generated);
+        Assert.Contains("global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideDynamicResource(\"AccentBrush\"", generated);
         Assert.DoesNotContain("__AXSG_CTX_", generated);
     }
 
@@ -16470,6 +16473,131 @@ public class AvaloniaXamlSourceGeneratorTests
             @"ApplyBinding\([^;]*EditableItem\.TextBindingProperty",
             generated);
         Assert.Equal(2, Regex.Matches(generated, @"SetValue\(global::Demo\.EditableItem\.TextBindingProperty,").Count);
+        Assert.True(Regex.Matches(generated, @"AttachBindingNameScope\(").Count >= 2);
+    }
+
+    [Fact]
+    public void Preserves_AssignBinding_For_Attached_Avalonia_Property_As_Binding_Object()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty { }
+                public class AttachedProperty<T> : AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value, global::Avalonia.Data.BindingPriority priority) { }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+
+                public enum BindingMode
+                {
+                    Default,
+                    TwoWay
+                }
+
+                public interface IBinding { }
+
+                public class Binding : IBinding
+                {
+                    public Binding() { }
+                    public Binding(string path) { Path = path; }
+                    public string? Path { get; set; }
+                    public BindingMode Mode { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope
+                {
+                    bool IsCompleted { get; }
+                    void Complete();
+                    void Register(string name, object element);
+                }
+
+                public class NameScope : INameScope
+                {
+                    public bool IsCompleted => false;
+                    public void Complete() { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class StyledElement : global::Avalonia.AvaloniaObject
+                {
+                    public string? Name { get; set; }
+                }
+
+                public class Control : StyledElement { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.StyledProperty<object?> ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+
+                public class Border : Control { }
+            }
+
+            namespace Demo
+            {
+                public class AttachedBindingHost
+                {
+                    public static readonly global::Avalonia.AttachedProperty<global::Avalonia.Data.IBinding?> TextBindingProperty = new();
+
+                    [global::Avalonia.Data.AssignBinding]
+                    public global::Avalonia.Data.IBinding? TextBinding { get; set; }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         xmlns:data="clr-namespace:Avalonia.Data"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <Border local:AttachedBindingHost.TextBinding="{Binding Name, Mode=TwoWay}" />
+                    <Border>
+                        <local:AttachedBindingHost.TextBinding>
+                            <data:Binding Path="Name" Mode="TwoWay" />
+                        </local:AttachedBindingHost.TextBinding>
+                    </Border>
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.DoesNotMatch(
+            @"ApplyBinding\([^;]*AttachedBindingHost\.TextBindingProperty",
+            generated);
+        Assert.Equal(2, Regex.Matches(generated, @"SetValue\(global::Demo\.AttachedBindingHost\.TextBindingProperty,").Count);
         Assert.True(Regex.Matches(generated, @"AttachBindingNameScope\(").Count >= 2);
     }
 

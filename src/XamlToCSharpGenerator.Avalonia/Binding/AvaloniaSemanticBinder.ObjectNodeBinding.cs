@@ -1251,7 +1251,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Line: propertyElement.Line,
                         Column: propertyElement.Column,
                         Condition: propertyElement.Condition,
-                        PreserveBindingValue: HasAssignBindingAttribute(FindProperty(symbol, attachedPropertyName))));
+                        PreserveBindingValue: HasAssignBindingAttribute(FindProperty(attachedResolvedOwnerType, attachedPropertyName))));
                     continue;
                 }
 
