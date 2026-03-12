@@ -15183,6 +15183,106 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_Generic_MarkupExtension_Without_Extension_Suffix_When_Suffixed_Type_Is_Not_A_MarkupExtension()
+    {
+        const string code = """
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0,
+                    N = 1
+                }
+
+                [global::System.Flags]
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Control = 1,
+                    Meta = 2
+                }
+
+                public sealed class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public sealed class ProbeControl : Control
+                {
+                    public global::Avalonia.Input.KeyGesture? Gesture { get; set; }
+                }
+            }
+
+            namespace Demo.Markup
+            {
+                public sealed class PlatformGestureExtension
+                {
+                    public string? Text { get; set; }
+                }
+
+                public sealed class PlatformGesture : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public string? Text { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider)
+                    {
+                        return global::Avalonia.Input.KeyGesture.Parse(Text ?? string.Empty);
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:m="clr-namespace:Demo.Markup"
+                         x:Class="Demo.MainView">
+                <ProbeControl Gesture="{m:PlatformGesture Text=Primary+N}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
+        Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
+        Assert.DoesNotContain("new global::Demo.Markup.PlatformGestureExtension()", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "global::Avalonia.Input.KeyGesture.Parse(\"{m:PlatformGesture Text=Primary+N}\")",
+            generated);
+    }
+
+    [Fact]
     public void Emits_Generic_Markup_Extension_For_Avalonia_Property_From_Using_Namespace()
     {
         const string code = """

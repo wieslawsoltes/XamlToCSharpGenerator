@@ -419,27 +419,28 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        foreach (var candidateToken in XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(markupName))
-        {
-            extensionType = ResolveTypeToken(compilation, document, candidateToken, document.ClassNamespace);
-            if (extensionType is not null)
-            {
-                break;
-            }
-        }
-
-        if (extensionType is null)
-        {
-            return false;
-        }
-
         var markupExtensionBase = ResolveContractType(compilation, TypeContractId.AvaloniaMarkupExtensionBase);
         if (markupExtensionBase is null)
         {
             return false;
         }
 
-        return IsTypeAssignableTo(extensionType, markupExtensionBase);
+        foreach (var candidateToken in XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(markupName))
+        {
+            var candidateType = ResolveTypeToken(compilation, document, candidateToken, document.ClassNamespace);
+            if (candidateType is null)
+            {
+                continue;
+            }
+
+            if (IsTypeAssignableTo(candidateType, markupExtensionBase))
+            {
+                extensionType = candidateType;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string WrapWithTargetTypeCast(ITypeSymbol targetType, string expression)
