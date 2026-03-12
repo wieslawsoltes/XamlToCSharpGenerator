@@ -1569,6 +1569,36 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void HotReload_Does_Not_Treat_Attached_Static_Setters_As_Clr_Reset_Members()
+    {
+        const string code = """
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.Window { }
+            }
+            """;
+        const string xaml = """
+            <Window xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    x:Class="Demo.MainView"
+                    RenderOptions.BitmapInterpolationMode="HighQuality" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join(
+            "\n---\n",
+            updatedCompilation.SyntaxTrees.Select(static tree => tree.ToString()));
+        Assert.DoesNotContain(
+            "new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"SetBitmapInterpolationMode\",",
+            generated,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("__typed.SetBitmapInterpolationMode = default!;", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HotReload_Emits_Clear_Before_Dictionary_Merge_Property_Reapply()
     {
         const string code = """

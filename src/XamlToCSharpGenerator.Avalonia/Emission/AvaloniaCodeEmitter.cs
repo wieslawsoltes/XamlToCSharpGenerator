@@ -3443,16 +3443,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         foreach (var assignment in rootNode.PropertyAssignments)
         {
-            if (!string.IsNullOrWhiteSpace(BuildAvaloniaPropertyExpression(assignment)))
+            if (!TryGetClrHotReloadMemberName(assignment, out var memberName))
             {
                 continue;
             }
 
-            var memberName = ExtractMemberName(assignment.PropertyName);
-            if (!string.IsNullOrWhiteSpace(memberName))
-            {
-                members.Add(memberName);
-            }
+            members.Add(memberName);
         }
 
         foreach (var assignment in rootNode.PropertyElementAssignments)
@@ -3464,16 +3460,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            if (!string.IsNullOrWhiteSpace(BuildAvaloniaPropertyExpression(assignment)))
+            if (!TryGetClrHotReloadMemberName(assignment, out var memberName))
             {
                 continue;
             }
 
-            var memberName = ExtractMemberName(assignment.PropertyName);
-            if (!string.IsNullOrWhiteSpace(memberName))
-            {
-                members.Add(memberName);
-            }
+            members.Add(memberName);
         }
 
         foreach (var fieldName in namedFieldMap.Values)
@@ -5173,6 +5165,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return null;
+    }
+
+    private static bool TryGetClrHotReloadMemberName(
+        ResolvedPropertyAssignment assignment,
+        out string memberName)
+    {
+        memberName = string.Empty;
+        if (!string.IsNullOrWhiteSpace(BuildAvaloniaPropertyExpression(assignment)) ||
+            string.IsNullOrWhiteSpace(assignment.ClrPropertyTypeName))
+        {
+            return false;
+        }
+
+        memberName = ExtractMemberName(assignment.PropertyName);
+        return !string.IsNullOrWhiteSpace(memberName) &&
+               IsValidIdentifierForGeneratedMemberAccess(memberName);
+    }
+
+    private static bool TryGetClrHotReloadMemberName(
+        ResolvedPropertyElementAssignment assignment,
+        out string memberName)
+    {
+        memberName = string.Empty;
+        if (!string.IsNullOrWhiteSpace(BuildAvaloniaPropertyExpression(assignment)) ||
+            string.IsNullOrWhiteSpace(assignment.ClrPropertyTypeName))
+        {
+            return false;
+        }
+
+        memberName = ExtractMemberName(assignment.PropertyName);
+        return !string.IsNullOrWhiteSpace(memberName) &&
+               IsValidIdentifierForGeneratedMemberAccess(memberName);
     }
 
     private static string? BuildAvaloniaPriorityExpression(ResolvedPropertyAssignment assignment)
