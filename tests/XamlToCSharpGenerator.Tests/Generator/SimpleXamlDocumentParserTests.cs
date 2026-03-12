@@ -248,6 +248,33 @@ public class SimpleXamlDocumentParserTests
     }
 
     [Fact]
+    public void Parse_Reports_Invalid_XShared_Value()
+    {
+        var parser = CreateAvaloniaParser();
+        var input = new XamlFileInput(
+            FilePath: "Colors.axaml",
+            TargetPath: "Colors.axaml",
+            SourceItemGroup: "AvaloniaXaml",
+            Text: """
+                  <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                      <SolidColorBrush x:Key="AccentBrush"
+                                       x:Shared="Falsee"
+                                       Color="Blue" />
+                  </ResourceDictionary>
+                  """);
+
+        var (document, diagnostics) = parser.Parse(input);
+
+        Assert.NotNull(document);
+        var diagnostic = Assert.Single(diagnostics, x => x.Id == "AXSG0004");
+        Assert.False(diagnostic.IsError);
+        Assert.Equal("x:Shared value must be either 'True' or 'False'.", diagnostic.Message);
+        var resourceNode = Assert.Single(document!.RootObject.ChildObjects);
+        Assert.Null(resourceNode.IsShared);
+    }
+
+    [Fact]
     public void Parse_Trims_And_Joins_Multiple_Inline_Text_Fragments()
     {
         var parser = CreateAvaloniaParser();

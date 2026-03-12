@@ -531,6 +531,7 @@ public static class XamlSourceGeneratorCompilerHost
                 "AXSG0001" => DiagnosticCatalog.ParseFailed,
                 "AXSG0002" => DiagnosticCatalog.MissingClassDirective,
                 "AXSG0003" => DiagnosticCatalog.PrecompileDirectiveInvalid,
+                "AXSG0004" => DiagnosticCatalog.SharedDirectiveInvalid,
                 "AXSG0100" => DiagnosticCatalog.TypeResolutionFailed,
                 "AXSG0101" => DiagnosticCatalog.UnsupportedProperty,
                 "AXSG0102" => DiagnosticCatalog.UnsupportedLiteralConversion,
