@@ -1776,18 +1776,7 @@ public static class XamlSourceGenHotReloadManager
             return;
         }
 
-        try
-        {
-            var uiThread = Dispatcher.UIThread;
-            if (uiThread.CheckAccess())
-            {
-                RunPipeline();
-                return;
-            }
-
-            uiThread.InvokeAsync(RunPipeline, DispatcherPriority.Background).GetAwaiter().GetResult();
-        }
-        catch
+        if (!SourceGenDispatcherRuntime.TryInvoke(RunPipeline, DispatcherPriority.Background))
         {
             RunPipeline();
         }
@@ -3378,13 +3367,9 @@ public static class XamlSourceGenHotReloadManager
                 return;
             }
 
-            try
-            {
-                global::Avalonia.Threading.Dispatcher.UIThread.Post(
+            if (!SourceGenDispatcherRuntime.TryPost(
                     ApplyScheduledThemeRefresh,
-                    global::Avalonia.Threading.DispatcherPriority.Background);
-            }
-            catch
+                    global::Avalonia.Threading.DispatcherPriority.Background))
             {
                 ApplyScheduledThemeRefresh();
             }

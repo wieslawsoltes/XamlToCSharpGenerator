@@ -2,11 +2,13 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Core;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Converters;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -24,7 +26,8 @@ public static class SourceGenMarkupExtensionRuntime
     {
         None,
         DataContextUnavailable,
-        TemplatedParentUnavailable
+        TemplatedParentUnavailable,
+        AncestorUnavailable
     }
 
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
@@ -314,6 +317,22 @@ public static class SourceGenMarkupExtensionRuntime
         IReadOnlyDictionary<string, string>? xmlNamespaces)
         where T : class
     {
+        var typedNameScope = nameScope as INameScope;
+        AttachBindingMetadata(binding, typedNameScope, xmlNamespaces);
+
+        return binding;
+    }
+
+    private static void AttachBindingMetadata(
+        object? binding,
+        INameScope? nameScope,
+        IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        if (binding is null)
+        {
+            return;
+        }
+
         if (binding is Binding dataBinding)
         {
             if (xmlNamespaces is not null && xmlNamespaces.Count > 0)
@@ -326,13 +345,20 @@ public static class SourceGenMarkupExtensionRuntime
             }
         }
 
-        if (binding is BindingBase bindingBase &&
-            nameScope is INameScope typedNameScope)
+        if (binding is BindingBase bindingBase && nameScope is not null)
         {
-            bindingBase.NameScope = new WeakReference<INameScope?>(typedNameScope);
+            bindingBase.NameScope = new WeakReference<INameScope?>(nameScope);
         }
 
-        return binding;
+        if (binding is not MultiBinding multiBinding)
+        {
+            return;
+        }
+
+        foreach (var childBinding in multiBinding.Bindings)
+        {
+            AttachBindingMetadata(childBinding, nameScope, xmlNamespaces);
+        }
     }
 
     public static void ApplyBinding(object? target, AvaloniaProperty property, object? value, object? anchor = null)
@@ -393,6 +419,7 @@ public static class SourceGenMarkupExtensionRuntime
                     }
 
                     observedElement.PropertyChanged -= OnPropertyChanged;
+                    observedElement.AttachedToLogicalTree -= OnAttachedToLogicalTree;
                     if (observedVisual is not null)
                     {
                         observedVisual.AttachedToVisualTree -= OnAttachedToVisualTree;
@@ -415,7 +442,13 @@ public static class SourceGenMarkupExtensionRuntime
                     TryApplyAndDetachHandlers();
                 }
 
+                void OnAttachedToLogicalTree(object? sender, LogicalTreeAttachmentEventArgs args)
+                {
+                    TryApplyAndDetachHandlers();
+                }
+
                 observedElement.PropertyChanged += OnPropertyChanged;
+                observedElement.AttachedToLogicalTree += OnAttachedToLogicalTree;
                 if (observedVisual is not null)
                 {
                     observedVisual.AttachedToVisualTree += OnAttachedToVisualTree;
@@ -500,6 +533,11 @@ public static class SourceGenMarkupExtensionRuntime
             return DeferredBindingFailureReason.TemplatedParentUnavailable;
         }
 
+        if (IsAncestorBindingWithoutReadyAnchor(dataBinding, target, anchor))
+        {
+            return DeferredBindingFailureReason.AncestorUnavailable;
+        }
+
         if (IsDataContextBindingWithoutSource(dataBinding) &&
             !HasBindingDataContext(target, anchor))
         {
@@ -530,6 +568,12 @@ public static class SourceGenMarkupExtensionRuntime
         if (message.IndexOf("Cannot find a StyledElement to get a TemplatedParent", StringComparison.Ordinal) >= 0)
         {
             return DeferredBindingFailureReason.TemplatedParentUnavailable;
+        }
+
+        if (message.IndexOf("Cannot find an ILogical to get a visual ancestor", StringComparison.Ordinal) >= 0 ||
+            message.IndexOf("Cannot find an ILogical to get a logical ancestor", StringComparison.Ordinal) >= 0)
+        {
+            return DeferredBindingFailureReason.AncestorUnavailable;
         }
 
         return DeferredBindingFailureReason.None;
@@ -598,6 +642,19 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
+    private static bool IsAncestorBindingWithoutReadyAnchor(Binding binding, AvaloniaObject target, object? anchor)
+    {
+        if (!IsFindAncestorRelativeSource(binding.RelativeSource) ||
+            !IsBindingSourceUnset(binding) ||
+            binding.ElementName is not null)
+        {
+            return false;
+        }
+
+        return !HasAncestorBindingAnchor(target) &&
+               !HasAncestorBindingAnchor(anchor);
+    }
+
     private static bool ShouldScheduleTimedBindingRetry(
         AvaloniaObject target,
         IBinding _,
@@ -614,26 +671,32 @@ public static class SourceGenMarkupExtensionRuntime
             return false;
         }
 
-        if (deferredReason != DeferredBindingFailureReason.TemplatedParentUnavailable)
+        if (deferredReason == DeferredBindingFailureReason.TemplatedParentUnavailable ||
+            deferredReason == DeferredBindingFailureReason.AncestorUnavailable)
         {
-            return false;
+            // For styled targets/anchors, tree and property change handlers already
+            // re-apply when the required context becomes available.
+            if (target is StyledElement ||
+                anchor is StyledElement)
+            {
+                return false;
+            }
+
+            // Non-styled targets without anchor notifications need timer-based retries.
+            return true;
         }
 
-        // For styled targets/anchors, property change handlers already re-apply when
-        // templated parent or visual attachment changes.
-        if (target is StyledElement ||
-            anchor is StyledElement)
-        {
-            return false;
-        }
-
-        // Non-styled targets without anchor notifications need timer-based retries.
-        return true;
+        return false;
     }
 
     private static bool IsTemplatedParentRelativeSource(RelativeSource? relativeSource)
     {
         return relativeSource?.Mode == RelativeSourceMode.TemplatedParent;
+    }
+
+    private static bool IsFindAncestorRelativeSource(RelativeSource? relativeSource)
+    {
+        return relativeSource?.Mode == RelativeSourceMode.FindAncestor;
     }
 
     private static bool IsBindingSourceUnset(Binding binding)
@@ -653,6 +716,21 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return null;
+    }
+
+    private static bool HasAncestorBindingAnchor(object? candidate)
+    {
+        if (candidate is not StyledElement styledElement)
+        {
+            return false;
+        }
+
+        if (candidate is ILogical logical && logical.IsAttachedToLogicalTree)
+        {
+            return true;
+        }
+
+        return candidate is Visual visual && TopLevel.GetTopLevel(visual) is not null;
     }
 
     private static bool TryPrepareBindingForNonStyledTemplatedParentTarget(
@@ -710,11 +788,49 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
+    private static bool TryPrepareBindingForNonLogicalAncestorTarget(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor,
+        out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (binding is not Binding dataBinding ||
+            !IsFindAncestorRelativeSource(dataBinding.RelativeSource) ||
+            !IsBindingSourceUnset(dataBinding) ||
+            dataBinding.ElementName is not null ||
+            target is ILogical)
+        {
+            return true;
+        }
+
+        if (TryResolveAncestorBindingSource(anchor, dataBinding.RelativeSource!, out var ancestorSource))
+        {
+            dataBinding.Source = ancestorSource;
+            dataBinding.RelativeSource = null;
+            TraceBinding(
+                $"Rewrote ancestor binding: target={target.GetType().FullName}, anchor={(anchor as object)?.GetType().FullName ?? "<null>"}, source={ancestorSource.GetType().FullName}, path={dataBinding.Path}.");
+            return true;
+        }
+
+        TraceBinding(
+            $"Deferred ancestor binding preparation: target={target.GetType().FullName}, anchor={(anchor as object)?.GetType().FullName ?? "<null>"}, path={dataBinding.Path}.");
+        deferredException = new InvalidOperationException("Cannot find an ILogical to get a visual ancestor.");
+        return false;
+    }
+
     private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
     {
+        async Task ScheduleDelayedRetryAsync(int attempt, int delayMilliseconds)
+        {
+            await Task.Delay(delayMilliseconds).ConfigureAwait(false);
+            TryApply(attempt);
+        }
+
         void TryApply(int attempt)
         {
-            Dispatcher.UIThread.Post(() =>
+            if (!SourceGenDispatcherRuntime.TryPost(() =>
             {
                 if (TryBind(target, property, binding, anchor, out var deferredException))
                 {
@@ -732,12 +848,29 @@ public static class SourceGenMarkupExtensionRuntime
                 {
                     var nextAttempt = attempt + 1;
                     var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
-                    DispatcherTimer.RunOnce(
-                        () => TryApply(nextAttempt),
-                        TimeSpan.FromMilliseconds(delayMilliseconds),
-                        DispatcherPriority.Background);
+                    if (SourceGenDispatcherRuntime.HasControlledUiDispatcher())
+                    {
+                        DispatcherTimer.RunOnce(
+                            () => TryApply(nextAttempt),
+                            TimeSpan.FromMilliseconds(delayMilliseconds),
+                            DispatcherPriority.Background);
+                    }
+                    else
+                    {
+                        _ = ScheduleDelayedRetryAsync(nextAttempt, delayMilliseconds);
+                    }
                 }
-            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background);
+            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background))
+            {
+                if (attempt + 1 >= MaxDeferredBindingRetryCount)
+                {
+                    return;
+                }
+
+                var nextAttempt = attempt + 1;
+                var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
+                _ = ScheduleDelayedRetryAsync(nextAttempt, delayMilliseconds);
+            }
         }
 
         TryApply(0);
@@ -748,6 +881,11 @@ public static class SourceGenMarkupExtensionRuntime
         deferredException = null;
 
         if (!TryPrepareBindingForNonStyledTemplatedParentTarget(target, binding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        if (!TryPrepareBindingForNonLogicalAncestorTarget(target, binding, anchor, out deferredException))
         {
             return false;
         }
@@ -813,6 +951,107 @@ public static class SourceGenMarkupExtensionRuntime
     private static string DescribeBindingTarget(AvaloniaObject target, AvaloniaProperty property)
     {
         return $"{target.GetType().FullName}.{property.Name}";
+    }
+
+    private static bool TryResolveAncestorBindingSource(
+        object? anchor,
+        RelativeSource relativeSource,
+        out object ancestorSource)
+    {
+        var ancestorLevel = relativeSource.AncestorLevel > 0 ? relativeSource.AncestorLevel : 1;
+        var ancestorType = relativeSource.AncestorType;
+
+        if (anchor is Visual visual &&
+            TopLevel.GetTopLevel(visual) is not null &&
+            TryResolveVisualAncestorBindingSource(visual, ancestorType, ancestorLevel, out ancestorSource))
+        {
+            return true;
+        }
+
+        if (anchor is ILogical logical &&
+            logical.IsAttachedToLogicalTree &&
+            TryResolveLogicalAncestorBindingSource(logical, ancestorType, ancestorLevel, out ancestorSource))
+        {
+            return true;
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool TryResolveVisualAncestorBindingSource(
+        Visual anchor,
+        Type? ancestorType,
+        int ancestorLevel,
+        out object ancestorSource)
+    {
+        if (MatchesAncestorBindingSource(anchor, ancestorType))
+        {
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = anchor;
+                return true;
+            }
+        }
+
+        foreach (var ancestor in anchor.GetVisualAncestors())
+        {
+            if (!MatchesAncestorBindingSource(ancestor, ancestorType))
+            {
+                continue;
+            }
+
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = ancestor;
+                return true;
+            }
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool TryResolveLogicalAncestorBindingSource(
+        ILogical anchor,
+        Type? ancestorType,
+        int ancestorLevel,
+        out object ancestorSource)
+    {
+        if (MatchesAncestorBindingSource(anchor, ancestorType))
+        {
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = anchor;
+                return true;
+            }
+        }
+
+        foreach (var ancestor in anchor.GetLogicalAncestors())
+        {
+            if (!MatchesAncestorBindingSource(ancestor, ancestorType))
+            {
+                continue;
+            }
+
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = ancestor;
+                return true;
+            }
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool MatchesAncestorBindingSource(object candidate, Type? ancestorType)
+    {
+        return ancestorType is null || ancestorType.IsInstanceOfType(candidate);
     }
 
     public static Avalonia.Media.Imaging.Bitmap? LoadBitmapAsset(string path, string? baseUri)
@@ -1199,6 +1438,30 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Creates the XAML service-provider context used when constructing a non-root object
+    /// via an <see cref="IServiceProvider"/> constructor.
+    /// </summary>
+    public static IServiceProvider CreateObjectConstructionServiceProvider(
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        return new ObjectConstructionServiceProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            ResolveBaseUri(
+                parentServiceProvider,
+                baseUri,
+                rootObject,
+                intermediateRootObject,
+                intermediateRootObject),
+            BuildParentStack(intermediateRootObject, parentStack));
     }
 
     public static object? ProvideOnPlatform(
@@ -2164,6 +2427,103 @@ public static class SourceGenMarkupExtensionRuntime
                 }
 
                 if (_targetObject is StyledElement styledElement &&
+                    NameScope.GetNameScope(styledElement) is { } elementNameScope)
+                {
+                    return elementNameScope;
+                }
+            }
+
+            return _parentServiceProvider?.GetService(serviceType);
+        }
+
+        private IEnumerable<object> EnumerateParents()
+        {
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            for (var index = 0; index < _parentStack.Length; index++)
+            {
+                var parent = _parentStack[index];
+                if (seen.Add(parent))
+                {
+                    yield return parent;
+                }
+            }
+
+            if (_parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) is IAvaloniaXamlIlParentStackProvider upstreamStack)
+            {
+                foreach (var upstreamParent in upstreamStack.Parents)
+                {
+                    if (seen.Add(upstreamParent))
+                    {
+                        yield return upstreamParent;
+                    }
+                }
+            }
+        }
+    }
+
+    private sealed class ObjectConstructionServiceProvider :
+        IServiceProvider,
+        IRootObjectProvider,
+        IUriContext,
+        IAvaloniaXamlIlParentStackProvider
+    {
+        private readonly IServiceProvider? _parentServiceProvider;
+        private readonly object _rootObject;
+        private readonly object _intermediateRootObject;
+        private readonly object[] _parentStack;
+        private readonly Uri _baseUri;
+
+        public ObjectConstructionServiceProvider(
+            IServiceProvider? parentServiceProvider,
+            object rootObject,
+            object intermediateRootObject,
+            Uri baseUri,
+            object[] parentStack)
+        {
+            _parentServiceProvider = parentServiceProvider;
+            _rootObject = rootObject;
+            _intermediateRootObject = intermediateRootObject;
+            _baseUri = baseUri;
+            _parentStack = parentStack;
+        }
+
+        public object RootObject => _rootObject;
+
+        public object IntermediateRootObject => _intermediateRootObject;
+
+        public Uri BaseUri
+        {
+            get => _baseUri;
+            set { }
+        }
+
+        public IEnumerable<object> Parents => EnumerateParents();
+
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IRootObjectProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IUriContext))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IAvaloniaXamlIlParentStackProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(INameScope))
+            {
+                if (_parentServiceProvider?.GetService(typeof(INameScope)) is INameScope nameScope)
+                {
+                    return nameScope;
+                }
+
+                if (_intermediateRootObject is StyledElement styledElement &&
                     NameScope.GetNameScope(styledElement) is { } elementNameScope)
                 {
                     return elementNameScope;

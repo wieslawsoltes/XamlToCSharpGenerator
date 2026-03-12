@@ -46,7 +46,7 @@ public static class SourceGenMethodCommandRuntime
             : (T)converted!;
     }
 
-    private sealed class MethodCommand : ICommand, IWeakEventSubscriber<PropertyChangedEventArgs>
+    private sealed class MethodCommand : ICommand
     {
         private readonly WeakReference<object?> _target;
         private readonly Action<object, object?> _execute;
@@ -68,7 +68,7 @@ public static class SourceGenMethodCommandRuntime
                 dependsOnProperties.Count > 0)
             {
                 _dependsOnProperties = new HashSet<string>(dependsOnProperties, StringComparer.Ordinal);
-                WeakEvents.ThreadSafePropertyChanged.Subscribe(notifyingTarget, this);
+                AttachPropertyChangedHandler(notifyingTarget);
             }
         }
 
@@ -92,15 +92,36 @@ public static class SourceGenMethodCommandRuntime
             }
         }
 
-        public void OnEvent(object? sender, WeakEvent ev, PropertyChangedEventArgs e)
+        private void AttachPropertyChangedHandler(INotifyPropertyChanged notifyingTarget)
+        {
+            var weakCommand = new WeakReference<MethodCommand>(this);
+            PropertyChangedEventHandler? handler = null;
+            handler = (_, e) =>
+            {
+                if (weakCommand.TryGetTarget(out var command))
+                {
+                    command.OnTargetPropertyChanged(e);
+                    return;
+                }
+
+                notifyingTarget.PropertyChanged -= handler;
+            };
+
+            notifyingTarget.PropertyChanged += handler;
+        }
+
+        private void OnTargetPropertyChanged(PropertyChangedEventArgs e)
         {
             if (_dependsOnProperties is null ||
                 string.IsNullOrWhiteSpace(e.PropertyName) ||
                 _dependsOnProperties.Contains(e.PropertyName))
             {
-                Dispatcher.UIThread.Post(
-                    () => CanExecuteChanged?.Invoke(this, EventArgs.Empty),
-                    DispatcherPriority.Input);
+                if (!SourceGenDispatcherRuntime.TryPost(
+                        () => CanExecuteChanged?.Invoke(this, EventArgs.Empty),
+                        DispatcherPriority.Input))
+                {
+                    CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
     }
