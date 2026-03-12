@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Emission;
 
@@ -44,6 +45,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var lineDirectiveFilePath = NormalizeLineDirectivePath(viewModel.Document.FilePath);
         var namedFieldMap = BuildNamedFieldMap(viewModel);
         var knownTypeNames = CollectKnownTypeNames(viewModel);
+        var bindingXmlNamespaceMapExpression = BuildBindingXmlNamespaceMapExpression(viewModel.Document.XmlNamespaces);
         var hotReloadCollectionMembers = ImmutableArray<string>.Empty;
         var hotReloadClrPropertyMembers = ImmutableArray<string>.Empty;
         var hotReloadAvaloniaPropertyMembers = ImmutableArray<string>.Empty;
@@ -99,6 +101,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         sourceBuilder.AppendLine($"        private const string __SourceGenDocumentUri = \"{escapedUri}\";");
+        sourceBuilder.AppendLine(
+            $"        private static readonly global::System.Collections.Generic.IReadOnlyDictionary<string, string> __BindingXmlNamespaces = {bindingXmlNamespaceMapExpression};");
 
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("        [ModuleInitializer]");
@@ -549,22 +553,24 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         string AttachBindingNameScope(string expression, ResolvedValueKind valueKind)
         {
-            if (string.IsNullOrWhiteSpace(nameScopeReference) || !IsBindingValueKind(valueKind))
+            if (!IsBindingValueKind(valueKind))
             {
                 return expression;
             }
 
-            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
+            var effectiveNameScopeReference = string.IsNullOrWhiteSpace(nameScopeReference) ? "null" : nameScopeReference;
+            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {effectiveNameScopeReference}, __BindingXmlNamespaces)";
         }
 
         string AttachBindingNodeNameScope(ResolvedObjectNode nodeValue, string expression)
         {
-            if (string.IsNullOrWhiteSpace(nameScopeReference) || !nodeValue.IsBindingObjectNode)
+            if (!nodeValue.IsBindingObjectNode)
             {
                 return expression;
             }
 
-            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
+            var effectiveNameScopeReference = string.IsNullOrWhiteSpace(nameScopeReference) ? "null" : nameScopeReference;
+            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {effectiveNameScopeReference}, __BindingXmlNamespaces)";
         }
 
         string WrapSetValueExpression(string expression, string targetObjectExpression, string targetPropertyExpression)
@@ -1305,6 +1311,29 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         continue;
                     }
 
+                    if (node.HasSemantic(ResolvedObjectNodeSemanticFlags.IsResourceDictionary) &&
+                        ShouldEmitDeferredResourceNode(child))
+                    {
+                        var deferredChildValueExpression = EmitDeferredResourceContent(
+                            child,
+                            sourceBuilder,
+                            ref nodeCounter,
+                            indent,
+                            rootReference,
+                            serviceProviderReference,
+                            emittedEventBindingMethodNames,
+                            baseUriExpression,
+                            nodeParentStackReferences,
+                            intermediateRootReference,
+                            emitDebugLineDirectives,
+                            lineDirectiveFilePath);
+                        EmitStatementAt(
+                            $"__AXSGObjectGraph.TryAddToDictionary({variableName}, {child.KeyExpression}, {deferredChildValueExpression}, __SourceGenDocumentUri);",
+                            child.Line,
+                            child.Column);
+                        continue;
+                    }
+
                     var childVariable = EmitNode(
                         child,
                         sourceBuilder,
@@ -1405,22 +1434,24 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         string AttachBindingNameScope(string expression, ResolvedValueKind valueKind)
         {
-            if (string.IsNullOrWhiteSpace(nameScopeReference) || !IsBindingValueKind(valueKind))
+            if (!IsBindingValueKind(valueKind))
             {
                 return expression;
             }
 
-            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
+            var effectiveNameScopeReference = string.IsNullOrWhiteSpace(nameScopeReference) ? "null" : nameScopeReference;
+            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {effectiveNameScopeReference}, __BindingXmlNamespaces)";
         }
 
         string AttachBindingNodeNameScope(ResolvedObjectNode nodeValue, string expression)
         {
-            if (string.IsNullOrWhiteSpace(nameScopeReference) || !nodeValue.IsBindingObjectNode)
+            if (!nodeValue.IsBindingObjectNode)
             {
                 return expression;
             }
 
-            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {nameScopeReference})";
+            var effectiveNameScopeReference = string.IsNullOrWhiteSpace(nameScopeReference) ? "null" : nameScopeReference;
+            return $"global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope({expression}, {effectiveNameScopeReference}, __BindingXmlNamespaces)";
         }
 
         string WrapSetValueExpression(string expression, string targetObjectExpression, string targetPropertyExpression)
@@ -2037,11 +2068,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         if (hasKeyedObjectValues)
         {
+            var canDeferResourceEntries = IsResourceDictionaryPropertyType(propertyElementAssignment.ClrPropertyTypeName);
             foreach (var keyedObjectValue in propertyElementAssignment.ObjectValues)
             {
                 var dictionaryKeyExpression = BuildDictionaryKeyExpression(
                     propertyElementAssignment.PropertyName,
                     keyedObjectValue.KeyExpression!);
+                if (canDeferResourceEntries &&
+                    ShouldEmitDeferredResourceNode(keyedObjectValue))
+                {
+                    var deferredValueExpression = EmitDeferredResourceContent(
+                        keyedObjectValue,
+                        sourceBuilder,
+                        ref nodeCounter,
+                        indent,
+                        rootReference,
+                        serviceProviderReference,
+                        emittedEventBindingMethodNames,
+                        baseUriExpression,
+                        parentStackReferences,
+                        intermediateRootReference,
+                        emitDebugLineDirectives,
+                        lineDirectiveFilePath);
+                    AppendSourceMappedLine(
+                        sourceBuilder,
+                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri);",
+                        emitDebugLineDirectives,
+                        lineDirectiveFilePath,
+                        keyedObjectValue.Line,
+                        keyedObjectValue.Column);
+                    continue;
+                }
+
                 var keyedChildVariable = EmitNode(
                     keyedObjectValue,
                     sourceBuilder,
@@ -2085,6 +2143,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var valueNode = propertyElementAssignment.ObjectValues[0];
         if (valueNode.ChildAttachmentMode == ResolvedChildAttachmentMode.DictionaryAdd)
         {
+            var canDeferResourceEntries = IsResourceDictionaryPropertyType(propertyElementAssignment.ClrPropertyTypeName);
             foreach (var child in valueNode.Children)
             {
                 if (string.IsNullOrWhiteSpace(child.KeyExpression))
@@ -2095,6 +2154,32 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 var dictionaryKeyExpression = BuildDictionaryKeyExpression(
                     propertyElementAssignment.PropertyName,
                     child.KeyExpression!);
+                if (canDeferResourceEntries &&
+                    ShouldEmitDeferredResourceNode(child))
+                {
+                    var deferredValueExpression = EmitDeferredResourceContent(
+                        child,
+                        sourceBuilder,
+                        ref nodeCounter,
+                        indent,
+                        rootReference,
+                        serviceProviderReference,
+                        emittedEventBindingMethodNames,
+                        baseUriExpression,
+                        parentStackReferences,
+                        intermediateRootReference,
+                        emitDebugLineDirectives,
+                        lineDirectiveFilePath);
+                    AppendSourceMappedLine(
+                        sourceBuilder,
+                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri);",
+                        emitDebugLineDirectives,
+                        lineDirectiveFilePath,
+                        child.Line,
+                        child.Column);
+                    continue;
+                }
+
                 var childVariable = EmitNode(
                     child,
                     sourceBuilder,
@@ -2159,6 +2244,91 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             propertyElementAssignment.Line,
             propertyElementAssignment.Column);
         return true;
+    }
+
+    private static string EmitDeferredResourceContent(
+        ResolvedObjectNode node,
+        StringBuilder sourceBuilder,
+        ref int nodeCounter,
+        string indent,
+        string rootReference,
+        string serviceProviderReference,
+        IReadOnlyDictionary<string, string> emittedEventBindingMethodNames,
+        string baseUriExpression,
+        ImmutableArray<string> parentStackReferences,
+        string intermediateRootReference,
+        bool emitDebugLineDirectives,
+        string lineDirectiveFilePath)
+    {
+        nodeCounter++;
+        var deferredValueName = "__deferredResourceContent" + nodeCounter.ToString();
+        var deferredProviderName = "__deferredResourceProvider" + nodeCounter.ToString();
+        var deferredParentStackExpression = BuildParentStackExpression(parentStackReferences);
+
+        AppendSourceMappedLine(
+            sourceBuilder,
+            $"{indent}var {deferredValueName} = global::XamlToCSharpGenerator.Runtime.SourceGenDeferredContentRuntime.CreateShared({serviceProviderReference}, __deferredServiceProvider =>",
+            emitDebugLineDirectives,
+            lineDirectiveFilePath,
+            node.Line,
+            node.Column);
+        AppendSourceMappedLine(
+            sourceBuilder,
+            indent + "{",
+            emitDebugLineDirectives,
+            lineDirectiveFilePath,
+            node.Line,
+            node.Column);
+
+        var factoryIndent = indent + "    ";
+        AppendSourceMappedLine(
+            sourceBuilder,
+            $"{factoryIndent}var {deferredProviderName} = global::XamlToCSharpGenerator.Runtime.SourceGenDeferredServiceProviderFactory.CreateDeferredResourceServiceProvider(__deferredServiceProvider, {rootReference}, {intermediateRootReference}, {baseUriExpression}, {deferredParentStackExpression});",
+            emitDebugLineDirectives,
+            lineDirectiveFilePath,
+            node.Line,
+            node.Column);
+
+        var resourceRoot = EmitNode(
+            node,
+            sourceBuilder,
+            ref nodeCounter,
+            factoryIndent,
+            rootReference,
+            EmptyNamedFieldMap,
+            emittedEventBindingMethodNames,
+            emitNameScopeRegistration: false,
+            nameScopeReference: null,
+            serviceProviderReference: deferredProviderName,
+            baseUriExpression: baseUriExpression,
+            parentStackReferences: parentStackReferences,
+            intermediateRootReference: intermediateRootReference,
+            emitDebugLineDirectives: emitDebugLineDirectives,
+            lineDirectiveFilePath: lineDirectiveFilePath);
+        var resourceValueExpression = BuildAttachedNodeValueExpression(
+            node,
+            resourceRoot,
+            deferredProviderName,
+            rootReference,
+            intermediateRootReference,
+            baseUriExpression,
+            BuildParentStackExpression(ExtendParentStack(parentStackReferences, resourceRoot)));
+        AppendSourceMappedLine(
+            sourceBuilder,
+            $"{factoryIndent}return {resourceValueExpression};",
+            emitDebugLineDirectives,
+            lineDirectiveFilePath,
+            node.Line,
+            node.Column);
+        AppendSourceMappedLine(
+            sourceBuilder,
+            indent + "});",
+            emitDebugLineDirectives,
+            lineDirectiveFilePath,
+            node.Line,
+            node.Column);
+
+        return deferredValueName;
     }
 
     private static void AppendSourceMappedLine(
@@ -2242,6 +2412,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             or "global::Avalonia.Markup.Xaml.Templates.ItemsPanelTemplate";
     }
 
+    private static bool ShouldEmitDeferredResourceNode(ResolvedObjectNode node)
+    {
+        return node.HasSemantic(ResolvedObjectNodeSemanticFlags.CanBeDeferredResource);
+    }
+
     private static IReadOnlyDictionary<string, string> BuildNamedFieldMap(ResolvedViewModel viewModel)
     {
         if (!viewModel.Document.IsClassBacked)
@@ -2264,6 +2439,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         AddKnownTypeName(typeNames, viewModel.RootObject.TypeName);
         CollectKnownTypeNames(typeNames, viewModel.RootObject);
+        CollectRuntimeBindingTypeNames(typeNames, viewModel.Document);
 
         for (var index = 0; index < viewModel.NamedElements.Length; index++)
         {
@@ -2298,6 +2474,176 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return typeNames.ToImmutableArray();
+    }
+
+    private static void CollectRuntimeBindingTypeNames(ISet<string> collector, XamlDocumentModel document)
+    {
+        var markupParser = new MarkupExpressionParser();
+        CollectRuntimeBindingTypeNames(collector, document, document.RootObject, markupParser);
+    }
+
+    private static void CollectRuntimeBindingTypeNames(
+        ISet<string> collector,
+        XamlDocumentModel document,
+        XamlObjectNode node,
+        MarkupExpressionParser markupParser)
+    {
+        for (var assignmentIndex = 0; assignmentIndex < node.PropertyAssignments.Length; assignmentIndex++)
+        {
+            var assignment = node.PropertyAssignments[assignmentIndex];
+            if (BindingEventMarkupParser.TryParseBindingMarkup(
+                    assignment.Value,
+                    markupParser.TryParseMarkupExtension,
+                    out var bindingMarkup) &&
+                !bindingMarkup.IsCompiledBinding)
+            {
+                CollectRuntimeBindingPathTypeName(collector, document, bindingMarkup.Path);
+            }
+
+            if (IsRuntimeBindingObjectNode(node) &&
+                string.Equals(assignment.PropertyName, "Path", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(assignment.Value))
+            {
+                CollectRuntimeBindingPathTypeName(collector, document, assignment.Value);
+            }
+        }
+
+        for (var argumentIndex = 0; argumentIndex < node.ConstructorArguments.Length; argumentIndex++)
+        {
+            CollectRuntimeBindingTypeNames(collector, document, node.ConstructorArguments[argumentIndex], markupParser);
+        }
+
+        for (var childIndex = 0; childIndex < node.ChildObjects.Length; childIndex++)
+        {
+            CollectRuntimeBindingTypeNames(collector, document, node.ChildObjects[childIndex], markupParser);
+        }
+
+        for (var propertyElementIndex = 0; propertyElementIndex < node.PropertyElements.Length; propertyElementIndex++)
+        {
+            var propertyElement = node.PropertyElements[propertyElementIndex];
+            for (var valueIndex = 0; valueIndex < propertyElement.ObjectValues.Length; valueIndex++)
+            {
+                CollectRuntimeBindingTypeNames(collector, document, propertyElement.ObjectValues[valueIndex], markupParser);
+            }
+        }
+    }
+
+    private static bool IsRuntimeBindingObjectNode(XamlObjectNode node)
+    {
+        return string.Equals(node.XmlTypeName, "Binding", StringComparison.Ordinal) ||
+               string.Equals(node.XmlTypeName, "ReflectionBinding", StringComparison.Ordinal);
+    }
+
+    private static void CollectRuntimeBindingPathTypeName(
+        ISet<string> collector,
+        XamlDocumentModel document,
+        string? bindingPath)
+    {
+        if (string.IsNullOrWhiteSpace(bindingPath))
+        {
+            return;
+        }
+
+        var normalizedBindingPath = bindingPath.Trim();
+        if (!XamlRuntimeBindingPathSemantics.TrySplitTypeCastPrefix(normalizedBindingPath, out var typeToken, out _))
+        {
+            return;
+        }
+
+        if (typeToken.StartsWith("global::", StringComparison.Ordinal))
+        {
+            AddKnownTypeName(collector, typeToken);
+            return;
+        }
+
+        var separatorIndex = typeToken.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= typeToken.Length - 1)
+        {
+            return;
+        }
+
+        var prefix = typeToken.Substring(0, separatorIndex);
+        var typeName = typeToken.Substring(separatorIndex + 1);
+        if (!document.XmlNamespaces.TryGetValue(prefix, out var xmlNamespace) ||
+            !TryResolveBindingTypeToken(xmlNamespace, typeName, out var resolvedTypeName))
+        {
+            return;
+        }
+
+        AddKnownTypeName(collector, resolvedTypeName);
+    }
+
+    private static bool TryResolveBindingTypeToken(
+        string xmlNamespace,
+        string typeName,
+        out string? resolvedTypeName)
+    {
+        resolvedTypeName = null;
+        if (string.IsNullOrWhiteSpace(xmlNamespace) || string.IsNullOrWhiteSpace(typeName))
+        {
+            return false;
+        }
+
+        if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal))
+        {
+            resolvedTypeName = xmlNamespace.Substring("using:".Length).Trim() + "." + typeName.Trim();
+            return true;
+        }
+
+        if (!xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var payload = xmlNamespace.Substring("clr-namespace:".Length);
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        foreach (var segment in payload.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.StartsWith("assembly=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            resolvedTypeName = trimmed + "." + typeName.Trim();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string BuildBindingXmlNamespaceMapExpression(ImmutableDictionary<string, string> xmlNamespaces)
+    {
+        var builder = new StringBuilder();
+        builder.Append("new global::System.Collections.Generic.Dictionary<string, string>(global::System.StringComparer.Ordinal)");
+
+        if (xmlNamespaces.Count == 0)
+        {
+            return builder.ToString();
+        }
+
+        builder.Append(" { ");
+        var orderedNamespaces = xmlNamespaces.OrderBy(static pair => pair.Key, StringComparer.Ordinal).ToArray();
+        for (var index = 0; index < orderedNamespaces.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append("[\"");
+            builder.Append(Escape(orderedNamespaces[index].Key));
+            builder.Append("\"] = \"");
+            builder.Append(Escape(orderedNamespaces[index].Value));
+            builder.Append("\"");
+        }
+
+        builder.Append(" }");
+        return builder.ToString();
     }
 
     private static void CollectKnownTypeNames(ISet<string> collector, ResolvedObjectNode node)
@@ -2532,6 +2878,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         return themeVariantExpression;
+    }
+
+    private static bool IsResourceDictionaryPropertyType(string? propertyTypeName)
+    {
+        return string.Equals(propertyTypeName, "global::Avalonia.Controls.ResourceDictionary", StringComparison.Ordinal) ||
+               string.Equals(propertyTypeName, "global::Avalonia.Controls.IResourceDictionary", StringComparison.Ordinal);
     }
 
     private static bool TryBuildThemeVariantKeyExpression(string keyExpression, out string themeVariantExpression)

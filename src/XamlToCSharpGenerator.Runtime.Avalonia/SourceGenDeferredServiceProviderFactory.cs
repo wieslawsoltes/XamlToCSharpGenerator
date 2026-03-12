@@ -36,6 +36,27 @@ public static class SourceGenDeferredServiceProviderFactory
             templateNameScope);
     }
 
+    /// <summary>
+    /// Creates the ambient services used when a deferred resource entry is materialized.
+    /// </summary>
+    public static IServiceProvider CreateDeferredResourceServiceProvider(
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        var upstreamParentStackProvider = parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) as IAvaloniaXamlIlParentStackProvider;
+        var parentResourceNodes = CollectDeferredResourceNodes(upstreamParentStackProvider, parentStack);
+        var resolvedBaseUri = ResolveBaseUri(parentServiceProvider, baseUri, rootObject);
+        return new DeferredResourceServiceProvider(
+            parentServiceProvider,
+            parentResourceNodes,
+            rootObject,
+            intermediateRootObject,
+            resolvedBaseUri);
+    }
+
     private static object[] CollectParentResourceNodes(IAvaloniaXamlIlParentStackProvider? parentStackProvider)
     {
         if (parentStackProvider is null)
@@ -79,6 +100,76 @@ public static class SourceGenDeferredServiceProviderFactory
 
         lastParentResourceStack.Set(parentStackProvider, snapshot);
         return snapshot;
+    }
+
+    private static object[] CollectDeferredResourceNodes(
+        IAvaloniaXamlIlParentStackProvider? parentStackProvider,
+        IReadOnlyList<object>? explicitParentStack)
+    {
+        if ((explicitParentStack is null || explicitParentStack.Count == 0) &&
+            parentStackProvider is null)
+        {
+            return Array.Empty<object>();
+        }
+
+        var resourceNodes = s_parentResourceNodeBuffer ??= new List<object>(8);
+        resourceNodes.Clear();
+        var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+        if (explicitParentStack is not null)
+        {
+            for (var index = 0; index < explicitParentStack.Count; index++)
+            {
+                var parent = explicitParentStack[index];
+                if (parent is IResourceNode && seen.Add(parent))
+                {
+                    resourceNodes.Add(parent);
+                }
+            }
+        }
+
+        if (parentStackProvider is not null)
+        {
+            foreach (var parent in parentStackProvider.Parents)
+            {
+                if (parent is IResourceNode && seen.Add(parent))
+                {
+                    resourceNodes.Add(parent);
+                }
+            }
+        }
+
+        if (resourceNodes.Count == 0)
+        {
+            resourceNodes.Clear();
+            return Array.Empty<object>();
+        }
+
+        var snapshot = resourceNodes.ToArray();
+        resourceNodes.Clear();
+        return snapshot;
+    }
+
+    private static Uri ResolveBaseUri(IServiceProvider? parentServiceProvider, string? baseUri, object rootObject)
+    {
+        if (SourceGenObjectGraphRuntimeHelpers.TryCreateUri(baseUri) is { } resolvedBaseUri)
+        {
+            return resolvedBaseUri;
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext uriContext &&
+            uriContext.BaseUri is not null)
+        {
+            return uriContext.BaseUri;
+        }
+
+        var assemblyName = rootObject.GetType().Assembly.GetName().Name;
+        if (!string.IsNullOrWhiteSpace(assemblyName))
+        {
+            return new Uri("avares://" + assemblyName + "/");
+        }
+
+        return new Uri("avares://Application/");
     }
 
     private sealed class DeferredTemplateServiceProvider : IServiceProvider, IRootObjectProvider, IAvaloniaXamlIlControlTemplateProvider, IAvaloniaXamlIlParentStackProvider
@@ -155,6 +246,64 @@ public static class SourceGenDeferredServiceProviderFactory
             if (serviceType == typeof(IAvaloniaXamlIlControlTemplateProvider))
             {
                 return this;
+            }
+
+            return _parentServiceProvider?.GetService(serviceType);
+        }
+    }
+
+    private sealed class DeferredResourceServiceProvider : IServiceProvider, IRootObjectProvider, IUriContext, IAvaloniaXamlIlParentStackProvider
+    {
+        private readonly IServiceProvider? _parentServiceProvider;
+        private readonly object[] _parentResourceNodes;
+        private readonly Uri _baseUri;
+
+        public DeferredResourceServiceProvider(
+            IServiceProvider? parentServiceProvider,
+            object[] parentResourceNodes,
+            object rootObject,
+            object intermediateRootObject,
+            Uri baseUri)
+        {
+            _parentServiceProvider = parentServiceProvider;
+            _parentResourceNodes = parentResourceNodes;
+            RootObject = rootObject;
+            IntermediateRootObject = intermediateRootObject;
+            _baseUri = baseUri;
+        }
+
+        public object RootObject { get; }
+
+        public object IntermediateRootObject { get; }
+
+        public Uri BaseUri
+        {
+            get => _baseUri;
+            set { }
+        }
+
+        public IEnumerable<object> Parents => _parentResourceNodes;
+
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IRootObjectProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IUriContext))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IAvaloniaXamlIlParentStackProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(INameScope))
+            {
+                return _parentServiceProvider?.GetService(serviceType);
             }
 
             return _parentServiceProvider?.GetService(serviceType);

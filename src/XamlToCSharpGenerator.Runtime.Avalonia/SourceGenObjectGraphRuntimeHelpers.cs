@@ -295,7 +295,7 @@ public static class SourceGenObjectGraphRuntimeHelpers
                     resourceDictionary.Remove(key);
                 }
 
-                resourceDictionary.AddNotSharedDeferred(key, deferredContent);
+                resourceDictionary.AddDeferred(key, deferredContent);
             }
             catch
             {
