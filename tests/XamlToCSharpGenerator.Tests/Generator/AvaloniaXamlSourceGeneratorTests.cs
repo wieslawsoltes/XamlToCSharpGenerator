@@ -1624,6 +1624,57 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Supports_XShared_False_For_Deferred_Resource_Dictionary_Entries()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public ResourceDictionary Resources { get; } = new();
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                }
+
+                public class Button : Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <Button x:Key="PrimaryButton" x:Shared="False" />
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__AXSGObjectGraph.TryAddToDictionary(__root.Resources, \"PrimaryButton\",", generated);
+        Assert.Contains("__SourceGenDocumentUri, false);", generated);
+    }
+
+    [Fact]
     public void HotReload_Emits_Root_Event_Subscription_Manifest_For_Reconciliation()
     {
         const string code = """

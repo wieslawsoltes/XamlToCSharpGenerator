@@ -921,6 +921,32 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [Fact]
+    public void Deferred_Resource_Lookup_Returns_Fresh_Instance_When_XShared_Is_False()
+    {
+        var resources = new ResourceDictionary();
+        var buildCount = 0;
+
+        SourceGenObjectGraphRuntimeHelpers.TryAddToDictionary(
+            resources,
+            "Overlay",
+            SourceGenDeferredContentRuntime.CreateShared(__ =>
+            {
+                buildCount++;
+                return new Border();
+            }),
+            "avares://Demo/Resources.axaml",
+            isShared: false);
+
+        Assert.Equal(0, buildCount);
+
+        var firstLookup = Assert.IsType<Border>(resources["Overlay"]);
+        var secondLookup = Assert.IsType<Border>(resources["Overlay"]);
+
+        Assert.NotSame(firstLookup, secondLookup);
+        Assert.Equal(2, buildCount);
+    }
+
+    [Fact]
     public void CreateObjectConstructionServiceProvider_Exposes_RootObject_UriContext_And_ParentStack()
     {
         var upstreamParent = new Border();
