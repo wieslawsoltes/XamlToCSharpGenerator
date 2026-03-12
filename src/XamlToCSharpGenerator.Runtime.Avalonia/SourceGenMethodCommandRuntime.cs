@@ -54,6 +54,7 @@ public static class SourceGenMethodCommandRuntime
         private readonly Func<object, object?, bool>? _canExecute;
         private readonly HashSet<string>? _dependsOnProperties;
         private readonly SynchronizationContext? _capturedSynchronizationContext;
+        private readonly PropertyChangedHandlerDetacher? _propertyChangedHandlerDetacher;
 
         public MethodCommand(
             object target,
@@ -71,7 +72,7 @@ public static class SourceGenMethodCommandRuntime
                 dependsOnProperties.Count > 0)
             {
                 _dependsOnProperties = new HashSet<string>(dependsOnProperties, StringComparer.Ordinal);
-                AttachPropertyChangedHandler(notifyingTarget);
+                _propertyChangedHandlerDetacher = AttachPropertyChangedHandler(notifyingTarget);
             }
         }
 
@@ -95,7 +96,7 @@ public static class SourceGenMethodCommandRuntime
             }
         }
 
-        private void AttachPropertyChangedHandler(INotifyPropertyChanged notifyingTarget)
+        private PropertyChangedHandlerDetacher AttachPropertyChangedHandler(INotifyPropertyChanged notifyingTarget)
         {
             var weakCommand = new WeakReference<MethodCommand>(this);
             PropertyChangedEventHandler? handler = null;
@@ -111,6 +112,7 @@ public static class SourceGenMethodCommandRuntime
             };
 
             notifyingTarget.PropertyChanged += handler;
+            return new PropertyChangedHandlerDetacher(notifyingTarget, handler);
         }
 
         private void OnTargetPropertyChanged(PropertyChangedEventArgs e)
@@ -126,6 +128,37 @@ public static class SourceGenMethodCommandRuntime
                 {
                     CanExecuteChanged?.Invoke(this, EventArgs.Empty);
                 }
+            }
+        }
+
+        private sealed class PropertyChangedHandlerDetacher : IDisposable
+        {
+            private INotifyPropertyChanged? _notifyingTarget;
+            private PropertyChangedEventHandler? _handler;
+
+            public PropertyChangedHandlerDetacher(
+                INotifyPropertyChanged notifyingTarget,
+                PropertyChangedEventHandler handler)
+            {
+                _notifyingTarget = notifyingTarget;
+                _handler = handler;
+            }
+
+            ~PropertyChangedHandlerDetacher()
+            {
+                Dispose();
+            }
+
+            public void Dispose()
+            {
+                var notifyingTarget = Interlocked.Exchange(ref _notifyingTarget, null);
+                var handler = Interlocked.Exchange(ref _handler, null);
+                if (notifyingTarget is not null && handler is not null)
+                {
+                    notifyingTarget.PropertyChanged -= handler;
+                }
+
+                GC.SuppressFinalize(this);
             }
         }
     }
