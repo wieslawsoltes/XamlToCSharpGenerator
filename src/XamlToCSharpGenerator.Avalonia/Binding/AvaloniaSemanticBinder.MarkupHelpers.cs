@@ -419,13 +419,15 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        var token = XamlMarkupExtensionNameSemantics.ToClrExtensionTypeToken(markupName);
-        if (token.Length == 0)
+        foreach (var candidateToken in XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(markupName))
         {
-            return false;
+            extensionType = ResolveTypeToken(compilation, document, candidateToken, document.ClassNamespace);
+            if (extensionType is not null)
+            {
+                break;
+            }
         }
 
-        extensionType = ResolveTypeToken(compilation, document, token, document.ClassNamespace);
         if (extensionType is null)
         {
             return false;
