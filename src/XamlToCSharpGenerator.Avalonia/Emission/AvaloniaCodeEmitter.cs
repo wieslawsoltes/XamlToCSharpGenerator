@@ -126,9 +126,13 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             $"            global::XamlToCSharpGenerator.Runtime.XamlSourceGenArtifactRefreshRegistry.Register(typeof({className}), __RegisterXamlSourceGenArtifacts);");
         sourceBuilder.AppendLine($"            global::XamlToCSharpGenerator.Runtime.XamlSourceGenRegistry.Register(\"{escapedUri}\", static __serviceProvider =>");
         sourceBuilder.AppendLine("            {");
-            sourceBuilder.AppendLine("                var __instance = __CreateRootInstance(__serviceProvider);");
-            sourceBuilder.AppendLine("                __PopulateGeneratedObjectGraph(__instance, __serviceProvider);");
-            sourceBuilder.AppendLine("                return __instance;");
+        sourceBuilder.AppendLine("                var __instance = __CreateRootInstance(__serviceProvider);");
+        sourceBuilder.AppendLine("                __PopulateGeneratedObjectGraph(__instance, __serviceProvider);");
+        if (!viewModel.Document.IsClassBacked && viewModel.EnableHotReload)
+        {
+            sourceBuilder.AppendLine("                __RegisterSourceGenHotReload(__instance);");
+        }
+        sourceBuilder.AppendLine("                return __instance;");
         sourceBuilder.AppendLine("            });");
 
         if (viewModel.CreateSourceInfo)
@@ -288,6 +292,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine("            }");
             sourceBuilder.AppendLine();
             sourceBuilder.AppendLine("            if (__self is global::Avalonia.Visual __visual)");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                __visual.InvalidateVisual();");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+        }
+        else if (viewModel.EnableHotReload)
+        {
+            var escapedSourcePath = Escape(viewModel.Document.FilePath);
+            sourceBuilder.AppendLine("        private static void __RegisterSourceGenHotReload(object __instance)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine(
+                "            global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.Register(__instance, __ApplySourceGenHotReload, new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine($"                TrackingType = typeof({className}),");
+            sourceBuilder.AppendLine($"                BuildUri = \"{escapedUri}\",");
+            sourceBuilder.AppendLine($"                SourcePath = \"{escapedSourcePath}\"");
+            sourceBuilder.AppendLine("            });");
+            sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("        private static void __ApplySourceGenHotReload(object __instance)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine("            __RegisterXamlSourceGenArtifacts();");
+            sourceBuilder.AppendLine($"            __PopulateGeneratedObjectGraph(({viewModel.RootObject.TypeName})__instance, null, true);");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("            if (__instance is global::Avalonia.Layout.Layoutable __layoutable)");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                __layoutable.InvalidateMeasure();");
+            sourceBuilder.AppendLine("                __layoutable.InvalidateArrange();");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("            if (__instance is global::Avalonia.Visual __visual)");
             sourceBuilder.AppendLine("            {");
             sourceBuilder.AppendLine("                __visual.InvalidateVisual();");
             sourceBuilder.AppendLine("            }");
@@ -2297,7 +2333,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         nodeCounter++;
         var deferredValueName = "__deferredResourceContent" + nodeCounter.ToString();
         var deferredProviderName = "__deferredResourceProvider" + nodeCounter.ToString();
+        var deferredNameScopeName = "__deferredResourceNameScope" + nodeCounter.ToString();
         var deferredParentStackExpression = BuildParentStackExpression(parentStackReferences);
+        var usesDeferredResourceNameScope = node.HasSemantic(ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource);
 
         AppendSourceMappedLine(
             sourceBuilder,
@@ -2315,9 +2353,19 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             node.Column);
 
         var factoryIndent = indent + "    ";
+        if (usesDeferredResourceNameScope)
+        {
+            AppendSourceMappedLine(
+                sourceBuilder,
+                $"{factoryIndent}var {deferredNameScopeName} = global::XamlToCSharpGenerator.Runtime.SourceGenDeferredServiceProviderFactory.CreateDeferredResourceNameScope(__deferredServiceProvider);",
+                emitDebugLineDirectives,
+                lineDirectiveFilePath,
+                node.Line,
+                node.Column);
+        }
         AppendSourceMappedLine(
             sourceBuilder,
-            $"{factoryIndent}var {deferredProviderName} = global::XamlToCSharpGenerator.Runtime.SourceGenDeferredServiceProviderFactory.CreateDeferredResourceServiceProvider(__deferredServiceProvider, {rootReference}, {intermediateRootReference}, {baseUriExpression}, {deferredParentStackExpression});",
+            $"{factoryIndent}var {deferredProviderName} = global::XamlToCSharpGenerator.Runtime.SourceGenDeferredServiceProviderFactory.CreateDeferredResourceServiceProvider(__deferredServiceProvider, {rootReference}, {intermediateRootReference}, {baseUriExpression}, {deferredParentStackExpression}, {(usesDeferredResourceNameScope ? deferredNameScopeName : "null")});",
             emitDebugLineDirectives,
             lineDirectiveFilePath,
             node.Line,
@@ -2331,8 +2379,9 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             rootReference,
             EmptyNamedFieldMap,
             emittedEventBindingMethodNames,
-            emitNameScopeRegistration: false,
-            nameScopeReference: null,
+            emitNameScopeRegistration: usesDeferredResourceNameScope,
+            nameScopeReference: usesDeferredResourceNameScope ? deferredNameScopeName : null,
+            completeNameScopeOnNodeCompletion: usesDeferredResourceNameScope,
             serviceProviderReference: deferredProviderName,
             baseUriExpression: baseUriExpression,
             parentStackReferences: parentStackReferences,

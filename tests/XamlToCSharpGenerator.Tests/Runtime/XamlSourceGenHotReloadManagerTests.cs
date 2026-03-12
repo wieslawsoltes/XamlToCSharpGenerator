@@ -92,6 +92,42 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     [Fact]
+    public void UpdateApplication_Uses_Explicit_Tracking_Type_For_Classless_Roots()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var firstCount = 0;
+        var secondCount = 0;
+        var first = new ResourceDictionary();
+        var second = new ResourceDictionary();
+
+        XamlSourceGenHotReloadManager.Register(
+            first,
+            _ => firstCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(ClasslessTrackingTypeA),
+                BuildUri = "avares://Demo/ThemeA.axaml",
+                SourcePath = "/tmp/ThemeA.axaml"
+            });
+        XamlSourceGenHotReloadManager.Register(
+            second,
+            _ => secondCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(ClasslessTrackingTypeB),
+                BuildUri = "avares://Demo/ThemeB.axaml",
+                SourcePath = "/tmp/ThemeB.axaml"
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ClasslessTrackingTypeA)]);
+
+        Assert.Equal(1, firstCount);
+        Assert.Equal(0, secondCount);
+    }
+
+    [Fact]
     public void UpdateApplication_Maps_MetadataUpdate_Replacement_Type_To_Original_Type()
     {
         ResetManager();
@@ -1397,6 +1433,14 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     private sealed class DuplicateGeneratedUpdateHelperB
+    {
+    }
+
+    private sealed class ClasslessTrackingTypeA
+    {
+    }
+
+    private sealed class ClasslessTrackingTypeB
     {
     }
 

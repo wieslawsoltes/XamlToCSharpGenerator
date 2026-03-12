@@ -1,5 +1,7 @@
 using System;
 using System.ComponentModel;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
@@ -40,6 +42,48 @@ public class SourceGenMethodCommandRuntimeTests
     public void ConvertParameter_Throws_For_Null_NonNullable_ValueType()
     {
         Assert.Throws<NullReferenceException>(() => SourceGenMethodCommandRuntime.ConvertParameter<int>(null));
+    }
+
+    [AvaloniaFact]
+    public async Task Create_Marshals_CanExecuteChanged_Through_Captured_Avalonia_Context_When_PlatformMarker_Is_Unset()
+    {
+        var originalPlatformSetupCompleted = SourceGenDispatcherRuntime.IsPlatformSetupCompleted;
+        SourceGenDispatcherRuntime.ResetForTests();
+        AvaloniaSynchronizationContext.InstallIfNeeded();
+
+        try
+        {
+            var viewModel = new MethodCommandViewModel();
+            var command = Assert.IsAssignableFrom<System.Windows.Input.ICommand>(
+                SourceGenMethodCommandRuntime.Create(
+                    viewModel,
+                    static (_, _) => { },
+                    static (_, _) => true,
+                    new[] { nameof(MethodCommandViewModel.IsEnabled) }));
+
+            var raisedOnUiContext = false;
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var uiContext = SynchronizationContext.Current;
+
+            command.CanExecuteChanged += (_, _) =>
+            {
+                raisedOnUiContext = ReferenceEquals(SynchronizationContext.Current, uiContext);
+                completion.TrySetResult(true);
+            };
+
+            await Task.Run(() => viewModel.IsEnabled = true);
+            Dispatcher.UIThread.RunJobs();
+            await completion.Task;
+
+            Assert.True(raisedOnUiContext);
+        }
+        finally
+        {
+            if (originalPlatformSetupCompleted)
+            {
+                SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            }
+        }
     }
 
     private sealed class MethodCommandViewModel : INotifyPropertyChanged

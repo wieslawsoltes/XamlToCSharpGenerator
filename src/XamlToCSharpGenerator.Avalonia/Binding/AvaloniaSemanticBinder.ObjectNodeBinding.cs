@@ -2078,7 +2078,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 normalizedNodeName,
                 resolvedChildren,
                 propertyElementAssignments,
-                flags))
+                flags,
+                allowNameScopeRegistrations: node.IsShared == false))
         {
             flags |= ResolvedObjectNodeSemanticFlags.CanBeDeferredResource;
         }
@@ -2097,33 +2098,42 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string? normalizedNodeName,
         ImmutableArray<ResolvedObjectNode> resolvedChildren,
         ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments,
-        ResolvedObjectNodeSemanticFlags semanticFlags)
+        ResolvedObjectNodeSemanticFlags semanticFlags,
+        bool allowNameScopeRegistrations)
     {
         if (symbol is null ||
             symbol.IsValueType ||
             symbol.SpecialType == SpecialType.System_String ||
-            !string.IsNullOrWhiteSpace(normalizedNodeName) ||
             semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsResourceInclude) ||
             semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsStyleInclude))
         {
             return false;
         }
 
-        foreach (var child in resolvedChildren)
+        if (!allowNameScopeRegistrations &&
+            !string.IsNullOrWhiteSpace(normalizedNodeName))
         {
-            if (ContainsNameScopeRegistration(child))
-            {
-                return false;
-            }
+            return false;
         }
 
-        foreach (var propertyElementAssignment in propertyElementAssignments)
+        if (!allowNameScopeRegistrations)
         {
-            foreach (var objectValue in propertyElementAssignment.ObjectValues)
+            foreach (var child in resolvedChildren)
             {
-                if (ContainsNameScopeRegistration(objectValue))
+                if (ContainsNameScopeRegistration(child))
                 {
                     return false;
+                }
+            }
+
+            foreach (var propertyElementAssignment in propertyElementAssignments)
+            {
+                foreach (var objectValue in propertyElementAssignment.ObjectValues)
+                {
+                    if (ContainsNameScopeRegistration(objectValue))
+                    {
+                        return false;
+                    }
                 }
             }
         }

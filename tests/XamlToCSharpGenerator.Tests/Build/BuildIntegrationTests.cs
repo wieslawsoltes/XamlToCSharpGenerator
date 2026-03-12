@@ -48,9 +48,44 @@ public class BuildIntegrationTests
 
         Assert.Contains("STATE|SourceGen|true|true|false|false|1|1", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 0, output);
+        Assert.True(CountMatches(output, "CACI|") == 1, output);
+        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void SourceGen_Backend_WatchMode_Can_Opt_Back_Into_DotNetWatch_Xaml_Build_Triggers()
+    {
+        var output = RunEvaluation(
+            sourceGenBackend: true,
+            seedAdditionalFile: true,
+            watchMode: true,
+            enableDotNetWatchXamlBuildTriggers: true);
+
+        Assert.Contains("STATE|SourceGen|true|true|false|false|1|1", output, StringComparison.Ordinal);
+        Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
         Assert.True(CountMatches(output, "WATCH|") == 1, output);
         Assert.True(CountMatches(output, "CACI|") == 1, output);
         Assert.True(CountMatches(output, "UTDI|") == 1, output);
+    }
+
+    [Fact]
+    public void SourceGen_Backend_DotNetWatchSdk_Target_Removes_Xaml_From_Final_Watch_List()
+    {
+        var output = RunDotNetWatchEvaluation(sourceGenBackend: true);
+
+        Assert.DoesNotContain("WATCHXAML|", output, StringComparison.Ordinal);
+        Assert.Contains("WATCHPROJ|", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SourceGen_Backend_DotNetWatchSdk_Target_Can_Opt_Back_Into_Xaml_Watch_List()
+    {
+        var output = RunDotNetWatchEvaluation(
+            sourceGenBackend: true,
+            enableDotNetWatchXamlBuildTriggers: true);
+
+        Assert.Contains("WATCHXAML|", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -71,6 +106,7 @@ public class BuildIntegrationTests
         var output = RunEvaluation(
             sourceGenBackend: true,
             watchMode: true,
+            enableDotNetWatchXamlBuildTriggers: true,
             runFromRepositoryRoot: true);
 
         var projectDirectory = GetSinglePrefixedValue(output, "PROJDIR|");
@@ -128,7 +164,7 @@ public class BuildIntegrationTests
 
         Assert.Contains("STATE|SourceGen|true|true|false|false|1|0", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
-        Assert.True(CountMatches(output, "WATCH|") == 1, output);
+        Assert.True(CountMatches(output, "WATCH|") == 0, output);
         Assert.True(CountMatches(output, "CACI|") == 1, output);
         Assert.True(CountMatches(output, "UTDI|") == 1, output);
     }
@@ -343,6 +379,7 @@ public class BuildIntegrationTests
         bool setSourceGenKnobs = false,
         bool useNeutralBackendProperty = false,
         bool useNeutralEnableFlag = false,
+        bool enableDotNetWatchXamlBuildTriggers = false,
         string? customInputItemGroup = null,
         string? customAdditionalFilesSourceItemGroup = null,
         bool includeTransformRule = false,
@@ -374,6 +411,7 @@ public class BuildIntegrationTests
                 setSourceGenKnobs,
                 useNeutralBackendProperty,
                 useNeutralEnableFlag,
+                enableDotNetWatchXamlBuildTriggers,
                 customInputItemGroup,
                 customAdditionalFilesSourceItemGroup,
                 includeTransformRule,
@@ -423,6 +461,92 @@ public class BuildIntegrationTests
         }
     }
 
+    private static string RunDotNetWatchEvaluation(
+        bool sourceGenBackend,
+        bool enableDotNetWatchXamlBuildTriggers = false)
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
+        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
+        var dotNetWatchTargetsPath = FindDotNetWatchTargetsPath();
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-dotnet-watch");
+
+        try
+        {
+            var projectFile = Path.Combine(tempDir, "BuildIntegration.csproj");
+            var xamlFile = Path.Combine(tempDir, "MainView.axaml");
+            File.WriteAllText(xamlFile, "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+
+            var backendProperty = sourceGenBackend
+                ? "\n    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>"
+                : string.Empty;
+            var dotNetWatchBuildTriggersProperty = enableDotNetWatchXamlBuildTriggers
+                ? "\n    <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>true</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>"
+                : string.Empty;
+
+            File.WriteAllText(projectFile, $"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="{NormalizeForMsBuild(propsPath)}" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>{backendProperty}
+    <DotNetWatchBuild>true</DotNetWatchBuild>{dotNetWatchBuildTriggersProperty}
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Include="MainView.axaml" Link="Views/MainView.axaml" />
+  </ItemGroup>
+
+  <Import Project="{NormalizeForMsBuild(targetsPath)}" />
+  <Import Project="{NormalizeForMsBuild(dotNetWatchTargetsPath)}" />
+
+  <Target Name="PrintDotNetWatchState" DependsOnTargets="_CollectWatchItems">
+    <Message Importance="high" Condition="'@(Watch)' != '' and $([System.String]::Copy('%(Watch.Identity)').EndsWith('.axaml'))" Text="WATCHXAML|%(Watch.Identity)" />
+    <Message Importance="high" Condition="'@(Watch)' != '' and $([System.String]::Copy('%(Watch.Identity)').EndsWith('.csproj'))" Text="WATCHPROJ|%(Watch.Identity)" />
+  </Target>
+</Project>
+""");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:PrintDotNetWatchState",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir
+            };
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+
+            var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            process.WaitForExit();
+            System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
+
+            var outputBuilder = new StringBuilder();
+            outputBuilder.Append(stdoutTask.Result);
+            outputBuilder.Append(stderrTask.Result);
+
+            var output = outputBuilder.ToString();
+            Assert.True(process.ExitCode == 0, output);
+            return output;
+        }
+        finally
+        {
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best effort cleanup in tests.
+            }
+        }
+    }
+
     private static string BuildProjectText(
         bool sourceGenBackend,
         bool seedAdditionalFile,
@@ -431,6 +555,7 @@ public class BuildIntegrationTests
         bool setSourceGenKnobs,
         bool useNeutralBackendProperty,
         bool useNeutralEnableFlag,
+        bool enableDotNetWatchXamlBuildTriggers,
         string? customInputItemGroup,
         string? customAdditionalFilesSourceItemGroup,
         bool includeTransformRule,
@@ -465,6 +590,9 @@ public class BuildIntegrationTests
         var watchProperty = watchMode
             ? "\n    <DotNetWatchBuild>true</DotNetWatchBuild>"
             : string.Empty;
+        var dotNetWatchBuildTriggersProperty = enableDotNetWatchXamlBuildTriggers
+            ? "\n    <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>true</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>"
+            : string.Empty;
         var seededAdditionalFiles = seedAdditionalFile
             ? "\n    <AdditionalFiles Include=\"MainView.axaml\" SourceItemGroup=\"AvaloniaXaml\" TargetPath=\"Views/MainView.axaml\" />"
             : string.Empty;
@@ -478,7 +606,7 @@ public class BuildIntegrationTests
             : string.Empty;
         var propertyGroup = $"""
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>{backendProperty}{enableProperty}{inputItemGroupProperty}{additionalFilesSourceItemGroupProperty}{transformRulesProperty}{transformRuleItemGroupProperty}{watchProperty}{sourceGenKnobs}
+    <TargetFramework>net10.0</TargetFramework>{backendProperty}{enableProperty}{inputItemGroupProperty}{additionalFilesSourceItemGroupProperty}{transformRulesProperty}{transformRuleItemGroupProperty}{watchProperty}{dotNetWatchBuildTriggersProperty}{sourceGenKnobs}
   </PropertyGroup>
 """;
         var xamlItemGroup = $"""
@@ -552,5 +680,51 @@ public class BuildIntegrationTests
     private static string NormalizeForMsBuild(string path)
     {
         return path.Replace('\\', '/');
+    }
+
+    private static string FindDotNetWatchTargetsPath()
+    {
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+
+        if (string.IsNullOrWhiteSpace(dotnetRoot))
+        {
+            var hostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            if (!string.IsNullOrWhiteSpace(hostPath))
+            {
+                dotnetRoot = Path.GetDirectoryName(hostPath);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(dotnetRoot))
+        {
+            var fallbackRoots = OperatingSystem.IsWindows()
+                ? new[] { @"C:\Program Files\dotnet", @"C:\Program Files (x86)\dotnet" }
+                : new[] { "/usr/local/share/dotnet", "/usr/share/dotnet" };
+            dotnetRoot = fallbackRoots.FirstOrDefault(Directory.Exists);
+        }
+
+        Assert.False(string.IsNullOrWhiteSpace(dotnetRoot), "Unable to locate DOTNET_ROOT for dotnet-watch target discovery.");
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = "--version",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+        var version = process!.StandardOutput.ReadToEnd().Trim();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0 && !string.IsNullOrWhiteSpace(version), "Unable to resolve active dotnet SDK version for dotnet-watch target discovery.");
+
+        var watchRoot = Path.Combine(dotnetRoot!, "sdk", version, "DotnetTools", "dotnet-watch");
+        Assert.True(Directory.Exists(watchRoot), $"Unable to locate dotnet-watch tool directory '{watchRoot}'.");
+
+        var targetFiles = Directory.GetFiles(watchRoot, "DotNetWatch.targets", SearchOption.AllDirectories);
+        return Assert.Single(targetFiles);
     }
 }

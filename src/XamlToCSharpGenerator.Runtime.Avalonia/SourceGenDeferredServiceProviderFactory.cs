@@ -21,6 +21,12 @@ public static class SourceGenDeferredServiceProviderFactory
         return new NameScope();
     }
 
+    public static INameScope CreateDeferredResourceNameScope(IServiceProvider? serviceProvider)
+    {
+        _ = serviceProvider;
+        return new NameScope();
+    }
+
     public static IServiceProvider CreateDeferredTemplateServiceProvider(
         IServiceProvider? parentServiceProvider,
         object rootObject,
@@ -44,7 +50,8 @@ public static class SourceGenDeferredServiceProviderFactory
         object rootObject,
         object intermediateRootObject,
         string? baseUri,
-        IReadOnlyList<object>? parentStack)
+        IReadOnlyList<object>? parentStack,
+        INameScope? resourceNameScope = null)
     {
         var upstreamParentStackProvider = parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) as IAvaloniaXamlIlParentStackProvider;
         var parentResourceNodes = CollectDeferredResourceNodes(upstreamParentStackProvider, parentStack);
@@ -54,7 +61,8 @@ public static class SourceGenDeferredServiceProviderFactory
             parentResourceNodes,
             rootObject,
             intermediateRootObject,
-            resolvedBaseUri);
+            resolvedBaseUri,
+            resourceNameScope);
     }
 
     private static object[] CollectParentResourceNodes(IAvaloniaXamlIlParentStackProvider? parentStackProvider)
@@ -257,19 +265,22 @@ public static class SourceGenDeferredServiceProviderFactory
         private readonly IServiceProvider? _parentServiceProvider;
         private readonly object[] _parentResourceNodes;
         private readonly Uri _baseUri;
+        private readonly INameScope? _resourceNameScope;
 
         public DeferredResourceServiceProvider(
             IServiceProvider? parentServiceProvider,
             object[] parentResourceNodes,
             object rootObject,
             object intermediateRootObject,
-            Uri baseUri)
+            Uri baseUri,
+            INameScope? resourceNameScope)
         {
             _parentServiceProvider = parentServiceProvider;
             _parentResourceNodes = parentResourceNodes;
             RootObject = rootObject;
             IntermediateRootObject = intermediateRootObject;
             _baseUri = baseUri;
+            _resourceNameScope = resourceNameScope;
         }
 
         public object RootObject { get; }
@@ -303,13 +314,12 @@ public static class SourceGenDeferredServiceProviderFactory
 
             if (serviceType == typeof(INameScope))
             {
-                return _parentServiceProvider?.GetService(serviceType);
+                return _resourceNameScope ?? _parentServiceProvider?.GetService(serviceType);
             }
 
             return _parentServiceProvider?.GetService(serviceType);
         }
     }
-
     private sealed class LastParentResourceStack
     {
         private readonly WeakReference<IAvaloniaXamlIlParentStackProvider?> _provider = new(null);

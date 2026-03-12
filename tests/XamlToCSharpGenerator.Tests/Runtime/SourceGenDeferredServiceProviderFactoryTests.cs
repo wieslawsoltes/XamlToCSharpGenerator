@@ -120,6 +120,30 @@ public class SourceGenDeferredServiceProviderFactoryTests
         Assert.Equal(new object[] { resources, owner }, parentStackProvider.Parents);
     }
 
+    [Fact]
+    public void CreateDeferredResourceNameScope_Creates_Local_Scope()
+    {
+        var parentScope = new NameScope();
+        var parentValue = new object();
+        parentScope.Register("Parent", parentValue);
+
+        var parentProvider = new DictionaryServiceProvider(new Dictionary<Type, object>
+        {
+            [typeof(INameScope)] = parentScope
+        });
+
+        var deferredScope = SourceGenDeferredServiceProviderFactory.CreateDeferredResourceNameScope(parentProvider);
+        var localValue = new object();
+        deferredScope.Register("Local", localValue);
+
+        Assert.Same(localValue, deferredScope.Find("Local"));
+        Assert.Null(deferredScope.Find("Parent"));
+
+        deferredScope.Complete();
+
+        Assert.True(deferredScope.IsCompleted);
+    }
+
     private sealed class ParentSentinel
     {
     }

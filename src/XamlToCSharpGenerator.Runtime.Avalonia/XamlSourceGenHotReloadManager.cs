@@ -118,7 +118,7 @@ public static class XamlSourceGenHotReloadManager
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(reloadAction);
 
-        var type = NormalizeType(instance.GetType());
+        var trackingType = NormalizeType(options?.TrackingType ?? instance.GetType());
         var registration = new ReloadRegistration(
             reloadAction,
             options?.BeforeReload,
@@ -128,20 +128,22 @@ public static class XamlSourceGenHotReloadManager
 
         lock (Sync)
         {
-            Registrations[type] = registration;
-            ReplacementTypeMap[type] = type;
+            Registrations[trackingType] = registration;
+            ReplacementTypeMap[trackingType] = trackingType;
 
-            if (!Instances.TryGetValue(type, out var references))
+            if (!Instances.TryGetValue(trackingType, out var references))
             {
                 references = new List<WeakReference<object>>();
-                Instances[type] = references;
+                Instances[trackingType] = references;
             }
 
             PruneDeadReferences(references);
             if (!ContainsReference(references, instance))
             {
                 references.Add(new WeakReference<object>(instance));
-                Trace("Registered instance for type '" + type.FullName + "'.");
+                Trace(
+                    "Registered instance for tracking type '" + trackingType.FullName +
+                    "' (runtime type '" + instance.GetType().FullName + "').");
             }
 
             var sourcePath = options?.SourcePath;
@@ -150,14 +152,16 @@ public static class XamlSourceGenHotReloadManager
                 var normalizedSourcePath = NormalizeSourcePath(sourcePath);
                 if (normalizedSourcePath is not null)
                 {
-                    IdeSourcePathWatchers[type] = SourcePathWatchState.Create(normalizedSourcePath);
-                    Trace("Registered source path watcher for type '" + type.FullName + "': " + normalizedSourcePath);
+                    IdeSourcePathWatchers[trackingType] = SourcePathWatchState.Create(normalizedSourcePath);
+                    Trace(
+                        "Registered source path watcher for tracking type '" + trackingType.FullName +
+                        "': " + normalizedSourcePath);
                 }
             }
 
             if (TryNormalizeBuildUri(options?.BuildUri, out var buildUri))
             {
-                BuildUrisByType[type] = buildUri;
+                BuildUrisByType[trackingType] = buildUri;
             }
         }
     }
@@ -2035,7 +2039,7 @@ public static class XamlSourceGenHotReloadManager
             var document = new RuntimeXamlLoaderDocument(baseUri, operation.Instance, stream);
             var configuration = new RuntimeXamlLoaderConfiguration
             {
-                LocalAssembly = operation.Instance.GetType().Assembly
+                LocalAssembly = operation.Type.Assembly
             };
 
             var options = AvaloniaSourceGeneratedXamlLoader.RuntimeCompilationOptions;

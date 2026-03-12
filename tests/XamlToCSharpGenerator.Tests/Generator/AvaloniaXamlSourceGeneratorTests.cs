@@ -1397,6 +1397,31 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_Classless_HotReload_Registration_With_Tracking_Type()
+    {
+        const string code = "namespace Demo;";
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                <Thickness x:Key="Inset">1</Thickness>
+            </ResourceDictionary>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("private static void __RegisterSourceGenHotReload(object __instance)", generated);
+        Assert.Contains("__RegisterSourceGenHotReload(__instance);", generated);
+        Assert.Contains("TrackingType = typeof(", generated);
+        Assert.Contains("BuildUri = \"avares://", generated);
+        Assert.Contains("SourcePath = ", generated);
+        Assert.Contains("private static void __ApplySourceGenHotReload(object __instance)", generated);
+        Assert.DoesNotContain("__TrackAndReconcileSourceGenHotReloadState", generated);
+    }
+
+    [Fact]
     public void HotReload_Can_Be_Disabled_Via_Build_Property()
     {
         const string code = "namespace Demo; public partial class MainView {}";
@@ -1701,6 +1726,81 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("__AXSGObjectGraph.TryAddToDictionary(__root.Resources, \"PrimaryButton\",", generated);
+        Assert.Contains("__SourceGenDocumentUri, false);", generated);
+    }
+
+    [Fact]
+    public void Supports_XShared_False_For_Named_Deferred_Resource_Dictionary_Entries()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject { }
+                public class StyledElement : AvaloniaObject
+                {
+                    public string? Name { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope
+                {
+                    void Register(string name, object value);
+                    object? Find(string name);
+                    void Complete();
+                    bool IsCompleted { get; }
+                }
+
+                public class NameScope : INameScope
+                {
+                    public void Register(string name, object value) { }
+                    public object? Find(string name) => null;
+                    public void Complete() { }
+                    public bool IsCompleted => false;
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class UserControl : Control
+                {
+                    public ResourceDictionary Resources { get; } = new();
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                }
+
+                public class Button : Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <Button x:Key="PrimaryButton" x:Shared="False" x:Name="NamedButton" />
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("CreateDeferredResourceNameScope(__deferredServiceProvider);", generated);
+        Assert.Contains("CreateDeferredResourceServiceProvider(__deferredServiceProvider,", generated);
+        Assert.Contains("__deferredResourceNameScope", generated);
         Assert.Contains("__AXSGObjectGraph.TryAddToDictionary(__root.Resources, \"PrimaryButton\",", generated);
         Assert.Contains("__SourceGenDocumentUri, false);", generated);
     }

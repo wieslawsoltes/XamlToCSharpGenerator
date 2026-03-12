@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.Threading;
 using System.Windows.Input;
 using Avalonia.Threading;
 using Avalonia.Utilities;
@@ -52,6 +53,7 @@ public static class SourceGenMethodCommandRuntime
         private readonly Action<object, object?> _execute;
         private readonly Func<object, object?, bool>? _canExecute;
         private readonly HashSet<string>? _dependsOnProperties;
+        private readonly SynchronizationContext? _capturedSynchronizationContext;
 
         public MethodCommand(
             object target,
@@ -62,6 +64,7 @@ public static class SourceGenMethodCommandRuntime
             _target = new WeakReference<object?>(target);
             _execute = execute;
             _canExecute = canExecute;
+            _capturedSynchronizationContext = SynchronizationContext.Current;
 
             if (target is INotifyPropertyChanged notifyingTarget &&
                 dependsOnProperties is not null &&
@@ -118,7 +121,8 @@ public static class SourceGenMethodCommandRuntime
             {
                 if (!SourceGenDispatcherRuntime.TryPost(
                         () => CanExecuteChanged?.Invoke(this, EventArgs.Empty),
-                        DispatcherPriority.Input))
+                        DispatcherPriority.Input,
+                        _capturedSynchronizationContext))
                 {
                     CanExecuteChanged?.Invoke(this, EventArgs.Empty);
                 }
