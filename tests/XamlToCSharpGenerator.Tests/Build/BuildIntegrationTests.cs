@@ -49,8 +49,8 @@ public class BuildIntegrationTests
         Assert.Contains("STATE|SourceGen|true|true|false|false|1|1", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
         Assert.True(CountMatches(output, "WATCH|") == 0, output);
-        Assert.True(CountMatches(output, "CACI|") == 1, output);
-        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 0, output);
+        Assert.True(CountMatches(output, "UTDI|") == 0, output);
     }
 
     [Fact]
@@ -75,6 +75,8 @@ public class BuildIntegrationTests
         var output = RunDotNetWatchEvaluation(sourceGenBackend: true);
 
         Assert.DoesNotContain("WATCHXAML|", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("CACIXAML|", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("UTDIXAML|", output, StringComparison.Ordinal);
         Assert.Contains("WATCHPROJ|", output, StringComparison.Ordinal);
     }
 
@@ -86,6 +88,8 @@ public class BuildIntegrationTests
             enableDotNetWatchXamlBuildTriggers: true);
 
         Assert.Contains("WATCHXAML|", output, StringComparison.Ordinal);
+        Assert.Contains("CACIXAML|", output, StringComparison.Ordinal);
+        Assert.Contains("UTDIXAML|", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,8 +169,8 @@ public class BuildIntegrationTests
         Assert.Contains("STATE|SourceGen|true|true|false|false|1|0", output, StringComparison.Ordinal);
         Assert.True(CountMatches(output, "AF|AvaloniaXaml|Views/MainView.axaml") == 1, output);
         Assert.True(CountMatches(output, "WATCH|") == 0, output);
-        Assert.True(CountMatches(output, "CACI|") == 1, output);
-        Assert.True(CountMatches(output, "UTDI|") == 1, output);
+        Assert.True(CountMatches(output, "CACI|") == 0, output);
+        Assert.True(CountMatches(output, "UTDI|") == 0, output);
     }
 
     [Fact]
@@ -500,9 +504,11 @@ public class BuildIntegrationTests
   <Import Project="{NormalizeForMsBuild(targetsPath)}" />
   <Import Project="{NormalizeForMsBuild(dotNetWatchTargetsPath)}" />
 
-  <Target Name="PrintDotNetWatchState" DependsOnTargets="_CollectWatchItems">
+  <Target Name="PrintDotNetWatchState" DependsOnTargets="XamlToCSharpGenerator_PrepareCoreCompileInputs;XamlToCSharpGenerator_CollectUpToDateCheckInputDesignTime;_CollectWatchItems">
     <Message Importance="high" Condition="'@(Watch)' != '' and $([System.String]::Copy('%(Watch.Identity)').EndsWith('.axaml'))" Text="WATCHXAML|%(Watch.Identity)" />
     <Message Importance="high" Condition="'@(Watch)' != '' and $([System.String]::Copy('%(Watch.Identity)').EndsWith('.csproj'))" Text="WATCHPROJ|%(Watch.Identity)" />
+    <Message Importance="high" Condition="'@(CustomAdditionalCompileInputs)' != '' and $([System.String]::Copy('%(CustomAdditionalCompileInputs.Identity)').EndsWith('.axaml'))" Text="CACIXAML|%(CustomAdditionalCompileInputs.Identity)" />
+    <Message Importance="high" Condition="'@(UpToDateCheckInput)' != '' and $([System.String]::Copy('%(UpToDateCheckInput.Identity)').EndsWith('.axaml'))" Text="UTDIXAML|%(UpToDateCheckInput.Identity)" />
   </Target>
 </Project>
 """);
