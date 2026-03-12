@@ -498,8 +498,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var isLastSegment = segmentIndex == segments.Length - 1;
+            var property = segment.IsMethodCall ? null : FindProperty(currentNamedType, segment.MemberName);
             var commandErrorMessage = string.Empty;
-            if (treatLastMethodAsCommand &&
+            if (property is null &&
+                treatLastMethodAsCommand &&
                 isLastSegment &&
                 !segment.IsMethodCall &&
                 leadingNotCount == 0 &&
@@ -531,7 +533,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 return true;
             }
 
-            if (treatLastMethodAsCommand &&
+            if (property is null &&
+                treatLastMethodAsCommand &&
                 isLastSegment &&
                 !segment.IsMethodCall &&
                 !string.IsNullOrWhiteSpace(commandErrorMessage))
@@ -541,7 +544,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var accessor = segment.AcceptsNull ? "?." : ".";
-            var property = segment.IsMethodCall ? null : FindProperty(currentNamedType, segment.MemberName);
             var method = segment.IsMethodCall
                 ? null
                 : FindParameterlessMethod(currentNamedType, segment.MemberName);
@@ -841,7 +843,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
             {
-                if (!seenMethods.Add(method) || !predicate(method))
+                if (!seenMethods.Add(method) ||
+                    !predicate(method) ||
+                    ContainsEquivalentMethodCommandSignature(interfaceCandidates, method))
                 {
                     continue;
                 }
@@ -851,6 +855,46 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return interfaceCandidates.ToImmutable();
+    }
+
+    private static bool ContainsEquivalentMethodCommandSignature(
+        ImmutableArray<IMethodSymbol>.Builder candidates,
+        IMethodSymbol candidate)
+    {
+        foreach (var existing in candidates)
+        {
+            if (HasEquivalentMethodCommandSignature(existing, candidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasEquivalentMethodCommandSignature(
+        IMethodSymbol left,
+        IMethodSymbol right)
+    {
+        if (!string.Equals(left.Name, right.Name, StringComparison.Ordinal) ||
+            !SymbolEqualityComparer.Default.Equals(left.ReturnType, right.ReturnType) ||
+            left.Parameters.Length != right.Parameters.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Parameters.Length; index++)
+        {
+            var leftParameter = left.Parameters[index];
+            var rightParameter = right.Parameters[index];
+            if (leftParameter.RefKind != rightParameter.RefKind ||
+                !SymbolEqualityComparer.Default.Equals(leftParameter.Type, rightParameter.Type))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static ImmutableArray<string> GetDependsOnPropertyNames(IMethodSymbol method)
