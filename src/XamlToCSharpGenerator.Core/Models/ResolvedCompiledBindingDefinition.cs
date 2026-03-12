@@ -9,4 +9,5 @@ public sealed record ResolvedCompiledBindingDefinition(
     string AccessorExpression,
     bool IsSetterBinding,
     int Line,
-    int Column);
+    int Column,
+    string? AccessorPlaceholderToken = null);
