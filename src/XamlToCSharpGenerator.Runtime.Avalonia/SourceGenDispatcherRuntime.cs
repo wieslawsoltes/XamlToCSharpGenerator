@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
@@ -34,6 +35,33 @@ internal static class SourceGenDispatcherRuntime
         }
 
         Dispatcher.UIThread.Post(action, priority);
+        return true;
+    }
+
+    internal static bool TryPost(
+        Action action,
+        DispatcherPriority priority,
+        SynchronizationContext? fallbackSynchronizationContext)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        if (TryPost(action, priority))
+        {
+            return true;
+        }
+
+        if (fallbackSynchronizationContext is not AvaloniaSynchronizationContext avaloniaSynchronizationContext)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(SynchronizationContext.Current, avaloniaSynchronizationContext))
+        {
+            action();
+            return true;
+        }
+
+        avaloniaSynchronizationContext.Post(static state => ((Action)state!).Invoke(), action);
         return true;
     }
 

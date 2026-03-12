@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Input;
+using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
 
@@ -62,6 +64,35 @@ public class SourceGenDispatcherRuntimeTests
             }
 
             UiThreadField.SetValue(null, originalUiThread);
+        }
+    }
+
+    [AvaloniaFact]
+    public void TryPost_Uses_Captured_AvaloniaSynchronizationContext_When_PlatformMarker_Is_Unset()
+    {
+        var originalPlatformSetupCompleted = SourceGenDispatcherRuntime.IsPlatformSetupCompleted;
+        SourceGenDispatcherRuntime.ResetForTests();
+        AvaloniaSynchronizationContext.InstallIfNeeded();
+        var synchronizationContext = SynchronizationContext.Current;
+        var ran = false;
+
+        try
+        {
+            var posted = SourceGenDispatcherRuntime.TryPost(
+                () => ran = true,
+                DispatcherPriority.Background,
+                synchronizationContext);
+
+            Assert.True(posted);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(ran);
+        }
+        finally
+        {
+            if (originalPlatformSetupCompleted)
+            {
+                SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            }
         }
     }
 

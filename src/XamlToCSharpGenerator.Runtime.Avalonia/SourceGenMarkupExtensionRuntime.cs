@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia;
@@ -822,6 +823,8 @@ public static class SourceGenMarkupExtensionRuntime
 
     private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
     {
+        var fallbackSynchronizationContext = SynchronizationContext.Current as AvaloniaSynchronizationContext;
+
         async Task ScheduleDelayedRetryAsync(int attempt, int delayMilliseconds)
         {
             await Task.Delay(delayMilliseconds).ConfigureAwait(false);
@@ -860,7 +863,7 @@ public static class SourceGenMarkupExtensionRuntime
                         _ = ScheduleDelayedRetryAsync(nextAttempt, delayMilliseconds);
                     }
                 }
-            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background))
+            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background, fallbackSynchronizationContext))
             {
                 if (attempt + 1 >= MaxDeferredBindingRetryCount)
                 {
