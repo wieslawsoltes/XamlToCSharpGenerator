@@ -1707,6 +1707,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var semanticFlags = ResolveObjectNodeSemanticFlags(
             symbol,
             compilation,
+            node,
             normalizedNodeName,
             resolvedChildren,
             resolvedPropertyElementAssignments);
@@ -2062,6 +2063,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static ResolvedObjectNodeSemanticFlags ResolveObjectNodeSemanticFlags(
         INamedTypeSymbol? symbol,
         Compilation compilation,
+        XamlObjectNode node,
         string? normalizedNodeName,
         ImmutableArray<ResolvedObjectNode> resolvedChildren,
         ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments)
@@ -2079,6 +2081,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 flags))
         {
             flags |= ResolvedObjectNodeSemanticFlags.CanBeDeferredResource;
+        }
+
+        if (node.IsShared == false &&
+            flags.HasFlag(ResolvedObjectNodeSemanticFlags.CanBeDeferredResource))
+        {
+            flags |= ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource;
         }
 
         return flags;

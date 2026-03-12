@@ -197,6 +197,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             conditionalNamespacesByRawUri);
         var isArrayDirective = IsXamlDirectiveElement(element, "Array");
         string? key = null;
+        bool? isShared = null;
         string? xName = null;
         string? plainName = null;
         string? fieldModifier = null;
@@ -218,6 +219,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                     if (attribute.Name.LocalName == "Key")
                     {
                         key = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "Shared")
+                    {
+                        isShared = bool.TryParse(attribute.Value, out var parsedShared)
+                            ? parsedShared
+                            : (bool?)null;
                     }
                     else if (attribute.Name.LocalName == "Name")
                     {
@@ -349,6 +356,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             XmlTypeName: element.Name.LocalName,
             Condition: elementCondition,
             Key: key,
+            IsShared: isShared,
             Name: name,
             FieldModifier: fieldModifier,
             DataType: dataType,
@@ -741,6 +749,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                || attribute.Name.LocalName == "FieldModifier"
                || attribute.Name.LocalName == "ClassModifier"
                || attribute.Name.LocalName == "Key"
+               || attribute.Name.LocalName == "Shared"
                || attribute.Name.LocalName == "DataType"
                || attribute.Name.LocalName == "CompileBindings"
                || attribute.Name.LocalName == "Precompile"

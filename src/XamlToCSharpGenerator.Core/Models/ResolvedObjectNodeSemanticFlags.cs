@@ -11,5 +11,6 @@ public enum ResolvedObjectNodeSemanticFlags
     IsStyleInclude = 1 << 2,
     StaticResourceMarkupExtension = 1 << 3,
     IsResourceDictionary = 1 << 4,
-    CanBeDeferredResource = 1 << 5
+    CanBeDeferredResource = 1 << 5,
+    IsNotSharedDeferredResource = 1 << 6
 }

@@ -21,4 +21,5 @@ public sealed record XamlObjectNode(
     int Line,
     int Column,
     ConditionalXamlExpression? Condition = null,
-    string? RawTextContent = null);
+    string? RawTextContent = null,
+    bool? IsShared = null);

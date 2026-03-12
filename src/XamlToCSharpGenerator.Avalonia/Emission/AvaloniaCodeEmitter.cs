@@ -1337,8 +1337,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                             intermediateRootReference,
                             emitDebugLineDirectives,
                             lineDirectiveFilePath);
+                        var sharedArgument = child.HasSemantic(ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource)
+                            ? ", false"
+                            : string.Empty;
                         EmitStatementAt(
-                            $"__AXSGObjectGraph.TryAddToDictionary({variableName}, {child.KeyExpression}, {deferredChildValueExpression}, __SourceGenDocumentUri);",
+                            $"__AXSGObjectGraph.TryAddToDictionary({variableName}, {child.KeyExpression}, {deferredChildValueExpression}, __SourceGenDocumentUri{sharedArgument});",
                             child.Line,
                             child.Column);
                         continue;
@@ -2110,9 +2113,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         intermediateRootReference,
                         emitDebugLineDirectives,
                         lineDirectiveFilePath);
+                    var sharedArgument = keyedObjectValue.HasSemantic(ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource)
+                        ? ", false"
+                        : string.Empty;
                     AppendSourceMappedLine(
                         sourceBuilder,
-                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri);",
+                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri{sharedArgument});",
                         emitDebugLineDirectives,
                         lineDirectiveFilePath,
                         keyedObjectValue.Line,
@@ -2190,9 +2196,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         intermediateRootReference,
                         emitDebugLineDirectives,
                         lineDirectiveFilePath);
+                    var sharedArgument = child.HasSemantic(ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource)
+                        ? ", false"
+                        : string.Empty;
                     AppendSourceMappedLine(
                         sourceBuilder,
-                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri);",
+                        $"{indent}__AXSGObjectGraph.TryAddToDictionary({variableName}.{propertyElementAssignment.PropertyName}, {dictionaryKeyExpression}, {deferredValueExpression}, __SourceGenDocumentUri{sharedArgument});",
                         emitDebugLineDirectives,
                         lineDirectiveFilePath,
                         child.Line,
