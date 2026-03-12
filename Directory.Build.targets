@@ -40,6 +40,10 @@
     </RemoveDuplicates>
 
     <ItemGroup>
+      <_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct Update="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct)">
+        <AdditionalProperties>TargetFramework=%(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct.ResolvedTargetFramework)</AdditionalProperties>
+      </_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct>
+
       <_XamlToCSharpGeneratorBuildLocalAnalyzerProject Include="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct)"
                                                        Condition="'%(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct.WatchOnly)' != 'true'" />
     </ItemGroup>
@@ -47,12 +51,14 @@
     <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
              Targets="Restore"
              BuildInParallel="true"
+             RemoveProperties="TargetFramework;TargetFrameworks"
              Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
              Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
 
     <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
              Targets="Build"
              BuildInParallel="true"
+             RemoveProperties="TargetFramework;TargetFrameworks"
              Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
              Properties="Configuration=$(Configuration)" />
 

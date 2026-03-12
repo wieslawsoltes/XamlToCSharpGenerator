@@ -221,6 +221,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                string.IsNullOrWhiteSpace(bindingMarkup.Source);
     }
 
+    private readonly record struct CompiledBindingAccessorResolution(
+        string AccessorExpression,
+        string NormalizedPath,
+        string? ResultTypeName,
+        ITypeSymbol? ResultTypeSymbol);
+
     private static bool TryResolveCompiledBindingSourceType(
         Compilation compilation,
         XamlDocumentModel document,
@@ -273,23 +279,101 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return sourceType is not null;
     }
 
+    private static bool TryResolveBindingSourceTypeForScopeInference(
+        Compilation compilation,
+        XamlDocumentModel document,
+        BindingMarkup bindingMarkup,
+        INamedTypeSymbol? ambientDataType,
+        INamedTypeSymbol? bindingTargetType,
+        out INamedTypeSymbol? sourceType,
+        out bool requiresAmbientDataType)
+    {
+        sourceType = null;
+        requiresAmbientDataType = false;
+
+        if (bindingMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingMarkup.ElementName))
+        {
+            sourceType = ResolveNamedElementBindingSourceType(
+                compilation,
+                document,
+                bindingMarkup.ElementName!);
+            return sourceType is not null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingMarkup.Source))
+        {
+            return false;
+        }
+
+        return TryResolveCompiledBindingSourceType(
+            compilation,
+            document,
+            bindingMarkup,
+            ambientDataType,
+            bindingTargetType,
+            out sourceType,
+            out requiresAmbientDataType);
+    }
+
+    private static INamedTypeSymbol? ResolveNamedElementBindingSourceType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string elementName)
+    {
+        // Binding ElementName resolution is namescope-scoped at runtime.
+        // The current document model only exposes a flat name list, so only the root
+        // element can be inferred safely here without cross-template false positives.
+        if (!string.Equals(document.RootObject.Name, elementName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (document.IsClassBacked)
+        {
+            var classSymbol = compilation.GetTypeByMetadataName(document.ClassFullName!);
+            if (classSymbol is not null)
+            {
+                return classSymbol;
+            }
+        }
+
+        return ResolveTypeSymbol(
+            compilation,
+            document.RootObject.XmlNamespace,
+            document.RootObject.XmlTypeName);
+    }
+
     private static bool TryBuildCompiledBindingAccessorExpression(
         Compilation compilation,
         XamlDocumentModel document,
         INamedTypeSymbol sourceType,
         string rawPath,
-        out string accessorExpression,
-        out string normalizedPath,
-        out string? resultTypeName,
+        ITypeSymbol? targetPropertyType,
+        out CompiledBindingAccessorResolution resolution,
         out string errorMessage)
     {
-        accessorExpression = "source";
-        normalizedPath = string.IsNullOrWhiteSpace(rawPath) ? "." : rawPath.Trim();
-        resultTypeName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var accessorExpression = "source";
+        var normalizedPath = string.IsNullOrWhiteSpace(rawPath) ? "." : rawPath.Trim();
+        var resultTypeName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        resolution = new CompiledBindingAccessorResolution(
+            accessorExpression,
+            normalizedPath,
+            resultTypeName,
+            sourceType);
         errorMessage = string.Empty;
 
         if (normalizedPath == ".")
         {
+            resolution = new CompiledBindingAccessorResolution(
+                accessorExpression,
+                normalizedPath,
+                resultTypeName,
+                sourceType);
             return true;
         }
 
@@ -301,12 +385,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (segments.Length == 0)
         {
             normalizedPath = ".";
+            resolution = new CompiledBindingAccessorResolution(
+                accessorExpression,
+                normalizedPath,
+                resultTypeName,
+                sourceType);
             return true;
         }
 
         var expressionBuilder = "source";
         ITypeSymbol? currentType = sourceType;
         var normalizedSegments = new List<string>(segments.Length);
+        var commandType = ResolveContractType(compilation, TypeContractId.SystemICommand);
+        var treatLastMethodAsCommand = IsCommandTargetType(targetPropertyType, commandType);
 
         for (var segmentIndex = 0; segmentIndex < segments.Length; segmentIndex++)
         {
@@ -406,8 +497,53 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
-            var accessor = segment.AcceptsNull ? "?." : ".";
+            var isLastSegment = segmentIndex == segments.Length - 1;
             var property = segment.IsMethodCall ? null : FindProperty(currentNamedType, segment.MemberName);
+            var commandErrorMessage = string.Empty;
+            if (property is null &&
+                treatLastMethodAsCommand &&
+                isLastSegment &&
+                !segment.IsMethodCall &&
+                leadingNotCount == 0 &&
+                TryBuildMethodCommandAccessorExpression(
+                    compilation,
+                    currentNamedType,
+                    expressionBuilder,
+                    segment.MemberName,
+                    out var commandAccessorExpression,
+                    out var commandResultTypeName,
+                    out commandErrorMessage))
+            {
+                if (normalizedSegments.Count == 0)
+                {
+                    normalizedSegments.Add(segment.MemberName + "()");
+                }
+                else
+                {
+                    normalizedSegments.Add((segment.AcceptsNull ? "?." : ".") + segment.MemberName + "()");
+                }
+
+                normalizedPath = string.Join(string.Empty, normalizedSegments);
+                resultTypeName = commandResultTypeName;
+                resolution = new CompiledBindingAccessorResolution(
+                    commandAccessorExpression,
+                    normalizedPath,
+                    resultTypeName,
+                    commandType);
+                return true;
+            }
+
+            if (property is null &&
+                treatLastMethodAsCommand &&
+                isLastSegment &&
+                !segment.IsMethodCall &&
+                !string.IsNullOrWhiteSpace(commandErrorMessage))
+            {
+                errorMessage = commandErrorMessage;
+                return false;
+            }
+
+            var accessor = segment.AcceptsNull ? "?." : ".";
             var method = segment.IsMethodCall
                 ? null
                 : FindParameterlessMethod(currentNamedType, segment.MemberName);
@@ -544,7 +680,289 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 normalizedPath = new string('!', leadingNotCount) + normalizedPath;
             }
         }
+
+        resolution = new CompiledBindingAccessorResolution(
+            accessorExpression,
+            normalizedPath,
+            resultTypeName,
+            currentType);
         return true;
+    }
+
+    private static bool TryBuildMethodCommandAccessorExpression(
+        Compilation compilation,
+        INamedTypeSymbol targetType,
+        string targetExpression,
+        string methodName,
+        out string accessorExpression,
+        out string? resultTypeName,
+        out string errorMessage)
+    {
+        accessorExpression = string.Empty;
+        errorMessage = string.Empty;
+
+        if (!TryResolveMethodCommandExecuteMethod(targetType, methodName, out var executeMethod, out errorMessage))
+        {
+            resultTypeName = null;
+            return false;
+        }
+
+        if (!TryResolveMethodCommandCanExecuteMethod(targetType, executeMethod, out var canExecuteMethod, out var canExecuteErrorMessage))
+        {
+            resultTypeName = null;
+            errorMessage = canExecuteErrorMessage;
+            return false;
+        }
+
+        var dependsOnProperties = canExecuteMethod is null
+            ? ImmutableArray<string>.Empty
+            : GetDependsOnPropertyNames(canExecuteMethod);
+        var commandType = ResolveContractType(compilation, TypeContractId.SystemICommand);
+        resultTypeName = commandType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ??
+                         "global::System.Windows.Input.ICommand";
+        accessorExpression =
+            "global::XamlToCSharpGenerator.Runtime.SourceGenMethodCommandRuntime.Create((object?)(" +
+            targetExpression +
+            "), " +
+            BuildMethodCommandExecuteLambda(executeMethod) +
+            ", " +
+            BuildMethodCommandCanExecuteLambda(canExecuteMethod) +
+            ", " +
+            BuildStringArrayLiteral(dependsOnProperties) +
+            ")";
+        return true;
+    }
+
+    private static bool TryResolveMethodCommandExecuteMethod(
+        INamedTypeSymbol targetType,
+        string methodName,
+        out IMethodSymbol executeMethod,
+        out string errorMessage)
+    {
+        var candidates = ResolveMethodCommandCandidates(
+            targetType,
+            methodName,
+            static method => !method.IsStatic &&
+                             method.MethodKind == MethodKind.Ordinary &&
+                             !method.IsGenericMethod &&
+                             !IsCommandLikeType(method.ReturnType) &&
+                             method.Parameters.Length <= 1 &&
+                             method.Parameters.All(static parameter => parameter.RefKind == RefKind.None));
+
+        if (candidates.Length == 0)
+        {
+            executeMethod = null!;
+            errorMessage = string.Empty;
+            return false;
+        }
+
+        if (candidates.Length > 1)
+        {
+            executeMethod = null!;
+            errorMessage =
+                "method-to-command binding is ambiguous. Candidates: " +
+                string.Join(
+                    ", ",
+                    candidates
+                        .OrderBy(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+                        .Select(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+            return false;
+        }
+
+        executeMethod = candidates[0];
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private static bool TryResolveMethodCommandCanExecuteMethod(
+        INamedTypeSymbol targetType,
+        IMethodSymbol executeMethod,
+        out IMethodSymbol? canExecuteMethod,
+        out string errorMessage)
+    {
+        canExecuteMethod = null;
+        errorMessage = string.Empty;
+
+        var canExecuteCandidates = ResolveMethodCommandCandidates(
+            targetType,
+            "Can" + executeMethod.Name,
+            static method => !method.IsStatic &&
+                             method.MethodKind == MethodKind.Ordinary &&
+                             !method.IsGenericMethod &&
+                             method.ReturnType.SpecialType == SpecialType.System_Boolean &&
+                             method.Parameters.Length == 1 &&
+                             method.Parameters[0].Type.SpecialType == SpecialType.System_Object &&
+                             method.Parameters[0].RefKind == RefKind.None);
+
+        if (canExecuteCandidates.Length <= 1)
+        {
+            canExecuteMethod = canExecuteCandidates.Length == 0 ? null : canExecuteCandidates[0];
+            return true;
+        }
+
+        errorMessage =
+            "command can-execute binding is ambiguous. Candidates: " +
+            string.Join(
+                ", ",
+                canExecuteCandidates
+                    .OrderBy(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+                    .Select(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        return false;
+    }
+
+    private static ImmutableArray<IMethodSymbol> ResolveMethodCommandCandidates(
+        INamedTypeSymbol targetType,
+        string methodName,
+        Func<IMethodSymbol, bool> predicate)
+    {
+        if (targetType.TypeKind != TypeKind.Interface)
+        {
+            for (INamedTypeSymbol? current = targetType; current is not null; current = current.BaseType)
+            {
+                var candidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+                foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
+                {
+                    if (predicate(method))
+                    {
+                        candidates.Add(method);
+                    }
+                }
+
+                if (candidates.Count > 0)
+                {
+                    return candidates.ToImmutable();
+                }
+            }
+
+            return ImmutableArray<IMethodSymbol>.Empty;
+        }
+
+        var interfaceCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+        var seenMethods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+
+        foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
+        {
+            foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
+            {
+                if (!seenMethods.Add(method) ||
+                    !predicate(method) ||
+                    ContainsEquivalentMethodCommandSignature(interfaceCandidates, method))
+                {
+                    continue;
+                }
+
+                interfaceCandidates.Add(method);
+            }
+        }
+
+        return interfaceCandidates.ToImmutable();
+    }
+
+    private static bool ContainsEquivalentMethodCommandSignature(
+        ImmutableArray<IMethodSymbol>.Builder candidates,
+        IMethodSymbol candidate)
+    {
+        foreach (var existing in candidates)
+        {
+            if (HasEquivalentMethodCommandSignature(existing, candidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasEquivalentMethodCommandSignature(
+        IMethodSymbol left,
+        IMethodSymbol right)
+    {
+        if (!string.Equals(left.Name, right.Name, StringComparison.Ordinal) ||
+            !SymbolEqualityComparer.Default.Equals(left.ReturnType, right.ReturnType) ||
+            left.Parameters.Length != right.Parameters.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Parameters.Length; index++)
+        {
+            var leftParameter = left.Parameters[index];
+            var rightParameter = right.Parameters[index];
+            if (leftParameter.RefKind != rightParameter.RefKind ||
+                !SymbolEqualityComparer.Default.Equals(leftParameter.Type, rightParameter.Type))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static ImmutableArray<string> GetDependsOnPropertyNames(IMethodSymbol method)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var attribute in method.GetAttributes())
+        {
+            var attributeType = attribute.AttributeClass;
+            if (attributeType is null)
+            {
+                continue;
+            }
+
+            var isDependsOnAttribute =
+                attributeType.Name.Equals("DependsOnAttribute", StringComparison.Ordinal) ||
+                attributeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                    .Equals("global::Avalonia.Metadata.DependsOnAttribute", StringComparison.Ordinal);
+            if (!isDependsOnAttribute ||
+                attribute.ConstructorArguments.Length != 1 ||
+                attribute.ConstructorArguments[0].Value is not string propertyName ||
+                string.IsNullOrWhiteSpace(propertyName) ||
+                !seen.Add(propertyName))
+            {
+                continue;
+            }
+
+            builder.Add(propertyName);
+        }
+
+        return builder.Count == 0
+            ? ImmutableArray<string>.Empty
+            : builder.ToImmutable();
+    }
+
+    private static string BuildMethodCommandExecuteLambda(IMethodSymbol method)
+    {
+        var targetTypeName = method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var targetAccessExpression = "((" + targetTypeName + ")target)." + method.Name;
+        if (method.Parameters.Length == 0)
+        {
+            return "static (target, parameter) => { " + targetAccessExpression + "(); }";
+        }
+
+        var parameterType = method.Parameters[0].Type;
+        var parameterExpression = parameterType.SpecialType == SpecialType.System_Object
+            ? "parameter"
+            : "global::XamlToCSharpGenerator.Runtime.SourceGenMethodCommandRuntime.ConvertParameter<" +
+              parameterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+              ">(parameter)";
+        return "static (target, parameter) => { " + targetAccessExpression + "(" + parameterExpression + "); }";
+    }
+
+    private static string BuildMethodCommandCanExecuteLambda(IMethodSymbol? method)
+    {
+        if (method is null)
+        {
+            return "null";
+        }
+
+        var targetTypeName = method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return "static (target, parameter) => ((" +
+               targetTypeName +
+               ")target)." +
+               method.Name +
+               "(parameter)";
     }
 
     private static bool CanUseNullConditionalAccess(ITypeSymbol type)
@@ -766,11 +1184,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        var indexer = namedCollectionType.GetMembers()
-            .OfType<IPropertySymbol>()
-            .FirstOrDefault(property => property.IsIndexer &&
-                                        property.Parameters.Length == 1 &&
-                                        property.GetMethod is not null);
+        IPropertySymbol? indexer = null;
+        foreach (var current in EnumerateInstanceMemberLookupTypes(namedCollectionType))
+        {
+            indexer = current.GetMembers()
+                .OfType<IPropertySymbol>()
+                .FirstOrDefault(property => property.IsIndexer &&
+                                            property.Parameters.Length == 1 &&
+                                            property.GetMethod is not null);
+            if (indexer is not null)
+            {
+                break;
+            }
+        }
+
         if (indexer is null)
         {
             indexerExpression = string.Empty;
@@ -805,7 +1232,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         errorMessage = string.Empty;
 
         var candidates = new List<IMethodSymbol>();
-        for (INamedTypeSymbol? current = targetType; current is not null; current = current.BaseType)
+        foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
         {
             foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
             {
@@ -4056,9 +4483,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         document,
                         compiledBindingSourceType!,
                         bindingMarkup.Path,
-                        out var accessorExpression,
-                        out var normalizedPath,
-                        out var resultTypeName,
+                        valueType,
+                        out var compiledBindingResolution,
                         out var errorMessage))
                 {
                     diagnostics.Add(new DiagnosticInfo(
@@ -4076,10 +4502,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compiledBindings.Add(new ResolvedCompiledBindingDefinition(
                         TargetTypeName: targetTypeName,
                         TargetPropertyName: propertyName,
-                        Path: normalizedPath,
+                        Path: compiledBindingResolution.NormalizedPath,
                         SourceTypeName: compiledBindingSourceType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        ResultTypeName: resultTypeName,
-                        AccessorExpression: accessorExpression,
+                        ResultTypeName: compiledBindingResolution.ResultTypeName,
+                        AccessorExpression: compiledBindingResolution.AccessorExpression,
                         IsSetterBinding: false,
                         Line: assignment.Line,
                         Column: assignment.Column));
@@ -5448,7 +5874,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static IMethodSymbol? FindParameterlessMethod(INamedTypeSymbol type, string methodName)
     {
-        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        foreach (var current in EnumerateInstanceMemberLookupTypes(type))
         {
             var method = current.GetMembers(methodName).OfType<IMethodSymbol>().FirstOrDefault(member =>
                 !member.IsStatic &&
@@ -5489,7 +5915,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool IsTypeAssignableTo(ITypeSymbol sourceType, ITypeSymbol targetType)
     {
-        if (SymbolEqualityComparer.Default.Equals(sourceType, targetType))
+        if (AreEquivalentTypesIgnoringNullable(sourceType, targetType))
         {
             return true;
         }
@@ -5498,17 +5924,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             for (INamedTypeSymbol? current = sourceNamed; current is not null; current = current.BaseType)
             {
-                if (SymbolEqualityComparer.Default.Equals(current, targetType))
+                if (AreEquivalentTypesIgnoringNullable(current, targetType))
                 {
                     return true;
                 }
 
-                foreach (var implementedInterface in current.Interfaces)
+            }
+
+            foreach (var implementedInterface in sourceNamed.AllInterfaces)
+            {
+                if (AreEquivalentTypesIgnoringNullable(implementedInterface, targetType))
                 {
-                    if (SymbolEqualityComparer.Default.Equals(implementedInterface, targetType))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
         }
@@ -5516,9 +5943,70 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return false;
     }
 
+    private static bool IsCommandTargetType(ITypeSymbol? targetPropertyType, INamedTypeSymbol? commandType)
+    {
+        if (targetPropertyType is null)
+        {
+            return false;
+        }
+
+        if (commandType is not null)
+        {
+            if (AreEquivalentTypesIgnoringNullable(targetPropertyType, commandType))
+            {
+                return true;
+            }
+        }
+
+        return IsCommandMetadataType(targetPropertyType);
+    }
+
+    private static bool IsCommandMetadataType(ITypeSymbol type)
+    {
+        return type is INamedTypeSymbol namedType &&
+               namedType.Name.Equals("ICommand", StringComparison.Ordinal) &&
+               namedType.ContainingNamespace.ToDisplayString().Equals("System.Windows.Input", StringComparison.Ordinal);
+    }
+
+    private static bool IsCommandLikeType(ITypeSymbol type)
+    {
+        if (IsCommandMetadataType(type))
+        {
+            return true;
+        }
+
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        if (namedType.AllInterfaces.Any(IsCommandMetadataType))
+        {
+            return true;
+        }
+
+        for (var current = namedType.BaseType; current is not null; current = current.BaseType)
+        {
+            if (IsCommandMetadataType(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool AreEquivalentTypesIgnoringNullable(ITypeSymbol left, ITypeSymbol right)
+    {
+        return SymbolEqualityComparer.Default.Equals(left, right) ||
+               SymbolEqualityComparer.Default.Equals(
+                   left.WithNullableAnnotation(NullableAnnotation.None),
+                   right.WithNullableAnnotation(NullableAnnotation.None));
+    }
+
     private static IEventSymbol? FindEvent(INamedTypeSymbol type, string eventName)
     {
-        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        foreach (var current in EnumerateInstanceMemberLookupTypes(type))
         {
             var eventSymbol = current.GetMembers(eventName).OfType<IEventSymbol>().FirstOrDefault();
             if (eventSymbol is not null)
@@ -5532,7 +6020,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static IPropertySymbol? FindProperty(INamedTypeSymbol type, string propertyName)
     {
-        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        foreach (var current in EnumerateInstanceMemberLookupTypes(type))
         {
             var property = current.GetMembers(propertyName).OfType<IPropertySymbol>().FirstOrDefault();
             if (property is not null)
@@ -5542,6 +6030,39 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static IEnumerable<INamedTypeSymbol> EnumerateInstanceMemberLookupTypes(INamedTypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.Interface)
+        {
+            var pending = new Stack<INamedTypeSymbol>();
+            var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+            pending.Push(type);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                if (!visited.Add(current))
+                {
+                    continue;
+                }
+
+                yield return current;
+
+                for (var index = current.Interfaces.Length - 1; index >= 0; index--)
+                {
+                    pending.Push(current.Interfaces[index]);
+                }
+            }
+
+            yield break;
+        }
+
+        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        {
+            yield return current;
+        }
     }
 
     private static string NormalizePropertyName(string propertyName)

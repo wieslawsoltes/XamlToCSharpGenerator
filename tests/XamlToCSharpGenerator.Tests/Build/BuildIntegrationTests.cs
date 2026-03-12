@@ -252,6 +252,88 @@ public class BuildIntegrationTests
         }
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task Local_Analyzer_Target_Builds_Analyzer_Project_Using_Its_Resolved_TargetFramework()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var repoTargetsPath = Path.Combine(repositoryRoot, "Directory.Build.targets");
+        var analyzerProjectPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj");
+        var analyzerAssemblyPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "bin", "Debug", "netstandard2.0", "XamlToCSharpGenerator.Generator.dll");
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-local-analyzer-targetframework");
+
+        byte[]? originalAssembly = null;
+
+        try
+        {
+            if (File.Exists(analyzerAssemblyPath))
+            {
+                originalAssembly = File.ReadAllBytes(analyzerAssemblyPath);
+                File.Delete(analyzerAssemblyPath);
+            }
+
+            var projectFile = Path.Combine(tempDir, "AnalyzerBuildProbe.csproj");
+            File.WriteAllText(projectFile, $$"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <XamlSourceGenLocalAnalyzerProject Include="{{NormalizeForMsBuild(analyzerProjectPath)}}" />
+  </ItemGroup>
+  <Import Project="{{NormalizeForMsBuild(repoTargetsPath)}}" />
+  <Target Name="VerifyLocalAnalyzerBuild" DependsOnTargets="XamlToCSharpGenerator_BuildLocalAnalyzers">
+    <Error Condition="!Exists('{{NormalizeForMsBuild(analyzerAssemblyPath)}}')" Text="Expected analyzer assembly was not built for its resolved target framework." />
+  </Target>
+</Project>
+""");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:VerifyLocalAnalyzerBuild -m:1 /nodeReuse:false",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir
+            };
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+
+            var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await stdoutTask + await stderrTask;
+            Assert.True(process.ExitCode == 0, output);
+            Assert.True(File.Exists(analyzerAssemblyPath), output);
+        }
+        finally
+        {
+            try
+            {
+                if (originalAssembly is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(analyzerAssemblyPath)!);
+                    File.WriteAllBytes(analyzerAssemblyPath, originalAssembly);
+                }
+            }
+            catch
+            {
+                // Best effort restore of test fixture state.
+            }
+
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best effort cleanup in tests.
+            }
+        }
+    }
+
     private static string RunEvaluation(
         bool sourceGenBackend,
         bool seedAdditionalFile = false,

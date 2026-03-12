@@ -7,6 +7,8 @@ public class XamlPropertyTokenSemanticsTests
     [Theory]
     [InlineData("Setter.Value", "Setter", "Value")]
     [InlineData("Grid.Row", "Grid", "Row")]
+    [InlineData("(Grid.Row)", "Grid", "Row")]
+    [InlineData(" (AutomationProperties.AutomationId) ", "AutomationProperties", "AutomationId")]
     [InlineData("  Owner.Property  ", "Owner", "Property")]
     public void TrySplitOwnerQualifiedProperty_ReturnsOwnerAndProperty(
         string token,
@@ -25,6 +27,7 @@ public class XamlPropertyTokenSemanticsTests
     [InlineData("Value")]
     [InlineData(".Value")]
     [InlineData("Owner.")]
+    [InlineData("(Owner.)")]
     public void TrySplitOwnerQualifiedProperty_RejectsInvalidTokens(string token)
     {
         var result = XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(token, out _, out _);

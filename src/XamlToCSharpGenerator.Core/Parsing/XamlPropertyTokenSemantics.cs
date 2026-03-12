@@ -17,6 +17,8 @@ public static class XamlPropertyTokenSemantics
             return false;
         }
 
+        propertyToken = TrimAttachedPropertyDelimiters(propertyToken);
+
         return XamlTokenSplitSemantics.TrySplitAtLastSeparator(
             propertyToken,
             '.',
@@ -55,5 +57,18 @@ public static class XamlPropertyTokenSemantics
         }
 
         return localName.Equals(propertyName, StringComparison.Ordinal);
+    }
+
+    private static string TrimAttachedPropertyDelimiters(string propertyToken)
+    {
+        var trimmed = propertyToken.Trim();
+        if (trimmed.Length > 2 &&
+            trimmed[0] == '(' &&
+            trimmed[trimmed.Length - 1] == ')')
+        {
+            return trimmed.Substring(1, trimmed.Length - 2).Trim();
+        }
+
+        return trimmed;
     }
 }
