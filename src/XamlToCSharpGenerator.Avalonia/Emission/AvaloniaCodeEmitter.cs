@@ -106,6 +106,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("        [ModuleInitializer]");
+        sourceBuilder.AppendLine("        internal static void __InitializeXamlSourceGenArtifacts()");
+        sourceBuilder.AppendLine("        {");
+        sourceBuilder.AppendLine("            __RegisterXamlSourceGenArtifacts();");
+        sourceBuilder.AppendLine("        }");
+        sourceBuilder.AppendLine();
         sourceBuilder.AppendLine("        internal static void __RegisterXamlSourceGenArtifacts()");
         sourceBuilder.AppendLine("        {");
         sourceBuilder.AppendLine(

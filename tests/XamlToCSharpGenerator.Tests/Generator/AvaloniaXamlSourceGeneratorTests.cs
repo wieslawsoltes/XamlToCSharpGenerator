@@ -1381,6 +1381,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
+        Assert.Contains("internal static void __InitializeXamlSourceGenArtifacts()", generated);
         Assert.Contains("__RegisterXamlSourceGenArtifacts();", generated);
         Assert.Contains("SourceGenArtifactRegistryRuntime.ResetDocumentRegistries(", generated);
         Assert.Contains("__TrackAndReconcileSourceGenHotReloadState(this);", generated);
