@@ -1,23 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using Xunit.Abstractions;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
-[Collection("BuildSerial")]
 public class DifferentialRuntimeBehaviorTests
 {
-    private static readonly string[] RoslynTransientFailureMarkers =
-    {
-        "BoundStepThroughSequencePoint.<Span>k__BackingField",
-        "ILOpCodeExtensions.StackPushCount",
-        "SignatureData.ReturnParam"
-    };
-
     private readonly ITestOutputHelper _output;
 
     public DifferentialRuntimeBehaviorTests(ITestOutputHelper output)
@@ -64,7 +54,7 @@ public class DifferentialRuntimeBehaviorTests
             var restore = RunProcess(
                 tempDir,
                 "dotnet",
-                $"restore \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+                $"restore \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers {DifferentialBuildHarness.GetRestoreMsBuildProperties(tempDir)}");
             Assert.True(restore.ExitCode == 0, restore.Output);
 
             var sourceGenBuild = BuildFixture(projectPath, tempDir, backend: "SourceGen");
@@ -74,12 +64,6 @@ public class DifferentialRuntimeBehaviorTests
             var sourceGenRun = RunFixture(projectPath, tempDir, backend: "SourceGen");
             Assert.True(sourceGenRun.ExitCode == 0, sourceGenRun.Output);
             var sourceGenResult = ExtractRuntimeResult(sourceGenRun.Output);
-
-            var clean = RunProcess(
-                tempDir,
-                "dotnet",
-                $"clean \"{projectPath}\" --nologo -m:1 /nodeReuse:false --disable-build-servers -p:BuildProjectReferences=false");
-            Assert.True(clean.ExitCode == 0, clean.Output);
 
             var xamlIlBuild = BuildFixture(projectPath, tempDir, backend: "XamlIl");
             Assert.True(xamlIlBuild.ExitCode == 0, xamlIlBuild.Output);
@@ -802,8 +786,9 @@ public class DifferentialRuntimeBehaviorTests
     private static (int ExitCode, string Output) BuildFixture(string projectPath, string workingDirectory, string backend)
     {
         var arguments =
-            $"build \"{projectPath}\" --nologo -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers " +
+            $"build \"{projectPath}\" --nologo -t:Rebuild -m:1 /nodeReuse:false --disable-build-servers --no-restore " +
             $"-p:AvaloniaXamlCompilerBackend={backend} " +
+            $"{DifferentialBuildHarness.GetBackendMsBuildProperties(workingDirectory, backend)} " +
             "-p:UseSharedCompilation=false " +
             "-p:ProduceReferenceAssembly=false";
         return RunProcess(workingDirectory, "dotnet", arguments);
@@ -814,7 +799,7 @@ public class DifferentialRuntimeBehaviorTests
         return RunProcess(
             workingDirectory,
             "dotnet",
-            $"run \"{projectPath}\" --no-build --nologo -p:AvaloniaXamlCompilerBackend={backend}");
+            $"run \"{projectPath}\" --no-build --nologo -p:AvaloniaXamlCompilerBackend={backend} {DifferentialBuildHarness.GetBackendMsBuildProperties(workingDirectory, backend)}");
     }
 
     private static string ExtractRuntimeResult(string output)
@@ -841,6 +826,7 @@ public class DifferentialRuntimeBehaviorTests
     <Nullable>enable</Nullable>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <Import Project="{propsPath}" Condition="'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'" />
@@ -859,70 +845,7 @@ public class DifferentialRuntimeBehaviorTests
 
     private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
     {
-        return RunProcess(workingDirectory, fileName, arguments, allowRetry: true);
-    }
-
-    private static (int ExitCode, string Output) RunProcess(
-        string workingDirectory,
-        string fileName,
-        string arguments,
-        bool allowRetry)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(startInfo);
-        Assert.NotNull(process);
-
-        var stdoutTask = process!.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
-
-        var outputBuilder = new StringBuilder();
-        outputBuilder.Append(stdoutTask.Result);
-        outputBuilder.Append(stderrTask.Result);
-        var output = outputBuilder.ToString();
-
-        if (allowRetry &&
-            ShouldRetryAfterTransientRoslynFailure(fileName, arguments, process.ExitCode, output))
-        {
-            var retry = RunProcess(workingDirectory, fileName, arguments, allowRetry: false);
-            var retryOutput = new StringBuilder(output.Length + retry.Output.Length + 128);
-            retryOutput.AppendLine("[Transient Roslyn compiler failure detected; retrying once.]");
-            retryOutput.AppendLine(output);
-            retryOutput.AppendLine("[Retry result follows:]");
-            retryOutput.Append(retry.Output);
-            return (retry.ExitCode, retryOutput.ToString());
-        }
-
-        return (process.ExitCode, output);
-    }
-
-    private static bool ShouldRetryAfterTransientRoslynFailure(
-        string fileName,
-        string arguments,
-        int exitCode,
-        string output)
-    {
-        var hasRoslynMissingMemberFailure =
-            output.Contains("MissingFieldException", StringComparison.Ordinal) ||
-            output.Contains("MissingMethodException", StringComparison.Ordinal);
-        var hasKnownMarker = RoslynTransientFailureMarkers.Any(marker => output.Contains(marker, StringComparison.Ordinal));
-
-        return exitCode != 0 &&
-               string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase) &&
-               arguments.Contains("build", StringComparison.OrdinalIgnoreCase) &&
-               hasRoslynMissingMemberFailure &&
-               hasKnownMarker;
+        return DifferentialBuildHarness.RunProcess(workingDirectory, fileName, arguments);
     }
 
     private static string GetRepositoryRoot()

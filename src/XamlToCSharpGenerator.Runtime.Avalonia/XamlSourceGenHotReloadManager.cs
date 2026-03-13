@@ -1316,7 +1316,7 @@ public static class XamlSourceGenHotReloadManager
 
         if (changedTypes is { Length: > 0 })
         {
-            Trace("IDE polling detected changed types: " + string.Join(", ", changedTypes));
+            Trace("IDE polling detected changed types: " + string.Join(", ", (IEnumerable<Type>)changedTypes));
             UpdateApplicationFromIdePolling(changedTypes);
         }
     }

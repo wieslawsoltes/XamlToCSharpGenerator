@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime</PackageId>
     <Description>Compatibility runtime package that composes Runtime.Core and Runtime.Avalonia.</Description>

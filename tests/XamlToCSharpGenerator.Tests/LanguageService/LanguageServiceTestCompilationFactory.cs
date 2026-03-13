@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -12,8 +14,42 @@ namespace XamlToCSharpGenerator.Tests.LanguageService;
 internal static class LanguageServiceTestCompilationFactory
 {
     public const string SymbolSourceFilePath = "/tmp/LanguageServiceTestTypes.cs";
+    private static readonly Lazy<Compilation> CachedCompilation =
+        new(CreateCompilationCore, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<MsBuildCompilationProvider> SharedMsBuildCompilationProvider =
+        new(() => new MsBuildCompilationProvider(), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly InMemoryCompilationProvider SharedInMemoryCompilationProvider =
+        new(CachedCompilation.Value);
+    private static readonly ConcurrentDictionary<string, Lazy<Task<string>>> RepositoryTextCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public static Compilation CreateCompilation()
+    {
+        return CachedCompilation.Value;
+    }
+
+    public static ICompilationProvider CreateSharedMsBuildCompilationProvider()
+    {
+        return new NonDisposingCompilationProvider(SharedMsBuildCompilationProvider.Value);
+    }
+
+    public static ICompilationProvider CreateHarnessCompilationProvider(ICompilationProvider? provider = null)
+    {
+        return provider ?? SharedInMemoryCompilationProvider;
+    }
+
+    public static Task<string> ReadCachedTextAsync(string path)
+    {
+        var normalizedPath = Path.GetFullPath(path);
+        var lazyText = RepositoryTextCache.GetOrAdd(
+            normalizedPath,
+            static cachedPath => new Lazy<Task<string>>(
+                () => File.ReadAllTextAsync(cachedPath),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        return lazyText.Value;
+    }
+
+    private static Compilation CreateCompilationCore()
     {
         const string source = """
                               using System;
@@ -198,6 +234,33 @@ internal sealed class InMemoryCompilationProvider : ICompilationProvider
 
     public void Invalidate(string filePath)
     {
+    }
+
+    public void Dispose()
+    {
+    }
+}
+
+internal sealed class NonDisposingCompilationProvider : ICompilationProvider
+{
+    private readonly ICompilationProvider _inner;
+
+    public NonDisposingCompilationProvider(ICompilationProvider inner)
+    {
+        _inner = inner;
+    }
+
+    public Task<CompilationSnapshot> GetCompilationAsync(
+        string filePath,
+        string? workspaceRoot,
+        CancellationToken cancellationToken)
+    {
+        return _inner.GetCompilationAsync(filePath, workspaceRoot, cancellationToken);
+    }
+
+    public void Invalidate(string filePath)
+    {
+        _inner.Invalidate(filePath);
     }
 
     public void Dispose()

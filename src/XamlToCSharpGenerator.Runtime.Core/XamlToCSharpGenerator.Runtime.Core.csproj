@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Runtime.Core</PackageId>
     <Description>Framework-agnostic runtime registries, URI mapping, and hot-reload contracts for source-generated XAML.</Description>
