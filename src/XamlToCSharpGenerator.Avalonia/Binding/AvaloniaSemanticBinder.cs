@@ -331,6 +331,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             Diagnostics = diagnostics;
             NamedElements = ImmutableArray.CreateBuilder<ResolvedNamedElement>(document.NamedElements.Length);
             CompiledBindings = ImmutableArray.CreateBuilder<ResolvedCompiledBindingDefinition>();
+            UnsafeAccessors = ImmutableArray.CreateBuilder<ResolvedUnsafeAccessorDefinition>();
             Resources = ImmutableArray<ResolvedResourceDefinition>.Empty;
             Templates = ImmutableArray<ResolvedTemplateDefinition>.Empty;
             Styles = ImmutableArray<ResolvedStyleDefinition>.Empty;
@@ -353,6 +354,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         public ImmutableArray<ResolvedNamedElement>.Builder NamedElements { get; }
 
         public ImmutableArray<ResolvedCompiledBindingDefinition>.Builder CompiledBindings { get; }
+
+        public ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder UnsafeAccessors { get; }
 
         public List<string> PassExecutionTrace { get; } = new();
 

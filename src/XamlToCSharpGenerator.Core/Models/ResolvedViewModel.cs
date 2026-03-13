@@ -17,6 +17,7 @@ public sealed record ResolvedViewModel(
     ImmutableArray<ResolvedResourceDefinition> Resources,
     ImmutableArray<ResolvedTemplateDefinition> Templates,
     ImmutableArray<ResolvedCompiledBindingDefinition> CompiledBindings,
+    ImmutableArray<ResolvedUnsafeAccessorDefinition> UnsafeAccessors,
     ImmutableArray<ResolvedStyleDefinition> Styles,
     ImmutableArray<ResolvedControlThemeDefinition> ControlThemes,
     ImmutableArray<ResolvedIncludeDefinition> Includes,
