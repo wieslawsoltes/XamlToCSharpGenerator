@@ -171,6 +171,7 @@ public sealed partial class AvaloniaSemanticBinder
         INamedTypeSymbol? sourceType,
         INamedTypeSymbol? rootTypeSymbol,
         INamedTypeSymbol? targetType,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder? unsafeAccessors,
         out bool isShorthandExpression,
         out CSharpShorthandResolutionResult result)
     {
@@ -216,6 +217,7 @@ public sealed partial class AvaloniaSemanticBinder
                         sourceType,
                         shorthand.Path,
                         targetPropertyType: null,
+                        unsafeAccessors,
                         out var forcedBindingResolution,
                         out _))
                 {
@@ -263,6 +265,7 @@ public sealed partial class AvaloniaSemanticBinder
                         rootTypeSymbol,
                         shorthand.Path,
                         targetPropertyType: null,
+                        unsafeAccessors,
                         out var rootResolution,
                         out _))
                 {
@@ -325,6 +328,7 @@ public sealed partial class AvaloniaSemanticBinder
                                          sourceType,
                                          shorthand.Path,
                                          targetPropertyType: null,
+                                         unsafeAccessors,
                                          out sourceResolution,
                                          out _);
                 if (sourceResolved)
@@ -344,6 +348,7 @@ public sealed partial class AvaloniaSemanticBinder
                                        rootTypeSymbol,
                                        shorthand.Path,
                                        targetPropertyType: null,
+                                       unsafeAccessors,
                                        out autoRootResolution,
                                        out _);
                 if (rootResolved)

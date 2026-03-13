@@ -29,7 +29,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         GeneratorOptions options,
-        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings)
+        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
         var styles = ImmutableArray.CreateBuilder<ResolvedStyleDefinition>(document.Styles.Length);
 
@@ -263,6 +264,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         styleDataType,
                         rootContextType,
                         targetType,
+                        unsafeAccessors,
                         out var isShorthandExpression,
                         out var shorthandResolution))
                 {
@@ -452,6 +454,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
                                      setterValueType,
+                                     unsafeAccessors,
                                      out var compiledBindingResolution,
                                      out var errorMessage))
                         {
@@ -582,7 +585,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         GeneratorOptions options,
-        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings)
+        ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
         var controlThemes = ImmutableArray.CreateBuilder<ResolvedControlThemeDefinition>(document.ControlThemes.Length);
 
@@ -789,6 +793,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         themeDataType,
                         rootContextType,
                         targetType,
+                        unsafeAccessors,
                         out var isShorthandExpression,
                         out var shorthandResolution))
                 {
@@ -978,6 +983,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      compiledBindingSourceTypeSymbol!,
                                      bindingMarkup.Path,
                                      setterValueType,
+                                     unsafeAccessors,
                                      out var compiledBindingResolution,
                                      out var errorMessage))
                         {

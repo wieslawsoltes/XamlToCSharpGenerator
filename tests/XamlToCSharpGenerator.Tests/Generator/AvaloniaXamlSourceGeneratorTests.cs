@@ -4970,6 +4970,111 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Allows_NonPublic_Shorthand_Bindings_In_Styles_And_ControlThemes()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public object? Text { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Style : Control
+                {
+                    public string? Selector { get; set; }
+                }
+
+                public class ControlTheme : Control
+                {
+                    public object? TargetType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainViewModel
+                {
+                    private string HiddenTitle { get; } = "hidden";
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainViewModel"
+                         x:CompileBindings="True">
+                <UserControl.Styles>
+                    <Style Selector="TextBlock" x:DataType="vm:MainViewModel">
+                        <Setter Property="Text" Value="{HiddenTitle}" />
+                    </Style>
+                </UserControl.Styles>
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Button" TargetType="Button" x:DataType="vm:MainViewModel">
+                        <Setter Property="Content" Value="{HiddenTitle}" />
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("new global::Avalonia.Data.Binding(\"HiddenTitle\")", generated);
+        Assert.True(
+            generated.Split("XamlCompiledBindingRegistry.Register", StringSplitOptions.None).Length - 1 >= 2,
+            "Expected compiled binding registrations for both style and control theme shorthand bindings.");
+        Assert.Contains("Name = \"get_HiddenTitle\"", generated);
+    }
+
+    [Fact]
     public void Reports_Diagnostic_For_Ambiguous_Shorthand_Between_DataType_And_Root()
     {
         const string code = """
@@ -7591,6 +7696,149 @@ public class AvaloniaXamlSourceGeneratorTests
                          x:DataType="vm:MainVm"
                          x:CompileBindings="True">
                 <ListBox ItemsSource="{CompiledBinding Rows}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{CompiledBinding Name}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "SourceGenCompiledBindingDescriptor(\"avares://Demo.Assembly/MainView.axaml\", \"global::Avalonia.Controls.TextBlock\", \"Text\", \"Name\", \"global::Demo.ViewModels.RowVm\"",
+            generated);
+        Assert.Contains("var source = (global::Demo.ViewModels.RowVm)__source;", generated);
+        Assert.Contains("return source.Name;", generated);
+    }
+
+    [Fact]
+    public void Infers_ItemTemplate_DataType_From_ObjectElement_ItemsSource_Binding()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class InheritDataTypeFromItemsAttribute : global::System.Attribute
+                {
+                    public InheritDataTypeFromItemsAttribute(string ancestorItemsProperty)
+                    {
+                        AncestorItemsProperty = ancestorItemsProperty;
+                    }
+
+                    public string AncestorItemsProperty { get; }
+
+                    public global::System.Type? AncestorType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ItemsControl : Control
+                {
+                    public object? ItemsSource { get; set; }
+
+                    [global::Avalonia.Metadata.InheritDataTypeFromItems(nameof(ItemsSource))]
+                    public object? ItemTemplate { get; set; }
+                }
+
+                public class ListBox : ItemsControl { }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class CompiledBindingExtension
+                {
+                    public string? Path { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class RowVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+
+                public sealed class MainVm
+                {
+                    public global::System.Collections.Generic.IReadOnlyList<RowVm> Rows { get; } =
+                        global::System.Array.Empty<RowVm>();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <ListBox>
+                    <ListBox.ItemsSource>
+                        <CompiledBinding Path="Rows" />
+                    </ListBox.ItemsSource>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <TextBlock Text="{CompiledBinding Name}" />

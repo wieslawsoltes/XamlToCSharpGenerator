@@ -664,7 +664,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 context.Compilation,
                 context.Diagnostics,
                 context.Options,
-                context.CompiledBindings);
+                context.CompiledBindings,
+                context.UnsafeAccessors);
         }
     }
 
@@ -687,7 +688,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 context.Compilation,
                 context.Diagnostics,
                 context.Options,
-                context.CompiledBindings);
+                context.CompiledBindings,
+                context.UnsafeAccessors);
         }
     }
 

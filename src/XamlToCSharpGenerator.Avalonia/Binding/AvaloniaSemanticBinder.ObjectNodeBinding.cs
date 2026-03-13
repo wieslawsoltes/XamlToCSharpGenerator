@@ -372,6 +372,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         assignmentDataType,
                         rootTypeSymbol,
                         currentSetterTargetType ?? symbol,
+                        unsafeAccessors,
                         out var isShorthandExpression,
                         out var shorthandResolution) &&
                     isShorthandExpression)
@@ -2143,6 +2144,34 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
+            if (TryParseBindingMarkupFromObjectNode(propertyElement.ObjectValues[0], out var bindingMarkup))
+            {
+                var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || ancestorScopeContext.CompileBindingsEnabled;
+                if (wantsCompiledBinding &&
+                    TryResolveBindingSourceTypeForScopeInference(
+                        compilation,
+                        document,
+                        bindingMarkup,
+                        ancestorScopeContext.NodeDataType,
+                        ancestorScopeContext.NodeType,
+                        out var sourceType,
+                        out _) &&
+                    sourceType is not null &&
+                    TryBuildCompiledBindingAccessorExpression(
+                        compilation,
+                        document,
+                        sourceType,
+                        bindingMarkup.Path,
+                        targetPropertyType: null,
+                        unsafeAccessors,
+                        out var resolution,
+                        out _) &&
+                    resolution.ResultTypeSymbol is not null)
+                {
+                    return resolution.ResultTypeSymbol;
+                }
+            }
+
             var directCollectionType = ResolveObjectTypeSymbol(compilation, document, propertyElement.ObjectValues[0]);
             if (directCollectionType is not null)
             {
@@ -2151,6 +2180,133 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static bool TryParseBindingMarkupFromObjectNode(
+        XamlObjectNode node,
+        out BindingMarkup bindingMarkup)
+    {
+        bindingMarkup = default;
+
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(node.XmlTypeName);
+        if (extensionKind is not (XamlMarkupExtensionKind.Binding or XamlMarkupExtensionKind.CompiledBinding))
+        {
+            return false;
+        }
+
+        var namedArguments = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            var canonicalName = GetCanonicalBindingObjectNodeArgumentName(assignment.PropertyName);
+            if (canonicalName is null ||
+                string.IsNullOrWhiteSpace(assignment.Value))
+            {
+                continue;
+            }
+
+            namedArguments[canonicalName] = Unquote(assignment.Value).Trim();
+        }
+
+        var positionalArguments = ImmutableArray.CreateBuilder<string>();
+        if (!namedArguments.ContainsKey("Path"))
+        {
+            var textContent = node.RawTextContent?.Trim();
+            if (string.IsNullOrWhiteSpace(textContent))
+            {
+                textContent = node.TextContent?.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(textContent))
+            {
+                positionalArguments.Add(textContent!);
+            }
+            else if (node.ConstructorArguments.Length == 1 &&
+                     TryGetSingleMarkupExtensionArgumentValue(node.ConstructorArguments[0], out var constructorArgumentValue))
+            {
+                positionalArguments.Add(constructorArgumentValue);
+            }
+        }
+
+        var arguments = ImmutableArray.CreateBuilder<MarkupExtensionArgument>(
+            positionalArguments.Count + namedArguments.Count);
+        for (var i = 0; i < positionalArguments.Count; i++)
+        {
+            arguments.Add(new MarkupExtensionArgument(
+                Name: null,
+                Value: positionalArguments[i],
+                IsNamed: false,
+                Position: i));
+        }
+
+        var argumentPosition = positionalArguments.Count;
+        foreach (var pair in namedArguments.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+        {
+            arguments.Add(new MarkupExtensionArgument(
+                Name: pair.Key,
+                Value: pair.Value,
+                IsNamed: true,
+                Position: argumentPosition++));
+        }
+
+        var markup = new MarkupExtensionInfo(
+            Name: node.XmlTypeName,
+            PositionalArguments: positionalArguments.ToImmutable(),
+            NamedArguments: namedArguments.ToImmutable(),
+            Arguments: arguments.ToImmutable());
+
+        return BindingEventMarkupParser.TryParseBindingMarkupCore(
+            markup,
+            extensionKind,
+            TryParseMarkupExtension,
+            out bindingMarkup);
+    }
+
+    private static string? GetCanonicalBindingObjectNodeArgumentName(string propertyName)
+    {
+        return NormalizePropertyName(propertyName) switch
+        {
+            "Path" => "Path",
+            "Mode" => "Mode",
+            "ElementName" => "ElementName",
+            "RelativeSource" => "RelativeSource",
+            "Source" => "Source",
+            "Converter" => "Converter",
+            "ConverterCulture" => "ConverterCulture",
+            "ConverterParameter" => "ConverterParameter",
+            "StringFormat" => "StringFormat",
+            "Format" => "Format",
+            "FallbackValue" => "FallbackValue",
+            "Fallback" => "Fallback",
+            "TargetNullValue" => "TargetNullValue",
+            "NullValue" => "NullValue",
+            "Delay" => "Delay",
+            "Priority" => "Priority",
+            "BindingPriority" => "BindingPriority",
+            "UpdateSourceTrigger" => "UpdateSourceTrigger",
+            "Trigger" => "Trigger",
+            _ => null
+        };
+    }
+
+    private static bool TryGetSingleMarkupExtensionArgumentValue(XamlObjectNode node, out string value)
+    {
+        value = string.Empty;
+
+        var rawTextContent = node.RawTextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(rawTextContent))
+        {
+            value = rawTextContent!;
+            return true;
+        }
+
+        var textContent = node.TextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(textContent))
+        {
+            value = textContent!;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryGetInheritDataTypeFromItemsAttribute(

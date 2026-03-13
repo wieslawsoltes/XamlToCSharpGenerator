@@ -355,26 +355,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol sourceType,
         string rawPath,
         ITypeSymbol? targetPropertyType,
-        out CompiledBindingAccessorResolution resolution,
-        out string errorMessage)
-    {
-        return TryBuildCompiledBindingAccessorExpression(
-            compilation,
-            document,
-            sourceType,
-            rawPath,
-            targetPropertyType,
-            unsafeAccessors: null,
-            out resolution,
-            out errorMessage);
-    }
-
-    private static bool TryBuildCompiledBindingAccessorExpression(
-        Compilation compilation,
-        XamlDocumentModel document,
-        INamedTypeSymbol sourceType,
-        string rawPath,
-        ITypeSymbol? targetPropertyType,
         ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder? unsafeAccessors,
         out CompiledBindingAccessorResolution resolution,
         out string errorMessage)
@@ -4751,6 +4731,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 nodeDataType,
                 rootTypeSymbol,
                 setterTargetType ?? targetType,
+                unsafeAccessors,
                 out var isShorthandExpression,
                 out var shorthandResolution))
         {
