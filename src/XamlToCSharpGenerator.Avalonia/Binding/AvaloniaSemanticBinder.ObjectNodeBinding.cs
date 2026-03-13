@@ -150,6 +150,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         options,
                         diagnostics,
                         compiledBindings,
+                        unsafeAccessors,
                         compileBindingsEnabled,
                         assignmentDataType,
                         currentSetterTargetType,

@@ -8082,9 +8082,133 @@ public class AvaloniaXamlSourceGeneratorTests
 
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Matches(
-            @"source\.SelectedChild is \{ \} __axsg_target_[0-9a-f]+ \? __AXSG_UnsafeAccessor_[0-9a-f]+\(__axsg_target_[0-9a-f]+\) : default",
+            @"source\.SelectedChild is \{ \} (__axsg_target_[0-9a-f]+) \? __AXSG_UnsafeAccessor_[0-9a-f]+\(\1\) : null",
             generated);
         Assert.DoesNotContain("source.SelectedChild is null ? default", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Preserves_Lifted_Null_Semantics_For_NonPublic_ValueType_NullConditional_Access()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class ChildVm
+                {
+                    private int HiddenCount { get; } = 42;
+                }
+
+                public sealed class MainVm
+                {
+                    public ChildVm? SelectedChild { get; } = new ChildVm();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding SelectedChild?.HiddenCount}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("(global::System.Nullable<int>)__AXSG_UnsafeAccessor_", generated);
+        Assert.Contains("default(global::System.Nullable<int>)", generated);
+    }
+
+    [Fact]
+    public void Preserves_NullConditional_Continuation_After_NonPublic_Helper_Access()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class HiddenContext
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+
+                public sealed class ChildVm
+                {
+                    private HiddenContext HiddenData { get; } = new();
+                }
+
+                public sealed class MainVm
+                {
+                    public ChildVm? SelectedChild { get; } = new ChildVm();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding SelectedChild?.HiddenData.Title}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Matches(
+            @"\(source\.SelectedChild is \{ \} (__axsg_target_[0-9a-f]+) \? __AXSG_UnsafeAccessor_[0-9a-f]+\(\1\) : null\)\?\.Title",
+            generated);
     }
 
     [Fact]
@@ -17353,6 +17477,71 @@ public class AvaloniaXamlSourceGeneratorTests
             generated);
         Assert.Equal(2, Regex.Matches(generated, @"SetValue\(global::Demo\.AttachedBindingHost\.TextBindingProperty,").Count);
         Assert.True(Regex.Matches(generated, @"AttachBindingNameScope\(").Count >= 2);
+    }
+
+    [Fact]
+    public void Allows_NonPublic_Compiled_Binding_For_Attached_Avalonia_Property_Assignment()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AttachedProperty<T> : AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Border : Control { }
+            }
+
+            namespace Demo
+            {
+                public sealed class AttachedBindingHost
+                {
+                    public static readonly global::Avalonia.AttachedProperty<object?> TextBindingProperty = new();
+
+                    public object? TextBinding { get; set; }
+                }
+
+                public sealed class MainVm
+                {
+                    private string HiddenTitle { get; } = "secret";
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView"
+                         x:DataType="local:MainVm"
+                         x:CompileBindings="True">
+                <Border local:AttachedBindingHost.TextBinding="{CompiledBinding HiddenTitle}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("Name = \"get_HiddenTitle\"", generated);
     }
 
     private static CSharpCompilation CreateCompilation(string code)

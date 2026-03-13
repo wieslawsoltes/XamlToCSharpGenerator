@@ -424,6 +424,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var accessibilityWithin = GetGeneratedCodeAccessibilityWithinSymbol(compilation, document);
         var commandType = ResolveContractType(compilation, TypeContractId.SystemICommand);
         var treatLastMethodAsCommand = IsCommandTargetType(targetPropertyType, commandType);
+        var forceConditionalAccessForNextStep = false;
 
         for (var segmentIndex = 0; segmentIndex < segments.Length; segmentIndex++)
         {
@@ -524,10 +525,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var isLastSegment = segmentIndex == segments.Length - 1;
+            var effectiveAcceptsNull = segment.AcceptsNull || forceConditionalAccessForNextStep;
             var propertyAccessExpression = string.Empty;
             var propertyNormalizedSegment = string.Empty;
             ITypeSymbol propertyResultType = currentNamedType;
             var foundInaccessibleProperty = false;
+            var propertyRequiresConditionalContinuation = false;
             var propertyResolved = !segment.IsMethodCall &&
                                    TryResolvePropertyPathAccessExpression(
                                        compilation,
@@ -535,12 +538,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                        currentNamedType,
                                        expressionBuilder,
                                        segment.MemberName,
-                                       segment.AcceptsNull,
+                                       effectiveAcceptsNull,
                                        unsafeAccessors,
                                        out propertyAccessExpression,
                                        out propertyNormalizedSegment,
                                        out propertyResultType,
-                                       out foundInaccessibleProperty);
+                                       out foundInaccessibleProperty,
+                                       out propertyRequiresConditionalContinuation);
             var commandErrorMessage = string.Empty;
             if (!segment.IsMethodCall &&
                 treatLastMethodAsCommand &&
@@ -594,6 +598,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var methodNormalizedSegment = string.Empty;
             ITypeSymbol methodResultType = currentNamedType;
             var foundInaccessibleMethod = false;
+            var methodRequiresConditionalContinuation = false;
             var methodResolved = !segment.IsMethodCall &&
                                  !propertyResolved &&
                                  !foundInaccessibleProperty &&
@@ -603,12 +608,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      currentNamedType,
                                      expressionBuilder,
                                      segment.MemberName,
-                                     segment.AcceptsNull,
+                                     effectiveAcceptsNull,
                                      unsafeAccessors,
                                      out methodAccessExpression,
                                      out methodNormalizedSegment,
                                      out methodResultType,
-                                     out foundInaccessibleMethod);
+                                     out foundInaccessibleMethod,
+                                     out methodRequiresConditionalContinuation);
             if (!propertyResolved && !methodResolved)
             {
                 if (!segment.IsMethodCall &&
@@ -631,15 +637,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         expressionBuilder,
                         segment.MemberName,
                         segment.MethodArguments,
-                        segment.AcceptsNull,
+                        effectiveAcceptsNull,
                         unsafeAccessors,
                         out var methodInvocationExpression,
                         out var methodInvocationNormalizedSegment,
                         out var methodReturnType,
+                        out var methodInvocationRequiresConditionalContinuation,
                         out errorMessage))
                 {
                     expressionBuilder = methodInvocationExpression;
                     currentType = methodReturnType;
+                    forceConditionalAccessForNextStep = methodInvocationRequiresConditionalContinuation;
                     var segmentSeparator = normalizedSegments.Count == 0
                         ? string.Empty
                         : segment.AcceptsNull ? "?." : ".";
@@ -680,12 +688,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 expressionBuilder = propertyAccessExpression;
                 currentType = propertyResultType;
                 normalizedSegment = propertyNormalizedSegment;
+                forceConditionalAccessForNextStep = propertyRequiresConditionalContinuation;
             }
             else
             {
                 expressionBuilder = methodAccessExpression;
                 currentType = methodResultType;
                 normalizedSegment = methodNormalizedSegment;
+                forceConditionalAccessForNextStep = methodRequiresConditionalContinuation;
             }
 
             foreach (var indexerToken in segment.Indexers)
@@ -695,9 +705,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expressionBuilder += "[" + indexerExpression + "]";
+                expressionBuilder += (forceConditionalAccessForNextStep ? "?[" : "[") + indexerExpression + "]";
                 normalizedSegment += "[" + normalizedIndexerToken + "]";
                 currentType = resultType;
+                forceConditionalAccessForNextStep = false;
             }
 
             if (!string.IsNullOrWhiteSpace(segment.CastTypeToken))
@@ -825,12 +836,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string accessExpression,
         out string normalizedSegment,
         out ITypeSymbol resultType,
-        out bool foundInaccessibleProperty)
+        out bool foundInaccessibleProperty,
+        out bool requiresConditionalContinuation)
     {
         accessExpression = string.Empty;
         normalizedSegment = string.Empty;
         resultType = targetType;
         foundInaccessibleProperty = false;
+        requiresConditionalContinuation = false;
 
         var property = FindAccessibleProperty(compilation, accessibilityWithin, targetType, propertyName, out foundInaccessibleProperty);
         if (property is not null)
@@ -860,9 +873,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             targetExpression,
             helperMethodName,
             acceptsNull,
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            inaccessibleProperty.Type);
         normalizedSegment = inaccessibleProperty.Name;
         resultType = inaccessibleProperty.Type;
+        requiresConditionalContinuation = acceptsNull;
         return true;
     }
 
@@ -877,12 +892,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string accessExpression,
         out string normalizedSegment,
         out ITypeSymbol resultType,
-        out bool foundInaccessibleMethod)
+        out bool foundInaccessibleMethod,
+        out bool requiresConditionalContinuation)
     {
         accessExpression = string.Empty;
         normalizedSegment = string.Empty;
         resultType = targetType;
         foundInaccessibleMethod = false;
+        requiresConditionalContinuation = false;
 
         var method = FindAccessibleParameterlessMethod(
             compilation,
@@ -921,9 +938,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             targetExpression,
             helperMethodName,
             acceptsNull,
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            inaccessibleMethod.ReturnType);
         normalizedSegment = inaccessibleMethod.Name + "()";
         resultType = inaccessibleMethod.ReturnType;
+        requiresConditionalContinuation = acceptsNull;
         return true;
     }
 
@@ -988,7 +1007,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string targetExpression,
         string helperMethodName,
         bool acceptsNull,
-        IReadOnlyList<string> argumentExpressions)
+        IReadOnlyList<string> argumentExpressions,
+        ITypeSymbol resultType)
     {
         if (!acceptsNull)
         {
@@ -1004,15 +1024,34 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var nullSafeInvocationArguments = argumentExpressions.Count == 0
             ? targetVariableName
             : targetVariableName + ", " + string.Join(", ", argumentExpressions);
+        var nullSafeInvocation = helperMethodName + "(" + nullSafeInvocationArguments + ")";
+        var requiresLiftedNullResult = resultType.IsValueType &&
+                                       (resultType is not INamedTypeSymbol namedValueType ||
+                                        !IsNullableValueType(namedValueType));
+        if (requiresLiftedNullResult)
+        {
+            var nullableResultTypeName = "global::System.Nullable<" +
+                                         resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                                         ">";
+            nullSafeInvocation = "(" + nullableResultTypeName + ")" + nullSafeInvocation;
+            return "(" +
+                   targetExpression +
+                   " is { } " +
+                   targetVariableName +
+                   " ? " +
+                   nullSafeInvocation +
+                   " : default(" +
+                   nullableResultTypeName +
+                   "))";
+        }
+
         return "(" +
                targetExpression +
                " is { } " +
                targetVariableName +
                " ? " +
-               helperMethodName +
-               "(" +
-               nullSafeInvocationArguments +
-               ") : default)";
+               nullSafeInvocation +
+               " : null)";
     }
 
     private static bool TryBuildMethodCommandAccessorExpression(
@@ -1609,11 +1648,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string invocationExpression,
         out string normalizedSegment,
         out ITypeSymbol returnType,
+        out bool requiresConditionalContinuation,
         out string errorMessage)
     {
         invocationExpression = string.Empty;
         normalizedSegment = string.Empty;
         returnType = targetType;
+        requiresConditionalContinuation = false;
         errorMessage = string.Empty;
 
         var supportsUnsafeAccessor = unsafeAccessors is not null && SupportsUnsafeAccessor(compilation);
@@ -1733,7 +1774,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     targetExpression,
                     helperMethodName,
                     acceptsNull,
-                    bestArgumentExpressions);
+                    bestArgumentExpressions,
+                    bestCandidate.ReturnType);
+                requiresConditionalContinuation = acceptsNull;
             }
 
             normalizedSegment = bestCandidate.Name + "(" + string.Join(", ", bestNormalizedArguments) + ")";
@@ -2781,6 +2824,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         GeneratorOptions options,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         ImmutableArray<ResolvedCompiledBindingDefinition>.Builder compiledBindings,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder? unsafeAccessors,
         bool compileBindingsEnabled,
         INamedTypeSymbol? nodeDataType,
         INamedTypeSymbol? setterTargetType,
@@ -2836,7 +2880,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             options,
             diagnostics,
             compiledBindings,
-            null,
+            unsafeAccessors,
             compileBindingsEnabled,
             nodeDataType,
             fallbackValueType: null,
