@@ -1638,7 +1638,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         errorMessage = string.Empty;
 
         var supportsUnsafeAccessor = unsafeAccessors is not null && SupportsUnsafeAccessor(compilation);
-        var candidates = new List<IMethodSymbol>();
+        var accessibleCandidates = new List<IMethodSymbol>();
+        var inaccessibleCandidates = new List<IMethodSymbol>();
         var foundInaccessibleCandidate = false;
         foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
         {
@@ -1661,11 +1662,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     {
                         continue;
                     }
+
+                    inaccessibleCandidates.Add(method);
+                    continue;
                 }
 
-                candidates.Add(method);
+                accessibleCandidates.Add(method);
             }
         }
+
+        var candidates = accessibleCandidates.Count > 0 ? accessibleCandidates : inaccessibleCandidates;
 
         if (candidates.Count == 0)
         {
