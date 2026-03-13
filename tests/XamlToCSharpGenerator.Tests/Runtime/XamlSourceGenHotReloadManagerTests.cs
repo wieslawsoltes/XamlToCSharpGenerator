@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -88,6 +89,42 @@ public class XamlSourceGenHotReloadManagerTests
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(GenericReloadTarget<int>)]);
 
         Assert.Equal(1, reloadCount);
+    }
+
+    [Fact]
+    public void UpdateApplication_Uses_Explicit_Tracking_Type_For_Classless_Roots()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var firstCount = 0;
+        var secondCount = 0;
+        var first = new ResourceDictionary();
+        var second = new ResourceDictionary();
+
+        XamlSourceGenHotReloadManager.Register(
+            first,
+            _ => firstCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(ClasslessTrackingTypeA),
+                BuildUri = "avares://Demo/ThemeA.axaml",
+                SourcePath = "/tmp/ThemeA.axaml"
+            });
+        XamlSourceGenHotReloadManager.Register(
+            second,
+            _ => secondCount++,
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(ClasslessTrackingTypeB),
+                BuildUri = "avares://Demo/ThemeB.axaml",
+                SourcePath = "/tmp/ThemeB.axaml"
+            });
+
+        XamlSourceGenHotReloadManager.UpdateApplication([typeof(ClasslessTrackingTypeA)]);
+
+        Assert.Equal(1, firstCount);
+        Assert.Equal(0, secondCount);
     }
 
     [Fact]
@@ -207,6 +244,55 @@ public class XamlSourceGenHotReloadManagerTests
         XamlSourceGenHotReloadManager.UpdateApplication([typeof(ReentrantReloadTarget)]);
 
         Assert.Equal(2, reloadCount);
+    }
+
+    [Fact]
+    public async Task UpdateApplication_DirectEnable_Dispatches_To_Existing_UiThread_When_PlatformSetup_Is_Not_Marked()
+    {
+        ResetManager();
+        var originalPlatformSetupCompleted = SourceGenDispatcherRuntime.IsPlatformSetupCompleted;
+        SourceGenDispatcherRuntime.ResetForTests();
+        _ = Dispatcher.UIThread;
+
+        var reloadExecuted = new ManualResetEventSlim();
+        var reloadRanOnUiThread = false;
+
+        try
+        {
+            XamlSourceGenHotReloadManager.Enable();
+
+            var instance = new Border();
+            XamlSourceGenHotReloadManager.Register(instance, _ =>
+            {
+                reloadRanOnUiThread = Dispatcher.UIThread.CheckAccess();
+                reloadExecuted.Set();
+            });
+
+            var updateTask = Task.Run(() => XamlSourceGenHotReloadManager.UpdateApplication([typeof(Border)]));
+            for (var attempt = 0; attempt < 50 && !reloadExecuted.IsSet && !updateTask.IsCompleted; attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(10);
+            }
+
+            Dispatcher.UIThread.RunJobs();
+            await updateTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.True(reloadExecuted.IsSet);
+            Assert.True(reloadRanOnUiThread);
+        }
+        finally
+        {
+            ResetManager();
+            if (originalPlatformSetupCompleted)
+            {
+                SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            }
+            else
+            {
+                SourceGenDispatcherRuntime.ResetForTests();
+            }
+        }
     }
 
     [Fact]
@@ -1347,6 +1433,14 @@ public class XamlSourceGenHotReloadManagerTests
     }
 
     private sealed class DuplicateGeneratedUpdateHelperB
+    {
+    }
+
+    private sealed class ClasslessTrackingTypeA
+    {
+    }
+
+    private sealed class ClasslessTrackingTypeB
     {
     }
 

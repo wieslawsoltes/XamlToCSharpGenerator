@@ -278,7 +278,7 @@ public static class SourceGenObjectGraphRuntimeHelpers
         }
     }
 
-    public static void TryAddToDictionary(object? dictionary, object? key, object? value, string? documentUri)
+    public static void TryAddToDictionary(object? dictionary, object? key, object? value, string? documentUri, bool isShared = true)
     {
         if (dictionary is null || key is null)
         {
@@ -295,7 +295,14 @@ public static class SourceGenObjectGraphRuntimeHelpers
                     resourceDictionary.Remove(key);
                 }
 
-                resourceDictionary.AddNotSharedDeferred(key, deferredContent);
+                if (isShared)
+                {
+                    resourceDictionary.AddDeferred(key, deferredContent);
+                }
+                else
+                {
+                    resourceDictionary.AddNotSharedDeferred(key, deferredContent);
+                }
             }
             catch
             {

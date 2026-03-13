@@ -47,6 +47,8 @@ The unified model layers on top of this compatibility surface.
 | `AvaloniaSourceGenMetricsEnabled` | `emitter.metricsEnabled` |
 | `AvaloniaSourceGenMetricsDetailed` | `emitter.metricsDetailed` |
 
+`AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled` and `AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled` remain MSBuild-only build/watch integration switches. They intentionally do not map to unified configuration-file keys.
+
 ## Transform-rule migration
 
 Legacy rule files still work:

@@ -23,6 +23,7 @@
     <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
     <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
     <AvaloniaSourceGenIdeHotReloadEnabled Condition="'$(AvaloniaSourceGenIdeHotReloadEnabled)' == ''">true</AvaloniaSourceGenIdeHotReloadEnabled>
+    <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenHotDesignEnabled Condition="'$(AvaloniaSourceGenHotDesignEnabled)' == ''">false</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
     <AvaloniaSourceGenMetricsEnabled Condition="'$(AvaloniaSourceGenMetricsEnabled)' == ''">false</AvaloniaSourceGenMetricsEnabled>
@@ -73,6 +74,7 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIdeHotReloadEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenMetricsEnabled" />

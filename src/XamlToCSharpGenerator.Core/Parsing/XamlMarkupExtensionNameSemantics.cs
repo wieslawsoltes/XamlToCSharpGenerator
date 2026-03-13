@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
 
@@ -124,6 +125,29 @@ public static class XamlMarkupExtensionNameSemantics
         return token.EndsWith(ExtensionSuffix, StringComparison.OrdinalIgnoreCase)
             ? token
             : token + ExtensionSuffix;
+    }
+
+    public static IEnumerable<string> EnumerateClrExtensionTypeTokens(string? extensionName)
+    {
+        if (extensionName is null)
+        {
+            yield break;
+        }
+
+        var token = extensionName.Trim();
+        if (token.Length == 0)
+        {
+            yield break;
+        }
+
+        if (token.EndsWith(ExtensionSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            yield return token;
+            yield break;
+        }
+
+        yield return ToClrExtensionTypeToken(token);
+        yield return token;
     }
 
     private static bool TryNormalizeToken(string? extensionName, out string normalized)

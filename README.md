@@ -264,6 +264,7 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 | `AvaloniaSourceGenHotReloadEnabled` | `true` | Enables SourceGen hot reload integration. |
 | `AvaloniaSourceGenHotReloadErrorResilienceEnabled` | `true` | Keeps last-known-good output during transient invalid edits. |
 | `AvaloniaSourceGenIdeHotReloadEnabled` | `true` | Enables IDE-triggered hot reload behavior. |
+| `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled` | `false` | Re-enables SDK `dotnet watch` XAML build triggers when AXSG IDE hot reload is active. |
 | `AvaloniaSourceGenHotDesignEnabled` | `false` | Enables hot design tooling support. |
 | `AvaloniaSourceGenTracePasses` | `false` | Traces compiler pass execution for diagnostics/perf investigation. |
 | `AvaloniaSourceGenMetricsEnabled` | `false` | Enables compiler metrics emission. |
@@ -278,14 +279,16 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 | `AvaloniaSourceGenGlobalXmlnsPrefixes` | empty | Declares global namespace prefix mappings. |
 | `AvaloniaSourceGenTransformRules` | empty | Adds transform rules to the unified configuration model. |
 
+When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses XAML entries from the SDK watch/build-trigger inputs by default so theme and resource-dictionary edits flow through AXSG runtime reload instead of Roslyn EnC rebuilds. Set `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled=true` only when you explicitly want the SDK `dotnet watch` XAML trigger behavior back.
+
 ### Build-host and configuration alias properties
 
 | Property | Default | Purpose |
 | --- | --- | --- |
 | `XamlSourceGenBackend` | mirrors `AvaloniaXamlCompilerBackend` | Backward-compatible backend alias. |
 | `XamlSourceGenEnabled` | mirrors `AvaloniaSourceGenCompilerEnabled` | Backward-compatible enable switch alias. |
-| `XamlSourceGenInputItemGroup` | `AvaloniaXaml` | Item group used as XAML input for the generator host. |
-| `XamlSourceGenAdditionalFilesSourceItemGroup` | `AvaloniaXaml` | AdditionalFiles source item group for XAML inputs. |
+| `XamlSourceGenInputItemGroup` | `AvaloniaXaml` | Item group used as XAML input for the generator host. This is the supported way to switch AXSG to a custom project item group. |
+| `XamlSourceGenAdditionalFilesSourceItemGroup` | `AvaloniaXaml` | Reserved for Avalonia package integration. AXSG always projects Avalonia XAML into Roslyn `AdditionalFiles` as `AvaloniaXaml`; custom values are ignored with a build warning. |
 | `XamlSourceGenTransformRules` | empty | Backward-compatible transform-rule alias. |
 | `XamlSourceGenTransformRuleItemGroup` | `AvaloniaSourceGenTransformRule` | Item group used to contribute transform rules. |
 | `XamlSourceGenConfigurationPrecedence` | empty | Overrides configuration source precedence. |

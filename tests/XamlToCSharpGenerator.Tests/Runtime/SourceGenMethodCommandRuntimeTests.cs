@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
@@ -42,6 +46,94 @@ public class SourceGenMethodCommandRuntimeTests
         Assert.Throws<NullReferenceException>(() => SourceGenMethodCommandRuntime.ConvertParameter<int>(null));
     }
 
+    [AvaloniaFact]
+    public async Task Create_Marshals_CanExecuteChanged_Through_Captured_Avalonia_Context_When_PlatformMarker_Is_Unset()
+    {
+        var originalPlatformSetupCompleted = SourceGenDispatcherRuntime.IsPlatformSetupCompleted;
+        SourceGenDispatcherRuntime.ResetForTests();
+        AvaloniaSynchronizationContext.InstallIfNeeded();
+
+        try
+        {
+            var viewModel = new MethodCommandViewModel();
+            var command = Assert.IsAssignableFrom<System.Windows.Input.ICommand>(
+                SourceGenMethodCommandRuntime.Create(
+                    viewModel,
+                    static (_, _) => { },
+                    static (_, _) => true,
+                    new[] { nameof(MethodCommandViewModel.IsEnabled) }));
+
+            var raisedOnUiContext = false;
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var uiContext = SynchronizationContext.Current;
+
+            command.CanExecuteChanged += (_, _) =>
+            {
+                raisedOnUiContext = ReferenceEquals(SynchronizationContext.Current, uiContext);
+                completion.TrySetResult(true);
+            };
+
+            await Task.Run(() => viewModel.IsEnabled = true);
+            Dispatcher.UIThread.RunJobs();
+            await completion.Task;
+
+            Assert.True(raisedOnUiContext);
+        }
+        finally
+        {
+            if (originalPlatformSetupCompleted)
+            {
+                SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            }
+        }
+    }
+
+    [Fact]
+    public void Create_Detaches_PropertyChanged_Handler_When_Command_Is_Collected()
+    {
+        var target = new CountingNotifyTarget();
+        var commandReference = CreateCollectedCommandReference(target);
+
+        Assert.Equal(1, target.SubscriberCount);
+
+        CollectUntil(() => !commandReference.IsAlive && target.SubscriberCount == 0);
+
+        Assert.False(commandReference.IsAlive);
+        Assert.Equal(0, target.SubscriberCount);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateCollectedCommandReference(CountingNotifyTarget target)
+    {
+        var command = SourceGenMethodCommandRuntime.Create(
+            target,
+            static (_, _) => { },
+            static (_, _) => true,
+            new[] { nameof(CountingNotifyTarget.IsEnabled) });
+
+        Assert.NotNull(command);
+        return new WeakReference(command);
+    }
+
+    private static void CollectUntil(Func<bool> condition)
+    {
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            if (condition())
+            {
+                return;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        Assert.True(condition());
+    }
+
     private sealed class MethodCommandViewModel : INotifyPropertyChanged
     {
         private bool _isEnabled;
@@ -74,5 +166,32 @@ public class SourceGenMethodCommandRuntimeTests
         {
             return IsEnabled && parameter is not null;
         }
+    }
+
+    private sealed class CountingNotifyTarget : INotifyPropertyChanged
+    {
+        private readonly List<PropertyChangedEventHandler> _handlers = new();
+
+        public int SubscriberCount => _handlers.Count;
+
+        public event PropertyChangedEventHandler? PropertyChanged
+        {
+            add
+            {
+                if (value is not null)
+                {
+                    _handlers.Add(value);
+                }
+            }
+            remove
+            {
+                if (value is not null)
+                {
+                    _handlers.Remove(value);
+                }
+            }
+        }
+
+        public bool IsEnabled { get; set; }
     }
 }

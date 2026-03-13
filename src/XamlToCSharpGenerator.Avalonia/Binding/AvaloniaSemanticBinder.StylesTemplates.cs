@@ -359,12 +359,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     }
                 }
 
+                var styleExpressionAccessorPlaceholderToken = BuildCompiledBindingAccessorPlaceholderToken(
+                    setter.Line,
+                    setter.Column);
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,
                         document,
                         options,
                         styleDataType,
+                        styleExpressionAccessorPlaceholderToken,
                         out var isExpressionMarkup,
                         out var expressionBindingValueExpression,
                         out var expressionAccessorExpression,
@@ -385,7 +390,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         AccessorExpression: expressionAccessorExpression,
                         IsSetterBinding: true,
                         Line: setter.Line,
-                        Column: setter.Column));
+                        Column: setter.Column,
+                        AccessorPlaceholderToken: styleExpressionAccessorPlaceholderToken));
 
                     setters.Add(new ResolvedSetterDefinition(
                         PropertyName: resolvedPropertyName,
@@ -879,12 +885,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     }
                 }
 
+                var themeExpressionAccessorPlaceholderToken = BuildCompiledBindingAccessorPlaceholderToken(
+                    setter.Line,
+                    setter.Column);
+
                 if (TryConvertCSharpExpressionMarkupToBindingExpression(
                         setter.Value,
                         compilation,
                         document,
                         options,
                         themeDataType,
+                        themeExpressionAccessorPlaceholderToken,
                         out var isExpressionMarkup,
                         out var expressionBindingValueExpression,
                         out var expressionAccessorExpression,
@@ -905,7 +916,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         AccessorExpression: expressionAccessorExpression,
                         IsSetterBinding: true,
                         Line: setter.Line,
-                        Column: setter.Column));
+                        Column: setter.Column,
+                        AccessorPlaceholderToken: themeExpressionAccessorPlaceholderToken));
 
                     setters.Add(new ResolvedSetterDefinition(
                         PropertyName: resolvedPropertyName,

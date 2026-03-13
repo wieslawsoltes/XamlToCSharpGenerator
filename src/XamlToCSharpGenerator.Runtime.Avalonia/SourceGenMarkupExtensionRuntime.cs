@@ -2,11 +2,14 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Core;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Converters;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -24,7 +27,8 @@ public static class SourceGenMarkupExtensionRuntime
     {
         None,
         DataContextUnavailable,
-        TemplatedParentUnavailable
+        TemplatedParentUnavailable,
+        AncestorUnavailable
     }
 
     private static readonly ConcurrentDictionary<string, Type?> BindingTypeCache = new(StringComparer.Ordinal);
@@ -267,7 +271,7 @@ public static class SourceGenMarkupExtensionRuntime
         return value;
     }
 
-    public static IBinding? ProvideDynamicResource(
+    public static object? ProvideDynamicResource(
         object resourceKey,
         IServiceProvider? parentServiceProvider,
         object rootObject,
@@ -277,6 +281,18 @@ public static class SourceGenMarkupExtensionRuntime
         string? baseUri,
         IReadOnlyList<object>? parentStack)
     {
+        if (targetObject is StyledElement styledTarget &&
+            !HasActiveBindingAnchorContext(styledTarget) &&
+            BuildDetachedDynamicResourceLookupChain(targetObject, parentStack) is { Count: > 0 } detachedLookupChain)
+        {
+            return InstancedBinding.OneWay(
+                new DetachedDynamicResourceObservable(
+                    resourceKey,
+                    detachedLookupChain,
+                    GetStaticResourceTargetType(targetObject, targetProperty)),
+                ResolveDynamicResourcePriority(parentServiceProvider));
+        }
+
         var contextProvider = CreateContextProvider(
             parentServiceProvider,
             rootObject,
@@ -293,24 +309,71 @@ public static class SourceGenMarkupExtensionRuntime
     public static T? AttachBindingNameScope<T>(T? binding, object? nameScope)
         where T : class
     {
-        if (binding is Binding dataBinding && dataBinding.TypeResolver is null)
-        {
-            dataBinding.TypeResolver = ResolveBindingType;
-        }
+        return AttachBindingNameScope(binding, nameScope, xmlNamespaces: null);
+    }
 
-        if (binding is BindingBase bindingBase &&
-            nameScope is INameScope typedNameScope)
-        {
-            bindingBase.NameScope = new WeakReference<INameScope?>(typedNameScope);
-        }
+    public static T? AttachBindingNameScope<T>(
+        T? binding,
+        object? nameScope,
+        IReadOnlyDictionary<string, string>? xmlNamespaces)
+        where T : class
+    {
+        var typedNameScope = nameScope as INameScope;
+        AttachBindingMetadata(binding, typedNameScope, xmlNamespaces);
 
         return binding;
+    }
+
+    private static void AttachBindingMetadata(
+        object? binding,
+        INameScope? nameScope,
+        IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        if (binding is null)
+        {
+            return;
+        }
+
+        if (binding is Binding dataBinding)
+        {
+            if (xmlNamespaces is not null && xmlNamespaces.Count > 0)
+            {
+                dataBinding.TypeResolver = CreateBindingTypeResolver(xmlNamespaces);
+            }
+            else if (dataBinding.TypeResolver is null)
+            {
+                dataBinding.TypeResolver = ResolveBindingType;
+            }
+        }
+
+        if (binding is BindingBase bindingBase && nameScope is not null)
+        {
+            bindingBase.NameScope = new WeakReference<INameScope?>(nameScope);
+        }
+
+        if (binding is not MultiBinding multiBinding)
+        {
+            return;
+        }
+
+        foreach (var childBinding in multiBinding.Bindings)
+        {
+            AttachBindingMetadata(childBinding, nameScope, xmlNamespaces);
+        }
     }
 
     public static void ApplyBinding(object? target, AvaloniaProperty property, object? value, object? anchor = null)
     {
         if (target is not AvaloniaObject avaloniaObject || property is null)
         {
+            return;
+        }
+
+        if (value is InstancedBinding instancedBinding)
+        {
+#pragma warning disable CS0618
+            BindingOperations.Apply(avaloniaObject, property, instancedBinding);
+#pragma warning restore CS0618
             return;
         }
 
@@ -357,6 +420,7 @@ public static class SourceGenMarkupExtensionRuntime
                     }
 
                     observedElement.PropertyChanged -= OnPropertyChanged;
+                    observedElement.AttachedToLogicalTree -= OnAttachedToLogicalTree;
                     if (observedVisual is not null)
                     {
                         observedVisual.AttachedToVisualTree -= OnAttachedToVisualTree;
@@ -379,7 +443,13 @@ public static class SourceGenMarkupExtensionRuntime
                     TryApplyAndDetachHandlers();
                 }
 
+                void OnAttachedToLogicalTree(object? sender, LogicalTreeAttachmentEventArgs args)
+                {
+                    TryApplyAndDetachHandlers();
+                }
+
                 observedElement.PropertyChanged += OnPropertyChanged;
+                observedElement.AttachedToLogicalTree += OnAttachedToLogicalTree;
                 if (observedVisual is not null)
                 {
                     observedVisual.AttachedToVisualTree += OnAttachedToVisualTree;
@@ -410,14 +480,16 @@ public static class SourceGenMarkupExtensionRuntime
 
     public static object? ResolveBindingAnchor(object? target, IReadOnlyList<object>? parentStack)
     {
-        if (target is StyledElement)
+        var styledTarget = target as StyledElement;
+        if (styledTarget is not null &&
+            HasActiveBindingAnchorContext(styledTarget))
         {
-            return target;
+            return styledTarget;
         }
 
         if (parentStack is null || parentStack.Count == 0)
         {
-            return null;
+            return styledTarget;
         }
 
         StyledElement? fallbackAnchor = null;
@@ -431,14 +503,20 @@ public static class SourceGenMarkupExtensionRuntime
 
             fallbackAnchor ??= styledElement;
 
-            if (styledElement.TemplatedParent is not null ||
-                styledElement is Visual visual && TopLevel.GetTopLevel(visual) is not null)
+            if (HasActiveBindingAnchorContext(styledElement))
             {
                 return styledElement;
             }
         }
 
-        return fallbackAnchor;
+        return fallbackAnchor ?? styledTarget;
+    }
+
+    private static bool HasActiveBindingAnchorContext(StyledElement styledElement)
+    {
+        return styledElement.IsSet(StyledElement.DataContextProperty) ||
+               styledElement.TemplatedParent is not null ||
+               styledElement is Visual visual && TopLevel.GetTopLevel(visual) is not null;
     }
 
     private static DeferredBindingFailureReason ClassifyDeferredBindingFailure(
@@ -454,6 +532,11 @@ public static class SourceGenMarkupExtensionRuntime
         if (IsTemplatedParentBindingWithoutAnchor(dataBinding, target, anchor))
         {
             return DeferredBindingFailureReason.TemplatedParentUnavailable;
+        }
+
+        if (IsAncestorBindingWithoutReadyAnchor(dataBinding, target, anchor))
+        {
+            return DeferredBindingFailureReason.AncestorUnavailable;
         }
 
         if (IsDataContextBindingWithoutSource(dataBinding) &&
@@ -486,6 +569,12 @@ public static class SourceGenMarkupExtensionRuntime
         if (message.IndexOf("Cannot find a StyledElement to get a TemplatedParent", StringComparison.Ordinal) >= 0)
         {
             return DeferredBindingFailureReason.TemplatedParentUnavailable;
+        }
+
+        if (message.IndexOf("Cannot find an ILogical to get a visual ancestor", StringComparison.Ordinal) >= 0 ||
+            message.IndexOf("Cannot find an ILogical to get a logical ancestor", StringComparison.Ordinal) >= 0)
+        {
+            return DeferredBindingFailureReason.AncestorUnavailable;
         }
 
         return DeferredBindingFailureReason.None;
@@ -554,6 +643,19 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
+    private static bool IsAncestorBindingWithoutReadyAnchor(Binding binding, AvaloniaObject target, object? anchor)
+    {
+        if (!IsFindAncestorRelativeSource(binding.RelativeSource) ||
+            !IsBindingSourceUnset(binding) ||
+            binding.ElementName is not null)
+        {
+            return false;
+        }
+
+        return !HasAncestorBindingAnchor(target) &&
+               !HasAncestorBindingAnchor(anchor);
+    }
+
     private static bool ShouldScheduleTimedBindingRetry(
         AvaloniaObject target,
         IBinding _,
@@ -570,26 +672,32 @@ public static class SourceGenMarkupExtensionRuntime
             return false;
         }
 
-        if (deferredReason != DeferredBindingFailureReason.TemplatedParentUnavailable)
+        if (deferredReason == DeferredBindingFailureReason.TemplatedParentUnavailable ||
+            deferredReason == DeferredBindingFailureReason.AncestorUnavailable)
         {
-            return false;
+            // For styled targets/anchors, tree and property change handlers already
+            // re-apply when the required context becomes available.
+            if (target is StyledElement ||
+                anchor is StyledElement)
+            {
+                return false;
+            }
+
+            // Non-styled targets without anchor notifications need timer-based retries.
+            return true;
         }
 
-        // For styled targets/anchors, property change handlers already re-apply when
-        // templated parent or visual attachment changes.
-        if (target is StyledElement ||
-            anchor is StyledElement)
-        {
-            return false;
-        }
-
-        // Non-styled targets without anchor notifications need timer-based retries.
-        return true;
+        return false;
     }
 
     private static bool IsTemplatedParentRelativeSource(RelativeSource? relativeSource)
     {
         return relativeSource?.Mode == RelativeSourceMode.TemplatedParent;
+    }
+
+    private static bool IsFindAncestorRelativeSource(RelativeSource? relativeSource)
+    {
+        return relativeSource?.Mode == RelativeSourceMode.FindAncestor;
     }
 
     private static bool IsBindingSourceUnset(Binding binding)
@@ -609,6 +717,21 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return null;
+    }
+
+    private static bool HasAncestorBindingAnchor(object? candidate)
+    {
+        if (candidate is not StyledElement styledElement)
+        {
+            return false;
+        }
+
+        if (candidate is ILogical logical && logical.IsAttachedToLogicalTree)
+        {
+            return true;
+        }
+
+        return candidate is Visual visual && TopLevel.GetTopLevel(visual) is not null;
     }
 
     private static bool TryPrepareBindingForNonStyledTemplatedParentTarget(
@@ -666,11 +789,51 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
+    private static bool TryPrepareBindingForNonLogicalAncestorTarget(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor,
+        out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (binding is not Binding dataBinding ||
+            !IsFindAncestorRelativeSource(dataBinding.RelativeSource) ||
+            !IsBindingSourceUnset(dataBinding) ||
+            dataBinding.ElementName is not null ||
+            target is ILogical)
+        {
+            return true;
+        }
+
+        if (TryResolveAncestorBindingSource(anchor, dataBinding.RelativeSource!, out var ancestorSource))
+        {
+            dataBinding.Source = ancestorSource;
+            dataBinding.RelativeSource = null;
+            TraceBinding(
+                $"Rewrote ancestor binding: target={target.GetType().FullName}, anchor={(anchor as object)?.GetType().FullName ?? "<null>"}, source={ancestorSource.GetType().FullName}, path={dataBinding.Path}.");
+            return true;
+        }
+
+        TraceBinding(
+            $"Deferred ancestor binding preparation: target={target.GetType().FullName}, anchor={(anchor as object)?.GetType().FullName ?? "<null>"}, path={dataBinding.Path}.");
+        deferredException = new InvalidOperationException("Cannot find an ILogical to get a visual ancestor.");
+        return false;
+    }
+
     private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
     {
+        var fallbackSynchronizationContext = SynchronizationContext.Current as AvaloniaSynchronizationContext;
+
+        async Task ScheduleDelayedRetryAsync(int attempt, int delayMilliseconds)
+        {
+            await Task.Delay(delayMilliseconds).ConfigureAwait(false);
+            TryApply(attempt);
+        }
+
         void TryApply(int attempt)
         {
-            Dispatcher.UIThread.Post(() =>
+            if (!SourceGenDispatcherRuntime.TryPost(() =>
             {
                 if (TryBind(target, property, binding, anchor, out var deferredException))
                 {
@@ -688,12 +851,29 @@ public static class SourceGenMarkupExtensionRuntime
                 {
                     var nextAttempt = attempt + 1;
                     var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
-                    DispatcherTimer.RunOnce(
-                        () => TryApply(nextAttempt),
-                        TimeSpan.FromMilliseconds(delayMilliseconds),
-                        DispatcherPriority.Background);
+                    if (SourceGenDispatcherRuntime.HasControlledUiDispatcher())
+                    {
+                        DispatcherTimer.RunOnce(
+                            () => TryApply(nextAttempt),
+                            TimeSpan.FromMilliseconds(delayMilliseconds),
+                            DispatcherPriority.Background);
+                    }
+                    else
+                    {
+                        _ = ScheduleDelayedRetryAsync(nextAttempt, delayMilliseconds);
+                    }
                 }
-            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background);
+            }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background, fallbackSynchronizationContext))
+            {
+                if (attempt + 1 >= MaxDeferredBindingRetryCount)
+                {
+                    return;
+                }
+
+                var nextAttempt = attempt + 1;
+                var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
+                _ = ScheduleDelayedRetryAsync(nextAttempt, delayMilliseconds);
+            }
         }
 
         TryApply(0);
@@ -704,6 +884,11 @@ public static class SourceGenMarkupExtensionRuntime
         deferredException = null;
 
         if (!TryPrepareBindingForNonStyledTemplatedParentTarget(target, binding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        if (!TryPrepareBindingForNonLogicalAncestorTarget(target, binding, anchor, out deferredException))
         {
             return false;
         }
@@ -769,6 +954,107 @@ public static class SourceGenMarkupExtensionRuntime
     private static string DescribeBindingTarget(AvaloniaObject target, AvaloniaProperty property)
     {
         return $"{target.GetType().FullName}.{property.Name}";
+    }
+
+    private static bool TryResolveAncestorBindingSource(
+        object? anchor,
+        RelativeSource relativeSource,
+        out object ancestorSource)
+    {
+        var ancestorLevel = relativeSource.AncestorLevel > 0 ? relativeSource.AncestorLevel : 1;
+        var ancestorType = relativeSource.AncestorType;
+
+        if (anchor is Visual visual &&
+            TopLevel.GetTopLevel(visual) is not null &&
+            TryResolveVisualAncestorBindingSource(visual, ancestorType, ancestorLevel, out ancestorSource))
+        {
+            return true;
+        }
+
+        if (anchor is ILogical logical &&
+            logical.IsAttachedToLogicalTree &&
+            TryResolveLogicalAncestorBindingSource(logical, ancestorType, ancestorLevel, out ancestorSource))
+        {
+            return true;
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool TryResolveVisualAncestorBindingSource(
+        Visual anchor,
+        Type? ancestorType,
+        int ancestorLevel,
+        out object ancestorSource)
+    {
+        if (MatchesAncestorBindingSource(anchor, ancestorType))
+        {
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = anchor;
+                return true;
+            }
+        }
+
+        foreach (var ancestor in anchor.GetVisualAncestors())
+        {
+            if (!MatchesAncestorBindingSource(ancestor, ancestorType))
+            {
+                continue;
+            }
+
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = ancestor;
+                return true;
+            }
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool TryResolveLogicalAncestorBindingSource(
+        ILogical anchor,
+        Type? ancestorType,
+        int ancestorLevel,
+        out object ancestorSource)
+    {
+        if (MatchesAncestorBindingSource(anchor, ancestorType))
+        {
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = anchor;
+                return true;
+            }
+        }
+
+        foreach (var ancestor in anchor.GetLogicalAncestors())
+        {
+            if (!MatchesAncestorBindingSource(ancestor, ancestorType))
+            {
+                continue;
+            }
+
+            ancestorLevel--;
+            if (ancestorLevel == 0)
+            {
+                ancestorSource = ancestor;
+                return true;
+            }
+        }
+
+        ancestorSource = null!;
+        return false;
+    }
+
+    private static bool MatchesAncestorBindingSource(object candidate, Type? ancestorType)
+    {
+        return ancestorType is null || ancestorType.IsInstanceOfType(candidate);
     }
 
     public static Avalonia.Media.Imaging.Bitmap? LoadBitmapAsset(string path, string? baseUri)
@@ -894,9 +1180,28 @@ public static class SourceGenMarkupExtensionRuntime
             : null;
     }
 
+    private static Func<string?, string, Type> CreateBindingTypeResolver(IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        if (xmlNamespaces is null || xmlNamespaces.Count == 0)
+        {
+            return ResolveBindingType;
+        }
+
+        return (xmlNamespace, name) => ResolveBindingType(xmlNamespace, name, xmlNamespaces);
+    }
+
     private static Type ResolveBindingType(string? xmlNamespace, string name)
     {
-        var key = (xmlNamespace ?? string.Empty) + "|" + name;
+        return ResolveBindingType(xmlNamespace, name, xmlNamespaces: null);
+    }
+
+    private static Type ResolveBindingType(
+        string? xmlNamespace,
+        string name,
+        IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        var normalizedXmlNamespace = NormalizeBindingXmlNamespace(xmlNamespace, xmlNamespaces);
+        var key = (normalizedXmlNamespace ?? string.Empty) + "|" + name;
         var resolvedType = BindingTypeCache.GetOrAdd(key, static cacheKey =>
         {
             var separatorIndex = cacheKey.IndexOf('|');
@@ -918,6 +1223,22 @@ public static class SourceGenMarkupExtensionRuntime
         return SourceGenKnownTypeRegistry.TryResolve(xmlNamespace, name, out var resolvedType)
             ? resolvedType
             : null;
+    }
+
+    private static string? NormalizeBindingXmlNamespace(
+        string? xmlNamespace,
+        IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        if (string.IsNullOrWhiteSpace(xmlNamespace) ||
+            xmlNamespaces is null ||
+            xmlNamespaces.Count == 0)
+        {
+            return xmlNamespace;
+        }
+
+        return xmlNamespaces.TryGetValue(xmlNamespace, out var mappedXmlNamespace)
+            ? mappedXmlNamespace
+            : xmlNamespace;
     }
 
     public static IBinding? ProvideReflectionBinding(
@@ -1120,6 +1441,30 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Creates the XAML service-provider context used when constructing a non-root object
+    /// via an <see cref="IServiceProvider"/> constructor.
+    /// </summary>
+    public static IServiceProvider CreateObjectConstructionServiceProvider(
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        return new ObjectConstructionServiceProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            ResolveBaseUri(
+                parentServiceProvider,
+                baseUri,
+                rootObject,
+                intermediateRootObject,
+                intermediateRootObject),
+            BuildParentStack(intermediateRootObject, parentStack));
     }
 
     public static object? ProvideOnPlatform(
@@ -1598,6 +1943,298 @@ public static class SourceGenMarkupExtensionRuntime
         return stack;
     }
 
+    private static IReadOnlyList<object>? BuildDetachedDynamicResourceLookupChain(
+        object targetObject,
+        IReadOnlyList<object>? parentStack)
+    {
+        List<object>? lookupChain = null;
+        HashSet<object>? seen = null;
+
+        void AddLookupCandidate(object? candidate)
+        {
+            if (candidate is not IResourceProvider &&
+                candidate is not IResourceHost)
+            {
+                return;
+            }
+
+            seen ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+            if (!seen.Add(candidate))
+            {
+                return;
+            }
+
+            lookupChain ??= new List<object>();
+            lookupChain.Add(candidate);
+        }
+
+        AddLookupCandidate(targetObject);
+
+        if (parentStack is not null)
+        {
+            for (var index = 0; index < parentStack.Count; index++)
+            {
+                AddLookupCandidate(parentStack[index]);
+            }
+        }
+
+        return lookupChain;
+    }
+
+    private static ThemeVariant? ResolveDetachedDynamicResourceThemeVariant(IReadOnlyList<object> lookupChain)
+    {
+        for (var index = 0; index < lookupChain.Count; index++)
+        {
+            if (lookupChain[index] is IThemeVariantProvider { Key: { } setKey })
+            {
+                return setKey;
+            }
+        }
+
+        return null;
+    }
+
+    private static BindingPriority ResolveDynamicResourcePriority(IServiceProvider? parentServiceProvider)
+    {
+        return parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlControlTemplateProvider)) is not null
+            ? BindingPriority.Template
+            : BindingPriority.LocalValue;
+    }
+
+    private sealed class DetachedDynamicResourceObservable : IObservable<object?>
+    {
+        private readonly object _resourceKey;
+        private readonly object[] _lookupChain;
+        private readonly Type? _targetType;
+
+        public DetachedDynamicResourceObservable(
+            object resourceKey,
+            IReadOnlyList<object> lookupChain,
+            Type? targetType)
+        {
+            _resourceKey = resourceKey;
+            _lookupChain = new object[lookupChain.Count];
+            for (var index = 0; index < lookupChain.Count; index++)
+            {
+                _lookupChain[index] = lookupChain[index];
+            }
+
+            _targetType = targetType;
+        }
+
+        public IDisposable Subscribe(IObserver<object?> observer)
+        {
+            ArgumentNullException.ThrowIfNull(observer);
+            return new DetachedDynamicResourceSubscription(_resourceKey, _lookupChain, _targetType, observer);
+        }
+    }
+
+    private sealed class DetachedDynamicResourceSubscription : IDisposable
+    {
+        private readonly object _resourceKey;
+        private readonly object[] _lookupChain;
+        private readonly Type? _targetType;
+        private readonly IObserver<object?> _observer;
+        private readonly List<IResourceProvider> _providers = new();
+        private readonly List<IResourceHost> _hosts = new();
+        private readonly List<IThemeVariantHost> _themeHosts = new();
+        private bool _disposed;
+
+        public DetachedDynamicResourceSubscription(
+            object resourceKey,
+            object[] lookupChain,
+            Type? targetType,
+            IObserver<object?> observer)
+        {
+            _resourceKey = resourceKey;
+            _lookupChain = lookupChain;
+            _targetType = targetType;
+            _observer = observer;
+
+            SubscribeToProviders();
+            RefreshHostSubscriptions();
+            PublishCurrent();
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            for (var index = 0; index < _providers.Count; index++)
+            {
+                _providers[index].OwnerChanged -= OnProviderOwnerChanged;
+            }
+
+            UnsubscribeHosts();
+        }
+
+        private void SubscribeToProviders()
+        {
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            for (var index = 0; index < _lookupChain.Length; index++)
+            {
+                if (_lookupChain[index] is not IResourceProvider provider ||
+                    !seen.Add(provider))
+                {
+                    continue;
+                }
+
+                provider.OwnerChanged += OnProviderOwnerChanged;
+                _providers.Add(provider);
+            }
+        }
+
+        private void RefreshHostSubscriptions()
+        {
+            UnsubscribeHosts();
+
+            var subscribeToThemeChanges = ResolveDetachedDynamicResourceThemeVariant(_lookupChain) is null;
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            for (var index = 0; index < _lookupChain.Length; index++)
+            {
+                if (_lookupChain[index] is IResourceHost resourceHost &&
+                    seen.Add(resourceHost))
+                {
+                    SubscribeHost(resourceHost, subscribeToThemeChanges);
+                }
+
+                if (_lookupChain[index] is IResourceProvider { Owner: { } owner } &&
+                    seen.Add(owner))
+                {
+                    SubscribeHost(owner, subscribeToThemeChanges);
+                }
+            }
+        }
+
+        private void SubscribeHost(IResourceHost resourceHost, bool subscribeToThemeChanges)
+        {
+            resourceHost.ResourcesChanged += OnResourcesChanged;
+            _hosts.Add(resourceHost);
+
+            if (subscribeToThemeChanges &&
+                resourceHost is IThemeVariantHost themeVariantHost)
+            {
+                themeVariantHost.ActualThemeVariantChanged += OnThemeVariantChanged;
+                _themeHosts.Add(themeVariantHost);
+            }
+        }
+
+        private void UnsubscribeHosts()
+        {
+            for (var index = 0; index < _hosts.Count; index++)
+            {
+                _hosts[index].ResourcesChanged -= OnResourcesChanged;
+            }
+
+            for (var index = 0; index < _themeHosts.Count; index++)
+            {
+                _themeHosts[index].ActualThemeVariantChanged -= OnThemeVariantChanged;
+            }
+
+            _hosts.Clear();
+            _themeHosts.Clear();
+        }
+
+        private void OnProviderOwnerChanged(object? sender, EventArgs e)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            RefreshHostSubscriptions();
+            PublishCurrent();
+        }
+
+        private void OnResourcesChanged(object? sender, ResourcesChangedEventArgs e)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            PublishCurrent();
+        }
+
+        private void OnThemeVariantChanged(object? sender, EventArgs e)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            PublishCurrent();
+        }
+
+        private void PublishCurrent()
+        {
+            _observer.OnNext(ResolveCurrentValue());
+        }
+
+        private object? ResolveCurrentValue()
+        {
+            var themeVariant = ResolveDetachedDynamicResourceThemeVariant(_lookupChain) ?? ResolveCurrentThemeVariant();
+            for (var index = 0; index < _lookupChain.Length; index++)
+            {
+                if (TryResolveResourceValue(_lookupChain[index], themeVariant, out var resolved))
+                {
+                    return ColorToBrushConverter.Convert(resolved, _targetType);
+                }
+            }
+
+            return AvaloniaProperty.UnsetValue;
+        }
+
+        private ThemeVariant? ResolveCurrentThemeVariant()
+        {
+            for (var index = 0; index < _lookupChain.Length; index++)
+            {
+                if (_lookupChain[index] is IThemeVariantHost themeVariantHost)
+                {
+                    return themeVariantHost.ActualThemeVariant;
+                }
+
+                if (_lookupChain[index] is IResourceProvider { Owner: IThemeVariantHost ownerThemeVariantHost })
+                {
+                    return ownerThemeVariantHost.ActualThemeVariant;
+                }
+            }
+
+            return null;
+        }
+
+        private bool TryResolveResourceValue(object lookupEntry, ThemeVariant? themeVariant, out object? value)
+        {
+            if (lookupEntry is IResourceHost resourceHost &&
+                resourceHost.TryFindResource(_resourceKey, themeVariant, out value))
+            {
+                return true;
+            }
+
+            if (lookupEntry is IResourceProvider resourceProvider)
+            {
+                if (resourceProvider.TryGetResource(_resourceKey, themeVariant, out value))
+                {
+                    return true;
+                }
+
+                if (resourceProvider.Owner is { } owner &&
+                    owner.TryFindResource(_resourceKey, themeVariant, out value))
+                {
+                    return true;
+                }
+            }
+
+            value = null;
+            return false;
+        }
+    }
+
     private static string NormalizeRuntimeXamlValue(string xaml)
     {
         var trimmed = xaml.Trim();
@@ -1793,6 +2430,103 @@ public static class SourceGenMarkupExtensionRuntime
                 }
 
                 if (_targetObject is StyledElement styledElement &&
+                    NameScope.GetNameScope(styledElement) is { } elementNameScope)
+                {
+                    return elementNameScope;
+                }
+            }
+
+            return _parentServiceProvider?.GetService(serviceType);
+        }
+
+        private IEnumerable<object> EnumerateParents()
+        {
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            for (var index = 0; index < _parentStack.Length; index++)
+            {
+                var parent = _parentStack[index];
+                if (seen.Add(parent))
+                {
+                    yield return parent;
+                }
+            }
+
+            if (_parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) is IAvaloniaXamlIlParentStackProvider upstreamStack)
+            {
+                foreach (var upstreamParent in upstreamStack.Parents)
+                {
+                    if (seen.Add(upstreamParent))
+                    {
+                        yield return upstreamParent;
+                    }
+                }
+            }
+        }
+    }
+
+    private sealed class ObjectConstructionServiceProvider :
+        IServiceProvider,
+        IRootObjectProvider,
+        IUriContext,
+        IAvaloniaXamlIlParentStackProvider
+    {
+        private readonly IServiceProvider? _parentServiceProvider;
+        private readonly object _rootObject;
+        private readonly object _intermediateRootObject;
+        private readonly object[] _parentStack;
+        private readonly Uri _baseUri;
+
+        public ObjectConstructionServiceProvider(
+            IServiceProvider? parentServiceProvider,
+            object rootObject,
+            object intermediateRootObject,
+            Uri baseUri,
+            object[] parentStack)
+        {
+            _parentServiceProvider = parentServiceProvider;
+            _rootObject = rootObject;
+            _intermediateRootObject = intermediateRootObject;
+            _baseUri = baseUri;
+            _parentStack = parentStack;
+        }
+
+        public object RootObject => _rootObject;
+
+        public object IntermediateRootObject => _intermediateRootObject;
+
+        public Uri BaseUri
+        {
+            get => _baseUri;
+            set { }
+        }
+
+        public IEnumerable<object> Parents => EnumerateParents();
+
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IRootObjectProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IUriContext))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(IAvaloniaXamlIlParentStackProvider))
+            {
+                return this;
+            }
+
+            if (serviceType == typeof(INameScope))
+            {
+                if (_parentServiceProvider?.GetService(typeof(INameScope)) is INameScope nameScope)
+                {
+                    return nameScope;
+                }
+
+                if (_intermediateRootObject is StyledElement styledElement &&
                     NameScope.GetNameScope(styledElement) is { } elementNameScope)
                 {
                     return elementNameScope;

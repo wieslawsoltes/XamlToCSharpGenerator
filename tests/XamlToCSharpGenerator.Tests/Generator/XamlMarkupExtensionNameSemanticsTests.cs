@@ -1,3 +1,4 @@
+using System.Linq;
 using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Tests.Generator;
@@ -42,6 +43,19 @@ public class XamlMarkupExtensionNameSemanticsTests
     public void ToClrExtensionTypeToken_Preserves_Namespace_And_Adds_Suffix(string token, string expected)
     {
         var actual = XamlMarkupExtensionNameSemantics.ToClrExtensionTypeToken(token);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("local:Custom", new[] { "local:CustomExtension", "local:Custom" })]
+    [InlineData("Custom", new[] { "CustomExtension", "Custom" })]
+    [InlineData("local:CustomExtension", new[] { "local:CustomExtension" })]
+    public void EnumerateClrExtensionTypeTokens_Returns_Xaml_Markup_Candidates_In_Resolution_Order(
+        string token,
+        string[] expected)
+    {
+        var actual = XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(token).ToArray();
 
         Assert.Equal(expected, actual);
     }

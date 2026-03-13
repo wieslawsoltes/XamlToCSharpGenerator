@@ -9,6 +9,7 @@ public static class AppBuilderExtensions
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             AvaloniaSourceGeneratedXamlLoader.Enable();
             XamlSourceGenHotReloadManager.Enable();
             XamlSourceGenHotReloadManager.TryEnableIdePollingFallbackFromEnvironment();
@@ -20,13 +21,18 @@ public static class AppBuilderExtensions
         bool enable = true,
         Action<SourceGenRuntimeXamlCompilationOptions>? configure = null)
     {
-        return builder.AfterSetup(_ => ConfigureRuntimeCompilation(enable, configure));
+        return builder.AfterSetup(_ =>
+        {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            ConfigureRuntimeCompilation(enable, configure);
+        });
     }
 
     public static AppBuilder UseAvaloniaSourceGeneratedXamlHotReload(this AppBuilder builder, bool enable = true)
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             if (enable)
             {
                 XamlSourceGenHotReloadManager.Enable();
@@ -47,6 +53,7 @@ public static class AppBuilderExtensions
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             if (enable)
             {
                 XamlSourceGenHotReloadManager.EnableIdePollingFallback(pollingIntervalMs);
@@ -65,6 +72,7 @@ public static class AppBuilderExtensions
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             XamlSourceGenHotReloadManager.RegisterHandler(handler, elementType);
         });
     }
@@ -75,7 +83,11 @@ public static class AppBuilderExtensions
         Action<SourceGenHotDesignOptions>? configure = null,
         ISourceGenHotDesignUpdateApplier? applier = null)
     {
-        return builder.AfterSetup(_ => ConfigureHotDesignCompatibility(enable, configure, applier));
+        return builder.AfterSetup(_ =>
+        {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
+            ConfigureHotDesignCompatibility(enable, configure, applier);
+        });
     }
 
     public static AppBuilder UseAvaloniaSourceGeneratedStudio(
@@ -84,6 +96,7 @@ public static class AppBuilderExtensions
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             var options = new SourceGenStudioOptions();
             configure?.Invoke(options);
             XamlSourceGenStudioHost.Start(options);
@@ -96,6 +109,7 @@ public static class AppBuilderExtensions
     {
         return builder.AfterSetup(_ =>
         {
+            SourceGenDispatcherRuntime.MarkPlatformSetupCompleted();
             var options = new SourceGenStudioOptions();
             configure?.Invoke(options);
 

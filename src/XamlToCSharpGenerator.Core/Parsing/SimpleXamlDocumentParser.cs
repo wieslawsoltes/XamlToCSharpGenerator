@@ -110,7 +110,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 input.FilePath,
                 out var conditionalNamespacesByRawUri);
             var ignoredNamespaces = CollectIgnoredNamespaces(root, xmlNamespaces);
-            var rootObject = ParseObjectNode(root, ignoredNamespaces, conditionalNamespacesByRawUri);
+            var rootObject = ParseObjectNode(
+                root,
+                ignoredNamespaces,
+                conditionalNamespacesByRawUri,
+                diagnostics,
+                input.FilePath);
             var namedElements = CollectNamedElements(rootObject);
             var model = new XamlDocumentModel(
                 FilePath: input.FilePath,
@@ -185,7 +190,9 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
     private XamlObjectNode ParseObjectNode(
         XElement element,
         ImmutableHashSet<string> ignoredNamespaces,
-        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri)
+        ImmutableDictionary<string, ConditionalXamlExpression> conditionalNamespacesByRawUri,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        string filePath)
     {
         var propertyAssignments = ImmutableArray.CreateBuilder<XamlPropertyAssignment>();
         var childObjects = ImmutableArray.CreateBuilder<XamlObjectNode>();
@@ -197,6 +204,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             conditionalNamespacesByRawUri);
         var isArrayDirective = IsXamlDirectiveElement(element, "Array");
         string? key = null;
+        bool? isShared = null;
         string? xName = null;
         string? plainName = null;
         string? fieldModifier = null;
@@ -218,6 +226,17 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                     if (attribute.Name.LocalName == "Key")
                     {
                         key = attribute.Value;
+                    }
+                    else if (attribute.Name.LocalName == "Shared")
+                    {
+                        if (bool.TryParse(attribute.Value, out var parsedShared))
+                        {
+                            isShared = parsedShared;
+                        }
+                        else
+                        {
+                            ReportInvalidSharedDirective(attribute, diagnostics, filePath);
+                        }
                     }
                     else if (attribute.Name.LocalName == "Name")
                     {
@@ -304,7 +323,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                         continue;
                     }
 
-                    constructorArguments.Add(ParseObjectNode(objectValue, ignoredNamespaces, conditionalNamespacesByRawUri));
+                    constructorArguments.Add(ParseObjectNode(
+                        objectValue,
+                        ignoredNamespaces,
+                        conditionalNamespacesByRawUri,
+                        diagnostics,
+                        filePath));
                 }
 
                 continue;
@@ -320,7 +344,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                         continue;
                     }
 
-                    objectValues.Add(ParseObjectNode(objectValue, ignoredNamespaces, conditionalNamespacesByRawUri));
+                    objectValues.Add(ParseObjectNode(
+                        objectValue,
+                        ignoredNamespaces,
+                        conditionalNamespacesByRawUri,
+                        diagnostics,
+                        filePath));
                 }
 
                 var lineInfo = (IXmlLineInfo)child;
@@ -340,7 +369,12 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 continue;
             }
 
-            childObjects.Add(ParseObjectNode(child, ignoredNamespaces, conditionalNamespacesByRawUri));
+            childObjects.Add(ParseObjectNode(
+                child,
+                ignoredNamespaces,
+                conditionalNamespacesByRawUri,
+                diagnostics,
+                filePath));
         }
 
         var elementLineInfo = (IXmlLineInfo)element;
@@ -349,6 +383,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             XmlTypeName: element.Name.LocalName,
             Condition: elementCondition,
             Key: key,
+            IsShared: isShared,
             Name: name,
             FieldModifier: fieldModifier,
             DataType: dataType,
@@ -364,6 +399,21 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
             Line: elementLineInfo.HasLineInfo() ? elementLineInfo.LineNumber : 1,
             Column: elementLineInfo.HasLineInfo() ? elementLineInfo.LinePosition : 1,
             RawTextContent: rawTextContent);
+    }
+
+    private static void ReportInvalidSharedDirective(
+        XAttribute attribute,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        string filePath)
+    {
+        var lineInfo = (IXmlLineInfo)attribute;
+        diagnostics.Add(new DiagnosticInfo(
+            "AXSG0004",
+            "x:Shared value must be either 'True' or 'False'.",
+            filePath,
+            lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
+            lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
+            false));
     }
 
     private XDocument LoadDocument(string text)
@@ -741,6 +791,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                || attribute.Name.LocalName == "FieldModifier"
                || attribute.Name.LocalName == "ClassModifier"
                || attribute.Name.LocalName == "Key"
+               || attribute.Name.LocalName == "Shared"
                || attribute.Name.LocalName == "DataType"
                || attribute.Name.LocalName == "CompileBindings"
                || attribute.Name.LocalName == "Precompile"

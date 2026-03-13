@@ -9,5 +9,8 @@ public enum ResolvedObjectNodeSemanticFlags
     RequiresBaseUriConstructor = 1 << 0,
     IsResourceInclude = 1 << 1,
     IsStyleInclude = 1 << 2,
-    StaticResourceMarkupExtension = 1 << 3
+    StaticResourceMarkupExtension = 1 << 3,
+    IsResourceDictionary = 1 << 4,
+    CanBeDeferredResource = 1 << 5,
+    IsNotSharedDeferredResource = 1 << 6
 }

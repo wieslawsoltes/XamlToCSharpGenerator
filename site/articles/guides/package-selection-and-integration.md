@@ -20,6 +20,14 @@ That gives you:
 
 Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers.
 
+For the normal Avalonia app path, the minimum supported setup is:
+
+- package reference to `XamlToCSharpGenerator`
+- `<AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>`
+- `.UseAvaloniaSourceGeneratedXaml()` on `AppBuilder`
+
+If you need a custom project item group, use `XamlSourceGenInputItemGroup` and mirror your XAML items into that group. Do not override `XamlSourceGenAdditionalFilesSourceItemGroup` for Avalonia consumers; the build package always projects AXSG Avalonia inputs into Roslyn `AdditionalFiles` as `AvaloniaXaml`.
+
 ## When to split packages
 
 ### Build-only integration

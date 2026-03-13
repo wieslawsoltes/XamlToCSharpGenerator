@@ -95,6 +95,7 @@ public sealed partial class AvaloniaSemanticBinder
         XamlDocumentModel document,
         GeneratorOptions options,
         INamedTypeSymbol? sourceType,
+        string? accessorPlaceholderToken,
         out bool isExpressionMarkup,
         out string expressionBindingValueExpression,
         out string accessorExpression,
@@ -151,6 +152,7 @@ public sealed partial class AvaloniaSemanticBinder
                 sourceType,
                 accessorExpression,
                 expressionDependencyNames,
+                accessorPlaceholderToken,
                 out expressionBindingValueExpression))
         {
             diagnosticId = "AXSG0111";
@@ -463,6 +465,7 @@ public sealed partial class AvaloniaSemanticBinder
         INamedTypeSymbol sourceType,
         string accessorExpression,
         ImmutableArray<string> dependencyNames,
+        string? accessorPlaceholderToken,
         out string expression)
     {
         expression = string.Empty;
@@ -472,14 +475,19 @@ public sealed partial class AvaloniaSemanticBinder
         }
 
         var dependencyArrayExpression = BuildStringArrayLiteral(dependencyNames);
+        var accessorArgument = string.IsNullOrWhiteSpace(accessorPlaceholderToken)
+            ? "static " +
+              ExpressionSourceParameterName +
+              " => (object?)(" +
+              accessorExpression +
+              ")"
+            : accessorPlaceholderToken!;
         expression =
             "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<" +
             sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
-            ">(static " +
-            ExpressionSourceParameterName +
-            " => (object?)(" +
-            accessorExpression +
-            "), " +
+            ">(" +
+            accessorArgument +
+            ", " +
             dependencyArrayExpression +
             ", " +
             MarkupContextServiceProviderToken +
@@ -497,6 +505,20 @@ public sealed partial class AvaloniaSemanticBinder
             MarkupContextParentStackToken +
             ")";
         return true;
+    }
+
+    private static bool TryBuildCompiledBindingRuntimeExpression(
+        INamedTypeSymbol sourceType,
+        CompiledBindingAccessorResolution resolution,
+        string? accessorPlaceholderToken,
+        out string expression)
+    {
+        return TryBuildExpressionBindingRuntimeExpression(
+            sourceType,
+            resolution.AccessorExpression,
+            resolution.DependencyNames,
+            accessorPlaceholderToken,
+            out expression);
     }
 
     private static bool TryParseInlineCSharpMarkupExtensionCode(

@@ -16,7 +16,32 @@ For most applications:
 
 If your repo already has custom SDK logic, generator composition rules, or a non-standard runtime host, stop here and read [Package Selection and Integration](../guides/package-selection-and-integration/). The umbrella package is the right default for app projects, but it is not the only supported integration model.
 
-## 2. Annotate binding scopes
+## 2. Enable the SourceGen backend
+
+AXSG does not silently replace Avalonia's default backend. Opt into the generated compiler path explicitly:
+
+```xml
+<PropertyGroup>
+  <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
+</PropertyGroup>
+```
+
+If you need a custom project item group, set `XamlSourceGenInputItemGroup` and mirror your `@(AvaloniaXaml)` items into that group. Do not override `XamlSourceGenAdditionalFilesSourceItemGroup` for Avalonia applications; AXSG always projects Avalonia XAML into `AdditionalFiles` as `AvaloniaXaml`.
+
+## 3. Enable the runtime bootstrap
+
+Register the AXSG runtime loader on `AppBuilder`:
+
+```csharp
+using XamlToCSharpGenerator.Runtime;
+
+public static AppBuilder BuildAvaloniaApp() =>
+    AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml();
+```
+
+## 4. Annotate binding scopes
 
 Add `x:DataType` to views, templates, and themes where you want compiled binding semantics:
 
@@ -35,7 +60,7 @@ Do this consistently in:
 
 AXSG can still compile some scenarios without `x:DataType`, but that is no longer the strongest validation path. The best diagnostics, completion, navigation, and inlay-hint behavior all assume explicit type scopes where the XAML feature allows them.
 
-## 3. Build the project
+## 5. Build the project
 
 Run a normal build first:
 
@@ -47,7 +72,7 @@ This lets AXSG generate code, surface diagnostics, and register the runtime arti
 
 After the first successful build, inspect `obj/<Configuration>/<TFM>/` once. AXSG is intentionally inspectable. Confirming that generated partials and helper code exist is the fastest way to separate package/build issues from authored-XAML issues.
 
-## 4. Verify generated behavior
+## 6. Verify generated behavior
 
 At this point you should be able to:
 
@@ -58,7 +83,7 @@ At this point you should be able to:
 
 If any of those are missing, move to [Troubleshooting](../guides/troubleshooting/) before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.
 
-## 5. Explore feature areas
+## 7. Explore feature areas
 
 Once the basic path works, use the sample catalog to validate more advanced features:
 
@@ -67,7 +92,7 @@ Once the basic path works, use the sample catalog to validate more advanced feat
 - selectors, control themes, and resource includes
 - language-service navigation and refactorings
 
-## 6. Validate one feature per layer
+## 8. Validate one feature per layer
 
 Before migrating a larger application, prove one feature from each layer:
 

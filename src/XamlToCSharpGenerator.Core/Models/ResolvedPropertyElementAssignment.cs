@@ -13,6 +13,7 @@ public sealed record ResolvedPropertyElementAssignment(
     int Column,
     ConditionalXamlExpression? Condition = null,
     ResolvedFrameworkPropertyPayload? FrameworkPayload = null,
+    bool PreserveBindingValue = false,
     ImmutableArray<ResolvedCollectionAddInstruction> CollectionAddInstructions = default)
 {
     // Compatibility constructor retained while Avalonia call sites migrate.
@@ -29,6 +30,7 @@ public sealed record ResolvedPropertyElementAssignment(
         int Line,
         int Column,
         ConditionalXamlExpression? Condition = null,
+        bool PreserveBindingValue = false,
         ImmutableArray<ResolvedCollectionAddInstruction> CollectionAddInstructions = default)
         : this(
             PropertyName,
@@ -44,6 +46,7 @@ public sealed record ResolvedPropertyElementAssignment(
                 AvaloniaPropertyOwnerTypeName,
                 AvaloniaPropertyFieldName,
                 BindingPriorityExpression),
+            PreserveBindingValue,
             CollectionAddInstructions)
     {
     }

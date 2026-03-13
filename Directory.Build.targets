@@ -15,6 +15,15 @@
     </XamlSourceGenLocalAnalyzerProject>
   </ItemDefinitionGroup>
 
+  <Target Name="XamlToCSharpGenerator_ConfigureLocalAnalyzerCompilation"
+          BeforeTargets="CoreCompile"
+          Condition="'@(XamlSourceGenLocalAnalyzerProject)' != ''">
+    <PropertyGroup>
+      <!-- Local source-generator development must bypass Roslyn shared compilation to avoid stale analyzer loads. -->
+      <UseSharedCompilation>false</UseSharedCompilation>
+    </PropertyGroup>
+  </Target>
+
   <Target Name="XamlToCSharpGenerator_BuildLocalAnalyzers"
           BeforeTargets="CoreCompile"
           Condition="'@(XamlSourceGenLocalAnalyzerProject)' != ''">
@@ -77,6 +86,8 @@
       <_XamlToCSharpGeneratorLocalAnalyzerAssembly Include="@(_XamlToCSharpGeneratorLocalAnalyzerProjectDistinct->'%(AnalyzerAssemblyPath)')"
                                                    Condition="Exists('%(AnalyzerAssemblyPath)')" />
       <Analyzer Include="@(_XamlToCSharpGeneratorLocalAnalyzerAssembly)" />
+      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)" />
+      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorLocalAnalyzerAssembly)" />
 
       <Watch Remove="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)" />
       <Watch Include="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)">

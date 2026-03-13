@@ -28,6 +28,14 @@ public static class DiagnosticCatalog
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor SharedDirectiveInvalid = new(
+        id: "AXSG0004",
+        title: "x:Shared value is invalid",
+        messageFormat: "{0}",
+        category: "AXSG.Parse",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor TypeResolutionFailed = new(
         id: "AXSG0100",
         title: "Named element type resolution failed",

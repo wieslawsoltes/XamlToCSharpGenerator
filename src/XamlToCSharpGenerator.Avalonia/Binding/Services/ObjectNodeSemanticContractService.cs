@@ -55,6 +55,15 @@ internal static class ObjectNodeSemanticContractService
             flags |= ResolvedObjectNodeSemanticFlags.IsStyleInclude;
         }
 
+        if (MatchesContractType(
+                objectType,
+                typeSymbolCatalog,
+                isTypeAssignableTo,
+                TypeContractId.ResourceDictionary))
+        {
+            flags |= ResolvedObjectNodeSemanticFlags.IsResourceDictionary;
+        }
+
         if (isResourceInclude || isStyleInclude)
         {
             flags |= ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor;

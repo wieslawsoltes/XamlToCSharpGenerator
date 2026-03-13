@@ -286,7 +286,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Column: assignment.Column,
                         Condition: assignment.Condition,
                         ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                        PreserveBindingValue: HasAssignBindingAttribute(property)));
                     continue;
                 }
 
@@ -362,6 +363,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         document,
                         options,
                         assignmentDataType,
+                        accessorPlaceholderToken: null,
                         out var isExpressionMarkup,
                         out var expressionBindingValueExpression,
                         out var expressionAccessorExpression,
@@ -409,7 +411,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Column: assignment.Column,
                         Condition: assignment.Condition,
                         ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                        PreserveBindingValue: HasAssignBindingAttribute(property)));
                     continue;
                 }
 
@@ -474,6 +477,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             continue;
                         }
 
+                        var compiledBindingAccessorPlaceholderToken = BuildCompiledBindingAccessorPlaceholderToken(
+                            assignment.Line,
+                            assignment.Column);
                         compiledBindings.Add(new ResolvedCompiledBindingDefinition(
                             TargetTypeName: typeName,
                             TargetPropertyName: property.Name,
@@ -483,7 +489,36 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             AccessorExpression: compiledBindingResolution.AccessorExpression,
                             IsSetterBinding: false,
                             Line: assignment.Line,
-                            Column: assignment.Column));
+                            Column: assignment.Column,
+                            AccessorPlaceholderToken: compiledBindingAccessorPlaceholderToken));
+
+                        if (TryBindAvaloniaPropertyAssignment(
+                                symbol,
+                                typeName,
+                                normalizedPropertyName,
+                                assignment,
+                                compilation,
+                                document,
+                                options,
+                                diagnostics,
+                                compiledBindings,
+                                compileBindingsEnabled,
+                                assignmentDataType,
+                                property.Type,
+                                currentBindingPriorityScope,
+                                currentSetterTargetType,
+                                rootTypeSymbol,
+                                out var compiledBindingAssignment,
+                                allowCompiledBindingRegistration: false,
+                                compiledBindingAccessorPlaceholderToken: compiledBindingAccessorPlaceholderToken))
+                        {
+                            if (compiledBindingAssignment is not null)
+                            {
+                                assignments.Add(compiledBindingAssignment);
+                            }
+
+                            continue;
+                        }
                     }
                     else if (wantsCompiledBinding && requiresAmbientDataType)
                     {
@@ -545,7 +580,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             Column: assignment.Column,
                             Condition: assignment.Condition,
                             ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                            PreserveBindingValue: HasAssignBindingAttribute(property)));
                         continue;
                     }
 
@@ -858,6 +894,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             var propertyAlias = ResolvePropertyAlias(symbol, propertyElement.PropertyName);
             var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
+            var propertyElementSetterTargetType = ResolvePropertyElementSetterTargetType(
+                symbol,
+                normalizedPropertyName,
+                currentSetterTargetType);
 
             if (propertyElement.ObjectValues.Length == 1 &&
                 TryExtractInlineCSharpObjectNodeCode(
@@ -947,7 +987,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             Column: propertyElement.Column,
                             Condition: propertyElement.Condition,
                             ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                            PreserveBindingValue: HasAssignBindingAttribute(inlineProperty)));
                         continue;
                     }
 
@@ -963,7 +1004,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Column: propertyElement.Column,
                         Condition: propertyElement.Condition,
                         ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
+                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                        PreserveBindingValue: HasAssignBindingAttribute(inlineProperty)));
                     continue;
                 }
             }
@@ -994,7 +1036,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1026,7 +1068,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1058,7 +1100,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compiledBindings,
                         compileBindingsEnabled,
                         nodeDataType,
-                        currentSetterTargetType,
+                        propertyElementSetterTargetType,
                         currentBindingPriorityScope,
                         rootTypeSymbol: rootTypeSymbol));
                 }
@@ -1098,7 +1140,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compiledBindings,
                     compileBindingsEnabled,
                     nodeDataType,
-                    currentSetterTargetType,
+                    propertyElementSetterTargetType,
                     currentBindingPriorityScope,
                     rootTypeSymbol: rootTypeSymbol));
             }
@@ -1150,7 +1192,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     ObjectValues: aliasedAssignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
-                    Condition: propertyElement.Condition));
+                    Condition: propertyElement.Condition,
+                    PreserveBindingValue: HasAssignBindingAttribute(FindProperty(symbol, normalizedPropertyName))));
                 continue;
             }
 
@@ -1207,7 +1250,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         ObjectValues: attachedAssignmentValues,
                         Line: propertyElement.Line,
                         Column: propertyElement.Column,
-                            Condition: propertyElement.Condition));
+                        Condition: propertyElement.Condition,
+                        PreserveBindingValue: HasAssignBindingAttribute(FindProperty(attachedResolvedOwnerType, attachedPropertyName))));
                     continue;
                 }
 
@@ -1342,7 +1386,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     ObjectValues: assignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
-                    Condition: propertyElement.Condition));
+                    Condition: propertyElement.Condition,
+                    PreserveBindingValue: HasAssignBindingAttribute(property)));
                 continue;
             }
 
@@ -1380,7 +1425,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     ObjectValues: assignmentValues,
                     Line: propertyElement.Line,
                     Column: propertyElement.Column,
-                    Condition: propertyElement.Condition));
+                    Condition: propertyElement.Condition,
+                    PreserveBindingValue: HasAssignBindingAttribute(property)));
                 continue;
             }
 
@@ -1648,6 +1694,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var useServiceProviderConstructor = ShouldUseServiceProviderConstructor(symbol);
         var useTopDownInitialization = IsUsableDuringInitialization(symbol);
         var normalizedNodeName = ResolveObjectNodeNameScopeRegistration(node, symbol, compilation);
+        var resolvedAssignments = assignments.ToImmutable();
+        var resolvedPropertyElementAssignments = propertyElementAssignments.ToImmutable();
+        var resolvedEventSubscriptions = eventSubscriptions.ToImmutable();
         var resolvedChildren = children.ToImmutable();
         var childAddInstructions = ResolveChildAddInstructions(
             symbol,
@@ -1655,7 +1704,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             resolvedChildren,
             compilation,
             document);
-        var semanticFlags = ResolveObjectNodeSemanticFlags(symbol, compilation);
+        var semanticFlags = ResolveObjectNodeSemanticFlags(
+            symbol,
+            compilation,
+            node,
+            normalizedNodeName,
+            resolvedChildren,
+            resolvedPropertyElementAssignments);
 
         return new ResolvedObjectNode(
             KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
@@ -1666,9 +1721,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             FactoryValueRequirements: factoryValueRequirements,
             UseServiceProviderConstructor: useServiceProviderConstructor,
             UseTopDownInitialization: useTopDownInitialization,
-            PropertyAssignments: assignments.ToImmutable(),
-            PropertyElementAssignments: propertyElementAssignments.ToImmutable(),
-            EventSubscriptions: eventSubscriptions.ToImmutable(),
+            PropertyAssignments: resolvedAssignments,
+            PropertyElementAssignments: resolvedPropertyElementAssignments,
+            EventSubscriptions: resolvedEventSubscriptions,
             Children: resolvedChildren,
             ChildAttachmentMode: attachmentMode,
             ContentPropertyName: resolvedContentPropertyName,
@@ -1972,14 +2027,147 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return "\"" + Escape(rawKey!.Trim()) + "\"";
     }
 
+    private static INamedTypeSymbol? ResolvePropertyElementSetterTargetType(
+        INamedTypeSymbol? objectType,
+        string propertyName,
+        INamedTypeSymbol? inheritedSetterTargetType)
+    {
+        if (inheritedSetterTargetType is not null || objectType is null)
+        {
+            return inheritedSetterTargetType;
+        }
+
+        var property = FindProperty(objectType, propertyName);
+        if (property is not null && IsTransitionsCollectionType(property.Type))
+        {
+            return objectType;
+        }
+
+        return null;
+    }
+
+    private static bool IsTransitionsCollectionType(ITypeSymbol type)
+    {
+        for (var current = type as INamedTypeSymbol; current is not null; current = current.BaseType)
+        {
+            if (current.Name == "Transitions" &&
+                current.ContainingNamespace.ToDisplayString() == "Avalonia.Animation")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static ResolvedObjectNodeSemanticFlags ResolveObjectNodeSemanticFlags(
         INamedTypeSymbol? symbol,
-        Compilation compilation)
+        Compilation compilation,
+        XamlObjectNode node,
+        string? normalizedNodeName,
+        ImmutableArray<ResolvedObjectNode> resolvedChildren,
+        ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments)
     {
-        return ObjectNodeSemanticContractService.Classify(
+        var flags = ObjectNodeSemanticContractService.Classify(
             symbol,
             GetActiveTypeSymbolCatalog(compilation),
             IsTypeAssignableTo);
+
+        if (CanBeDeferredResourceNode(
+                symbol,
+                normalizedNodeName,
+                resolvedChildren,
+                propertyElementAssignments,
+                flags,
+                allowNameScopeRegistrations: node.IsShared == false))
+        {
+            flags |= ResolvedObjectNodeSemanticFlags.CanBeDeferredResource;
+        }
+
+        if (node.IsShared == false &&
+            flags.HasFlag(ResolvedObjectNodeSemanticFlags.CanBeDeferredResource))
+        {
+            flags |= ResolvedObjectNodeSemanticFlags.IsNotSharedDeferredResource;
+        }
+
+        return flags;
+    }
+
+    private static bool CanBeDeferredResourceNode(
+        INamedTypeSymbol? symbol,
+        string? normalizedNodeName,
+        ImmutableArray<ResolvedObjectNode> resolvedChildren,
+        ImmutableArray<ResolvedPropertyElementAssignment> propertyElementAssignments,
+        ResolvedObjectNodeSemanticFlags semanticFlags,
+        bool allowNameScopeRegistrations)
+    {
+        if (symbol is null ||
+            symbol.IsValueType ||
+            symbol.SpecialType == SpecialType.System_String ||
+            semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsResourceInclude) ||
+            semanticFlags.HasFlag(ResolvedObjectNodeSemanticFlags.IsStyleInclude))
+        {
+            return false;
+        }
+
+        if (!allowNameScopeRegistrations &&
+            !string.IsNullOrWhiteSpace(normalizedNodeName))
+        {
+            return false;
+        }
+
+        if (!allowNameScopeRegistrations)
+        {
+            foreach (var child in resolvedChildren)
+            {
+                if (ContainsNameScopeRegistration(child))
+                {
+                    return false;
+                }
+            }
+
+            foreach (var propertyElementAssignment in propertyElementAssignments)
+            {
+                foreach (var objectValue in propertyElementAssignment.ObjectValues)
+                {
+                    if (ContainsNameScopeRegistration(objectValue))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ContainsNameScopeRegistration(ResolvedObjectNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.Name))
+        {
+            return true;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (ContainsNameScopeRegistration(child))
+            {
+                return true;
+            }
+        }
+
+        foreach (var propertyElementAssignment in node.PropertyElementAssignments)
+        {
+            foreach (var objectValue in propertyElementAssignment.ObjectValues)
+            {
+                if (ContainsNameScopeRegistration(objectValue))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool TryExtractInlineCSharpObjectNodeCode(

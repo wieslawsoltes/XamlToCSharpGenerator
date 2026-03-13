@@ -94,6 +94,56 @@ public class SourceGenDeferredServiceProviderFactoryTests
         Assert.Equal(new object[] { resourceA, resourceB, "NotAResource" }, providerParentStack.Parents);
     }
 
+    [AvaloniaFact]
+    public void CreateDeferredResourceServiceProvider_Uses_Explicit_Parent_Resources_And_BaseUri()
+    {
+        var owner = new Border();
+        var resources = new ResourceDictionary();
+        owner.Resources = resources;
+
+        var provider = SourceGenDeferredServiceProviderFactory.CreateDeferredResourceServiceProvider(
+            parentServiceProvider: null,
+            rootObject: owner,
+            intermediateRootObject: resources,
+            baseUri: "avares://Demo/Resources.axaml",
+            parentStack: new object[] { resources, owner, "Ignored" });
+
+        var rootProvider = Assert.IsAssignableFrom<IRootObjectProvider>(provider.GetService(typeof(IRootObjectProvider)));
+        Assert.Same(owner, rootProvider.RootObject);
+        Assert.Same(resources, rootProvider.IntermediateRootObject);
+
+        var uriContext = Assert.IsAssignableFrom<IUriContext>(provider.GetService(typeof(IUriContext)));
+        Assert.Equal("avares://Demo/Resources.axaml", uriContext.BaseUri.ToString());
+
+        var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
+            provider.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
+        Assert.Equal(new object[] { resources, owner }, parentStackProvider.Parents);
+    }
+
+    [Fact]
+    public void CreateDeferredResourceNameScope_Creates_Local_Scope()
+    {
+        var parentScope = new NameScope();
+        var parentValue = new object();
+        parentScope.Register("Parent", parentValue);
+
+        var parentProvider = new DictionaryServiceProvider(new Dictionary<Type, object>
+        {
+            [typeof(INameScope)] = parentScope
+        });
+
+        var deferredScope = SourceGenDeferredServiceProviderFactory.CreateDeferredResourceNameScope(parentProvider);
+        var localValue = new object();
+        deferredScope.Register("Local", localValue);
+
+        Assert.Same(localValue, deferredScope.Find("Local"));
+        Assert.Null(deferredScope.Find("Parent"));
+
+        deferredScope.Complete();
+
+        Assert.True(deferredScope.IsCompleted);
+    }
+
     private sealed class ParentSentinel
     {
     }

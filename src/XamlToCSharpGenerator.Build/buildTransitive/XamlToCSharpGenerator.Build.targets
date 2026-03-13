@@ -6,7 +6,12 @@
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == '' and '$(AvaloniaSourceGenCompilerEnabled)' != ''">$(AvaloniaSourceGenCompilerEnabled)</XamlSourceGenEnabled>
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenEnabled)' == ''">false</XamlSourceGenEnabled>
     <XamlSourceGenEnabled Condition="'$(XamlSourceGenBackend)' == 'SourceGen'">true</XamlSourceGenEnabled>
+    <_XamlSourceGenRequestedAdditionalFilesSourceItemGroup Condition="'$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' == ''">$(XamlSourceGenAdditionalFilesSourceItemGroup)</_XamlSourceGenRequestedAdditionalFilesSourceItemGroup>
+    <_XamlSourceGenSupportedAdditionalFilesSourceItemGroup>AvaloniaXaml</_XamlSourceGenSupportedAdditionalFilesSourceItemGroup>
     <XamlSourceGenAdditionalFilesSourceItemGroup Condition="'$(XamlSourceGenAdditionalFilesSourceItemGroup)' == ''">AvaloniaXaml</XamlSourceGenAdditionalFilesSourceItemGroup>
+    <_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>false</_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>
+    <_XamlSourceGenAdditionalFilesSourceItemGroupGuarded Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' != '' and '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' != '$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)'">true</_XamlSourceGenAdditionalFilesSourceItemGroupGuarded>
+    <XamlSourceGenAdditionalFilesSourceItemGroup Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true'">$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)</XamlSourceGenAdditionalFilesSourceItemGroup>
     <XamlSourceGenTransformRules Condition="'$(XamlSourceGenTransformRules)' == '' and '$(AvaloniaSourceGenTransformRules)' != ''">$(AvaloniaSourceGenTransformRules)</XamlSourceGenTransformRules>
     <XamlSourceGenTransformRuleItemGroup Condition="'$(XamlSourceGenTransformRuleItemGroup)' == ''">AvaloniaSourceGenTransformRule</XamlSourceGenTransformRuleItemGroup>
     <XamlSourceGenConfigurationPrecedence Condition="'$(XamlSourceGenConfigurationPrecedence)' == '' and '$(AvaloniaSourceGenConfigurationPrecedence)' != ''">$(AvaloniaSourceGenConfigurationPrecedence)</XamlSourceGenConfigurationPrecedence>
@@ -23,10 +28,17 @@
     <_XamlSourceGenIsIosSimulator Condition="'$(_XamlSourceGenIsIosSimulator)' != 'true' and '$(_XamlSourceGenIsIosTarget)' == 'true' and ('$(Platform)' == 'iPhoneSimulator' or '$(PlatformTarget)' == 'iPhoneSimulator')">true</_XamlSourceGenIsIosSimulator>
     <AvaloniaSourceGenIosHotReloadEnabled Condition="'$(AvaloniaSourceGenIosHotReloadEnabled)' == '' and '$(_XamlSourceGenIsIosTarget)' == 'true' and '$(Configuration)' == 'Debug'">true</AvaloniaSourceGenIosHotReloadEnabled>
     <AvaloniaSourceGenIosHotReloadEnabled Condition="'$(AvaloniaSourceGenIosHotReloadEnabled)' == ''">false</AvaloniaSourceGenIosHotReloadEnabled>
+    <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenIosHotReloadUseInterpreter Condition="'$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == '' and '$(AvaloniaSourceGenIosHotReloadEnabled)' == 'true'">true</AvaloniaSourceGenIosHotReloadUseInterpreter>
     <AvaloniaSourceGenIosHotReloadUseInterpreter Condition="'$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == ''">false</AvaloniaSourceGenIosHotReloadUseInterpreter>
     <_XamlSourceGenEnableIosDotNetWatchHotReload>false</_XamlSourceGenEnableIosDotNetWatchHotReload>
     <_XamlSourceGenEnableIosDotNetWatchHotReload Condition="'$(_XamlSourceGenIsIosTarget)' == 'true' and '$(Configuration)' == 'Debug' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnabled)' == 'true'">true</_XamlSourceGenEnableIosDotNetWatchHotReload>
+    <_XamlSourceGenEnableDotNetWatchXamlBuildTriggers>false</_XamlSourceGenEnableDotNetWatchXamlBuildTriggers>
+    <_XamlSourceGenEnableDotNetWatchXamlBuildTriggers Condition="'$(DotNetWatchBuild)' == 'true' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIdeHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == 'true'">true</_XamlSourceGenEnableDotNetWatchXamlBuildTriggers>
+    <_XamlSourceGenEnableDotNetWatchXamlBuildTriggers Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == 'true'">true</_XamlSourceGenEnableDotNetWatchXamlBuildTriggers>
+    <_XamlSourceGenEnableDotNetWatchXamlCompileInputs>true</_XamlSourceGenEnableDotNetWatchXamlCompileInputs>
+    <_XamlSourceGenEnableDotNetWatchXamlCompileInputs Condition="'$(DotNetWatchBuild)' == 'true' and '$(_XamlSourceGenEnableDotNetWatchXamlBuildTriggers)' != 'true' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIdeHotReloadEnabled)' == 'true'">false</_XamlSourceGenEnableDotNetWatchXamlCompileInputs>
+    <CustomCollectWatchItems>$(CustomCollectWatchItems);XamlToCSharpGenerator_FilterDotNetWatchItems</CustomCollectWatchItems>
     <UseInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(UseInterpreter)' == ''">true</UseInterpreter>
     <MtouchInterpreter Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadUseInterpreter)' == 'true' and '$(MtouchInterpreter)' == ''">all</MtouchInterpreter>
     <StartupHookSupport Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardWatchEnvironment)' == 'true' and '$(AvaloniaSourceGenIosHotReloadForwardStartupHooks)' == 'true' and '$(AvaloniaSourceGenIosHotReloadEnableStartupHookSupport)' == 'true'">true</StartupHookSupport>
@@ -227,17 +239,19 @@
       <NormalizedFullPath>%(FullPath)</NormalizedFullPath>
     </_XamlToCSharpGeneratorTransformRuleProjected>
     <Watch Include="@(_XamlToCSharpGeneratorXamlProjected->'%(NormalizedFullPath)'->Distinct())"
-           Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' != 'true' or '$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == 'true'">
+           Condition="'$(DotNetWatchBuild)' != 'true' or '$(_XamlSourceGenEnableDotNetWatchXamlBuildTriggers)' == 'true'">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </Watch>
     <Watch Include="@(_XamlToCSharpGeneratorTransformRuleProjected->'%(NormalizedFullPath)'->Distinct())">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </Watch>
 
-    <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlProjected)">
+    <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlProjected)"
+                                   Condition="'$(_XamlSourceGenEnableDotNetWatchXamlCompileInputs)' == 'true'">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </CustomAdditionalCompileInputs>
-    <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlProjected)">
+    <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlProjected)"
+                        Condition="'$(_XamlSourceGenEnableDotNetWatchXamlCompileInputs)' == 'true'">
       <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
     </UpToDateCheckInput>
   </ItemGroup>
@@ -251,7 +265,8 @@
 
     <ItemGroup>
       <CustomAdditionalCompileInputs Remove="@(CustomAdditionalCompileInputs)" Condition="'%(CustomAdditionalCompileInputs.XamlToCSharpGenerator)' == 'true'" />
-      <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlCompileInputDistinct)">
+      <CustomAdditionalCompileInputs Include="@(_XamlToCSharpGeneratorXamlCompileInputDistinct)"
+                                     Condition="'$(_XamlSourceGenEnableDotNetWatchXamlCompileInputs)' == 'true'">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </CustomAdditionalCompileInputs>
     </ItemGroup>
@@ -266,10 +281,17 @@
 
     <ItemGroup>
       <UpToDateCheckInput Remove="@(UpToDateCheckInput)" Condition="'%(UpToDateCheckInput.XamlToCSharpGenerator)' == 'true'" />
-      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlUpToDateDistinct)">
+      <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorXamlUpToDateDistinct)"
+                          Condition="'$(_XamlSourceGenEnableDotNetWatchXamlCompileInputs)' == 'true'">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </UpToDateCheckInput>
     </ItemGroup>
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_ValidateAdditionalFilesSourceItemGroup"
+          BeforeTargets="XamlToCSharpGenerator_InjectAdditionalFiles"
+          Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true'">
+    <Warning Text="[AXSG.Build] XamlSourceGenAdditionalFilesSourceItemGroup='$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)' is not supported for Avalonia consumers. AXSG always tags projected AdditionalFiles as '$(_XamlSourceGenSupportedAdditionalFilesSourceItemGroup)'. Keep your custom project item group in XamlSourceGenInputItemGroup and remove the AdditionalFiles override." />
   </Target>
 
   <Target Name="XamlToCSharpGenerator_InjectAdditionalFiles"
@@ -315,6 +337,8 @@
 
       <!-- Drop any existing AXAML AdditionalFiles projections before re-adding deterministic entries. -->
       <AdditionalFiles Remove="@(AdditionalFiles)" Condition="'%(AdditionalFiles.SourceItemGroup)' == '$(XamlSourceGenAdditionalFilesSourceItemGroup)'" />
+      <AdditionalFiles Remove="@(AdditionalFiles)"
+                       Condition="'$(_XamlSourceGenAdditionalFilesSourceItemGroupGuarded)' == 'true' and '%(AdditionalFiles.SourceItemGroup)' == '$(_XamlSourceGenRequestedAdditionalFilesSourceItemGroup)'" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected)" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXamlProjected->'%(FullPath)')" />
       <AdditionalFiles Remove="@(_XamlToCSharpGeneratorXaml->'%(NormalizedIdentity)')" />
@@ -342,7 +366,7 @@
       </AdditionalFiles>
 
       <_XamlToCSharpGeneratorXamlWatch Include="@(_XamlToCSharpGeneratorXamlDistinct)"
-                                       Condition="'$(_XamlSourceGenEnableIosDotNetWatchHotReload)' != 'true' or '$(AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled)' == 'true'" />
+                                       Condition="'$(DotNetWatchBuild)' != 'true' or '$(_XamlSourceGenEnableDotNetWatchXamlBuildTriggers)' == 'true'" />
       <_XamlToCSharpGeneratorTransformRuleWatch Include="@(_XamlToCSharpGeneratorTransformRuleDistinct)" />
       <Watch Remove="@(_XamlToCSharpGeneratorXamlWatch)" />
       <Watch Remove="@(_XamlToCSharpGeneratorTransformRuleWatch)" />
@@ -352,6 +376,15 @@
       <Watch Include="@(_XamlToCSharpGeneratorTransformRuleWatch)">
         <XamlToCSharpGenerator>true</XamlToCSharpGenerator>
       </Watch>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_FilterDotNetWatchItems"
+          DependsOnTargets="XamlToCSharpGenerator_InjectAdditionalFiles"
+          Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(DotNetWatchBuild)' == 'true' and '$(AvaloniaSourceGenHotReloadEnabled)' == 'true' and '$(AvaloniaSourceGenIdeHotReloadEnabled)' == 'true' and '$(_XamlSourceGenEnableDotNetWatchXamlBuildTriggers)' != 'true'">
+    <ItemGroup>
+      <!-- dotnet-watch auto-adds embedded resources to its watch list; AXSG runtime source polling owns XAML reloads instead. -->
+      <Watch Remove="@(_XamlToCSharpGeneratorXamlDistinct->'%(FullPath)')" />
     </ItemGroup>
   </Target>
 </Project>

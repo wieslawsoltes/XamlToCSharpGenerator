@@ -210,7 +210,7 @@ public class AvaloniaSemanticBinderDeHackGuardTests
         var typeExpressionResolutionSource = ReadXamlTypeExpressionResolutionServiceSource();
 
         Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", markupHelpersSource, StringComparison.Ordinal);
-        Assert.Contains("XamlMarkupExtensionNameSemantics.ToClrExtensionTypeToken(", markupHelpersSource, StringComparison.Ordinal);
+        Assert.Contains("XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(", markupHelpersSource, StringComparison.Ordinal);
         Assert.DoesNotContain("markup.Name.Trim().ToLowerInvariant()", markupHelpersSource, StringComparison.Ordinal);
         Assert.DoesNotContain("token += \"Extension\"", markupHelpersSource, StringComparison.Ordinal);
 
