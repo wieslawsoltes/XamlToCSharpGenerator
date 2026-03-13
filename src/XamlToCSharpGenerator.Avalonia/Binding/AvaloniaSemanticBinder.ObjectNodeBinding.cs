@@ -27,6 +27,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? NodeType,
         INamedTypeSymbol? NodeDataType,
         bool CompileBindingsEnabled,
+        INamedTypeSymbol? RootTypeSymbol,
         BindingScopeContext? Parent,
         string? ParentPropertyName);
 
@@ -74,6 +75,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             symbol,
             inheritedDataType,
             compileBindingsEnabled,
+            rootTypeSymbol,
             parentScopeContext,
             parentPropertyName);
         var nodeDataType = ResolveNodeDataType(
@@ -82,6 +84,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             node,
             symbol,
             inheritedDataType,
+            options,
             scopeContext,
             unsafeAccessors);
         scopeContext = scopeContext with { NodeDataType = nodeDataType };
@@ -136,6 +139,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 document,
                 inheritedDataType,
                 nodeDataType,
+                options,
                 scopeContext,
                 unsafeAccessors);
 
@@ -1856,6 +1860,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         XamlObjectNode node,
         INamedTypeSymbol? nodeType,
         INamedTypeSymbol? inheritedDataType,
+        GeneratorOptions options,
         BindingScopeContext scopeContext,
         ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
@@ -1914,6 +1919,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 scopeContext.Parent,
                 scopeContext.Parent.NodeType,
                 parentPropertyAlias.ResolvedPropertyName,
+                options,
                 unsafeAccessors);
             if (inferredFromParentProperty is not null)
             {
@@ -1931,6 +1937,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         XamlDocumentModel document,
         INamedTypeSymbol? inheritedDataType,
         INamedTypeSymbol? nodeDataType,
+        GeneratorOptions options,
         BindingScopeContext scopeContext,
         ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
@@ -1948,6 +1955,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 scopeContext,
                 ownerType,
                 propertyAlias.ResolvedPropertyName,
+                options,
                 unsafeAccessors);
             if (inferredFromItemsProperty is not null)
             {
@@ -2022,6 +2030,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         BindingScopeContext propertyOwnerScopeContext,
         INamedTypeSymbol propertyOwnerType,
         string propertyName,
+        GeneratorOptions options,
         ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
         var property = FindProperty(propertyOwnerType, propertyName);
@@ -2042,6 +2051,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             document,
             ancestorScopeContext,
             ancestorItemsPropertyName,
+            options,
             unsafeAccessors);
         if (itemsCollectionType is null)
         {
@@ -2086,6 +2096,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         XamlDocumentModel document,
         BindingScopeContext ancestorScopeContext,
         string ancestorItemsPropertyName,
+        GeneratorOptions options,
         ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
         foreach (var assignment in ancestorScopeContext.Node.PropertyAssignments)
@@ -2099,7 +2110,46 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var bindingMarkupParsed = TryParseBindingMarkup(assignment.Value, out var bindingMarkup);
             if (!bindingMarkupParsed)
             {
-                continue;
+                if (!TryResolveImplicitCSharpShorthandExpression(
+                        assignment.Value,
+                        compilation,
+                        document,
+                        options,
+                        ancestorScopeContext.NodeDataType,
+                        ancestorScopeContext.RootTypeSymbol,
+                        ancestorScopeContext.NodeType,
+                        unsafeAccessors,
+                        out var isShorthandExpression,
+                        out var shorthandResolution) ||
+                    !isShorthandExpression ||
+                    shorthandResolution.Path is null)
+                {
+                    continue;
+                }
+
+                INamedTypeSymbol? shorthandSourceType = shorthandResolution.Kind switch
+                {
+                    CSharpShorthandResolutionKind.BindingPath => ancestorScopeContext.NodeDataType,
+                    CSharpShorthandResolutionKind.RootExpression => ancestorScopeContext.RootTypeSymbol,
+                    _ => null
+                };
+
+                if (shorthandSourceType is null ||
+                    !TryBuildCompiledBindingAccessorExpression(
+                        compilation,
+                        document,
+                        shorthandSourceType,
+                        shorthandResolution.Path,
+                        targetPropertyType: null,
+                        unsafeAccessors,
+                        out var shorthandResolutionInfo,
+                        out _) ||
+                    shorthandResolutionInfo.ResultTypeSymbol is null)
+                {
+                    continue;
+                }
+
+                return shorthandResolutionInfo.ResultTypeSymbol;
             }
 
             var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || ancestorScopeContext.CompileBindingsEnabled;
