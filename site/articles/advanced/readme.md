@@ -11,6 +11,7 @@ Use these articles when you need to move beyond the default application-facing i
 ## What this section covers
 
 - compiler configuration layering and transform-rule convergence
+- class-backed XAML generation, `InitializeComponent`, and code-behind fallback behavior
 - custom framework profile design and implementation boundaries
 - runtime hot reload and hot design behavior under real build/watch workflows
 - language-service and compiler performance work, including benchmark expectations
@@ -20,11 +21,12 @@ Use these articles when you need to move beyond the default application-facing i
 ## Recommended reading order
 
 1. [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules/)
-2. [Custom Framework Profiles](custom-framework-profiles/)
-3. [Hot Reload and Hot Design Internals](hot-reload-and-hot-design/)
-4. [Language Service and Compiler Performance](language-service-and-compiler-performance/)
-5. [Testing and Validation](testing-and-validation/)
-6. [Docs and Release Infrastructure](docs-and-release-infrastructure/)
+2. [Class-backed XAML and InitializeComponent Internals](class-backed-xaml-and-initializecomponent/)
+3. [Custom Framework Profiles](custom-framework-profiles/)
+4. [Hot Reload and Hot Design Internals](hot-reload-and-hot-design/)
+5. [Language Service and Compiler Performance](language-service-and-compiler-performance/)
+6. [Testing and Validation](testing-and-validation/)
+7. [Docs and Release Infrastructure](docs-and-release-infrastructure/)
 
 ## Typical scenarios
 
@@ -41,6 +43,7 @@ Start with:
 Start with:
 
 - [Compiler Configuration and Transform Rules](compiler-configuration-and-transform-rules/)
+- [Class-backed XAML and InitializeComponent Internals](class-backed-xaml-and-initializecomponent/)
 - [Configuration Model](../reference/configuration-model/)
 - [Configuration Migration](../reference/configuration-migration/)
 
@@ -49,6 +52,7 @@ Start with:
 Start with:
 
 - [Hot Reload and Hot Design Internals](hot-reload-and-hot-design/)
+- [Class-backed XAML and InitializeComponent Internals](class-backed-xaml-and-initializecomponent/)
 - [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
 

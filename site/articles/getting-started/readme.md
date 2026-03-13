@@ -10,8 +10,9 @@ This section is for first-time adopters and for people returning to the repo aft
 
 1. Read [Why AXSG](overview/) to understand what you get beyond a normal XAML toolchain.
 2. Read [Installation](installation/) to choose the right package or tool entry point.
-3. Follow [Quickstart](quickstart/) to get a project building with generated output.
-4. Walk through [Samples and Feature Tour](samples-and-feature-tour/) to see the supported language and runtime features in one place.
+3. Read [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/) if the app already has hand-written `AvaloniaXamlLoader.Load(this)` code-behind.
+4. Follow [Quickstart](quickstart/) to get a project building with generated output.
+5. Walk through [Samples and Feature Tour](samples-and-feature-tour/) to see the supported language and runtime features in one place.
 
 ## After the first successful build
 
@@ -21,5 +22,6 @@ This section is for first-time adopters and for people returning to the repo aft
 
 - [Overview](overview/)
 - [Installation](installation/)
+- [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
 - [Quickstart](quickstart/)
 - [Samples and Feature Tour](samples-and-feature-tour/)
