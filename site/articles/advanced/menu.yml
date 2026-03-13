@@ -2,6 +2,7 @@ advanced:
   - {path: readme.md, title: "Advanced"}
   - {path: custom-framework-profiles.md, title: "Custom Framework Profiles"}
   - {path: compiler-configuration-and-transform-rules.md, title: "Compiler Configuration and Transform Rules"}
+  - {path: class-backed-xaml-and-initializecomponent.md, title: "Class-backed XAML and InitializeComponent Internals"}
   - {path: hot-reload-and-hot-design.md, title: "Hot Reload and Hot Design Internals"}
   - {path: language-service-and-compiler-performance.md, title: "Language Service and Compiler Performance"}
   - {path: performance-and-benchmarking.md, title: "Performance and Benchmarking"}
