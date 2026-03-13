@@ -75,17 +75,50 @@ For the main Avalonia path, a project should have:
 - `x:DataType` on binding scopes where compiled binding semantics are required
 - build enabled so generated files can be produced on the first pass
 
+## Class-backed XAML code-behind
+
+If the project already contains hand-written `InitializeComponent()` methods that call `AvaloniaXamlLoader.Load(this)`, do not leave those methods unconditional when you switch to AXSG.
+
+AXSG generates `InitializeComponent(bool loadXaml = true)` for class-backed XAML, and normal constructor calls such as `InitializeComponent();` are expected to bind to that generated method. A hand-written parameterless overload wins overload resolution and will bypass AXSG output.
+
+Use one of these patterns:
+
+- sourcegen-only project: remove the manual `AvaloniaXamlLoader.Load(this)` method
+- mixed-backend or multi-target project: keep it behind `#if !AXAML_SOURCEGEN_BACKEND`
+
+Recommended portable pattern:
+
+```csharp
+public MainWindow()
+{
+    InitializeComponent();
+}
+
+#if !AXAML_SOURCEGEN_BACKEND
+private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+#endif
+```
+
+Use the dedicated article for the full explanation of why this works and how it interacts with generated partials:
+
+- [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
+
 ## Recommended follow-up
 
 After installing:
 
 1. Build once so generated artifacts and diagnostics are available.
 2. Confirm the app uses `.UseAvaloniaSourceGeneratedXaml()` before debugging runtime loading or hot reload.
-3. Add or verify `x:DataType` on key views, templates, and themes.
-4. Open the sample catalog if you want a feature-by-feature reference implementation.
+3. Confirm class-backed views do not keep an unconditional parameterless `InitializeComponent()` wrapper around `AvaloniaXamlLoader.Load(this)`.
+4. Add or verify `x:DataType` on key views, templates, and themes.
+5. Open the sample catalog if you want a feature-by-feature reference implementation.
 
 ## Related docs
 
 - [Quickstart](quickstart/)
+- [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
 - [Package and Assembly](../reference/package-and-assembly/)
 - [Package Catalog](../reference/package-catalog/)

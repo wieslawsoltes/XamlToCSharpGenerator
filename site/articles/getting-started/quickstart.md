@@ -41,7 +41,29 @@ public static AppBuilder BuildAvaloniaApp() =>
         .UseAvaloniaSourceGeneratedXaml();
 ```
 
-## 4. Annotate binding scopes
+## 4. Fix class-backed `InitializeComponent` patterns
+
+If a class-backed view or theme already has:
+
+```csharp
+private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+```
+
+do not leave that method unconditional after enabling AXSG. AXSG generates `InitializeComponent(bool loadXaml = true)` for class-backed XAML, and the hand-written parameterless overload will intercept `InitializeComponent();` calls in constructors.
+
+Use one of these approaches:
+
+- remove the manual method in sourcegen-only projects
+- wrap it in `#if !AXAML_SOURCEGEN_BACKEND` for mixed-backend or multi-target projects
+
+The full behavior, including overload resolution and build constants, is documented in:
+
+- [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
+
+## 5. Annotate binding scopes
 
 Add `x:DataType` to views, templates, and themes where you want compiled binding semantics:
 
@@ -60,7 +82,7 @@ Do this consistently in:
 
 AXSG can still compile some scenarios without `x:DataType`, but that is no longer the strongest validation path. The best diagnostics, completion, navigation, and inlay-hint behavior all assume explicit type scopes where the XAML feature allows them.
 
-## 5. Build the project
+## 6. Build the project
 
 Run a normal build first:
 
@@ -72,7 +94,7 @@ This lets AXSG generate code, surface diagnostics, and register the runtime arti
 
 After the first successful build, inspect `obj/<Configuration>/<TFM>/` once. AXSG is intentionally inspectable. Confirming that generated partials and helper code exist is the fastest way to separate package/build issues from authored-XAML issues.
 
-## 6. Verify generated behavior
+## 7. Verify generated behavior
 
 At this point you should be able to:
 
@@ -83,7 +105,7 @@ At this point you should be able to:
 
 If any of those are missing, move to [Troubleshooting](../guides/troubleshooting/) before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.
 
-## 7. Explore feature areas
+## 8. Explore feature areas
 
 Once the basic path works, use the sample catalog to validate more advanced features:
 
@@ -92,7 +114,7 @@ Once the basic path works, use the sample catalog to validate more advanced feat
 - selectors, control themes, and resource includes
 - language-service navigation and refactorings
 
-## 8. Validate one feature per layer
+## 9. Validate one feature per layer
 
 Before migrating a larger application, prove one feature from each layer:
 
@@ -108,6 +130,7 @@ That confirms the compiler, runtime, and tooling surfaces are all present and al
 In a healthy AXSG setup you should see:
 
 - generated XAML-backed partial classes
+- generated `InitializeComponent` methods for class-backed documents
 - helper methods or descriptors for complex lowering paths
 - runtime registration artifacts for source info, URIs, or hot reload
 - editor features that match compiler semantics instead of inventing a separate model
@@ -117,6 +140,7 @@ If the generated output shape looks wrong, start with the build/package docs bef
 ## Where to go next
 
 - [Samples and Feature Tour](samples-and-feature-tour/)
+- [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
 - [XAML feature docs](../xaml/)
 - [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
