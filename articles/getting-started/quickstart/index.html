@@ -162,7 +162,23 @@
 <pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /&gt;
 </code></pre>
 <p>If your repo already has custom SDK logic, generator composition rules, or a non-standard runtime host, stop here and read <a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a>. The umbrella package is the right default for app projects, but it is not the only supported integration model.</p>
-<h2 id="2-annotate-binding-scopes">2. Annotate binding scopes</h2>
+<h2 id="2-enable-the-sourcegen-backend">2. Enable the SourceGen backend</h2>
+<p>AXSG does not silently replace Avalonia's default backend. Opt into the generated compiler path explicitly:</p>
+<pre><code class="language-xml">&lt;PropertyGroup&gt;
+  &lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;
+&lt;/PropertyGroup&gt;
+</code></pre>
+<p>If you need a custom project item group, set <code>XamlSourceGenInputItemGroup</code> and mirror your <code>@(AvaloniaXaml)</code> items into that group. Do not override <code>XamlSourceGenAdditionalFilesSourceItemGroup</code> for Avalonia applications; AXSG always projects Avalonia XAML into <code>AdditionalFiles</code> as <code>AvaloniaXaml</code>.</p>
+<h2 id="3-enable-the-runtime-bootstrap">3. Enable the runtime bootstrap</h2>
+<p>Register the AXSG runtime loader on <code>AppBuilder</code>:</p>
+<pre><code class="language-csharp">using XamlToCSharpGenerator.Runtime;
+
+public static AppBuilder BuildAvaloniaApp() =&gt;
+    AppBuilder.Configure&lt;App&gt;()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml();
+</code></pre>
+<h2 id="4-annotate-binding-scopes">4. Annotate binding scopes</h2>
 <p>Add <code>x:DataType</code> to views, templates, and themes where you want compiled binding semantics:</p>
 <pre><code class="language-xml">&lt;UserControl
     x:Class=&quot;MyApp.Views.MainView&quot;
@@ -176,13 +192,13 @@
 <li>resource dictionaries that contain compiled-binding-capable content</li>
 </ul>
 <p>AXSG can still compile some scenarios without <code>x:DataType</code>, but that is no longer the strongest validation path. The best diagnostics, completion, navigation, and inlay-hint behavior all assume explicit type scopes where the XAML feature allows them.</p>
-<h2 id="3-build-the-project">3. Build the project</h2>
+<h2 id="5-build-the-project">5. Build the project</h2>
 <p>Run a normal build first:</p>
 <pre><code class="language-bash">dotnet build
 </code></pre>
 <p>This lets AXSG generate code, surface diagnostics, and register the runtime artifacts used by later tooling.</p>
 <p>After the first successful build, inspect <code>obj/&lt;Configuration&gt;/&lt;TFM&gt;/</code> once. AXSG is intentionally inspectable. Confirming that generated partials and helper code exist is the fastest way to separate package/build issues from authored-XAML issues.</p>
-<h2 id="4-verify-generated-behavior">4. Verify generated behavior</h2>
+<h2 id="6-verify-generated-behavior">6. Verify generated behavior</h2>
 <p>At this point you should be able to:</p>
 <ul>
 <li>inspect generated code if you need to debug output shape</li>
@@ -191,7 +207,7 @@
 <li>exercise runtime features such as hot reload if your host is configured for them</li>
 </ul>
 <p>If any of those are missing, move to <a href="/XamlToCSharpGenerator/articles/guides/troubleshooting">Troubleshooting</a> before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.</p>
-<h2 id="5-explore-feature-areas">5. Explore feature areas</h2>
+<h2 id="7-explore-feature-areas">7. Explore feature areas</h2>
 <p>Once the basic path works, use the sample catalog to validate more advanced features:</p>
 <ul>
 <li>compiled bindings and shorthand expressions</li>
@@ -199,7 +215,7 @@
 <li>selectors, control themes, and resource includes</li>
 <li>language-service navigation and refactorings</li>
 </ul>
-<h2 id="6-validate-one-feature-per-layer">6. Validate one feature per layer</h2>
+<h2 id="8-validate-one-feature-per-layer">8. Validate one feature per layer</h2>
 <p>Before migrating a larger application, prove one feature from each layer:</p>
 <ul>
 <li>one compiled binding</li>

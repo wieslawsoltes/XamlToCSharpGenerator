@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Package Selection and Integration | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Package Selection and Integration Use this guide when you need to decide between the umbrella package, lower-level compiler packages, runtime-only packages, or the standalone tooling artifacts. Default app setup Most Avalonia applications should start with: XamlToCSharpGenerator That gives you: build imports source generator payload runtime support packages Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers. When to split packages...">
+<meta name="twitter:description" content="Package Selection and Integration Use this guide when you need to decide between the umbrella package, lower-level compiler packages, runtime-only packages, or the standalone tooling artifacts. Default app setup Most Avalonia applications should start with: XamlToCSharpGenerator That gives you: build imports source generator payload runtime support packages Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers. For the normal Avalonia app path,...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Package Selection and Integration | XamlToCSharpGenerator">
 <meta property="og:title" content="Package Selection and Integration | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Package Selection and Integration Use this guide when you need to decide between the umbrella package, lower-level compiler packages, runtime-only packages, or the standalone tooling artifacts. Default app setup Most Avalonia applications should start with: XamlToCSharpGenerator That gives you: build imports source generator payload runtime support packages Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers. When to split packages...">
+<meta property="og:description" content="Package Selection and Integration Use this guide when you need to decide between the umbrella package, lower-level compiler packages, runtime-only packages, or the standalone tooling artifacts. Default app setup Most Avalonia applications should start with: XamlToCSharpGenerator That gives you: build imports source generator payload runtime support packages Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers. For the normal Avalonia app path,...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Package Selection and Integration | XamlToCSharpGenerator">
   </head>
@@ -157,6 +157,13 @@
 <li>runtime support packages</li>
 </ul>
 <p>Use the umbrella package unless you have a concrete reason to separate compiler, runtime, or tooling layers.</p>
+<p>For the normal Avalonia app path, the minimum supported setup is:</p>
+<ul>
+<li>package reference to <code>XamlToCSharpGenerator</code></li>
+<li><code>&lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;</code></li>
+<li><code>.UseAvaloniaSourceGeneratedXaml()</code> on <code>AppBuilder</code></li>
+</ul>
+<p>If you need a custom project item group, use <code>XamlSourceGenInputItemGroup</code> and mirror your XAML items into that group. Do not override <code>XamlSourceGenAdditionalFilesSourceItemGroup</code> for Avalonia consumers; the build package always projects AXSG Avalonia inputs into Roslyn <code>AdditionalFiles</code> as <code>AvaloniaXaml</code>.</p>
 <h2 id="when-to-split-packages">When to split packages</h2>
 <h3 id="build-only-integration">Build-only integration</h3>
 <p>Pick <code>XamlToCSharpGenerator.Build</code> when:</p>

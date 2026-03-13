@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Installation | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; />...">
+<meta name="twitter:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. For Avalonia apps, the package reference alone is not the whole setup. AXSG keeps backend selection explicit, so you also need to:...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Installation | XamlToCSharpGenerator">
 <meta property="og:title" content="Installation | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. Build/package integrator If you need explicit control over the imported build layer, start from: &lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; />...">
+<meta property="og:description" content="Installation AXSG ships multiple install surfaces because different users need different entry points. Choose the right artifact Application author Use the umbrella package when you want the normal app-facing install path: &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /> This is the recommended starting point for Avalonia applications. For Avalonia apps, the package reference alone is not the whole setup. AXSG keeps backend selection explicit, so you also need to:...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Installation | XamlToCSharpGenerator">
   </head>
@@ -163,6 +163,28 @@
 <pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /&gt;
 </code></pre>
 <p>This is the recommended starting point for Avalonia applications.</p>
+<p>For Avalonia apps, the package reference alone is not the whole setup. AXSG keeps backend selection explicit, so you also need to:</p>
+<ol>
+<li>opt the project into the SourceGen backend</li>
+<li>enable the AXSG runtime bootstrap on <code>AppBuilder</code></li>
+</ol>
+<p>Minimal project setup:</p>
+<pre><code class="language-xml">&lt;ItemGroup&gt;
+  &lt;PackageReference Include=&quot;XamlToCSharpGenerator&quot; Version=&quot;x.y.z&quot; /&gt;
+&lt;/ItemGroup&gt;
+
+&lt;PropertyGroup&gt;
+  &lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;
+&lt;/PropertyGroup&gt;
+</code></pre>
+<p>Minimal runtime bootstrap:</p>
+<pre><code class="language-csharp">using XamlToCSharpGenerator.Runtime;
+
+public static AppBuilder BuildAvaloniaApp() =&gt;
+    AppBuilder.Configure&lt;App&gt;()
+        .UsePlatformDetect()
+        .UseAvaloniaSourceGeneratedXaml();
+</code></pre>
 <h3 id="buildpackage-integrator">Build/package integrator</h3>
 <p>If you need explicit control over the imported build layer, start from:</p>
 <pre><code class="language-xml">&lt;PackageReference Include=&quot;XamlToCSharpGenerator.Build&quot; Version=&quot;x.y.z&quot; /&gt;
@@ -176,7 +198,9 @@
 <p>For the main Avalonia path, a project should have:</p>
 <ul>
 <li>the AXSG package reference</li>
+<li><code>AvaloniaXamlCompilerBackend=SourceGen</code></li>
 <li>an Avalonia application/runtime setup</li>
+<li><code>.UseAvaloniaSourceGeneratedXaml()</code> in the app bootstrap path</li>
 <li><code>x:DataType</code> on binding scopes where compiled binding semantics are required</li>
 <li>build enabled so generated files can be produced on the first pass</li>
 </ul>
@@ -184,6 +208,7 @@
 <p>After installing:</p>
 <ol>
 <li>Build once so generated artifacts and diagnostics are available.</li>
+<li>Confirm the app uses <code>.UseAvaloniaSourceGeneratedXaml()</code> before debugging runtime loading or hot reload.</li>
 <li>Add or verify <code>x:DataType</code> on key views, templates, and themes.</li>
 <li>Open the sample catalog if you want a feature-by-feature reference implementation.</li>
 </ol>
