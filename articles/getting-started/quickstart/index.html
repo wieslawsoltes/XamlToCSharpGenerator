@@ -106,8 +106,10 @@
             <li id='menu-item-getting-started-3' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/installation/' class='menu-link  '>Installation</a></span>  </li>
             <li id='menu-item-getting-started-4' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback/' class='menu-link  '>InitializeComponent and Loader Fallback</a></span>  </li>
+            <li id='menu-item-getting-started-5' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour/' class='menu-link  '>Samples and Feature Tour</a></span>  </li>
-            <li id='menu-item-getting-started-5' class='menu-item  active'>
+            <li id='menu-item-getting-started-6' class='menu-item  active'>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/quickstart/' class='menu-link  '>Quickstart</a></span>  </li>
           </ol>
 
@@ -178,7 +180,24 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
         .UsePlatformDetect()
         .UseAvaloniaSourceGeneratedXaml();
 </code></pre>
-<h2 id="4-annotate-binding-scopes">4. Annotate binding scopes</h2>
+<h2 id="4-fix-class-backed-initializecomponent-patterns">4. Fix class-backed <code>InitializeComponent</code> patterns</h2>
+<p>If a class-backed view or theme already has:</p>
+<pre><code class="language-csharp">private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+</code></pre>
+<p>do not leave that method unconditional after enabling AXSG. AXSG generates <code>InitializeComponent(bool loadXaml = true)</code> for class-backed XAML, and the hand-written parameterless overload will intercept <code>InitializeComponent();</code> calls in constructors.</p>
+<p>Use one of these approaches:</p>
+<ul>
+<li>remove the manual method in sourcegen-only projects</li>
+<li>wrap it in <code>#if !AXAML_SOURCEGEN_BACKEND</code> for mixed-backend or multi-target projects</li>
+</ul>
+<p>The full behavior, including overload resolution and build constants, is documented in:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+</ul>
+<h2 id="5-annotate-binding-scopes">5. Annotate binding scopes</h2>
 <p>Add <code>x:DataType</code> to views, templates, and themes where you want compiled binding semantics:</p>
 <pre><code class="language-xml">&lt;UserControl
     x:Class=&quot;MyApp.Views.MainView&quot;
@@ -192,13 +211,13 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <li>resource dictionaries that contain compiled-binding-capable content</li>
 </ul>
 <p>AXSG can still compile some scenarios without <code>x:DataType</code>, but that is no longer the strongest validation path. The best diagnostics, completion, navigation, and inlay-hint behavior all assume explicit type scopes where the XAML feature allows them.</p>
-<h2 id="5-build-the-project">5. Build the project</h2>
+<h2 id="6-build-the-project">6. Build the project</h2>
 <p>Run a normal build first:</p>
 <pre><code class="language-bash">dotnet build
 </code></pre>
 <p>This lets AXSG generate code, surface diagnostics, and register the runtime artifacts used by later tooling.</p>
 <p>After the first successful build, inspect <code>obj/&lt;Configuration&gt;/&lt;TFM&gt;/</code> once. AXSG is intentionally inspectable. Confirming that generated partials and helper code exist is the fastest way to separate package/build issues from authored-XAML issues.</p>
-<h2 id="6-verify-generated-behavior">6. Verify generated behavior</h2>
+<h2 id="7-verify-generated-behavior">7. Verify generated behavior</h2>
 <p>At this point you should be able to:</p>
 <ul>
 <li>inspect generated code if you need to debug output shape</li>
@@ -207,7 +226,7 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <li>exercise runtime features such as hot reload if your host is configured for them</li>
 </ul>
 <p>If any of those are missing, move to <a href="/XamlToCSharpGenerator/articles/guides/troubleshooting">Troubleshooting</a> before adding more features. Most downstream editor and hot-reload problems are much easier to diagnose once the base compiler/runtime path is known-good.</p>
-<h2 id="7-explore-feature-areas">7. Explore feature areas</h2>
+<h2 id="8-explore-feature-areas">8. Explore feature areas</h2>
 <p>Once the basic path works, use the sample catalog to validate more advanced features:</p>
 <ul>
 <li>compiled bindings and shorthand expressions</li>
@@ -215,7 +234,7 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <li>selectors, control themes, and resource includes</li>
 <li>language-service navigation and refactorings</li>
 </ul>
-<h2 id="8-validate-one-feature-per-layer">8. Validate one feature per layer</h2>
+<h2 id="9-validate-one-feature-per-layer">9. Validate one feature per layer</h2>
 <p>Before migrating a larger application, prove one feature from each layer:</p>
 <ul>
 <li>one compiled binding</li>
@@ -228,6 +247,7 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <p>In a healthy AXSG setup you should see:</p>
 <ul>
 <li>generated XAML-backed partial classes</li>
+<li>generated <code>InitializeComponent</code> methods for class-backed documents</li>
 <li>helper methods or descriptors for complex lowering paths</li>
 <li>runtime registration artifacts for source info, URIs, or hot reload</li>
 <li>editor features that match compiler semantics instead of inventing a separate model</li>
@@ -236,6 +256,7 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <h2 id="where-to-go-next">Where to go next</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour">Samples and Feature Tour</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/xaml">XAML feature docs</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>

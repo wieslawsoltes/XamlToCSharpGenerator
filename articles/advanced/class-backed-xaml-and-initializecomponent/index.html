@@ -6,21 +6,21 @@
     <meta name="generator" content="lunet 1.0.10.0">
     <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
     <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
-    <title>Testing and Validation | XamlToCSharpGenerator</title>
+    <title>Class-backed XAML and InitializeComponent Internals | XamlToCSharpGenerator</title>
     <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
     <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
-<meta name="twitter:title" content="Testing and Validation | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Testing and Validation AXSG changes both compile-time semantics and runtime behavior, so the test strategy is intentionally broad. Test layers Unit tests These lock small parser, binder, emitter, runtime-helper, and language-service rules. Source-generator output tests These validate the generated C# shape directly. They are important for: stable generated identities hot-reload-safe helper emission runtime descriptor registration exact lowering behavior for new language features Runtime tests...">
+<meta name="twitter:title" content="Class-backed XAML and InitializeComponent Internals | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Class-backed XAML and InitializeComponent Internals This article explains how AXSG handles class-backed XAML, why it generates InitializeComponent, how that interacts with hand-written Avalonia code-behind, and why mixed-backend projects often keep a guarded AvaloniaXamlLoader.Load(this) fallback. Scope This article is about class-backed documents such as: windows user controls class-backed resource dictionaries and themes other XAML documents that compile into a CLR partial type...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
-<meta name="twitter:image:alt" content="Testing and Validation | XamlToCSharpGenerator">
-<meta property="og:title" content="Testing and Validation | XamlToCSharpGenerator">
+<meta name="twitter:image:alt" content="Class-backed XAML and InitializeComponent Internals | XamlToCSharpGenerator">
+<meta property="og:title" content="Class-backed XAML and InitializeComponent Internals | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Testing and Validation AXSG changes both compile-time semantics and runtime behavior, so the test strategy is intentionally broad. Test layers Unit tests These lock small parser, binder, emitter, runtime-helper, and language-service rules. Source-generator output tests These validate the generated C# shape directly. They are important for: stable generated identities hot-reload-safe helper emission runtime descriptor registration exact lowering behavior for new language features Runtime tests...">
+<meta property="og:description" content="Class-backed XAML and InitializeComponent Internals This article explains how AXSG handles class-backed XAML, why it generates InitializeComponent, how that interacts with hand-written Avalonia code-behind, and why mixed-backend projects often keep a guarded AvaloniaXamlLoader.Load(this) fallback. Scope This article is about class-backed documents such as: windows user controls class-backed resource dictionaries and themes other XAML documents that compile into a CLR partial type...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
-<meta property="og:image:alt" content="Testing and Validation | XamlToCSharpGenerator">
+<meta property="og:image:alt" content="Class-backed XAML and InitializeComponent Internals | XamlToCSharpGenerator">
   </head>
   <body>
 
@@ -105,7 +105,7 @@
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/custom-framework-profiles/' class='menu-link  '>Custom Framework Profiles</a></span>  </li>
             <li id='menu-item-advanced-3' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules/' class='menu-link  '>Compiler Configuration and Transform Rules</a></span>  </li>
-            <li id='menu-item-advanced-4' class='menu-item '>
+            <li id='menu-item-advanced-4' class='menu-item  active'>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent/' class='menu-link  '>Class-backed XAML and InitializeComponent Internals</a></span>  </li>
             <li id='menu-item-advanced-5' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design/' class='menu-link  '>Hot Reload and Hot Design Internals</a></span>  </li>
@@ -113,7 +113,7 @@
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/language-service-and-compiler-performance/' class='menu-link  '>Language Service and Compiler Performance</a></span>  </li>
             <li id='menu-item-advanced-7' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/performance-and-benchmarking/' class='menu-link  '>Performance and Benchmarking</a></span>  </li>
-            <li id='menu-item-advanced-8' class='menu-item  active'>
+            <li id='menu-item-advanced-8' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/testing-and-validation/' class='menu-link  '>Testing and Validation</a></span>  </li>
             <li id='menu-item-advanced-9' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/docs-and-release-infrastructure/' class='menu-link  '>Docs and Release Infrastructure</a></span>  </li>
@@ -136,7 +136,7 @@
           <li class='breadcrumb-item '>
             <a href='/XamlToCSharpGenerator/articles/advanced/' class='breadcrumb-link  '>Advanced</a>  </li>
           <li class='breadcrumb-item  active'>
-            Testing and Validation  </li>
+            Class-backed XAML and InitializeComponent Internals  </li>
         </ol>
 
         <p id="lunet-results"></p>
@@ -163,32 +163,168 @@
           </button>
         </div>
 <!-- lunet:summarize -->
-<h1 id="testing-and-validation">Testing and Validation</h1>
-<p>AXSG changes both compile-time semantics and runtime behavior, so the test strategy is intentionally broad.</p>
-<h2 id="test-layers">Test layers</h2>
-<h3 id="unit-tests">Unit tests</h3>
-<p>These lock small parser, binder, emitter, runtime-helper, and language-service rules.</p>
-<h3 id="source-generator-output-tests">Source-generator output tests</h3>
-<p>These validate the generated C# shape directly. They are important for:</p>
+<h1 id="class-backed-xaml-and-initializecomponent-internals">Class-backed XAML and InitializeComponent Internals</h1>
+<p>This article explains how AXSG handles class-backed XAML, why it generates <code>InitializeComponent</code>, how that interacts with hand-written Avalonia code-behind, and why mixed-backend projects often keep a guarded <code>AvaloniaXamlLoader.Load(this)</code> fallback.</p>
+<h2 id="scope">Scope</h2>
+<p>This article is about class-backed documents such as:</p>
 <ul>
-<li>stable generated identities</li>
-<li>hot-reload-safe helper emission</li>
-<li>runtime descriptor registration</li>
-<li>exact lowering behavior for new language features</li>
+<li>windows</li>
+<li>user controls</li>
+<li>class-backed resource dictionaries and themes</li>
+<li>other XAML documents that compile into a CLR partial type</li>
 </ul>
-<h3 id="runtime-tests">Runtime tests</h3>
-<p>These verify generated code and runtime helpers cooperate correctly when features are executed, not just emitted.</p>
-<h3 id="language-service-and-lsp-integration-tests">Language-service and LSP integration tests</h3>
-<p>These make sure editor features follow compiler semantics and survive transport/projection layers.</p>
-<h3 id="differential-and-build-integration-tests">Differential and build integration tests</h3>
-<p>These validate whole-project behavior, package outputs, build graph wiring, and compatibility scenarios.</p>
-<h2 id="why-this-matters-for-docs-readers">Why this matters for docs readers</h2>
-<p>If you are changing AXSG or integrating deeply with it, the test suite tells you where confidence comes from. A feature page might look simple, but its behavior may be locked by several kinds of tests across compiler, runtime, and editor layers.</p>
+<p>It is not about runtime-only includes or non-class-backed resource fragments.</p>
+<h2 id="generated-method-shape">Generated method shape</h2>
+<p>For class-backed XAML, AXSG emits:</p>
+<pre><code class="language-csharp">public void InitializeComponent(bool loadXaml = true)
+</code></pre>
+<p>The generated method is responsible for:</p>
+<ul>
+<li>populating the object graph from generated code</li>
+<li>rebinding named elements when loading is skipped</li>
+<li>registering hot reload or hot design hooks when those features are enabled</li>
+</ul>
+<p>The important point is that the generated method is not a separate naming convention. It uses the same <code>InitializeComponent</code> name app authors already expect in Avalonia code-behind.</p>
+<h2 id="why-constructor-code-usually-stays-the-same">Why constructor code usually stays the same</h2>
+<p>Most app constructors can remain:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+</code></pre>
+<p>That call is fine because the generated method has an optional parameter. With no competing hand-written overload, <code>InitializeComponent();</code> naturally binds to the generated method.</p>
+<h2 id="where-migrations-go-wrong">Where migrations go wrong</h2>
+<p>Older Avalonia code-behind often contains:</p>
+<pre><code class="language-csharp">private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+</code></pre>
+<p>That method is a different overload from AXSG's generated <code>InitializeComponent(bool loadXaml = true)</code>, but it is a better overload match for the parameterless constructor call.</p>
+<p>So this constructor:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+</code></pre>
+<p>will call the hand-written parameterless method, not the generated AXSG method.</p>
+<p>That means:</p>
+<ul>
+<li>AXSG still generates code</li>
+<li>the project may still build</li>
+<li>but the generated initialization path is bypassed for that class</li>
+</ul>
+<p>This is the key overload-resolution detail most integrations miss.</p>
+<h2 id="why-axaml_sourcegen_backend-exists">Why <code>AXAML_SOURCEGEN_BACKEND</code> exists</h2>
+<p>AXSG's build integration defines the <code>AXAML_SOURCEGEN_BACKEND</code> conditional symbol when the project is using the AXSG backend. That lets a single code-behind file support both paths:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+
+#if !AXAML_SOURCEGEN_BACKEND
+private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+#endif
+</code></pre>
+<p>Under AXSG:</p>
+<ul>
+<li>the hand-written fallback is compiled out</li>
+<li>the constructor binds to the generated AXSG method</li>
+</ul>
+<p>Under a non-AXSG backend:</p>
+<ul>
+<li>the hand-written fallback remains available</li>
+<li>the constructor binds to the classic Avalonia loader path</li>
+</ul>
+<p>This pattern is why mixed-backend and multi-target repositories can migrate incrementally without splitting every code-behind file.</p>
+<h2 id="when-you-can-remove-the-fallback-entirely">When you can remove the fallback entirely</h2>
+<p>You can remove the hand-written <code>AvaloniaXamlLoader.Load(this)</code> method when all of the following are true:</p>
+<ul>
+<li>the project is sourcegen-only</li>
+<li>the target frameworks that matter all use AXSG</li>
+<li>you do not need to build the same code-behind on a non-AXSG path anymore</li>
+</ul>
+<p>This is common in sample apps or fully migrated application repos.</p>
+<h2 id="when-you-should-keep-the-guarded-fallback">When you should keep the guarded fallback</h2>
+<p>Keep the guarded fallback when:</p>
+<ul>
+<li>shared libraries still build against non-AXSG paths</li>
+<li>some target frameworks use AXSG and others do not</li>
+<li>downstream consumers may still compile the same code against standard Avalonia loader behavior</li>
+</ul>
+<p>This is the safer default for reusable libraries.</p>
+<h2 id="relationship-to-avaloniaxamlloader">Relationship to <code>AvaloniaXamlLoader</code></h2>
+<p><code>Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this)</code> is not inherently wrong. It is simply the non-AXSG initialization path.</p>
+<p>The problem is not the method itself. The problem is leaving a parameterless <code>InitializeComponent()</code> wrapper around it in the same class when AXSG is active, because that steals the constructor call from the generated AXSG method.</p>
+<h2 id="relationship-to-useavaloniasourcegeneratedxaml">Relationship to <code>.UseAvaloniaSourceGeneratedXaml()</code></h2>
+<p>These concerns operate at different layers:</p>
+<ul>
+<li>generated <code>InitializeComponent</code> handles class-backed object graph initialization</li>
+<li><code>.UseAvaloniaSourceGeneratedXaml()</code> wires AXSG runtime services into <code>AppBuilder</code></li>
+</ul>
+<p>You still want both in a normal AXSG app:</p>
+<ol>
+<li>generated class-backed initialization</li>
+<li>AXSG runtime bootstrap on <code>AppBuilder</code></li>
+</ol>
+<p>Do not treat the generated <code>InitializeComponent</code> method as a replacement for runtime bootstrap.</p>
+<h2 id="behavior-matrix">Behavior matrix</h2>
+<table class="table">
+<thead>
+<tr>
+<th>Project shape</th>
+<th>Hand-written fallback</th>
+<th>Recommended state</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sourcegen-only app</td>
+<td><code>private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }</code></td>
+<td>remove it</td>
+</tr>
+<tr>
+<td>Mixed-backend app</td>
+<td>same fallback</td>
+<td>wrap it in <code>#if !AXAML_SOURCEGEN_BACKEND</code></td>
+</tr>
+<tr>
+<td>Shared library with multiple TFMs/backends</td>
+<td>same fallback</td>
+<td>keep the guarded version</td>
+</tr>
+<tr>
+<td>AXSG-enabled app with no manual fallback yet</td>
+<td>none</td>
+<td>leave constructor as <code>InitializeComponent();</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="common-symptoms-of-a-wrong-setup">Common symptoms of a wrong setup</h2>
+<p>Typical signs that the fallback is still intercepting AXSG:</p>
+<ul>
+<li>generated code exists under <code>obj</code>, but the class behaves as if AXSG changes are ignored</li>
+<li>runtime behavior differs only for class-backed views that still have old code-behind</li>
+<li>a repo works on some TFMs and silently bypasses AXSG on others</li>
+</ul>
+<h2 id="recommended-troubleshooting-flow">Recommended troubleshooting flow</h2>
+<ol>
+<li>Confirm the project sets <code>AvaloniaXamlCompilerBackend=SourceGen</code>.</li>
+<li>Confirm the app uses <code>.UseAvaloniaSourceGeneratedXaml()</code>.</li>
+<li>Inspect the code-behind file for a parameterless <code>InitializeComponent()</code>.</li>
+<li>Inspect generated output under <code>obj/...</code> and confirm AXSG emitted <code>InitializeComponent(bool loadXaml = true)</code>.</li>
+<li>If the project still needs non-AXSG support, switch the fallback to <code>#if !AXAML_SOURCEGEN_BACKEND</code>.</li>
+</ol>
 <h2 id="related-docs">Related docs</h2>
 <ul>
-<li><a href="/XamlToCSharpGenerator/articles/advanced/performance-and-benchmarking">Performance and Benchmarking</a></li>
-<li><a href="/XamlToCSharpGenerator/articles/architecture/compiler-pipeline">Compiler Pipeline</a></li>
-<li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/installation">Installation</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/quickstart">Quickstart</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a></li>
 </ul>
 
       </div>

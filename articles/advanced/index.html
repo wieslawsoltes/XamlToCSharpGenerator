@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Advanced | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Advanced This section is for extension authors, package maintainers, and teams integrating AXSG into a larger product or build platform. Use these articles when you need to move beyond the default application-facing install path and reason about the internals that shape generated output, runtime behavior, language tooling, docs publication, and release automation. What this section covers compiler configuration layering and transform-rule convergence custom framework profile design and implementation boundaries...">
+<meta name="twitter:description" content="Advanced This section is for extension authors, package maintainers, and teams integrating AXSG into a larger product or build platform. Use these articles when you need to move beyond the default application-facing install path and reason about the internals that shape generated output, runtime behavior, language tooling, docs publication, and release automation. What this section covers compiler configuration layering and transform-rule convergence class-backed XAML generation, InitializeComponent, and code-behind fallback behavior...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Advanced | XamlToCSharpGenerator">
 <meta property="og:title" content="Advanced | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Advanced This section is for extension authors, package maintainers, and teams integrating AXSG into a larger product or build platform. Use these articles when you need to move beyond the default application-facing install path and reason about the internals that shape generated output, runtime behavior, language tooling, docs publication, and release automation. What this section covers compiler configuration layering and transform-rule convergence custom framework profile design and implementation boundaries...">
+<meta property="og:description" content="Advanced This section is for extension authors, package maintainers, and teams integrating AXSG into a larger product or build platform. Use these articles when you need to move beyond the default application-facing install path and reason about the internals that shape generated output, runtime behavior, language tooling, docs publication, and release automation. What this section covers compiler configuration layering and transform-rule convergence class-backed XAML generation, InitializeComponent, and code-behind fallback behavior...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Advanced | XamlToCSharpGenerator">
   </head>
@@ -106,14 +106,16 @@
             <li id='menu-item-advanced-3' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules/' class='menu-link  '>Compiler Configuration and Transform Rules</a></span>  </li>
             <li id='menu-item-advanced-4' class='menu-item '>
-              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design/' class='menu-link  '>Hot Reload and Hot Design Internals</a></span>  </li>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent/' class='menu-link  '>Class-backed XAML and InitializeComponent Internals</a></span>  </li>
             <li id='menu-item-advanced-5' class='menu-item '>
-              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/language-service-and-compiler-performance/' class='menu-link  '>Language Service and Compiler Performance</a></span>  </li>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design/' class='menu-link  '>Hot Reload and Hot Design Internals</a></span>  </li>
             <li id='menu-item-advanced-6' class='menu-item '>
-              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/performance-and-benchmarking/' class='menu-link  '>Performance and Benchmarking</a></span>  </li>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/language-service-and-compiler-performance/' class='menu-link  '>Language Service and Compiler Performance</a></span>  </li>
             <li id='menu-item-advanced-7' class='menu-item '>
-              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/testing-and-validation/' class='menu-link  '>Testing and Validation</a></span>  </li>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/performance-and-benchmarking/' class='menu-link  '>Performance and Benchmarking</a></span>  </li>
             <li id='menu-item-advanced-8' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/testing-and-validation/' class='menu-link  '>Testing and Validation</a></span>  </li>
+            <li id='menu-item-advanced-9' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/advanced/docs-and-release-infrastructure/' class='menu-link  '>Docs and Release Infrastructure</a></span>  </li>
           </ol>
 
@@ -165,6 +167,7 @@
 <h2 id="what-this-section-covers">What this section covers</h2>
 <ul>
 <li>compiler configuration layering and transform-rule convergence</li>
+<li>class-backed XAML generation, <code>InitializeComponent</code>, and code-behind fallback behavior</li>
 <li>custom framework profile design and implementation boundaries</li>
 <li>runtime hot reload and hot design behavior under real build/watch workflows</li>
 <li>language-service and compiler performance work, including benchmark expectations</li>
@@ -174,6 +177,7 @@
 <h2 id="recommended-reading-order">Recommended reading order</h2>
 <ol>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent">Class-backed XAML and InitializeComponent Internals</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/custom-framework-profiles">Custom Framework Profiles</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design">Hot Reload and Hot Design Internals</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/language-service-and-compiler-performance">Language Service and Compiler Performance</a></li>
@@ -192,6 +196,7 @@
 <p>Start with:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent">Class-backed XAML and InitializeComponent Internals</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/configuration-model">Configuration Model</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/configuration-migration">Configuration Migration</a></li>
 </ul>
@@ -199,6 +204,7 @@
 <p>Start with:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/hot-reload-and-hot-design">Hot Reload and Hot Design Internals</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent">Class-backed XAML and InitializeComponent Internals</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a></li>
 </ul>

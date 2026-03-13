@@ -106,8 +106,10 @@
             <li id='menu-item-getting-started-3' class='menu-item  active'>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/installation/' class='menu-link  '>Installation</a></span>  </li>
             <li id='menu-item-getting-started-4' class='menu-item '>
-              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour/' class='menu-link  '>Samples and Feature Tour</a></span>  </li>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback/' class='menu-link  '>InitializeComponent and Loader Fallback</a></span>  </li>
             <li id='menu-item-getting-started-5' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour/' class='menu-link  '>Samples and Feature Tour</a></span>  </li>
+            <li id='menu-item-getting-started-6' class='menu-item '>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/getting-started/quickstart/' class='menu-link  '>Quickstart</a></span>  </li>
           </ol>
 
@@ -204,17 +206,44 @@ public static AppBuilder BuildAvaloniaApp() =&gt;
 <li><code>x:DataType</code> on binding scopes where compiled binding semantics are required</li>
 <li>build enabled so generated files can be produced on the first pass</li>
 </ul>
+<h2 id="class-backed-xaml-code-behind">Class-backed XAML code-behind</h2>
+<p>If the project already contains hand-written <code>InitializeComponent()</code> methods that call <code>AvaloniaXamlLoader.Load(this)</code>, do not leave those methods unconditional when you switch to AXSG.</p>
+<p>AXSG generates <code>InitializeComponent(bool loadXaml = true)</code> for class-backed XAML, and normal constructor calls such as <code>InitializeComponent();</code> are expected to bind to that generated method. A hand-written parameterless overload wins overload resolution and will bypass AXSG output.</p>
+<p>Use one of these patterns:</p>
+<ul>
+<li>sourcegen-only project: remove the manual <code>AvaloniaXamlLoader.Load(this)</code> method</li>
+<li>mixed-backend or multi-target project: keep it behind <code>#if !AXAML_SOURCEGEN_BACKEND</code></li>
+</ul>
+<p>Recommended portable pattern:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+
+#if !AXAML_SOURCEGEN_BACKEND
+private void InitializeComponent()
+{
+    global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
+}
+#endif
+</code></pre>
+<p>Use the dedicated article for the full explanation of why this works and how it interacts with generated partials:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+</ul>
 <h2 id="recommended-follow-up">Recommended follow-up</h2>
 <p>After installing:</p>
 <ol>
 <li>Build once so generated artifacts and diagnostics are available.</li>
 <li>Confirm the app uses <code>.UseAvaloniaSourceGeneratedXaml()</code> before debugging runtime loading or hot reload.</li>
+<li>Confirm class-backed views do not keep an unconditional parameterless <code>InitializeComponent()</code> wrapper around <code>AvaloniaXamlLoader.Load(this)</code>.</li>
 <li>Add or verify <code>x:DataType</code> on key views, templates, and themes.</li>
 <li>Open the sample catalog if you want a feature-by-feature reference implementation.</li>
 </ol>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/quickstart">Quickstart</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/package-and-assembly">Package and Assembly</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/package-catalog">Package Catalog</a></li>
 </ul>
