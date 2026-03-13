@@ -7482,6 +7482,311 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Infers_ItemTemplate_DataType_From_ItemsSource_Attribute()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class InheritDataTypeFromItemsAttribute : global::System.Attribute
+                {
+                    public InheritDataTypeFromItemsAttribute(string ancestorItemsProperty)
+                    {
+                        AncestorItemsProperty = ancestorItemsProperty;
+                    }
+
+                    public string AncestorItemsProperty { get; }
+
+                    public global::System.Type? AncestorType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class ItemsControl : Control
+                {
+                    public object? ItemsSource { get; set; }
+
+                    [global::Avalonia.Metadata.InheritDataTypeFromItems(nameof(ItemsSource))]
+                    public object? ItemTemplate { get; set; }
+                }
+
+                public class ListBox : ItemsControl { }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class RowVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+
+                public sealed class MainVm
+                {
+                    public global::System.Collections.Generic.IReadOnlyList<RowVm> Rows { get; } =
+                        global::System.Array.Empty<RowVm>();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <ListBox ItemsSource="{CompiledBinding Rows}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{CompiledBinding Name}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "SourceGenCompiledBindingDescriptor(\"avares://Demo.Assembly/MainView.axaml\", \"global::Avalonia.Controls.TextBlock\", \"Text\", \"Name\", \"global::Demo.ViewModels.RowVm\"",
+            generated);
+        Assert.Contains("var source = (global::Demo.ViewModels.RowVm)__source;", generated);
+        Assert.Contains("return source.Name;", generated);
+    }
+
+    [Fact]
+    public void Infers_Annotated_Binding_And_Template_DataTypes_From_Ancestor_ItemsSource()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public interface IBinding { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class InheritDataTypeFromItemsAttribute : global::System.Attribute
+                {
+                    public InheritDataTypeFromItemsAttribute(string ancestorItemsProperty)
+                    {
+                        AncestorItemsProperty = ancestorItemsProperty;
+                    }
+
+                    public string AncestorItemsProperty { get; }
+
+                    public global::System.Type? AncestorType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.Controls
+            {
+                public sealed class DataGridLikeControl : global::Avalonia.Controls.Control
+                {
+                    public object? ItemsSource { get; set; }
+
+                    public global::Avalonia.Collections.AvaloniaList<DataGridLikeColumn> Columns { get; } = new();
+                }
+
+                public sealed class DataGridLikeColumn
+                {
+                    [global::Avalonia.Data.AssignBinding]
+                    [global::Avalonia.Metadata.InheritDataTypeFromItems(
+                        nameof(DataGridLikeControl.ItemsSource),
+                        AncestorType = typeof(DataGridLikeControl))]
+                    public global::Avalonia.Data.IBinding? ValueBinding { get; set; }
+
+                    [global::Avalonia.Metadata.InheritDataTypeFromItems(
+                        nameof(DataGridLikeControl.ItemsSource),
+                        AncestorType = typeof(DataGridLikeControl))]
+                    public object? CellTemplate { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class RowVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+
+                public sealed class MainVm
+                {
+                    public global::System.Collections.Generic.IReadOnlyList<RowVm> Rows { get; } =
+                        global::System.Array.Empty<RowVm>();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         xmlns:local="clr-namespace:Demo.Controls"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <local:DataGridLikeControl ItemsSource="{CompiledBinding Rows}">
+                    <local:DataGridLikeControl.Columns>
+                        <local:DataGridLikeColumn ValueBinding="{CompiledBinding Name}" />
+                        <local:DataGridLikeColumn>
+                            <local:DataGridLikeColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{CompiledBinding Name}" />
+                                </DataTemplate>
+                            </local:DataGridLikeColumn.CellTemplate>
+                        </local:DataGridLikeColumn>
+                    </local:DataGridLikeControl.Columns>
+                </local:DataGridLikeControl>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "SourceGenCompiledBindingDescriptor(\"avares://Demo.Assembly/MainView.axaml\", \"global::Demo.Controls.DataGridLikeColumn\", \"ValueBinding\", \"Name\", \"global::Demo.ViewModels.RowVm\"",
+            generated);
+        Assert.Contains(
+            "SourceGenCompiledBindingDescriptor(\"avares://Demo.Assembly/MainView.axaml\", \"global::Avalonia.Controls.TextBlock\", \"Text\", \"Name\", \"global::Demo.ViewModels.RowVm\"",
+            generated);
+        Assert.True(
+            Regex.Matches(
+                generated,
+                @"var source = \(global::Demo\.ViewModels\.RowVm\)__source;",
+                RegexOptions.CultureInvariant).Count >= 2,
+            "Expected ancestor-items inference to produce RowVm-typed compiled binding accessors for both binding and template scopes.");
+        Assert.True(
+            Regex.Matches(
+                generated,
+                @"return source\.Name;",
+                RegexOptions.CultureInvariant).Count >= 2,
+            "Expected ancestor-items inference to bind Name against RowVm in both binding and template scopes.");
+    }
+
+    [Fact]
     public void Uses_Distinct_Compiled_Binding_Accessors_For_Identical_Command_Paths_Across_Source_Types()
     {
         const string code = """
@@ -7612,7 +7917,7 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
-    public void Reports_Inaccessible_Compiled_Binding_Member_As_Binding_Diagnostic()
+    public void Allows_NonPublic_Compiled_Binding_Properties_With_XamlX_Parity()
     {
         const string code = """
             namespace Avalonia
@@ -7677,9 +7982,13 @@ public class AvaloniaXamlSourceGeneratorTests
                 public abstract class WizardStepViewModelBase
                 {
                     protected WizardContext Context { get; } = new();
+                    internal string InternalTitle { get; } = "internal";
                 }
 
-                public sealed class StepViewModel : WizardStepViewModelBase { }
+                public sealed class StepViewModel : WizardStepViewModelBase
+                {
+                    private string HiddenTitle { get; } = "hidden";
+                }
             }
 
             namespace Demo
@@ -7697,19 +8006,178 @@ public class AvaloniaXamlSourceGeneratorTests
                 <UserControl.DataTemplates>
                     <DataTemplate DataType="vm:StepViewModel">
                         <TextBlock Text="{CompiledBinding Context.Title}" />
+                        <TextBlock Text="{CompiledBinding HiddenTitle}" />
+                        <TextBlock Text="{CompiledBinding InternalTitle}" />
                     </DataTemplate>
                 </UserControl.DataTemplates>
             </UserControl>
             """;
 
         var compilation = CreateCompilation(code);
-        var (_, diagnostics) = RunGenerator(compilation, xaml);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
-        Assert.Contains(
-            diagnostics,
-            diagnostic => diagnostic.Id == "AXSG0111" &&
-                          diagnostic.GetMessage().Contains("not accessible", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "CS0122");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("Name = \"get_Context\"", generated);
+        Assert.Contains("Name = \"get_HiddenTitle\"", generated);
+        Assert.DoesNotContain("Name = \"get_InternalTitle\"", generated, StringComparison.Ordinal);
+        Assert.Contains("source.InternalTitle", generated);
+    }
+
+    [Fact]
+    public void Emits_NullConditional_NonPublic_Compiled_Binding_Access_With_Single_Target_Evaluation()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class ChildVm
+                {
+                    private string HiddenTitle { get; } = "hidden";
+                }
+
+                public sealed class MainVm
+                {
+                    public ChildVm? SelectedChild { get; } = new ChildVm();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding SelectedChild?.HiddenTitle}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Matches(
+            @"source\.SelectedChild is \{ \} __axsg_target_[0-9a-f]+ \? __AXSG_UnsafeAccessor_[0-9a-f]+\(__axsg_target_[0-9a-f]+\) : default",
+            generated);
+        Assert.DoesNotContain("source.SelectedChild is null ? default", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Allows_NonPublic_Compiled_Binding_Methods_With_XamlX_Parity()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public abstract class StepViewModelBase
+                {
+                    protected string BuildTitle() => "ready";
+
+                    protected void Save()
+                    {
+                    }
+
+                    protected bool CanSave(object? parameter) => parameter is not null;
+                }
+
+                public sealed class StepViewModel : StepViewModelBase
+                {
+                    private string FormatTitle(int count, string suffix) => count.ToString() + suffix;
+
+                    internal string InternalLabel() => "internal";
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:StepViewModel"
+                         x:CompileBindings="True">
+                <StackPanel>
+                    <TextBlock Text="{CompiledBinding BuildTitle}" />
+                    <TextBlock Text="{CompiledBinding FormatTitle(2, 'x')}" />
+                    <TextBlock Text="{CompiledBinding InternalLabel}" />
+                    <Button Command="{CompiledBinding Save}" />
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "CS0122");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("Name = \"BuildTitle\"", generated);
+        Assert.Contains("Name = \"FormatTitle\"", generated);
+        Assert.Contains("Name = \"Save\"", generated);
+        Assert.Contains("Name = \"CanSave\"", generated);
+        Assert.DoesNotContain("Name = \"InternalLabel\"", generated, StringComparison.Ordinal);
+        Assert.Contains("source.InternalLabel()", generated);
+        Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source)", generated);
     }
 
     [Fact]
@@ -10362,6 +10830,61 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("source.ResolveTitle()", generated);
+    }
+
+    [Fact]
+    public void Reports_Diagnostic_For_Parameterless_Void_Method_Segment()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainVm
+                {
+                    public void ResolveTitle()
+                    {
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding ResolveTitle}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0111" &&
+                          diagnostic.GetMessage().Contains(
+                              "not a supported parameterless method with a return value",
+                              StringComparison.Ordinal));
     }
 
     [Fact]
