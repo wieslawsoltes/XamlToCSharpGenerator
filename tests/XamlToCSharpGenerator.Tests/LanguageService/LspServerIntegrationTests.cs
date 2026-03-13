@@ -19,6 +19,10 @@ namespace XamlToCSharpGenerator.Tests.LanguageService;
 
 public sealed class LspServerIntegrationTests
 {
+    private static readonly SemaphoreSlim SharedRepositoryHarnessGate = new(1, 1);
+    private static readonly Lazy<Task<LspServerHarness>> SharedRepositoryHarness =
+        new(CreateSharedRepositoryHarnessAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+
     [Fact]
     public async Task Initialize_ReturnsDeclaredCapabilities()
     {
@@ -691,7 +695,7 @@ public sealed class LspServerIntegrationTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "ExpressionBindingsPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var originalText = await File.ReadAllTextAsync(xamlPath);
+        var originalText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string existingExpression = "<TextBlock Text=\"{= FirstName + ' ' + LastName}\" />";
         const string emptyExpression = "<TextBlock Text=\"{= }\" />";
         Assert.Contains(existingExpression, originalText, StringComparison.Ordinal);
@@ -699,40 +703,38 @@ public sealed class LspServerIntegrationTests
         var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf(emptyExpression, StringComparison.Ordinal) + "<TextBlock Text=\"{= ".Length);
         var uri = new Uri(xamlPath).AbsoluteUri;
 
-        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider());
-        await harness.InitializeAsync();
-
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        await SharedRepositoryHarnessGate.WaitAsync();
+        try
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = xaml
-            }
-        });
+            var harness = await SharedRepositoryHarness.Value;
+            await harness.OpenDocumentAsync(uri, xaml);
 
-        await harness.SendRequestAsync(2031, "textDocument/completion", new JsonObject
+            await harness.SendRequestAsync(2031, "textDocument/completion", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = caret.Line,
+                    ["character"] = caret.Character
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(2031);
+            var items = response.RootElement
+                .GetProperty("result")
+                .GetProperty("items");
+
+            Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FirstName", StringComparison.Ordinal));
+            Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FormatSummary", StringComparison.Ordinal));
+            await harness.CloseDocumentAsync(uri);
+        }
+        finally
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = caret.Line,
-                ["character"] = caret.Character
-            }
-        });
-
-        using var response = await harness.ReadResponseAsync(2031);
-        var items = response.RootElement
-            .GetProperty("result")
-            .GetProperty("items");
-
-        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FirstName", StringComparison.Ordinal));
-        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FormatSummary", StringComparison.Ordinal));
+            SharedRepositoryHarnessGate.Release();
+        }
     }
 
     [Fact]
@@ -742,64 +744,62 @@ public sealed class LspServerIntegrationTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodeCDataPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xaml = await File.ReadAllTextAsync(xamlPath);
+        var xaml = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var methodOffset = xaml.IndexOf("RecordSender", StringComparison.Ordinal);
         var propertyOffset = xaml.IndexOf("ClickCount = 0", StringComparison.Ordinal);
         Assert.True(methodOffset >= 0, "Expected inline CDATA method usage not found.");
         Assert.True(propertyOffset >= 0, "Expected inline CDATA property usage not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), repositoryRoot);
-        await harness.InitializeAsync();
-
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        await SharedRepositoryHarnessGate.WaitAsync();
+        try
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = xaml
-            }
-        });
+            var harness = await SharedRepositoryHarness.Value;
+            await harness.OpenDocumentAsync(uri, xaml);
 
-        var methodCaret = SourceText.From(xaml).Lines.GetLinePosition(methodOffset + 2);
-        await harness.SendRequestAsync(2034, "textDocument/definition", new JsonObject
+            var methodCaret = SourceText.From(xaml).Lines.GetLinePosition(methodOffset + 2);
+            await harness.SendRequestAsync(2034, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = methodCaret.Line,
+                    ["character"] = methodCaret.Character
+                }
+            });
+
+            using var methodResponse = await harness.ReadResponseAsync(2034);
+            var methodResult = methodResponse.RootElement.GetProperty("result");
+            var methodFirst = methodResult.ValueKind == JsonValueKind.Array ? methodResult[0] : methodResult;
+            Assert.Contains("InlineCodePageViewModel.cs", methodFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+
+            var propertyCaret = SourceText.From(xaml).Lines.GetLinePosition(propertyOffset + 2);
+            await harness.SendRequestAsync(2035, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = propertyCaret.Line,
+                    ["character"] = propertyCaret.Character
+                }
+            });
+
+            using var propertyResponse = await harness.ReadResponseAsync(2035);
+            var propertyResult = propertyResponse.RootElement.GetProperty("result");
+            var propertyFirst = propertyResult.ValueKind == JsonValueKind.Array ? propertyResult[0] : propertyResult;
+            Assert.Contains("InlineCodePageViewModel.cs", propertyFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            await harness.CloseDocumentAsync(uri);
+        }
+        finally
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = methodCaret.Line,
-                ["character"] = methodCaret.Character
-            }
-        });
-
-        using var methodResponse = await harness.ReadResponseAsync(2034);
-        var methodResult = methodResponse.RootElement.GetProperty("result");
-        var methodFirst = methodResult.ValueKind == JsonValueKind.Array ? methodResult[0] : methodResult;
-        Assert.Contains("InlineCodePageViewModel.cs", methodFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
-
-        var propertyCaret = SourceText.From(xaml).Lines.GetLinePosition(propertyOffset + 2);
-        await harness.SendRequestAsync(2035, "textDocument/definition", new JsonObject
-        {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = propertyCaret.Line,
-                ["character"] = propertyCaret.Character
-            }
-        });
-
-        using var propertyResponse = await harness.ReadResponseAsync(2035);
-        var propertyResult = propertyResponse.RootElement.GetProperty("result");
-        var propertyFirst = propertyResult.ValueKind == JsonValueKind.Array ? propertyResult[0] : propertyResult;
-        Assert.Contains("InlineCodePageViewModel.cs", propertyFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            SharedRepositoryHarnessGate.Release();
+        }
     }
 
     [Fact]
@@ -809,64 +809,62 @@ public sealed class LspServerIntegrationTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodePage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xaml = await File.ReadAllTextAsync(xamlPath);
+        var xaml = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var propertyOffset = xaml.IndexOf("{CSharp Code=source.ProductName}", StringComparison.Ordinal);
         var methodOffset = xaml.IndexOf("source.RecordSender(sender)", StringComparison.Ordinal);
         Assert.True(propertyOffset >= 0, "Expected inline compact property usage not found.");
         Assert.True(methodOffset >= 0, "Expected inline compact method usage not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), repositoryRoot);
-        await harness.InitializeAsync();
-
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        await SharedRepositoryHarnessGate.WaitAsync();
+        try
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = xaml
-            }
-        });
+            var harness = await SharedRepositoryHarness.Value;
+            await harness.OpenDocumentAsync(uri, xaml);
 
-        var propertyCaret = SourceText.From(xaml).Lines.GetLinePosition(propertyOffset + "{CSharp Code=source.".Length + 2);
-        await harness.SendRequestAsync(2036, "textDocument/definition", new JsonObject
+            var propertyCaret = SourceText.From(xaml).Lines.GetLinePosition(propertyOffset + "{CSharp Code=source.".Length + 2);
+            await harness.SendRequestAsync(2036, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = propertyCaret.Line,
+                    ["character"] = propertyCaret.Character
+                }
+            });
+
+            using var propertyResponse = await harness.ReadResponseAsync(2036);
+            var propertyResult = propertyResponse.RootElement.GetProperty("result");
+            var propertyFirst = propertyResult.ValueKind == JsonValueKind.Array ? propertyResult[0] : propertyResult;
+            Assert.Contains("InlineCodePageViewModel.cs", propertyFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+
+            var methodCaret = SourceText.From(xaml).Lines.GetLinePosition(methodOffset + "source.".Length + 2);
+            await harness.SendRequestAsync(2037, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = methodCaret.Line,
+                    ["character"] = methodCaret.Character
+                }
+            });
+
+            using var methodResponse = await harness.ReadResponseAsync(2037);
+            var methodResult = methodResponse.RootElement.GetProperty("result");
+            var methodFirst = methodResult.ValueKind == JsonValueKind.Array ? methodResult[0] : methodResult;
+            Assert.Contains("InlineCodePageViewModel.cs", methodFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            await harness.CloseDocumentAsync(uri);
+        }
+        finally
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = propertyCaret.Line,
-                ["character"] = propertyCaret.Character
-            }
-        });
-
-        using var propertyResponse = await harness.ReadResponseAsync(2036);
-        var propertyResult = propertyResponse.RootElement.GetProperty("result");
-        var propertyFirst = propertyResult.ValueKind == JsonValueKind.Array ? propertyResult[0] : propertyResult;
-        Assert.Contains("InlineCodePageViewModel.cs", propertyFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
-
-        var methodCaret = SourceText.From(xaml).Lines.GetLinePosition(methodOffset + "source.".Length + 2);
-        await harness.SendRequestAsync(2037, "textDocument/definition", new JsonObject
-        {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = methodCaret.Line,
-                ["character"] = methodCaret.Character
-            }
-        });
-
-        using var methodResponse = await harness.ReadResponseAsync(2037);
-        var methodResult = methodResponse.RootElement.GetProperty("result");
-        var methodFirst = methodResult.ValueKind == JsonValueKind.Array ? methodResult[0] : methodResult;
-        Assert.Contains("InlineCodePageViewModel.cs", methodFirst.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            SharedRepositoryHarnessGate.Release();
+        }
     }
 
     [Fact]
@@ -876,44 +874,42 @@ public sealed class LspServerIntegrationTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodeCDataPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xaml = await File.ReadAllTextAsync(xamlPath);
+        var xaml = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var sourceOffset = xaml.IndexOf("source.ClickCount++;", StringComparison.Ordinal);
         Assert.True(sourceOffset >= 0, "Expected inline CDATA source usage not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), repositoryRoot);
-        await harness.InitializeAsync();
-
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        await SharedRepositoryHarnessGate.WaitAsync();
+        try
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = xaml
-            }
-        });
+            var harness = await SharedRepositoryHarness.Value;
+            await harness.OpenDocumentAsync(uri, xaml);
 
-        var sourceCaret = SourceText.From(xaml).Lines.GetLinePosition(sourceOffset + 2);
-        await harness.SendRequestAsync(2038, "textDocument/definition", new JsonObject
+            var sourceCaret = SourceText.From(xaml).Lines.GetLinePosition(sourceOffset + 2);
+            await harness.SendRequestAsync(2038, "textDocument/definition", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                },
+                ["position"] = new JsonObject
+                {
+                    ["line"] = sourceCaret.Line,
+                    ["character"] = sourceCaret.Character
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(2038);
+            var result = response.RootElement.GetProperty("result");
+            var first = result.ValueKind == JsonValueKind.Array ? result[0] : result;
+
+            Assert.Contains("InlineCodePageViewModel.cs", first.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            await harness.CloseDocumentAsync(uri);
+        }
+        finally
         {
-            ["textDocument"] = new JsonObject
-            {
-                ["uri"] = uri
-            },
-            ["position"] = new JsonObject
-            {
-                ["line"] = sourceCaret.Line,
-                ["character"] = sourceCaret.Character
-            }
-        });
-
-        using var response = await harness.ReadResponseAsync(2038);
-        var result = response.RootElement.GetProperty("result");
-        var first = result.ValueKind == JsonValueKind.Array ? result[0] : result;
-
-        Assert.Contains("InlineCodePageViewModel.cs", first.GetProperty("uri").GetString(), StringComparison.OrdinalIgnoreCase);
+            SharedRepositoryHarnessGate.Release();
+        }
     }
 
     [Fact]
@@ -3186,14 +3182,17 @@ public sealed class LspServerIntegrationTests
         private readonly Stream _clientReadStream;
         private readonly LspMessageReader _clientReader;
         private readonly AxsgLanguageServer _server;
-        private readonly CancellationTokenSource _cts = new(TimeSpan.FromSeconds(120));
+        private readonly CancellationTokenSource _cts;
         private readonly Task<int> _runTask;
         private bool _stopped;
 
         private readonly string _workspaceRoot;
 
-        private LspServerHarness(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null)
+        private LspServerHarness(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null, TimeSpan? timeout = null)
         {
+            _cts = timeout.HasValue
+                ? new CancellationTokenSource(timeout.Value)
+                : new CancellationTokenSource(TimeSpan.FromSeconds(120));
             _workspaceRoot = string.IsNullOrWhiteSpace(workspaceRoot) ? "/tmp" : workspaceRoot;
             _clientWriteStream = _clientToServer.Writer.AsStream();
             _serverReadStream = _clientToServer.Reader.AsStream();
@@ -3202,7 +3201,7 @@ public sealed class LspServerIntegrationTests
             _clientReader = new LspMessageReader(_clientReadStream);
 
             var engine = new XamlLanguageServiceEngine(
-                compilationProvider ?? new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+                LanguageServiceTestCompilationFactory.CreateHarnessCompilationProvider(compilationProvider));
             _server = new AxsgLanguageServer(
                 new LspMessageReader(_serverReadStream),
                 new LspMessageWriter(_serverWriteStream),
@@ -3211,9 +3210,9 @@ public sealed class LspServerIntegrationTests
             _runTask = _server.RunAsync(_cts.Token);
         }
 
-        public static Task<LspServerHarness> StartAsync(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null)
+        public static Task<LspServerHarness> StartAsync(ICompilationProvider? compilationProvider = null, string? workspaceRoot = null, TimeSpan? timeout = null)
         {
-            return Task.FromResult(new LspServerHarness(compilationProvider, workspaceRoot));
+            return Task.FromResult(new LspServerHarness(compilationProvider, workspaceRoot, timeout));
         }
 
         public async Task InitializeAsync()
@@ -3264,6 +3263,31 @@ public sealed class LspServerIntegrationTests
             };
 
             return SendAsync(payload);
+        }
+
+        public Task OpenDocumentAsync(string uri, string text, string languageId = "axaml", int version = 1)
+        {
+            return SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri,
+                    ["languageId"] = languageId,
+                    ["version"] = version,
+                    ["text"] = text
+                }
+            });
+        }
+
+        public Task CloseDocumentAsync(string uri)
+        {
+            return SendNotificationAsync("textDocument/didClose", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = uri
+                }
+            });
         }
 
         public Task SendRawRequestAsync(JsonObject payload)
@@ -3407,6 +3431,17 @@ public sealed class LspServerIntegrationTests
         }
 
         throw new InvalidOperationException("Could not locate repository root from test base directory.");
+    }
+
+    private static async Task<LspServerHarness> CreateSharedRepositoryHarnessAsync()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var harness = await LspServerHarness.StartAsync(
+            LanguageServiceTestCompilationFactory.CreateSharedMsBuildCompilationProvider(),
+            repositoryRoot,
+            TimeSpan.FromMinutes(10));
+        await harness.InitializeAsync();
+        return harness;
     }
 
     private static string? GetQueryParameter(string uri, string key)

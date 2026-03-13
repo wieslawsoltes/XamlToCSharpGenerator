@@ -18,6 +18,9 @@ namespace XamlToCSharpGenerator.Tests.LanguageService;
 
 public sealed class XamlLanguageServiceEngineTests
 {
+    private static readonly Lazy<Compilation> CachedExternalControlsCompilation =
+        new(CreateCompilationWithExternalControlsCore, LazyThreadSafetyMode.ExecutionAndPublication);
+
     [Fact]
     public async Task Completion_InElementContext_ReturnsKnownTypes()
     {
@@ -2992,7 +2995,7 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "pages:CompositionPage";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected token not found in sample XAML.");
@@ -3000,7 +3003,7 @@ public sealed class XamlLanguageServiceEngineTests
         var tokenPosition = GetPosition(xamlText, tokenOffset + "pages:".Length + 2);
         var uri = new Uri(xamlPath).AbsoluteUri;
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3027,7 +3030,7 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "ExpressionBindingsPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var originalText = await File.ReadAllTextAsync(xamlPath);
+        var originalText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string existingExpression = "<TextBlock Text=\"{= FirstName + ' ' + LastName}\" />";
         const string emptyExpression = "<TextBlock Text=\"{= }\" />";
         Assert.Contains(existingExpression, originalText, StringComparison.Ordinal);
@@ -3037,7 +3040,7 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.True(caretOffset >= 0, "Expected empty expression insertion point not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3059,14 +3062,14 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodeCDataPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var methodOffset = xamlText.IndexOf("RecordSender", StringComparison.Ordinal);
         var propertyOffset = xamlText.IndexOf("ClickCount = 0", StringComparison.Ordinal);
         Assert.True(methodOffset >= 0, "Expected inline CDATA method usage not found.");
         Assert.True(propertyOffset >= 0, "Expected inline CDATA property usage not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3095,14 +3098,14 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodePage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var propertyOffset = xamlText.IndexOf("{CSharp Code=source.ProductName}", StringComparison.Ordinal);
         var methodOffset = xamlText.IndexOf("source.RecordSender(sender)", StringComparison.Ordinal);
         Assert.True(propertyOffset >= 0, "Expected inline compact property usage not found.");
         Assert.True(methodOffset >= 0, "Expected inline compact method usage not found.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3133,8 +3136,8 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.True(File.Exists(cdataPath), "Expected sample file not found: " + cdataPath);
         Assert.True(File.Exists(compactPath), "Expected sample file not found: " + compactPath);
 
-        var cdataText = await File.ReadAllTextAsync(cdataPath);
-        var compactText = await File.ReadAllTextAsync(compactPath);
+        var cdataText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(cdataPath);
+        var compactText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(compactPath);
         var cdataSourceOffset = cdataText.IndexOf("source.ClickCount++;", StringComparison.Ordinal);
         var compactSourceOffset = compactText.IndexOf("{CSharp Code=source.ProductName}", StringComparison.Ordinal);
         Assert.True(cdataSourceOffset >= 0, "Expected inline CDATA source usage not found.");
@@ -3142,7 +3145,7 @@ public sealed class XamlLanguageServiceEngineTests
 
         var cdataUri = new Uri(cdataPath).AbsoluteUri;
         var compactUri = new Uri(compactPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(cdataUri, cdataText, version: 1, options, CancellationToken.None);
@@ -3177,9 +3180,9 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "SourceGenXamlCatalogSample", "Pages", "InlineCodeCDataPage.axaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3206,7 +3209,7 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "viewModels:MainWindowViewModel";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected x:DataType token not found in sample XAML.");
@@ -3214,7 +3217,7 @@ public sealed class XamlLanguageServiceEngineTests
         var tokenPosition = GetPosition(xamlText, tokenOffset + "viewModels:".Length + 2);
         var uri = new Uri(xamlPath).AbsoluteUri;
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3242,7 +3245,7 @@ public sealed class XamlLanguageServiceEngineTests
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
         Assert.True(File.Exists(xamlPath), "Expected sample file not found: " + xamlPath);
 
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "ControlCatalog.MainView";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected x:Class token not found in sample XAML.");
@@ -3250,7 +3253,7 @@ public sealed class XamlLanguageServiceEngineTests
         var tokenPosition = GetPosition(xamlText, tokenOffset + "ControlCatalog.".Length + 2);
         var uri = new Uri(xamlPath).AbsoluteUri;
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
 
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
@@ -3276,7 +3279,7 @@ public sealed class XamlLanguageServiceEngineTests
     {
         await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
 
         var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
@@ -3296,7 +3299,7 @@ public sealed class XamlLanguageServiceEngineTests
     {
         await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
 
         var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
@@ -3316,7 +3319,7 @@ public sealed class XamlLanguageServiceEngineTests
     {
         await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
 
         var references = await engine.GetXamlReferencesForCSharpSymbolAsync(
@@ -3338,7 +3341,7 @@ public sealed class XamlLanguageServiceEngineTests
     {
         await using var fixture = await CreateCrossLanguageNavigationFixtureAsync();
 
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(fixture.RootPath, IncludeSemanticDiagnostics: false);
 
         var declarations = await engine.GetXamlDeclarationsForCSharpSymbolAsync(
@@ -3360,13 +3363,13 @@ public sealed class XamlLanguageServiceEngineTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "viewModels:MainWindowViewModel";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected x:DataType token not found in sample XAML.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
 
@@ -3385,13 +3388,13 @@ public sealed class XamlLanguageServiceEngineTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "ControlCatalog.MainView";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected x:Class token not found in sample XAML.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
 
@@ -3410,12 +3413,12 @@ public sealed class XamlLanguageServiceEngineTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         var tokenOffset = xamlText.IndexOf("<Grid", StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected Grid element not found in sample XAML.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
 
@@ -3447,13 +3450,13 @@ public sealed class XamlLanguageServiceEngineTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var xamlPath = Path.Combine(repositoryRoot, "samples", "ControlCatalog", "MainView.xaml");
-        var xamlText = await File.ReadAllTextAsync(xamlPath);
+        var xamlText = await LanguageServiceTestCompilationFactory.ReadCachedTextAsync(xamlPath);
         const string token = "TextWrapping";
         var tokenOffset = xamlText.IndexOf(token, StringComparison.Ordinal);
         Assert.True(tokenOffset >= 0, "Expected TextWrapping property token not found in sample XAML.");
 
         var uri = new Uri(xamlPath).AbsoluteUri;
-        using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+        using var engine = CreateMsBuildEngine();
         var options = new XamlLanguageServiceOptions(repositoryRoot, IncludeSemanticDiagnostics: false);
         await engine.OpenDocumentAsync(uri, xamlText, version: 1, options, CancellationToken.None);
 
@@ -3974,7 +3977,17 @@ public sealed class XamlLanguageServiceEngineTests
         }
     }
 
+    private static XamlLanguageServiceEngine CreateMsBuildEngine()
+    {
+        return new XamlLanguageServiceEngine(LanguageServiceTestCompilationFactory.CreateSharedMsBuildCompilationProvider());
+    }
+
     private static Compilation CreateCompilationWithExternalControls()
+    {
+        return CachedExternalControlsCompilation.Value;
+    }
+
+    private static Compilation CreateCompilationWithExternalControlsCore()
     {
         const string metadataSource = """
                                       namespace ExtLib.Controls
