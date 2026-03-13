@@ -22,13 +22,39 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\net6.0\XamlToCSharpGenerator.Runtime.Core.dll"
+          Pack="true"
+          PackagePath="lib/net6.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\net8.0\XamlToCSharpGenerator.Runtime.Core.dll"
+          Pack="true"
+          PackagePath="lib/net8.0"
+          Visible="false" />
     <None Include="..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Runtime.Core.dll"
           Pack="true"
           PackagePath="lib/net10.0"
           Visible="false" />
+
+    <None Include="..\XamlToCSharpGenerator.Runtime.Avalonia\bin\$(Configuration)\net6.0\XamlToCSharpGenerator.Runtime.Avalonia.dll"
+          Pack="true"
+          PackagePath="lib/net6.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Runtime.Avalonia\bin\$(Configuration)\net8.0\XamlToCSharpGenerator.Runtime.Avalonia.dll"
+          Pack="true"
+          PackagePath="lib/net8.0"
+          Visible="false" />
     <None Include="..\XamlToCSharpGenerator.Runtime.Avalonia\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Runtime.Avalonia.dll"
           Pack="true"
           PackagePath="lib/net10.0"
+          Visible="false" />
+
+    <None Include="..\XamlToCSharpGenerator.Runtime\bin\$(Configuration)\net6.0\XamlToCSharpGenerator.Runtime.dll"
+          Pack="true"
+          PackagePath="lib/net6.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Runtime\bin\$(Configuration)\net8.0\XamlToCSharpGenerator.Runtime.dll"
+          Pack="true"
+          PackagePath="lib/net8.0"
           Visible="false" />
     <None Include="..\XamlToCSharpGenerator.Runtime\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Runtime.dll"
           Pack="true"

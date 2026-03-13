@@ -369,7 +369,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
     public static void SetCanvasFormFactor(string formFactor, double? width = null, double? height = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(formFactor);
+        ThrowIfNullOrWhiteSpace(formFactor, nameof(formFactor));
 
         lock (Sync)
         {
@@ -426,7 +426,7 @@ public static class XamlSourceGenHotDesignCoreTools
         string xamlText,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(buildUri);
+        ThrowIfNullOrWhiteSpace(buildUri, nameof(buildUri));
         ArgumentNullException.ThrowIfNull(xamlText);
 
         var request = new SourceGenHotDesignUpdateRequest
@@ -436,6 +436,14 @@ public static class XamlSourceGenHotDesignCoreTools
         };
 
         return ApplyUpdateAndRecordHistoryAsync(request, cancellationToken, recordHistory: true);
+    }
+
+    private static void ThrowIfNullOrWhiteSpace(string? value, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", paramName);
+        }
     }
 
     public static async ValueTask<SourceGenHotDesignApplyResult> ApplyPropertyUpdateAsync(

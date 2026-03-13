@@ -294,7 +294,7 @@ internal sealed class DotNetWatchNamedPipeBridge : IDisposable
             while (remaining > 0)
             {
                 var toRead = Math.Min(remaining, buffer.Length);
-                await stream.ReadExactlyAsync(buffer.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
+                await ReadExactlyAsync(stream, buffer.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
                 remaining -= toRead;
             }
         }
@@ -307,14 +307,14 @@ internal sealed class DotNetWatchNamedPipeBridge : IDisposable
     private static async Task<byte> ReadByteAsync(Stream stream, CancellationToken cancellationToken)
     {
         var buffer = new byte[1];
-        await stream.ReadExactlyAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+        await ReadExactlyAsync(stream, buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
         return buffer[0];
     }
 
     private static async Task<int> ReadInt32Async(Stream stream, CancellationToken cancellationToken)
     {
         var buffer = new byte[4];
-        await stream.ReadExactlyAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+        await ReadExactlyAsync(stream, buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
         return BitConverter.ToInt32(buffer, 0);
     }
 
@@ -329,10 +329,26 @@ internal sealed class DotNetWatchNamedPipeBridge : IDisposable
         var buffer = new byte[length];
         if (length > 0)
         {
-            await stream.ReadExactlyAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await ReadExactlyAsync(stream, buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
         }
 
         return Encoding.UTF8.GetString(buffer);
+    }
+
+    private static async Task ReadExactlyAsync(Stream stream, Memory<byte> buffer, CancellationToken cancellationToken)
+    {
+        var totalRead = 0;
+
+        while (totalRead < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.Slice(totalRead), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new EndOfStreamException();
+            }
+
+            totalRead += read;
+        }
     }
 
     private static async Task<int> Read7BitEncodedIntAsync(Stream stream, CancellationToken cancellationToken)
