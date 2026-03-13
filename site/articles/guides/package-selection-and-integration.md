@@ -26,6 +26,12 @@ For the normal Avalonia app path, the minimum supported setup is:
 - `<AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>`
 - `.UseAvaloniaSourceGeneratedXaml()` on `AppBuilder`
 
+For class-backed XAML, also make sure existing code-behind does not keep an unconditional parameterless `InitializeComponent()` wrapper that still calls `AvaloniaXamlLoader.Load(this)`. AXSG generates `InitializeComponent(bool loadXaml = true)`, and the hand-written parameterless overload will intercept constructor calls such as `InitializeComponent();`.
+
+Use the guarded fallback pattern instead when the same file must support both AXSG and non-AXSG builds:
+
+- [InitializeComponent and Loader Fallback](../getting-started/initializecomponent-and-loader-fallback/)
+
 If you need a custom project item group, use `XamlSourceGenInputItemGroup` and mirror your XAML items into that group. Do not override `XamlSourceGenAdditionalFilesSourceItemGroup` for Avalonia consumers; the build package always projects AXSG Avalonia inputs into Roslyn `AdditionalFiles` as `AvaloniaXaml`.
 
 ## When to split packages

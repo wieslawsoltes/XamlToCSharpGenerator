@@ -27,6 +27,19 @@ Fallback is used when a scenario is intentionally handled at runtime rather than
 
 Fallback should never become the default design for normal compiler behavior. If a scenario can be emitted deterministically into generated code, AXSG should prefer that route and keep fallback as operational support rather than semantic authority.
 
+## Class-backed XAML is not a runtime-loader fallback case
+
+For class-backed Avalonia XAML, AXSG generates `InitializeComponent(bool loadXaml = true)` into the generated partial type. That generated method is the normal class initialization path.
+
+The AXSG runtime bootstrap and fallback services do not replace that method. In particular:
+
+- `.UseAvaloniaSourceGeneratedXaml()` does not make an old hand-written `InitializeComponent()` wrapper safe
+- a parameterless `InitializeComponent()` that still calls `AvaloniaXamlLoader.Load(this)` can bypass the generated AXSG method completely
+
+If you are migrating an existing Avalonia app, use the guarded fallback pattern documented here:
+
+- [InitializeComponent and Loader Fallback](../getting-started/initializecomponent-and-loader-fallback/)
+
 ## Relevant runtime packages
 
 - `XamlToCSharpGenerator.Runtime`
