@@ -574,11 +574,6 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var targetElementId = request.ElementId;
         if (string.IsNullOrWhiteSpace(targetElementId))
         {
@@ -592,32 +587,42 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         targetElementId ??= "0";
-        var targetElement = TryFindElementById(xamlDocument.Root, targetElementId);
-        if (targetElement is null)
+
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate element '" + targetElementId + "' in the document.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        var propertyName = request.PropertyName.Trim();
-        var attributeName = ResolveAttributeName(targetElement, propertyName);
-        if (request.RemoveProperty)
+        if (!editor.TryApplyPropertyUpdate(
+                targetElementId,
+                request.PropertyName.Trim(),
+                request.PropertyValue,
+                request.RemoveProperty,
+                out var updatedText,
+                out var updateError))
         {
-            var existing = targetElement.Attributes(attributeName).FirstOrDefault();
-            if (existing is not null)
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to apply property update.");
+        }
+
+        if (string.Equals(updatedText, text, StringComparison.Ordinal))
+        {
+            lock (Sync)
             {
-                existing.Remove();
+                ActiveBuildUri = resolvedDocument.BuildUri;
+                SelectedElementId = targetElementId;
             }
-        }
-        else
-        {
-            targetElement.SetAttributeValue(attributeName, request.PropertyValue ?? string.Empty);
+
+            return new SourceGenHotDesignApplyResult(
+                true,
+                request.RemoveProperty ? "Property was already removed." : "Property is already up to date.",
+                BuildUri: resolvedDocument.BuildUri,
+                SourcePersisted: false);
         }
 
-        var serialized = SerializeXaml(xamlDocument);
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -659,11 +664,6 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var parentId = request.ParentElementId;
         if (string.IsNullOrWhiteSpace(parentId))
         {
@@ -677,38 +677,39 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         parentId ??= "0";
-        var parentElement = TryFindElementById(xamlDocument.Root, parentId);
-        if (parentElement is null)
+
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate parent element '" + parentId + "' for insert.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        XElement elementToInsert;
-        if (!string.IsNullOrWhiteSpace(request.XamlFragment))
+        if (!editor.TryInsertElement(
+                parentId,
+                request.ElementName,
+                request.XamlFragment,
+                out var updatedText,
+                out var updateError))
         {
-            try
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to insert element.");
+        }
+
+        if (string.Equals(updatedText, text, StringComparison.Ordinal))
+        {
+            lock (Sync)
             {
-                elementToInsert = XElement.Parse(request.XamlFragment!, LoadOptions.SetLineInfo);
+                ActiveBuildUri = resolvedDocument.BuildUri;
             }
-            catch (Exception ex)
-            {
-                return new SourceGenHotDesignApplyResult(false, "Could not parse XAML fragment: " + ex.Message, Error: ex);
-            }
-        }
-        else
-        {
-            var elementName = request.ElementName.Trim();
-            var xName = ResolveElementName(parentElement, elementName);
-            elementToInsert = new XElement(xName);
-        }
 
-        parentElement.Add(elementToInsert);
-
-        var serialized = SerializeXaml(xamlDocument);
+            return new SourceGenHotDesignApplyResult(
+                true,
+                "Element insert produced no changes.",
+                BuildUri: resolvedDocument.BuildUri,
+                SourcePersisted: false);
+        }
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -749,30 +750,26 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var elementId = request.ElementId.Trim();
         if (string.Equals(elementId, "0", StringComparison.Ordinal))
         {
             return new SourceGenHotDesignApplyResult(false, "Cannot remove the root element.");
         }
 
-        var element = TryFindElementById(xamlDocument.Root, elementId);
-        if (element is null)
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate element '" + elementId + "' for remove.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        element.Remove();
+        if (!editor.TryRemoveElement(elementId, out var updatedText, out var updateError))
+        {
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to remove element.");
+        }
 
-        var serialized = SerializeXaml(xamlDocument);
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -1825,11 +1822,6 @@ public static class XamlSourceGenHotDesignCoreTools
         return TryParseXamlDocument(xamlText, out xamlDocument);
     }
 
-    private static string SerializeXaml(XDocument document)
-    {
-        return document.ToString(SaveOptions.None);
-    }
-
     private static XElement? TryFindElementById(XElement root, string elementId)
     {
         if (string.IsNullOrWhiteSpace(elementId))
@@ -2038,40 +2030,6 @@ public static class XamlSourceGenHotDesignCoreTools
                 string.Equals(attribute.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase) &&
                 !attribute.IsNamespaceDeclaration)
             ?.Value;
-    }
-
-    private static XName ResolveAttributeName(XElement element, string propertyName)
-    {
-        if (propertyName.Contains(':', StringComparison.Ordinal))
-        {
-            var parts = propertyName.Split(':', 2);
-            var prefix = parts[0];
-            var localName = parts[1];
-            var ns = element.GetNamespaceOfPrefix(prefix);
-            return ns is null ? XName.Get(propertyName) : ns + localName;
-        }
-
-        return XName.Get(propertyName);
-    }
-
-    private static XName ResolveElementName(XElement parent, string elementName)
-    {
-        if (elementName.Contains(':', StringComparison.Ordinal))
-        {
-            var parts = elementName.Split(':', 2);
-            var prefix = parts[0];
-            var localName = parts[1];
-            var ns = parent.GetNamespaceOfPrefix(prefix);
-            return ns is null ? XName.Get(elementName) : ns + localName;
-        }
-
-        var defaultNamespace = parent.GetDefaultNamespace();
-        if (defaultNamespace == XNamespace.None)
-        {
-            return XName.Get(elementName);
-        }
-
-        return defaultNamespace + elementName;
     }
 
     private static string GetParentElementId(string elementId)

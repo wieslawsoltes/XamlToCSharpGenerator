@@ -353,6 +353,82 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public async Task ApplyPropertyUpdate_Undo_And_Redo_Preserve_Exact_Source_Text()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        const string original =
+            """
+            <Window xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <StackPanel x:Name='RootPanel'>
+                <TextBlock
+                    x:Name="TitleText"
+                    Text = 'Hello'
+                    Width = "120" />
+              </StackPanel>
+            </Window>
+            """;
+        const string expected =
+            """
+            <Window xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <StackPanel x:Name='RootPanel'>
+                <TextBlock
+                    x:Name="TitleText"
+                    Text = 'Updated'
+                    Width = "120" />
+              </StackPanel>
+            </Window>
+            """;
+
+        var sourcePath = CreateTempFile(original);
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectDocument(buildUri);
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0/0/0");
+
+            var updateResult = await XamlSourceGenHotDesignCoreTools.ApplyPropertyUpdateAsync(new SourceGenHotDesignPropertyUpdateRequest
+            {
+                BuildUri = buildUri,
+                ElementId = "0/0/0",
+                PropertyName = "Text",
+                PropertyValue = "Updated"
+            });
+
+            Assert.True(updateResult.Succeeded);
+            Assert.Equal(expected, File.ReadAllText(sourcePath));
+
+            var undoResult = await XamlSourceGenHotDesignCoreTools.UndoAsync(buildUri);
+            Assert.True(undoResult.Succeeded);
+            Assert.Equal(original, File.ReadAllText(sourcePath));
+
+            var redoResult = await XamlSourceGenHotDesignCoreTools.RedoAsync(buildUri);
+            Assert.True(redoResult.Succeeded);
+            Assert.Equal(expected, File.ReadAllText(sourcePath));
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public async Task Insert_And_Remove_Element_Updates_Source()
     {
         ResetRuntimeState();
