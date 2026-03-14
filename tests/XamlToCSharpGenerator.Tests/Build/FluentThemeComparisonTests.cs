@@ -207,6 +207,21 @@ public class FluentThemeComparisonTests
         Assert.Equal(
             GetRequiredProbeValue(xamlIlProbe, "TextBoxStates.Focus.BorderBrush"),
             GetRequiredProbeValue(sourceGenProbe, "TextBoxStates.Focus.BorderBrush"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "SliderStates.PointerOver.ThumbBackground"),
+            GetRequiredProbeValue(sourceGenProbe, "SliderStates.PointerOver.ThumbBackground"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "SliderStates.Pressed.ThumbBackground"),
+            GetRequiredProbeValue(sourceGenProbe, "SliderStates.Pressed.ThumbBackground"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "SliderStates.PointerOver.IncreaseBackground"),
+            GetRequiredProbeValue(sourceGenProbe, "SliderStates.PointerOver.IncreaseBackground"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "SliderStates.TemplateFound"),
+            GetRequiredProbeValue(sourceGenProbe, "SliderStates.TemplateFound"));
+        Assert.Equal(
+            GetRequiredProbeValue(xamlIlProbe, "SliderStates.ThumbFound"),
+            GetRequiredProbeValue(sourceGenProbe, "SliderStates.ThumbFound"));
 
         Assert.Equal(
             GetRequiredProbeValue(xamlIlProbe, "TemplateApply.Button.ThemeFound"),
