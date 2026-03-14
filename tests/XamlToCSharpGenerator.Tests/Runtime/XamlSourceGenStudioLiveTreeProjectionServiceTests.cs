@@ -166,6 +166,79 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
     }
 
     [AvaloniaFact]
+    public void BuildLiveTree_Does_Not_Cache_Empty_Preferred_Lookup_For_Unresolved_Document()
+    {
+        ResetRuntimeState();
+
+        var sourcePath = CreateTempXamlSource();
+        const string registeredBuildUri = "avares://tests/StudioLiveTree.RegisteredLookup.axaml";
+        const string missingBuildUri = "avares://tests/StudioLiveTree.MissingLookup.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = registeredBuildUri,
+                    SourcePath = sourcePath
+                });
+
+            var root = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new Button { Name = "ActionButton", Content = "Run" }
+                }
+            };
+
+            var initialBuildCount = GetPreferredSourceLookupBuildCount();
+
+            _ = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                preferredBuildUri: missingBuildUri,
+                selectedSourceElementId: null);
+
+            var afterMissingBuild = GetPreferredSourceLookupBuildCount();
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = missingBuildUri,
+                    SourcePath = sourcePath
+                });
+
+            var rebuilt = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                preferredBuildUri: missingBuildUri,
+                selectedSourceElementId: null);
+
+            var afterRegisteredBuild = GetPreferredSourceLookupBuildCount();
+
+            Assert.Equal(initialBuildCount, afterMissingBuild);
+            Assert.Equal(initialBuildCount + 1, afterRegisteredBuild);
+            Assert.Equal(missingBuildUri, Assert.Single(rebuilt).SourceBuildUri);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
     public void BuildLiveTree_Assigns_Distinct_SourceElementIds_For_Duplicate_Unnamed_Siblings()
     {
         ResetRuntimeState();

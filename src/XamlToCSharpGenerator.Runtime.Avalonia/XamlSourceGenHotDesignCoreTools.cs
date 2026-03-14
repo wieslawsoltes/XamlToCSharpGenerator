@@ -313,7 +313,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var status = XamlSourceGenHotDesignManager.GetStatus();
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
-        var document = ResolveDocument(documents, buildUri, targetType: null, targetTypeName: null);
+        var document = FindDocumentByBuildUri(documents, buildUri);
         if (document is null)
         {
             return false;

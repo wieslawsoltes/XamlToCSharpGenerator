@@ -586,7 +586,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         }
         else
         {
-            lookupContext = CreateEmptySourceLookupContext(preferredBuildUri);
+            return CreateEmptySourceLookupContext(preferredBuildUri);
         }
 
         lock (SourceLookupCacheSync)
