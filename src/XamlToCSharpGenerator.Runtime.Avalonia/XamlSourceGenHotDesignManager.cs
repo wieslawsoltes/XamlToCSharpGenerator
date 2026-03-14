@@ -102,6 +102,62 @@ public static class XamlSourceGenHotDesignManager
         Action<object> runtimeApplyAction,
         SourceGenHotDesignRegistrationOptions options)
     {
+        RegisterCore(instance, runtimeApplyAction, options, isMirroredFromHotReload: false);
+    }
+
+    internal static void RegisterMirroredFromHotReload(
+        object instance,
+        Action<object> runtimeApplyAction,
+        SourceGenHotDesignRegistrationOptions options)
+    {
+        RegisterCore(instance, runtimeApplyAction, options, isMirroredFromHotReload: true);
+    }
+
+    internal static void ClearMirroredRegistrations()
+    {
+        var removedAny = false;
+
+        lock (Sync)
+        {
+            if (Registrations.Count == 0)
+            {
+                return;
+            }
+
+            var mirroredTypes = new List<Type>();
+            foreach (var pair in Registrations)
+            {
+                if (pair.Value.IsMirroredFromHotReload)
+                {
+                    mirroredTypes.Add(pair.Key);
+                }
+            }
+
+            if (mirroredTypes.Count == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < mirroredTypes.Count; index++)
+            {
+                RemoveRegistrationLocked(mirroredTypes[index]);
+            }
+
+            removedAny = true;
+        }
+
+        if (removedAny)
+        {
+            XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+        }
+    }
+
+    private static void RegisterCore(
+        object instance,
+        Action<object> runtimeApplyAction,
+        SourceGenHotDesignRegistrationOptions options,
+        bool isMirroredFromHotReload)
+    {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(runtimeApplyAction);
         ArgumentNullException.ThrowIfNull(options);
@@ -127,17 +183,26 @@ public static class XamlSourceGenHotDesignManager
                     runtimeApplyAction,
                     options.DocumentRole,
                     options.ArtifactKind,
-                    normalizedScopeHints);
+                    normalizedScopeHints,
+                    isMirroredFromHotReload);
                 Registrations[trackedType] = registration;
             }
             else
             {
+                if (!string.Equals(registration.BuildUri, normalizedBuildUri, StringComparison.OrdinalIgnoreCase) &&
+                    TypeByBuildUri.TryGetValue(registration.BuildUri, out var existingMappedType) &&
+                    existingMappedType == trackedType)
+                {
+                    TypeByBuildUri.Remove(registration.BuildUri);
+                }
+
                 registration.BuildUri = normalizedBuildUri;
                 registration.SourcePath = normalizedSourcePath;
                 registration.RuntimeApplyAction = runtimeApplyAction;
                 registration.DocumentRole = options.DocumentRole;
                 registration.ArtifactKind = options.ArtifactKind;
                 registration.ScopeHints = normalizedScopeHints;
+                registration.IsMirroredFromHotReload = registration.IsMirroredFromHotReload && isMirroredFromHotReload;
             }
 
             TypeByBuildUri[normalizedBuildUri] = trackedType;
@@ -158,6 +223,21 @@ public static class XamlSourceGenHotDesignManager
         }
 
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+    }
+
+    private static void RemoveRegistrationLocked(Type trackedType)
+    {
+        if (!Registrations.TryGetValue(trackedType, out var registration))
+        {
+            return;
+        }
+
+        Registrations.Remove(trackedType);
+        if (TypeByBuildUri.TryGetValue(registration.BuildUri, out var mappedType) &&
+            mappedType == trackedType)
+        {
+            TypeByBuildUri.Remove(registration.BuildUri);
+        }
     }
 
     public static void RegisterApplier(ISourceGenHotDesignUpdateApplier applier)
@@ -795,7 +875,8 @@ public static class XamlSourceGenHotDesignManager
         Action<object> runtimeApplyAction,
         SourceGenHotDesignDocumentRole documentRole,
         SourceGenHotDesignArtifactKind artifactKind,
-        IReadOnlyList<string>? scopeHints)
+        IReadOnlyList<string>? scopeHints,
+        bool isMirroredFromHotReload)
     {
         public Type RootType { get; } = rootType;
 
@@ -810,6 +891,8 @@ public static class XamlSourceGenHotDesignManager
         public SourceGenHotDesignArtifactKind ArtifactKind { get; set; } = artifactKind;
 
         public IReadOnlyList<string>? ScopeHints { get; set; } = scopeHints;
+
+        public bool IsMirroredFromHotReload { get; set; } = isMirroredFromHotReload;
 
         public List<WeakReference<object>> Instances { get; } = [];
     }

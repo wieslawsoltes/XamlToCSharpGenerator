@@ -226,6 +226,8 @@ public static class XamlSourceGenHotReloadManager
             ProcessedRemoteOperationOrder.Clear();
             ResetTransportStateLocked();
         }
+
+        XamlSourceGenHotDesignManager.ClearMirroredRegistrations();
     }
 
     public static void EnableIdePollingFallback(int intervalMs = 1000)
@@ -1366,7 +1368,7 @@ public static class XamlSourceGenHotReloadManager
 
         var artifactKind = InferHotDesignArtifactKind(trackingType, buildUri);
         var documentRole = InferHotDesignDocumentRole(artifactKind);
-        XamlSourceGenHotDesignManager.Register(
+        XamlSourceGenHotDesignManager.RegisterMirroredFromHotReload(
             instance,
             reloadAction,
             new SourceGenHotDesignRegistrationOptions
