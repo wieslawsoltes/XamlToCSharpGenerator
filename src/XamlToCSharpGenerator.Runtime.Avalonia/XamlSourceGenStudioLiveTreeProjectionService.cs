@@ -26,6 +26,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         var query = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var root = BuildLiveNode(
             rootControl,
+            rootControl,
             "live:0",
             0,
             mode,
@@ -128,6 +129,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
     }
 
     private static SourceGenHotDesignElementNode? BuildLiveNode(
+        Control rootControl,
         Control control,
         string id,
         int depth,
@@ -142,6 +144,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         {
             var child = children[index];
             var childNode = BuildLiveNode(
+                rootControl,
                 child,
                 id + "/" + index,
                 depth + 1,
@@ -155,7 +158,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
             }
         }
 
-        var sourceMatch = ResolveSourceElement(control, mode, sourceLookupContext, id);
+        var sourceMatch = ResolveSourceElement(rootControl, control, mode, sourceLookupContext, id);
         var sourceBuildUri = sourceMatch.BuildUri;
         var sourceElementId = sourceMatch.ElementId;
 
@@ -230,6 +233,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         var lookupContext = CreateSourceLookupContext(preferredBuildUri ?? sourceBuildUri);
         return FindControlBySourceElementCore(
             control,
+            control,
             mode,
             lookupContext,
             sourceBuildUri,
@@ -237,13 +241,14 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
     }
 
     private static Control? FindControlBySourceElementCore(
+        Control rootControl,
         Control control,
         SourceGenHotDesignHitTestMode mode,
         SourceElementLookupContext lookupContext,
         string? sourceBuildUri,
         string sourceElementId)
     {
-        var match = ResolveSourceElement(control, mode, lookupContext, liveNodeId: null);
+        var match = ResolveSourceElement(rootControl, control, mode, lookupContext, liveNodeId: null);
         if (!string.IsNullOrWhiteSpace(match.ElementId) &&
             string.Equals(match.ElementId, sourceElementId, StringComparison.Ordinal) &&
             (string.IsNullOrWhiteSpace(sourceBuildUri) ||
@@ -255,6 +260,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         foreach (var child in EnumerateChildren(control, mode))
         {
             var resolved = FindControlBySourceElementCore(
+                rootControl,
                 child,
                 mode,
                 lookupContext,
@@ -289,7 +295,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         }
 
         var lookupContext = CreateSourceLookupContext(preferredBuildUri ?? sourceBuildUri);
-        var match = ResolveSourceElement(candidate, mode, lookupContext, "live:" + sourceElementId);
+        var match = ResolveSourceElement(rootControl, candidate, mode, lookupContext, "live:" + sourceElementId);
         if (string.IsNullOrWhiteSpace(match.ElementId) ||
             !string.Equals(match.ElementId, sourceElementId, StringComparison.Ordinal) ||
             (!string.IsNullOrWhiteSpace(sourceBuildUri) &&
@@ -442,11 +448,18 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
     }
 
     private static (string? BuildUri, string? ElementId) ResolveSourceElement(
+        Control rootControl,
         Control control,
         SourceGenHotDesignHitTestMode mode,
         SourceElementLookupContext sourceLookupContext,
         string? liveNodeId)
     {
+        if (mode == SourceGenHotDesignHitTestMode.Visual &&
+            control.TemplatedParent is not null)
+        {
+            return (null, null);
+        }
+
         var controlNames = new List<string>(4);
         var controlTypeNames = new List<string>(6);
         XamlSourceGenStudioHitTestingService.CollectIdentityCandidates(

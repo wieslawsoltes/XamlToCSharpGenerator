@@ -1,7 +1,13 @@
 using System;
 using System.IO;
+using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -153,6 +159,101 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         }
     }
 
+    [AvaloniaFact]
+    public void BuildLiveTree_Visual_Mode_Does_Not_Source_Map_Template_Only_Descendants()
+    {
+        ResetRuntimeState();
+        EnsureFluentTheme();
+
+        var sourcePath = CreateTempTemplateVisualXamlSource();
+        const string buildUri = "avares://tests/StudioLiveTree.VisualTemplate.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var root = new UserControl
+            {
+                Content = new StackPanel
+                {
+                    Name = "RootPanel",
+                    Children =
+                    {
+                        new ListBox
+                        {
+                            Name = "ActionList",
+                            ItemsSource = new[] { "Run" }
+                        }
+                    }
+                }
+            };
+
+            var window = new Window
+            {
+                Width = 800,
+                Height = 600,
+                Content = root
+            };
+
+            try
+            {
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+
+                var projected = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                    root,
+                    SourceGenHotDesignHitTestMode.Visual,
+                    preferredBuildUri: buildUri,
+                    selectedSourceElementId: null);
+
+                var liveRoot = Assert.Single(projected);
+                var actionList = FindByName(liveRoot, "ActionList");
+                Assert.NotNull(actionList);
+                Assert.False(string.IsNullOrWhiteSpace(actionList!.SourceElementId));
+
+                var templateOnlyControl = root.GetVisualDescendants()
+                    .OfType<Control>()
+                    .FirstOrDefault(control => control.TemplatedParent is not null);
+                Assert.NotNull(templateOnlyControl);
+
+                var templateOnlyNode = Flatten(liveRoot)
+                    .FirstOrDefault(node =>
+                        XamlSourceGenStudioLiveTreeProjectionService.TryResolveControlByLiveNodeId(
+                            root,
+                            SourceGenHotDesignHitTestMode.Visual,
+                            node.Id,
+                            out var resolvedControl) &&
+                        ReferenceEquals(resolvedControl, templateOnlyControl));
+
+                Assert.NotNull(templateOnlyNode);
+                Assert.True(string.IsNullOrWhiteSpace(templateOnlyNode!.SourceElementId));
+            }
+            finally
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
     [Fact]
     public void ResolveLiveControlForElement_Uses_Exact_Live_Node_Id_For_Duplicate_Type_Matches()
     {
@@ -283,6 +384,31 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         return null;
     }
 
+    private static IEnumerable<SourceGenHotDesignElementNode> Flatten(SourceGenHotDesignElementNode node)
+    {
+        yield return node;
+
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            foreach (var child in Flatten(node.Children[index]))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private static void EnsureFluentTheme()
+    {
+        var application = Application.Current ?? throw new InvalidOperationException("Avalonia application is not initialized.");
+
+        if (!application.Styles.OfType<FluentTheme>().Any())
+        {
+            application.Styles.Insert(0, new FluentTheme());
+        }
+
+        application.RequestedThemeVariant = ThemeVariant.Default;
+    }
+
     private static void ResetRuntimeState()
     {
         XamlSourceGenStudioManager.Disable();
@@ -321,6 +447,24 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
                 <StackPanel>
                     <Button Content="First" />
                     <Button Content="Second" />
+                </StackPanel>
+            </UserControl>
+            """;
+        File.WriteAllText(path, xaml);
+        return path;
+    }
+
+    private static string CreateTempTemplateVisualXamlSource()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioLiveTree-TemplateVisual-" + Guid.NewGuid().ToString("N") + ".axaml");
+        const string xaml =
+            """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                <StackPanel Name="RootPanel">
+                    <ListBox Name="ActionList">
+                        <x:String>Run</x:String>
+                    </ListBox>
                 </StackPanel>
             </UserControl>
             """;
