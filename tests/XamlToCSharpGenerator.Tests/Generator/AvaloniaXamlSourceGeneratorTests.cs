@@ -8537,7 +8537,7 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
-    public void Preserves_NullConditional_Continuation_After_NonPublic_Helper_Access()
+    public void Preserves_Authored_NullConditional_Boundary_After_NonPublic_Helper_Access()
     {
         const string code = """
             namespace Avalonia.Controls
@@ -8597,7 +8597,72 @@ public class AvaloniaXamlSourceGeneratorTests
 
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Matches(
-            @"\(source\.SelectedChild is \{ \} (__axsg_target_[0-9a-f]+) \? __AXSG_UnsafeAccessor_[0-9a-f]+\(\1\) : null\)\?\.Title",
+            @"source\.SelectedChild is \{ \} (__axsg_target_[0-9a-f]+) \? __AXSG_UnsafeAccessor_[0-9a-f]+\(\1\)\.Title : null",
+            generated);
+    }
+
+    [Fact]
+    public void Preserves_Explicit_NullConditional_After_NonPublic_Helper_Access()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class HiddenContext
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+
+                public sealed class ChildVm
+                {
+                    private HiddenContext? HiddenData { get; } = new();
+                }
+
+                public sealed class MainVm
+                {
+                    public ChildVm? SelectedChild { get; } = new ChildVm();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding SelectedChild?.HiddenData?.Title}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Matches(
+            @"source\.SelectedChild is \{ \} (__axsg_target_[0-9a-f]+) \? __AXSG_UnsafeAccessor_[0-9a-f]+\(\1\)\?\.Title : null",
             generated);
     }
 

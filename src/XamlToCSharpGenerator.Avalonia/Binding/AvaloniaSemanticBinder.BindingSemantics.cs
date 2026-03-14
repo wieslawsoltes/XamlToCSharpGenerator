@@ -404,7 +404,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var accessibilityWithin = GetGeneratedCodeAccessibilityWithinSymbol(compilation, document);
         var commandType = ResolveContractType(compilation, TypeContractId.SystemICommand);
         var treatLastMethodAsCommand = IsCommandTargetType(targetPropertyType, commandType);
-        var forceConditionalAccessForNextStep = false;
+        var pendingConditionalAccessScopes = new List<PendingConditionalAccessScope>();
 
         for (var segmentIndex = 0; segmentIndex < segments.Length; segmentIndex++)
         {
@@ -448,15 +448,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var ownerTypeName = ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 if (segment.AcceptsNull)
                 {
-                    expressionBuilder = "(" +
-                                        expressionBuilder +
-                                        " is null ? default : " +
-                                        ownerTypeName +
-                                        "." +
-                                        getterMethod.Name +
-                                        "(" +
-                                        expressionBuilder +
-                                        "))";
+                    var scope = CreatePendingConditionalAccessScope(
+                        expressionBuilder,
+                        ownerTypeName + "." + getterMethod.Name,
+                        out var targetVariableName);
+                    expressionBuilder = ownerTypeName + "." + getterMethod.Name + "(" + targetVariableName + ")";
+                    pendingConditionalAccessScopes.Add(scope);
                 }
                 else
                 {
@@ -505,12 +502,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             var isLastSegment = segmentIndex == segments.Length - 1;
-            var effectiveAcceptsNull = segment.AcceptsNull || forceConditionalAccessForNextStep;
             var propertyAccessExpression = string.Empty;
             var propertyNormalizedSegment = string.Empty;
             ITypeSymbol propertyResultType = currentNamedType;
             var foundInaccessibleProperty = false;
-            var propertyRequiresConditionalContinuation = false;
+            PendingConditionalAccessScope? propertyPendingConditionalAccessScope = null;
             var propertyResolved = !segment.IsMethodCall &&
                                    TryResolvePropertyPathAccessExpression(
                                        compilation,
@@ -518,13 +514,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                        currentNamedType,
                                        expressionBuilder,
                                        segment.MemberName,
-                                       effectiveAcceptsNull,
+                                       segment.AcceptsNull,
                                        unsafeAccessors,
                                        out propertyAccessExpression,
                                        out propertyNormalizedSegment,
                                        out propertyResultType,
                                        out foundInaccessibleProperty,
-                                       out propertyRequiresConditionalContinuation);
+                                       out propertyPendingConditionalAccessScope);
             var commandErrorMessage = string.Empty;
             if (!segment.IsMethodCall &&
                 treatLastMethodAsCommand &&
@@ -536,7 +532,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compilation,
                     accessibilityWithin,
                     currentNamedType,
-                    expressionBuilder,
+                    pendingConditionalAccessScopes.Count == 0
+                        ? expressionBuilder
+                        : ApplyPendingConditionalAccessScopes(expressionBuilder, currentNamedType, pendingConditionalAccessScopes),
                     segment.MemberName,
                     unsafeAccessors,
                     out var commandAccessorExpression,
@@ -578,7 +576,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var methodNormalizedSegment = string.Empty;
             ITypeSymbol methodResultType = currentNamedType;
             var foundInaccessibleMethod = false;
-            var methodRequiresConditionalContinuation = false;
+            PendingConditionalAccessScope? methodPendingConditionalAccessScope = null;
             var methodResolved = !segment.IsMethodCall &&
                                  !propertyResolved &&
                                  !foundInaccessibleProperty &&
@@ -588,13 +586,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                      currentNamedType,
                                      expressionBuilder,
                                      segment.MemberName,
-                                     effectiveAcceptsNull,
+                                     segment.AcceptsNull,
                                      unsafeAccessors,
                                      out methodAccessExpression,
                                      out methodNormalizedSegment,
                                      out methodResultType,
                                      out foundInaccessibleMethod,
-                                     out methodRequiresConditionalContinuation);
+                                     out methodPendingConditionalAccessScope);
             if (!propertyResolved && !methodResolved)
             {
                 if (!segment.IsMethodCall &&
@@ -617,17 +615,21 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         expressionBuilder,
                         segment.MemberName,
                         segment.MethodArguments,
-                        effectiveAcceptsNull,
+                        segment.AcceptsNull,
                         unsafeAccessors,
                         out var methodInvocationExpression,
                         out var methodInvocationNormalizedSegment,
                         out var methodReturnType,
-                        out var methodInvocationRequiresConditionalContinuation,
+                        out var methodInvocationPendingConditionalAccessScope,
                         out errorMessage))
                 {
                     expressionBuilder = methodInvocationExpression;
                     currentType = methodReturnType;
-                    forceConditionalAccessForNextStep = methodInvocationRequiresConditionalContinuation;
+                    if (methodInvocationPendingConditionalAccessScope is { } pendingConditionalAccessScope)
+                    {
+                        pendingConditionalAccessScopes.Add(pendingConditionalAccessScope);
+                    }
+
                     var segmentSeparator = normalizedSegments.Count == 0
                         ? string.Empty
                         : segment.AcceptsNull ? "?." : ".";
@@ -668,14 +670,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 expressionBuilder = propertyAccessExpression;
                 currentType = propertyResultType;
                 normalizedSegment = propertyNormalizedSegment;
-                forceConditionalAccessForNextStep = propertyRequiresConditionalContinuation;
+                if (propertyPendingConditionalAccessScope is { } pendingConditionalAccessScope)
+                {
+                    pendingConditionalAccessScopes.Add(pendingConditionalAccessScope);
+                }
             }
             else
             {
                 expressionBuilder = methodAccessExpression;
                 currentType = methodResultType;
                 normalizedSegment = methodNormalizedSegment;
-                forceConditionalAccessForNextStep = methodRequiresConditionalContinuation;
+                if (methodPendingConditionalAccessScope is { } pendingConditionalAccessScope)
+                {
+                    pendingConditionalAccessScopes.Add(pendingConditionalAccessScope);
+                }
             }
 
             foreach (var indexerToken in segment.Indexers)
@@ -685,10 +693,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     return false;
                 }
 
-                expressionBuilder += (forceConditionalAccessForNextStep ? "?[" : "[") + indexerExpression + "]";
+                expressionBuilder += "[" + indexerExpression + "]";
                 normalizedSegment += "[" + normalizedIndexerToken + "]";
                 currentType = resultType;
-                forceConditionalAccessForNextStep = false;
             }
 
             if (!string.IsNullOrWhiteSpace(segment.CastTypeToken))
@@ -730,6 +737,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 var separator = segment.AcceptsNull ? "?." : ".";
                 normalizedSegments.Add(separator + normalizedSegment);
             }
+        }
+
+        if (pendingConditionalAccessScopes.Count > 0)
+        {
+            expressionBuilder = ApplyPendingConditionalAccessScopes(expressionBuilder, currentType!, pendingConditionalAccessScopes);
         }
 
         if (leadingNotCount > 0)
@@ -817,13 +829,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string normalizedSegment,
         out ITypeSymbol resultType,
         out bool foundInaccessibleProperty,
-        out bool requiresConditionalContinuation)
+        out PendingConditionalAccessScope? pendingConditionalAccessScope)
     {
         accessExpression = string.Empty;
         normalizedSegment = string.Empty;
         resultType = targetType;
         foundInaccessibleProperty = false;
-        requiresConditionalContinuation = false;
+        pendingConditionalAccessScope = null;
 
         var property = FindAccessibleProperty(compilation, accessibilityWithin, targetType, propertyName, out foundInaccessibleProperty);
         if (property is not null)
@@ -849,15 +861,26 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var helperMethodName = RegisterUnsafeAccessorDefinition(unsafeAccessors, getter);
-        accessExpression = BuildUnsafeAccessorInvocationExpression(
-            targetExpression,
-            helperMethodName,
-            acceptsNull,
-            Array.Empty<string>(),
-            inaccessibleProperty.Type);
+        if (acceptsNull)
+        {
+            pendingConditionalAccessScope = CreateUnsafeAccessorPendingConditionalAccessScope(
+                targetExpression,
+                helperMethodName,
+                Array.Empty<string>(),
+                out accessExpression);
+        }
+        else
+        {
+            accessExpression = BuildUnsafeAccessorInvocationExpression(
+                targetExpression,
+                helperMethodName,
+                acceptsNull,
+                Array.Empty<string>(),
+                inaccessibleProperty.Type);
+        }
+
         normalizedSegment = inaccessibleProperty.Name;
         resultType = inaccessibleProperty.Type;
-        requiresConditionalContinuation = acceptsNull;
         return true;
     }
 
@@ -873,13 +896,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string normalizedSegment,
         out ITypeSymbol resultType,
         out bool foundInaccessibleMethod,
-        out bool requiresConditionalContinuation)
+        out PendingConditionalAccessScope? pendingConditionalAccessScope)
     {
         accessExpression = string.Empty;
         normalizedSegment = string.Empty;
         resultType = targetType;
         foundInaccessibleMethod = false;
-        requiresConditionalContinuation = false;
+        pendingConditionalAccessScope = null;
 
         var method = FindAccessibleParameterlessMethod(
             compilation,
@@ -914,15 +937,26 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var helperMethodName = RegisterUnsafeAccessorDefinition(unsafeAccessors, inaccessibleMethod);
-        accessExpression = BuildUnsafeAccessorInvocationExpression(
-            targetExpression,
-            helperMethodName,
-            acceptsNull,
-            Array.Empty<string>(),
-            inaccessibleMethod.ReturnType);
+        if (acceptsNull)
+        {
+            pendingConditionalAccessScope = CreateUnsafeAccessorPendingConditionalAccessScope(
+                targetExpression,
+                helperMethodName,
+                Array.Empty<string>(),
+                out accessExpression);
+        }
+        else
+        {
+            accessExpression = BuildUnsafeAccessorInvocationExpression(
+                targetExpression,
+                helperMethodName,
+                acceptsNull,
+                Array.Empty<string>(),
+                inaccessibleMethod.ReturnType);
+        }
+
         normalizedSegment = inaccessibleMethod.Name + "()";
         resultType = inaccessibleMethod.ReturnType;
-        requiresConditionalContinuation = acceptsNull;
         return true;
     }
 
@@ -1033,6 +1067,87 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                nullSafeInvocation +
                " : null)";
     }
+
+    private static PendingConditionalAccessScope CreateUnsafeAccessorPendingConditionalAccessScope(
+        string targetExpression,
+        string helperMethodName,
+        IReadOnlyList<string> argumentExpressions,
+        out string accessExpression)
+    {
+        var pendingConditionalAccessScope = CreatePendingConditionalAccessScope(
+            targetExpression,
+            helperMethodName + "|" + string.Join("|", argumentExpressions),
+            out var targetVariableName);
+        var invocationArguments = argumentExpressions.Count == 0
+            ? targetVariableName
+            : targetVariableName + ", " + string.Join(", ", argumentExpressions);
+        accessExpression = helperMethodName + "(" + invocationArguments + ")";
+        return pendingConditionalAccessScope;
+    }
+
+    private static PendingConditionalAccessScope CreatePendingConditionalAccessScope(
+        string targetExpression,
+        string scopeIdentity,
+        out string targetVariableName)
+    {
+        targetVariableName = "__axsg_target_" + ComputeStableHashHex(targetExpression + "|" + scopeIdentity);
+        return new PendingConditionalAccessScope(targetExpression, targetVariableName);
+    }
+
+    private static string ApplyPendingConditionalAccessScopes(
+        string expression,
+        ITypeSymbol resultType,
+        IReadOnlyList<PendingConditionalAccessScope> pendingConditionalAccessScopes)
+    {
+        for (var index = pendingConditionalAccessScopes.Count - 1; index >= 0; index--)
+        {
+            expression = BuildPendingConditionalAccessExpression(
+                pendingConditionalAccessScopes[index],
+                expression,
+                resultType);
+        }
+
+        return expression;
+    }
+
+    private static string BuildPendingConditionalAccessExpression(
+        PendingConditionalAccessScope pendingConditionalAccessScope,
+        string trueBranchExpression,
+        ITypeSymbol resultType)
+    {
+        var requiresLiftedNullResult = resultType.IsValueType &&
+                                       (resultType is not INamedTypeSymbol namedValueType ||
+                                        !IsNullableValueType(namedValueType));
+        if (requiresLiftedNullResult)
+        {
+            var nullableResultTypeName = "global::System.Nullable<" +
+                                         resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                                         ">";
+            return "(" +
+                   pendingConditionalAccessScope.TargetExpression +
+                   " is { } " +
+                   pendingConditionalAccessScope.TargetVariableName +
+                   " ? (" +
+                   nullableResultTypeName +
+                   ")" +
+                   trueBranchExpression +
+                   " : default(" +
+                   nullableResultTypeName +
+                   "))";
+        }
+
+        return "(" +
+               pendingConditionalAccessScope.TargetExpression +
+               " is { } " +
+               pendingConditionalAccessScope.TargetVariableName +
+               " ? " +
+               trueBranchExpression +
+               " : null)";
+    }
+
+    private readonly record struct PendingConditionalAccessScope(
+        string TargetExpression,
+        string TargetVariableName);
 
     private static bool TryBuildMethodCommandAccessorExpression(
         Compilation compilation,
@@ -1675,13 +1790,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string invocationExpression,
         out string normalizedSegment,
         out ITypeSymbol returnType,
-        out bool requiresConditionalContinuation,
+        out PendingConditionalAccessScope? pendingConditionalAccessScope,
         out string errorMessage)
     {
         invocationExpression = string.Empty;
         normalizedSegment = string.Empty;
         returnType = targetType;
-        requiresConditionalContinuation = false;
+        pendingConditionalAccessScope = null;
         errorMessage = string.Empty;
 
         var supportsUnsafeAccessor = unsafeAccessors is not null && SupportsUnsafeAccessor(compilation);
@@ -1751,13 +1866,23 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             else
             {
                 var helperMethodName = RegisterUnsafeAccessorDefinition(unsafeAccessors, bestCandidate);
-                invocationExpression = BuildUnsafeAccessorInvocationExpression(
-                    targetExpression,
-                    helperMethodName,
-                    acceptsNull,
-                    bestArgumentExpressions!,
-                    bestCandidate.ReturnType);
-                requiresConditionalContinuation = acceptsNull;
+                if (acceptsNull)
+                {
+                    pendingConditionalAccessScope = CreateUnsafeAccessorPendingConditionalAccessScope(
+                        targetExpression,
+                        helperMethodName,
+                        bestArgumentExpressions!,
+                        out invocationExpression);
+                }
+                else
+                {
+                    invocationExpression = BuildUnsafeAccessorInvocationExpression(
+                        targetExpression,
+                        helperMethodName,
+                        acceptsNull,
+                        bestArgumentExpressions!,
+                        bestCandidate.ReturnType);
+                }
             }
 
             normalizedSegment = bestCandidate.Name + "(" + string.Join(", ", bestNormalizedArguments!) + ")";
