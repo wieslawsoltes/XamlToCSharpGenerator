@@ -1194,29 +1194,53 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var supportsUnsafeAccessor = allowUnsafeAccessors && SupportsUnsafeAccessor(compilation);
         if (targetType.TypeKind != TypeKind.Interface)
         {
+            ImmutableArray<IMethodSymbol> fallbackCandidates = ImmutableArray<IMethodSymbol>.Empty;
             for (INamedTypeSymbol? current = targetType; current is not null; current = current.BaseType)
             {
-                var candidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+                var accessibleCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+                ImmutableArray<IMethodSymbol>.Builder? inaccessibleCandidates = supportsUnsafeAccessor
+                    ? ImmutableArray.CreateBuilder<IMethodSymbol>()
+                    : null;
+
                 foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
                 {
-                    if (predicate(method) &&
-                        (compilation.IsSymbolAccessibleWithin(method, accessibilityWithin, targetType) ||
-                         supportsUnsafeAccessor))
+                    if (!predicate(method))
                     {
-                        candidates.Add(method);
+                        continue;
+                    }
+
+                    if (compilation.IsSymbolAccessibleWithin(method, accessibilityWithin, targetType))
+                    {
+                        accessibleCandidates.Add(method);
+                        continue;
+                    }
+
+                    if (supportsUnsafeAccessor)
+                    {
+                        inaccessibleCandidates!.Add(method);
                     }
                 }
 
-                if (candidates.Count > 0)
+                if (accessibleCandidates.Count > 0)
                 {
-                    return candidates.ToImmutable();
+                    return accessibleCandidates.ToImmutable();
+                }
+
+                if (fallbackCandidates.IsDefaultOrEmpty &&
+                    inaccessibleCandidates is not null &&
+                    inaccessibleCandidates.Count > 0)
+                {
+                    fallbackCandidates = inaccessibleCandidates.ToImmutable();
                 }
             }
 
-            return ImmutableArray<IMethodSymbol>.Empty;
+            return fallbackCandidates.IsDefault ? ImmutableArray<IMethodSymbol>.Empty : fallbackCandidates;
         }
 
-        var interfaceCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+        var accessibleInterfaceCandidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
+        ImmutableArray<IMethodSymbol>.Builder? inaccessibleInterfaceCandidates = supportsUnsafeAccessor
+            ? ImmutableArray.CreateBuilder<IMethodSymbol>()
+            : null;
         var seenMethods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
 
         foreach (var current in EnumerateInstanceMemberLookupTypes(targetType))
@@ -1224,18 +1248,41 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             foreach (var method in current.GetMembers(methodName).OfType<IMethodSymbol>())
             {
                 if (!seenMethods.Add(method) ||
-                    !predicate(method) ||
-                    (!compilation.IsSymbolAccessibleWithin(method, accessibilityWithin, targetType) && !supportsUnsafeAccessor) ||
-                    ContainsEquivalentMethodCommandSignature(interfaceCandidates, method))
+                    !predicate(method))
                 {
                     continue;
                 }
 
-                interfaceCandidates.Add(method);
+                if (compilation.IsSymbolAccessibleWithin(method, accessibilityWithin, targetType))
+                {
+                    if (!ContainsEquivalentMethodCommandSignature(accessibleInterfaceCandidates, method))
+                    {
+                        accessibleInterfaceCandidates.Add(method);
+                    }
+
+                    continue;
+                }
+
+                if (supportsUnsafeAccessor &&
+                    inaccessibleInterfaceCandidates is not null &&
+                    !ContainsEquivalentMethodCommandSignature(inaccessibleInterfaceCandidates, method))
+                {
+                    inaccessibleInterfaceCandidates.Add(method);
+                }
             }
         }
 
-        return interfaceCandidates.ToImmutable();
+        if (accessibleInterfaceCandidates.Count > 0)
+        {
+            return accessibleInterfaceCandidates.ToImmutable();
+        }
+
+        if (inaccessibleInterfaceCandidates is not null && inaccessibleInterfaceCandidates.Count > 0)
+        {
+            return inaccessibleInterfaceCandidates.ToImmutable();
+        }
+
+        return ImmutableArray<IMethodSymbol>.Empty;
     }
 
     private static bool ContainsEquivalentMethodCommandSignature(

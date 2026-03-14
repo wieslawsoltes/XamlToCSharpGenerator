@@ -8695,6 +8695,87 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Prefers_Accessible_Base_Method_Command_Over_Derived_NonPublic_Candidates()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class CommandBase
+                {
+                    public void Save()
+                    {
+                    }
+
+                    public bool CanSave(object? parameter) => parameter is not null;
+                }
+
+                public sealed class MainVm : CommandBase
+                {
+                    private new void Save()
+                    {
+                    }
+
+                    private void Save(object? parameter)
+                    {
+                    }
+
+                    private new bool CanSave(object? parameter) => false;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <Button Command="{CompiledBinding Save}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "CS0122");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source)", generated);
+        Assert.Contains("((global::Demo.ViewModels.CommandBase)target).Save()", generated);
+        Assert.Contains("((global::Demo.ViewModels.CommandBase)target).CanSave(parameter)", generated);
+        Assert.DoesNotContain("Name = \"Save\"", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Name = \"CanSave\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Emits_ControlTheme_Materializer_Registration_With_Factory_Method()
     {
         const string code = """
