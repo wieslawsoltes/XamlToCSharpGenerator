@@ -426,6 +426,76 @@ public class XamlSourceGenStudioShellViewModelTests
     }
 
     [Fact]
+    public void Selecting_RuntimeOnly_Live_Node_Synchronizes_Selected_Property()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.RuntimeOnlyPropertySync.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            var statusTextNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
+            viewModel.SelectedElement = statusTextNode;
+            viewModel.SelectedProperty = Assert.Single(viewModel.Properties, property => property.Name == "Text");
+            Assert.Equal("Text", viewModel.PropertyName);
+            Assert.Equal("Ready", viewModel.PropertyValue);
+
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Border()
+                }
+            });
+
+            viewModel.SelectedElement = new SourceGenHotDesignElementNode(
+                Id: "live:0/0",
+                DisplayName: "[Border]",
+                TypeName: "Border",
+                XamlName: null,
+                Classes: null,
+                Depth: 1,
+                IsSelected: true,
+                Line: 0,
+                Children: [],
+                IsExpanded: true,
+                DescendantCount: 0,
+                SourceBuildUri: null,
+                SourceElementId: null,
+                IsLive: true);
+
+            Assert.Null(viewModel.SelectedProperty);
+            Assert.Equal(string.Empty, viewModel.PropertyName);
+            Assert.Equal(string.Empty, viewModel.PropertyValue);
+            Assert.NotEmpty(viewModel.Properties);
+            Assert.DoesNotContain(viewModel.Properties, property => property.Name == "Text");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
     public void ClearLiveElementTree_Clears_RuntimeOnly_Live_Properties_And_Selection()
     {
         ResetRuntimeState();

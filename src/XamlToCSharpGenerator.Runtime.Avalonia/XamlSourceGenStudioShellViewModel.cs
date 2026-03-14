@@ -602,6 +602,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         RefreshPropertiesForCurrentSelection(element);
+        SynchronizeSelectedPropertySelection();
     }
 
     private void SelectSourceElement(string? buildUri, string elementId, bool retainLiveSelection = false)
