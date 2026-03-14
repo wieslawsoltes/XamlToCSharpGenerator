@@ -137,11 +137,19 @@ public class XamlSourceGenStudioShellViewModelTests
                     ArtifactKind = SourceGenHotDesignArtifactKind.View
                 });
 
+            XamlSourceGenRegistry.Register(appBuildUri, static _ => new object());
+            XamlSourceGenRegistry.Register(viewBuildUri, static _ => new TextBlock
+            {
+                Text = "Preview"
+            });
+
             XamlSourceGenHotDesignCoreTools.SelectDocument(appBuildUri);
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
             using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
             Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
+            Assert.Equal(appBuildUri, viewModel.SelectedScope?.BuildUri);
+            Assert.Equal("Preview unavailable for non-control artifact.", viewModel.PreviewStatus);
 
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
             {
@@ -150,11 +158,16 @@ public class XamlSourceGenStudioShellViewModelTests
 
             Assert.True(handled);
             Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
+            Assert.Equal(viewBuildUri, viewModel.SelectedScope?.BuildUri);
             Assert.NotNull(viewModel.SelectedElement);
             Assert.Equal("ActionButton", viewModel.SelectedElement!.XamlName);
+            Assert.Equal("Preview ready for " + viewBuildUri, viewModel.PreviewStatus);
+            Assert.IsType<TextBlock>(viewModel.CanvasPreviewContent);
         }
         finally
         {
+            XamlSourceGenRegistry.Unregister(appBuildUri);
+            XamlSourceGenRegistry.Unregister(viewBuildUri);
             ResetRuntimeState();
             DeleteFileIfExists(appSourcePath);
             DeleteFileIfExists(viewSourcePath);
@@ -410,6 +423,42 @@ public class XamlSourceGenStudioShellViewModelTests
         Assert.NotEmpty(viewModel.Properties);
         Assert.Contains(viewModel.Properties, property => property.Name == "Name");
         Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+    }
+
+    [Fact]
+    public void ClearLiveElementTree_Clears_RuntimeOnly_Live_Properties_And_Selection()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        viewModel.UpdateLiveElementTree(new StackPanel
+        {
+            Children =
+            {
+                new Button
+                {
+                    Name = "ActionButton",
+                    Content = "Run"
+                }
+            }
+        });
+
+        viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+        var liveRoot = Assert.Single(viewModel.DisplayElements);
+        var liveButton = Assert.Single(liveRoot.Children);
+
+        viewModel.SelectedElement = liveButton;
+        viewModel.SelectedProperty = Assert.Single(viewModel.Properties, property => property.Name == "Content");
+
+        viewModel.ClearLiveElementTree();
+
+        Assert.Null(viewModel.SelectedElement);
+        Assert.Null(viewModel.SelectedProperty);
+        Assert.Empty(viewModel.Properties);
+        Assert.Empty(viewModel.FilteredProperties);
+        Assert.Equal(string.Empty, viewModel.PropertyName);
+        Assert.Equal(string.Empty, viewModel.PropertyValue);
     }
 
     [Fact]

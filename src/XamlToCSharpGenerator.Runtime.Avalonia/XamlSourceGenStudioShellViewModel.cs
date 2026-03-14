@@ -611,12 +611,13 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
+        var documentChanged = !string.Equals(_activeBuildUri, buildUri, StringComparison.OrdinalIgnoreCase);
         if (!retainLiveSelection)
         {
             _selectedLiveElementId = null;
         }
 
-        if (!string.Equals(_activeBuildUri, buildUri, StringComparison.OrdinalIgnoreCase))
+        if (documentChanged)
         {
             _activeBuildUri = buildUri;
             XamlSourceGenHotDesignTool.SelectDocument(buildUri);
@@ -625,7 +626,14 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
         SelectedElementId = elementId;
         XamlSourceGenHotDesignTool.SelectElement(buildUri, elementId);
-        RefreshWorkspace();
+        if (documentChanged)
+        {
+            RefreshAll();
+        }
+        else
+        {
+            RefreshWorkspace();
+        }
     }
 
     public bool TryHandleLiveSurfacePointerPressed(object? pointerSource)
@@ -709,10 +717,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
             _sourceProperties = snapshot.Properties;
             RefreshPropertiesForCurrentSelection(selectedElement);
-
-            var selectedProperty = Properties.FirstOrDefault(property =>
-                string.Equals(property.Name, PropertyName, StringComparison.OrdinalIgnoreCase));
-            SelectedProperty = selectedProperty;
+            SynchronizeSelectedPropertySelection();
 
             StatusMessage = snapshot.Status.IsEnabled
                 ? "Hot Design active. Documents=" + snapshot.Documents.Count + ", Elements=" + DisplayElements.Count + "."
@@ -767,6 +772,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         if (wasUsingLiveElementTree)
         {
             RefreshDisplayElements(SelectedElementId);
+            RefreshPropertiesForCurrentSelection(_selectedElement);
+            SynchronizeSelectedPropertySelection();
         }
     }
 
@@ -824,6 +831,13 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         ReplaceCollection(Properties, pinnedProperties, PropertyEntryEquals);
         RebuildPropertyFilters();
         RefreshFilteredProperties();
+    }
+
+    private void SynchronizeSelectedPropertySelection()
+    {
+        var selectedProperty = Properties.FirstOrDefault(property =>
+            string.Equals(property.Name, PropertyName, StringComparison.OrdinalIgnoreCase));
+        SelectedProperty = selectedProperty;
     }
 
     private bool TryResolveLiveControl(SourceGenHotDesignElementNode element, out Control? liveControl)
