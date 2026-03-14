@@ -592,6 +592,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 document: context.Document,
                 options: context.Options,
                 compiledBindings: context.CompiledBindings,
+                unsafeAccessors: context.UnsafeAccessors,
                 inheritedCompileBindingsEnabled: rootCompileBindings,
                 inheritedDataType: rootDataType,
                 inheritedSetterTargetType: null,
@@ -663,7 +664,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 context.Compilation,
                 context.Diagnostics,
                 context.Options,
-                context.CompiledBindings);
+                context.CompiledBindings,
+                context.UnsafeAccessors);
         }
     }
 
@@ -686,7 +688,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 context.Compilation,
                 context.Diagnostics,
                 context.Options,
-                context.CompiledBindings);
+                context.CompiledBindings,
+                context.UnsafeAccessors);
         }
     }
 
@@ -731,6 +734,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 document: context.Document,
                 options: context.Options,
                 compiledBindings: context.CompiledBindings,
+                unsafeAccessors: context.UnsafeAccessors,
                 inheritedCompileBindingsEnabled: context.Document.RootObject.CompileBindings ?? context.Options.UseCompiledBindingsByDefault,
                 inheritedDataType: ResolveTypeFromTypeExpression(
                     context.Compilation,
@@ -775,6 +779,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 Resources: context.Resources,
                 Templates: context.Templates,
                 CompiledBindings: context.CompiledBindings.ToImmutable(),
+                UnsafeAccessors: context.UnsafeAccessors.ToImmutable(),
                 Styles: context.Styles,
                 ControlThemes: context.ControlThemes,
                 Includes: context.Includes,

@@ -353,6 +353,8 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 }
 
                 var lineInfo = (IXmlLineInfo)child;
+                var propertyElementTextContent = TryGetInlineTextContent(child);
+                var propertyElementRawTextContent = TryGetRawInlineTextContent(child);
                 propertyElements.Add(new XamlPropertyElement(
                     PropertyName: ExtractPropertyElementName(child.Name.LocalName),
                     ObjectValues: objectValues.ToImmutable(),
@@ -360,7 +362,9 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                         child.Name.NamespaceName,
                         conditionalNamespacesByRawUri),
                     Line: lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1,
-                    Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1));
+                    Column: lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1,
+                    TextContent: propertyElementTextContent,
+                    RawTextContent: propertyElementRawTextContent));
                 continue;
             }
 

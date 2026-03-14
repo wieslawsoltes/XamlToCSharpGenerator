@@ -331,6 +331,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine();
         }
 
+        EmitUnsafeAccessorMethods(sourceBuilder, viewModel.UnsafeAccessors);
         EmitCompiledBindingAccessorMethods(sourceBuilder, compiledBindingAccessorEmissionPlan);
         sourceBuilder.AppendLine("        private static object? __CompiledBindingAccessor(int __index, object __source)");
         sourceBuilder.AppendLine("        {");
@@ -505,6 +506,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         estimate += viewModel.Resources.Length * 220;
         estimate += viewModel.Templates.Length * 220;
         estimate += viewModel.CompiledBindings.Length * 180;
+        estimate += viewModel.UnsafeAccessors.Length * 160;
         estimate += viewModel.Styles.Length * 220;
         estimate += viewModel.ControlThemes.Length * 260;
         estimate += viewModel.Includes.Length * 180;
@@ -3153,6 +3155,42 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine(
                 $"            return __CompiledBindingAccessor({method.CompiledBindingIndex}, source);");
             sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+        }
+    }
+
+    private static void EmitUnsafeAccessorMethods(
+        StringBuilder sourceBuilder,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition> unsafeAccessors)
+    {
+        if (unsafeAccessors.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        foreach (var unsafeAccessor in unsafeAccessors
+                     .GroupBy(static accessor => accessor.MethodName, StringComparer.Ordinal)
+                     .Select(static group => group.First())
+                     .OrderBy(static accessor => accessor.MethodName, StringComparer.Ordinal))
+        {
+            sourceBuilder.AppendLine(
+                $"        [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Method, Name = \"{Escape(unsafeAccessor.UnsafeAccessorTargetName)}\")]");
+            sourceBuilder.Append("        private static extern ");
+            sourceBuilder.Append(unsafeAccessor.ReturnTypeName);
+            sourceBuilder.Append(' ');
+            sourceBuilder.Append(unsafeAccessor.MethodName);
+            sourceBuilder.Append('(');
+            sourceBuilder.Append(unsafeAccessor.DeclaringTypeName);
+            sourceBuilder.Append(" __instance");
+            for (var index = 0; index < unsafeAccessor.ParameterTypeNames.Length; index++)
+            {
+                sourceBuilder.Append(", ");
+                sourceBuilder.Append(unsafeAccessor.ParameterTypeNames[index]);
+                sourceBuilder.Append(" __arg");
+                sourceBuilder.Append(index.ToString(CultureInfo.InvariantCulture));
+            }
+
+            sourceBuilder.AppendLine(");");
             sourceBuilder.AppendLine();
         }
     }

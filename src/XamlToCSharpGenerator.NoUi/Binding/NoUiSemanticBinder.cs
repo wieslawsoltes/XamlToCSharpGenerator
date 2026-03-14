@@ -43,6 +43,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
             Resources: ImmutableArray<ResolvedResourceDefinition>.Empty,
             Templates: ImmutableArray<ResolvedTemplateDefinition>.Empty,
             CompiledBindings: ImmutableArray<ResolvedCompiledBindingDefinition>.Empty,
+            UnsafeAccessors: ImmutableArray<ResolvedUnsafeAccessorDefinition>.Empty,
             Styles: ImmutableArray<ResolvedStyleDefinition>.Empty,
             ControlThemes: ImmutableArray<ResolvedControlThemeDefinition>.Empty,
             Includes: ImmutableArray<ResolvedIncludeDefinition>.Empty,
