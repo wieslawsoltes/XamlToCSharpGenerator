@@ -112,6 +112,65 @@ public class XamlSourceGenStudioViewTests
     }
 
     [AvaloniaFact]
+    public void StudioOverlayView_InteractiveMode_Stops_LayoutRefresh_Work()
+    {
+        ResetRuntimeState();
+        EnsureFluentTheme();
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        var overlay = new XamlSourceGenStudioOverlayView(
+            liveAppContent: new Border
+            {
+                Child = new TextBlock
+                {
+                    Text = "Live surface"
+                }
+            },
+            liveSurfaceDataContextSource: null)
+        {
+            DataContext = viewModel
+        };
+
+        var window = new Window
+        {
+            Width = 1280,
+            Height = 900,
+            Content = overlay
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            InvokePrivateMethod(overlay, "ScheduleLayoutRefresh");
+            Assert.True(GetLayoutRefreshTimer(overlay)?.IsEnabled);
+            Assert.True(GetPrivateBool(overlay, "_layoutRefreshRequested"));
+
+            viewModel.WorkspaceMode = SourceGenHotDesignWorkspaceMode.Interactive;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(GetLayoutRefreshTimer(overlay)?.IsEnabled ?? false);
+            Assert.False(GetPrivateBool(overlay, "_layoutRefreshRequested"));
+
+            InvokePrivateMethod(overlay, "OnLiveLayerLayoutUpdated", overlay, EventArgs.Empty);
+
+            Assert.False(GetLayoutRefreshTimer(overlay)?.IsEnabled ?? false);
+            Assert.False(GetPrivateBool(overlay, "_layoutRefreshRequested"));
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            ResetRuntimeState();
+        }
+    }
+
+    [AvaloniaFact]
     public void UpdateLiveElementTree_Does_Not_Republish_Equivalent_Projection()
     {
         ResetRuntimeState();
@@ -202,6 +261,31 @@ public class XamlSourceGenStudioViewTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(field);
         return Assert.IsType<int>(field!.GetValue(viewModel));
+    }
+
+    private static DispatcherTimer? GetLayoutRefreshTimer(XamlSourceGenStudioOverlayView overlay)
+    {
+        var field = typeof(XamlSourceGenStudioOverlayView).GetField(
+            "_layoutRefreshTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return field!.GetValue(overlay) as DispatcherTimer;
+    }
+
+    private static bool GetPrivateBool(XamlSourceGenStudioOverlayView overlay, string fieldName)
+    {
+        var field = typeof(XamlSourceGenStudioOverlayView).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return Assert.IsType<bool>(field!.GetValue(overlay));
+    }
+
+    private static void InvokePrivateMethod(object instance, string methodName, params object?[]? arguments)
+    {
+        var method = instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        _ = method.Invoke(instance, arguments);
     }
 
     private static void EnsureFluentTheme()

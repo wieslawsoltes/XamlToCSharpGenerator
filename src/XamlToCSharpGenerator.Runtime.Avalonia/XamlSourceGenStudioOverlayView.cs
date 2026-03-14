@@ -781,12 +781,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        if (_layoutRefreshTimer is not null)
-        {
-            _layoutRefreshTimer.Stop();
-            _layoutRefreshTimer = null;
-        }
-        _layoutRefreshRequested = false;
+        StopLayoutRefreshTimer(dispose: true);
 
         if (_liveLayer is not null)
         {
@@ -836,6 +831,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         if (interactive)
         {
+            StopLayoutRefreshTimer();
             _hoveredControl = null;
             _selectedControl = null;
             HideAdorners();
@@ -901,6 +897,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnLiveLayerLayoutUpdated(object? sender, EventArgs e)
     {
+        if (_viewModel?.IsInteractiveMode != false)
+        {
+            StopLayoutRefreshTimer();
+            return;
+        }
+
         ScheduleLayoutRefresh();
     }
 
@@ -921,6 +923,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnLayoutRefreshTimerTick(object? sender, EventArgs e)
     {
+        if (_viewModel?.IsInteractiveMode != false)
+        {
+            StopLayoutRefreshTimer();
+            return;
+        }
+
         if (_layoutRefreshTimer is not null)
         {
             if (!_layoutRefreshRequested)
@@ -955,7 +963,6 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         if (_viewModel.IsInteractiveMode)
         {
-            _viewModel.ClearLiveElementTree();
             return;
         }
 
@@ -993,7 +1000,19 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void SynchronizeSelectionFromWorkspace()
     {
-        if (_viewModel?.SelectedElement is null)
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_viewModel.IsInteractiveMode)
+        {
+            _selectedControl = null;
+            RefreshSelectionAdorner();
+            return;
+        }
+
+        if (_viewModel.SelectedElement is null)
         {
             return;
         }
@@ -1008,6 +1027,20 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         _selectedControl = matched;
         RefreshSelectionAdorner();
+    }
+
+    private void StopLayoutRefreshTimer(bool dispose = false)
+    {
+        if (_layoutRefreshTimer is not null)
+        {
+            _layoutRefreshTimer.Stop();
+            if (dispose)
+            {
+                _layoutRefreshTimer = null;
+            }
+        }
+
+        _layoutRefreshRequested = false;
     }
 
     private Control? TryFindLiveControlForElement(SourceGenHotDesignElementNode element)
