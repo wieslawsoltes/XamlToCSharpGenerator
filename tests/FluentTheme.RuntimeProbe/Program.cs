@@ -63,6 +63,7 @@ try
         report);
     ProbeWindowTemplateOverlayMaterialization(fluentTheme, report);
     ProbeTextBoxInteractionStates(fluentTheme, "TextBoxStates", report);
+    ProbeSliderInteractionStates(fluentTheme, "SliderStates", report);
 
     ProbeResource(fluentTheme, "ButtonPadding", "Resource.ButtonPadding.Default", report);
     ProbeResource(fluentTheme, "SystemControlForegroundBaseHighBrush", "Resource.SystemControlForegroundBaseHighBrush.Default", report);
@@ -70,6 +71,9 @@ try
     ProbeResource(fluentTheme, "TextControlBorderBrushFocused", "Resource.TextControlBorderBrushFocused.Default", report);
     ProbeResource(fluentTheme, "TextControlSelectionHighlightColor", "Resource.TextControlSelectionHighlightColor.Default", report);
     ProbeResource(fluentTheme, "ToggleButtonBackgroundChecked", "Resource.ToggleButtonBackgroundChecked.Default", report);
+    ProbeResource(fluentTheme, "SliderThumbBackgroundPointerOver", "Resource.SliderThumbBackgroundPointerOver.Default", report);
+    ProbeResource(fluentTheme, "SliderThumbBackgroundPressed", "Resource.SliderThumbBackgroundPressed.Default", report);
+    ProbeResource(fluentTheme, "ToggleButtonBackgroundCheckedPointerOver", "Resource.ToggleButtonBackgroundCheckedPointerOver.Default", report);
     ProbeResource(fluentTheme, "HorizontalMenuFlyoutPresenter", "Resource.HorizontalMenuFlyoutPresenter.Default", report);
     ProbeDirectGeneratedLoad(
         "avares://Avalonia.Themes.Fluent/Controls/Button.xaml",
@@ -366,6 +370,77 @@ static void ProbeTextBoxInteractionStates(
     }
 }
 
+static void ProbeSliderInteractionStates(
+    IResourceNode node,
+    string prefix,
+    IDictionary<string, string> report)
+{
+    if (!TryGetResource(node, typeof(Slider), out var value) ||
+        value is not ControlTheme controlTheme)
+    {
+        report[$"{prefix}.ThemeFound"] = "false";
+        return;
+    }
+
+    report[$"{prefix}.ThemeFound"] = "true";
+
+    try
+    {
+        var slider = new ProbeSlider
+        {
+            Theme = controlTheme,
+            Value = 50,
+            Width = 240
+        };
+        var hostWindow = new Window
+        {
+            Width = 320,
+            Height = 120,
+            Content = slider
+        };
+
+        INameScope? templateNameScope = null;
+        slider.TemplateApplied += (_, e) => templateNameScope = e.NameScope;
+        hostWindow.Show();
+        slider.ApplyTemplate();
+        report[$"{prefix}.TemplateFound"] = (templateNameScope is not null).ToString().ToLowerInvariant();
+
+        var container = templateNameScope?.Find<Grid>("SliderContainer");
+        var track = templateNameScope?.Find<Track>("PART_Track");
+        var decreaseButton = templateNameScope?.Find<RepeatButton>("PART_DecreaseButton");
+        var increaseButton = templateNameScope?.Find<RepeatButton>("PART_IncreaseButton");
+        var thumb = track?.Thumb;
+
+        report[$"{prefix}.ContainerFound"] = (container is not null).ToString().ToLowerInvariant();
+        report[$"{prefix}.TrackFound"] = (track is not null).ToString().ToLowerInvariant();
+        report[$"{prefix}.DecreaseFound"] = (decreaseButton is not null).ToString().ToLowerInvariant();
+        report[$"{prefix}.IncreaseFound"] = (increaseButton is not null).ToString().ToLowerInvariant();
+        report[$"{prefix}.ThumbFound"] = (thumb is not null).ToString().ToLowerInvariant();
+        if (container is null || decreaseButton is null || increaseButton is null || thumb is null)
+        {
+            hostWindow.Close();
+            return;
+        }
+
+        CaptureSliderState(prefix, "Default", container, decreaseButton, increaseButton, thumb, report);
+
+        slider.SetPseudoClass(":pointerover", true);
+        CaptureSliderState(prefix, "PointerOver", container, decreaseButton, increaseButton, thumb, report);
+        slider.SetPseudoClass(":pointerover", false);
+
+        slider.SetPseudoClass(":pressed", true);
+        CaptureSliderState(prefix, "Pressed", container, decreaseButton, increaseButton, thumb, report);
+        slider.SetPseudoClass(":pressed", false);
+
+        hostWindow.Close();
+    }
+    catch (Exception ex)
+    {
+        report[$"{prefix}.Exception.Type"] = ex.GetType().FullName ?? ex.GetType().Name;
+        report[$"{prefix}.Exception.Message"] = ex.Message;
+    }
+}
+
 static void CaptureState(
     string prefix,
     string stateName,
@@ -377,6 +452,21 @@ static void CaptureState(
     report[$"{prefix}.{stateName}.BorderBrush"] = SummarizeValue(border.BorderBrush);
     report[$"{prefix}.{stateName}.BorderThickness"] = SummarizeValue(border.BorderThickness);
     report[$"{prefix}.{stateName}.WatermarkForeground"] = SummarizeValue(watermark.Foreground);
+}
+
+static void CaptureSliderState(
+    string prefix,
+    string stateName,
+    Grid container,
+    RepeatButton decreaseButton,
+    RepeatButton increaseButton,
+    Thumb thumb,
+    IDictionary<string, string> report)
+{
+    report[$"{prefix}.{stateName}.ContainerBackground"] = SummarizeValue(container.Background);
+    report[$"{prefix}.{stateName}.DecreaseBackground"] = SummarizeValue(decreaseButton.Background);
+    report[$"{prefix}.{stateName}.IncreaseBackground"] = SummarizeValue(increaseButton.Background);
+    report[$"{prefix}.{stateName}.ThumbBackground"] = SummarizeValue(thumb.Background);
 }
 
 static bool TryGetResource(IResourceNode node, object key, out object? value)
@@ -437,6 +527,14 @@ static string SummarizeValue(object? value)
 }
 
 sealed class ProbeTextBox : TextBox
+{
+    public void SetPseudoClass(string pseudoClass, bool value)
+    {
+        PseudoClasses.Set(pseudoClass, value);
+    }
+}
+
+sealed class ProbeSlider : Slider
 {
     public void SetPseudoClass(string pseudoClass, bool value)
     {
