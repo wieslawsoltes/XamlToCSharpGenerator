@@ -1371,6 +1371,7 @@ public static class XamlSourceGenHotReloadManager
             reloadAction,
             new SourceGenHotDesignRegistrationOptions
             {
+                TrackingType = trackingType,
                 BuildUri = buildUri,
                 SourcePath = sourcePath,
                 DocumentRole = documentRole,

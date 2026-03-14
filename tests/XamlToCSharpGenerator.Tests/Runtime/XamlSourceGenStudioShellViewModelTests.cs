@@ -413,6 +413,63 @@ public class XamlSourceGenStudioShellViewModelTests
     }
 
     [Fact]
+    public void ClearLiveElementTree_Falls_Back_To_Source_DisplayElements()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.LiveFallback.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+            var liveRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.True(liveRoot.IsLive);
+
+            viewModel.ClearLiveElementTree();
+
+            var sourceRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.False(sourceRoot.IsLive);
+            Assert.Equal("0", sourceRoot.Id);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
     public void RefreshCommand_Does_Not_Republish_Unchanged_Workspace_Collections()
     {
         ResetRuntimeState();

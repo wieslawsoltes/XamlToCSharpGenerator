@@ -111,7 +111,7 @@ public static class XamlSourceGenHotDesignManager
             throw new ArgumentException("BuildUri must be provided.", nameof(options));
         }
 
-        var trackedType = NormalizeType(instance.GetType());
+        var trackedType = NormalizeType(options.TrackingType ?? instance.GetType());
         var normalizedBuildUri = options.BuildUri.Trim();
         var normalizedSourcePath = NormalizeSourcePath(options.SourcePath);
         var normalizedScopeHints = NormalizeScopeHints(options.ScopeHints);

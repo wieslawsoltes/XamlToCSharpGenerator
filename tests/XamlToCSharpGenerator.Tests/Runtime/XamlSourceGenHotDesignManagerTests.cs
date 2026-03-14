@@ -86,6 +86,42 @@ public class XamlSourceGenHotDesignManagerTests
     }
 
     [Fact]
+    public void HotReload_Register_Mirror_Preserves_Explicit_Tracking_Type()
+    {
+        ResetManager();
+
+        XamlSourceGenHotReloadManager.Register(
+            new global::Avalonia.Controls.ResourceDictionary(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(HotReloadMirrorDictionaryA),
+                BuildUri = "avares://tests/HotReloadMirrorA.axaml",
+                SourcePath = "/tmp/HotReloadMirrorA.axaml"
+            });
+
+        XamlSourceGenHotReloadManager.Register(
+            new global::Avalonia.Controls.ResourceDictionary(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(HotReloadMirrorDictionaryB),
+                BuildUri = "avares://tests/HotReloadMirrorB.axaml",
+                SourcePath = "/tmp/HotReloadMirrorB.axaml"
+            });
+
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
+            .OrderBy(static document => document.BuildUri, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.Equal(2, documents.Length);
+        Assert.Equal(typeof(HotReloadMirrorDictionaryA), documents[0].RootType);
+        Assert.Equal("avares://tests/HotReloadMirrorA.axaml", documents[0].BuildUri);
+        Assert.Equal(typeof(HotReloadMirrorDictionaryB), documents[1].RootType);
+        Assert.Equal("avares://tests/HotReloadMirrorB.axaml", documents[1].BuildUri);
+    }
+
+    [Fact]
     public void ApplyUpdate_RuntimeOnly_Uses_RuntimeApply_Action()
     {
         ResetManager();
@@ -292,6 +328,14 @@ public class XamlSourceGenHotDesignManagerTests
     private sealed class HotDesignTarget
     {
         public int ApplyCount { get; set; }
+    }
+
+    private sealed class HotReloadMirrorDictionaryA : global::Avalonia.Controls.ResourceDictionary
+    {
+    }
+
+    private sealed class HotReloadMirrorDictionaryB : global::Avalonia.Controls.ResourceDictionary
+    {
     }
 
     private sealed class RecordingHotDesignApplier : ISourceGenHotDesignUpdateApplier

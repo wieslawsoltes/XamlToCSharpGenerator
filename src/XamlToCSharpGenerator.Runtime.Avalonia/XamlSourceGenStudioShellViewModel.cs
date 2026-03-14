@@ -757,13 +757,14 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public void ClearLiveElementTree()
     {
         _liveRootControlReference = null;
+        var wasUsingLiveElementTree = ShouldUseLiveElementTree();
         if (_liveElements.Count == 0)
         {
             return;
         }
 
         _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
-        if (ShouldUseLiveElementTree())
+        if (wasUsingLiveElementTree)
         {
             RefreshDisplayElements(SelectedElementId);
         }
