@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
+    <ProjectReference Include="..\..\samples\ControlCatalog\ControlCatalog.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('..\..\src\XamlToCSharpGenerator.LanguageServer\XamlToCSharpGenerator.LanguageServer.csproj')">
