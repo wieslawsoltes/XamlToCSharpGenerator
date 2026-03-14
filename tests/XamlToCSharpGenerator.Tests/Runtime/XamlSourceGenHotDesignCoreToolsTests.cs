@@ -108,6 +108,52 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void WorkspaceSnapshot_Uses_Resolved_Document_BuildUri_When_Requested_Uri_Is_Stale()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Button Name=""ActionButton"" Content=""Run"" />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        var staleBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(staleBuildUri);
+
+            Assert.Equal(buildUri, snapshot.ActiveBuildUri);
+            var root = Assert.Single(snapshot.Elements);
+            Assert.Equal(buildUri, root.SourceBuildUri);
+
+            var followupSnapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot();
+            Assert.Equal(buildUri, followupSnapshot.ActiveBuildUri);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public void WorkspaceSnapshot_AllPropertyMode_Includes_Default_Metadata()
     {
         ResetRuntimeState();

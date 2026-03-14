@@ -130,6 +130,16 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         var selectedDocument = ResolveDocument(documents, currentActiveBuildUri, null, null);
+        if (selectedDocument is not null &&
+            !string.Equals(currentActiveBuildUri, selectedDocument.BuildUri, StringComparison.OrdinalIgnoreCase))
+        {
+            currentActiveBuildUri = selectedDocument.BuildUri;
+            lock (Sync)
+            {
+                ActiveBuildUri = currentActiveBuildUri;
+            }
+        }
+
         var currentText = TryReadCurrentXamlDocument(
             selectedDocument,
             status.Options.MaxHistoryEntries,
