@@ -341,7 +341,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var status = XamlSourceGenHotDesignManager.GetStatus();
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
-        var document = ResolveDocument(documents, buildUri, targetType: null, targetTypeName: null);
+        var document = FindDocumentByBuildUri(documents, buildUri);
         if (!TryReadCurrentXamlDocument(document, status.Options.MaxHistoryEntries, out var xamlDocument, out _))
         {
             return false;
@@ -1642,6 +1642,20 @@ public static class XamlSourceGenHotDesignCoreTools
         collector.Add(type);
     }
 
+    private static SourceGenHotDesignDocumentDescriptor? FindDocumentByBuildUri(
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents,
+        string? buildUri)
+    {
+        if (string.IsNullOrWhiteSpace(buildUri))
+        {
+            return null;
+        }
+
+        var normalizedBuildUri = buildUri.Trim();
+        return documents.FirstOrDefault(document =>
+            string.Equals(document.BuildUri, normalizedBuildUri, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryResolveDocument(string? buildUri, Type? targetType, string? targetTypeName, out SourceGenHotDesignDocumentDescriptor? document)
     {
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
@@ -1664,9 +1678,7 @@ public static class XamlSourceGenHotDesignCoreTools
     {
         if (!string.IsNullOrWhiteSpace(buildUri))
         {
-            var normalizedBuildUri = buildUri.Trim();
-            var byBuildUri = documents.FirstOrDefault(document =>
-                string.Equals(document.BuildUri, normalizedBuildUri, StringComparison.OrdinalIgnoreCase));
+            var byBuildUri = FindDocumentByBuildUri(documents, buildUri);
             if (byBuildUri is not null)
             {
                 return byBuildUri;

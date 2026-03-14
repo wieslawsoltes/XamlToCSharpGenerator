@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
 
@@ -70,6 +71,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private string? _lastProjectedSelectedSourceElementId;
     private string? _lastProjectedSearchText;
     private SourceGenHotDesignHitTestMode _lastProjectedHitTestMode;
+    private int _lastProjectedLiveTreeStamp;
     private int _liveProjectionBuildCount;
     private string? _selectedLiveElementId;
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
@@ -914,7 +916,9 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return false;
         }
 
+        var liveTreeStamp = ComputeLiveTreeStamp(liveRootControl, hitTestMode);
         return hitTestMode == _lastProjectedHitTestMode &&
+               liveTreeStamp == _lastProjectedLiveTreeStamp &&
                string.Equals(buildUri, _lastProjectedBuildUri, StringComparison.OrdinalIgnoreCase) &&
                string.Equals(selectedSourceElementId, _lastProjectedSelectedSourceElementId, StringComparison.Ordinal) &&
                string.Equals(searchText, _lastProjectedSearchText, StringComparison.Ordinal);
@@ -932,6 +936,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         _lastProjectedSelectedSourceElementId = selectedSourceElementId;
         _lastProjectedSearchText = searchText;
         _lastProjectedHitTestMode = hitTestMode;
+        _lastProjectedLiveTreeStamp = ComputeLiveTreeStamp(liveRootControl, hitTestMode);
     }
 
     private void InvalidateProjectedLiveTree()
@@ -940,6 +945,57 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         _lastProjectedBuildUri = null;
         _lastProjectedSelectedSourceElementId = null;
         _lastProjectedSearchText = null;
+        _lastProjectedLiveTreeStamp = 0;
+    }
+
+    private static int ComputeLiveTreeStamp(Control liveRootControl, SourceGenHotDesignHitTestMode hitTestMode)
+    {
+        var hash = new HashCode();
+        hash.Add((int)hitTestMode);
+
+        var stack = new Stack<(Control Control, int SiblingIndex)>();
+        stack.Push((liveRootControl, 0));
+
+        while (stack.Count > 0)
+        {
+            var (control, siblingIndex) = stack.Pop();
+            hash.Add(siblingIndex);
+            hash.Add(control.GetType().FullName, StringComparer.Ordinal);
+            hash.Add(control.Name, StringComparer.Ordinal);
+
+            var children = EnumerateLiveTreeChildren(control, hitTestMode).ToArray();
+            hash.Add(children.Length);
+            for (var index = children.Length - 1; index >= 0; index--)
+            {
+                stack.Push((children[index], index));
+            }
+        }
+
+        return hash.ToHashCode();
+    }
+
+    private static IEnumerable<Control> EnumerateLiveTreeChildren(Control control, SourceGenHotDesignHitTestMode hitTestMode)
+    {
+        if (hitTestMode == SourceGenHotDesignHitTestMode.Logical)
+        {
+            foreach (var child in ((ILogical)control).GetLogicalChildren())
+            {
+                if (child is Control childControl)
+                {
+                    yield return childControl;
+                }
+            }
+
+            yield break;
+        }
+
+        foreach (var visualChild in control.GetVisualChildren())
+        {
+            if (visualChild is Control childControl)
+            {
+                yield return childControl;
+            }
+        }
     }
 
     private bool ShouldUseLiveElementTree()

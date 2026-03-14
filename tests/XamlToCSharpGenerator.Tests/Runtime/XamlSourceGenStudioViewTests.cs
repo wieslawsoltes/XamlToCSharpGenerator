@@ -155,6 +155,46 @@ public class XamlSourceGenStudioViewTests
         }
     }
 
+    [AvaloniaFact]
+    public void UpdateLiveElementTree_Rebuilds_When_Same_Root_Instance_Mutates()
+    {
+        ResetRuntimeState();
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        var root = new StackPanel
+        {
+            Name = "RootPanel",
+            Children =
+            {
+                new Button
+                {
+                    Name = "ActionButton",
+                    Content = "Run"
+                }
+            }
+        };
+
+        viewModel.UpdateLiveElementTree(root);
+
+        var initialRootNode = Assert.Single(viewModel.DisplayElements);
+        Assert.Single(initialRootNode.Children);
+        var initialBuildCount = GetLiveProjectionBuildCount(viewModel);
+
+        root.Children.Insert(0, new TextBlock
+        {
+            Name = "InsertedLabel",
+            Text = "Inserted"
+        });
+
+        viewModel.UpdateLiveElementTree(root);
+
+        var updatedRootNode = Assert.Single(viewModel.DisplayElements);
+        Assert.Equal(2, updatedRootNode.Children.Count);
+        Assert.Equal(initialBuildCount + 1, GetLiveProjectionBuildCount(viewModel));
+
+        ResetRuntimeState();
+    }
+
     private static int GetLiveProjectionBuildCount(XamlSourceGenStudioShellViewModel viewModel)
     {
         var field = typeof(XamlSourceGenStudioShellViewModel).GetField(

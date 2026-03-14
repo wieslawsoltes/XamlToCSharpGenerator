@@ -295,6 +295,48 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void TryBuildElementTreeForDocument_Requires_Exact_BuildUri_Match()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel x:Name=""RootPanel"">
+    <Button x:Name=""ActionButton"" Content=""Run"" />
+  </StackPanel>
+</UserControl>");
+
+        var registeredBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        var missingBuildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = registeredBuildUri,
+                    SourcePath = sourcePath
+                });
+
+            var built = XamlSourceGenHotDesignCoreTools.TryBuildElementTreeForDocument(missingBuildUri, out var elements);
+
+            Assert.False(built);
+            Assert.Empty(elements);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public async Task ApplyPropertyUpdate_Supports_Undo_And_Redo()
     {
         ResetRuntimeState();
