@@ -840,19 +840,25 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return null;
         }
 
+        SourceGenHotDesignElementNode? selectedLive = null;
+        if (ShouldUseLiveElementTree() && !string.IsNullOrWhiteSpace(_selectedLiveElementId))
+        {
+            selectedLive = FindById(DisplayElements, _selectedLiveElementId);
+            if (selectedLive is not null && string.IsNullOrWhiteSpace(selectedLive.SourceElementId))
+            {
+                return selectedLive;
+            }
+        }
+
         var selected = FindBySourceElementId(DisplayElements, selectedElementId);
         if (selected is not null)
         {
             return selected;
         }
 
-        if (ShouldUseLiveElementTree() && !string.IsNullOrWhiteSpace(_selectedLiveElementId))
+        if (selectedLive is not null)
         {
-            var selectedLive = FindById(DisplayElements, _selectedLiveElementId);
-            if (selectedLive is not null)
-            {
-                return selectedLive;
-            }
+            return selectedLive;
         }
 
         return FindById(DisplayElements, selectedElementId);

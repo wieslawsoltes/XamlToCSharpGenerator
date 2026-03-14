@@ -17,7 +17,7 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioOverlayView : UserControl
 {
-    private const int LayoutRefreshDebounceMilliseconds = 120;
+    private const int LayoutRefreshIntervalMilliseconds = 120;
 
     private static readonly IBrush HoverAdornerBorderBrush = new SolidColorBrush(Color.FromArgb(255, 255, 195, 45));
     private static readonly IBrush HoverAdornerFillBrush = new SolidColorBrush(Color.FromArgb(28, 255, 195, 45));
@@ -43,6 +43,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private Control? _hoveredControl;
     private Control? _selectedControl;
     private DispatcherTimer? _layoutRefreshTimer;
+    private bool _layoutRefreshRequested;
 
     public XamlSourceGenStudioOverlayView(
         object? liveAppContent,
@@ -785,6 +786,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             _layoutRefreshTimer.Stop();
             _layoutRefreshTimer = null;
         }
+        _layoutRefreshRequested = false;
 
         if (_liveLayer is not null)
         {
@@ -905,24 +907,30 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private void ScheduleLayoutRefresh()
     {
         _layoutRefreshTimer ??= new DispatcherTimer(
-            TimeSpan.FromMilliseconds(LayoutRefreshDebounceMilliseconds),
+            TimeSpan.FromMilliseconds(LayoutRefreshIntervalMilliseconds),
             DispatcherPriority.Background,
             OnLayoutRefreshTimerTick);
 
-        if (_layoutRefreshTimer.IsEnabled)
-        {
-            _layoutRefreshTimer.Stop();
-        }
+        _layoutRefreshRequested = true;
 
-        _layoutRefreshTimer.Start();
+        if (!_layoutRefreshTimer.IsEnabled)
+        {
+            _layoutRefreshTimer.Start();
+        }
     }
 
     private void OnLayoutRefreshTimerTick(object? sender, EventArgs e)
     {
         if (_layoutRefreshTimer is not null)
         {
-            _layoutRefreshTimer.Stop();
+            if (!_layoutRefreshRequested)
+            {
+                _layoutRefreshTimer.Stop();
+                return;
+            }
         }
+
+        _layoutRefreshRequested = false;
 
         if (_liveLayer is null || _viewModel is null)
         {
@@ -931,6 +939,11 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         RefreshAdorners();
         RefreshLiveTreeProjection();
+
+        if (_layoutRefreshTimer is not null && !_layoutRefreshRequested)
+        {
+            _layoutRefreshTimer.Stop();
+        }
     }
 
     private void RefreshLiveTreeProjection()

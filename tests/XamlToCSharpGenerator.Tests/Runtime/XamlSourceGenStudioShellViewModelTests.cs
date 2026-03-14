@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Specialized;
 using System.IO;
+using System.Reflection;
 using Avalonia.Controls;
 using XamlToCSharpGenerator.Runtime;
 
@@ -572,6 +573,74 @@ public class XamlSourceGenStudioShellViewModelTests
     }
 
     [Fact]
+    public void RefreshDisplayElements_Preserves_RuntimeOnly_Live_Selection()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+
+        var runtimeOnlyLiveNode = new SourceGenHotDesignElementNode(
+            Id: "live:0/1",
+            DisplayName: "[Border]",
+            TypeName: "Border",
+            XamlName: null,
+            Classes: null,
+            Depth: 1,
+            IsSelected: false,
+            Line: 0,
+            Children: [],
+            IsExpanded: true,
+            DescendantCount: 0,
+            SourceBuildUri: null,
+            SourceElementId: null,
+            IsLive: true);
+
+        var sourceBackedLiveNode = new SourceGenHotDesignElementNode(
+            Id: "live:0/0",
+            DisplayName: "[TextBlock] StatusText",
+            TypeName: "TextBlock",
+            XamlName: "StatusText",
+            Classes: null,
+            Depth: 1,
+            IsSelected: false,
+            Line: 0,
+            Children: [],
+            IsExpanded: true,
+            DescendantCount: 0,
+            SourceBuildUri: "avares://tests/StudioShell.RuntimeOnlySelection.axaml",
+            SourceElementId: "0/0/1",
+            IsLive: true);
+
+        var liveRoot = new SourceGenHotDesignElementNode(
+            Id: "live:0",
+            DisplayName: "[StackPanel]",
+            TypeName: "StackPanel",
+            XamlName: null,
+            Classes: null,
+            Depth: 0,
+            IsSelected: false,
+            Line: 0,
+            Children: [sourceBackedLiveNode, runtimeOnlyLiveNode],
+            IsExpanded: true,
+            DescendantCount: 2,
+            SourceBuildUri: "avares://tests/StudioShell.RuntimeOnlySelection.axaml",
+            SourceElementId: "0/0",
+            IsLive: true);
+
+        SetPrivateField(viewModel, "_liveElements", new[] { liveRoot });
+        SetPrivateField(viewModel, "_selectedLiveElementId", runtimeOnlyLiveNode.Id);
+        viewModel.SelectedElementId = sourceBackedLiveNode.SourceElementId!;
+
+        InvokePrivateMethod(viewModel, "RefreshDisplayElements", viewModel.SelectedElementId);
+
+        Assert.NotNull(viewModel.SelectedElement);
+        Assert.Equal(runtimeOnlyLiveNode.Id, viewModel.SelectedElement!.Id);
+        Assert.Null(viewModel.SelectedElement.SourceElementId);
+    }
+
+    [Fact]
     public void ClearLiveElementTree_Clears_RuntimeOnly_Live_Properties_And_Selection()
     {
         ResetRuntimeState();
@@ -846,6 +915,20 @@ public class XamlSourceGenStudioShellViewModelTests
         }
 
         return null;
+    }
+
+    private static void InvokePrivateMethod(object instance, string methodName, params object?[]? arguments)
+    {
+        var method = instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        _ = method.Invoke(instance, arguments);
+    }
+
+    private static void SetPrivateField<T>(object instance, string fieldName, T value)
+    {
+        var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field.SetValue(instance, value);
     }
 
     private static string CreateTempXamlSource()
