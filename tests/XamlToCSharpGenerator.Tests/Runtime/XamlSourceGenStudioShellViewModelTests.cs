@@ -2,6 +2,7 @@ using System;
 using System.Collections.Specialized;
 using System.IO;
 using System.Reflection;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using XamlToCSharpGenerator.Runtime;
 
@@ -868,6 +869,115 @@ public class XamlSourceGenStudioShellViewModelTests
         }
     }
 
+    [Fact]
+    public async Task ApplyPropertyAsync_Uses_Studio_HotReload_Wait_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.PropertyWaitMode.axaml";
+        var studioOptions = new SourceGenStudioOptions
+        {
+            WaitMode = SourceGenStudioWaitMode.WaitForLocalOnly,
+            FallbackPolicy = SourceGenStudioFallbackPolicy.NoFallback,
+            UpdateTimeout = TimeSpan.FromSeconds(1)
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(studioOptions);
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
+            viewModel.PropertyName = "Text";
+            viewModel.PropertyValue = "Updated";
+
+            var publishTask = PublishHotReloadCompletionAsync(typeof(StudioTarget));
+            await InvokePrivateTaskAsync(viewModel, "ApplyPropertyAsync");
+            await publishTask;
+
+            var operation = Assert.Single(XamlSourceGenStudioManager.GetStatusSnapshot().Operations);
+            Assert.Null(operation.Request.WaitMode);
+            Assert.Null(operation.Request.PersistChangesToSource);
+            Assert.NotNull(operation.Result);
+            Assert.True(operation.Result!.LocalUpdateObserved);
+            Assert.Equal("Updated", File.ReadAllText(sourcePath).Contains("Text=\"Updated\"", StringComparison.Ordinal) ? "Updated" : "Missing");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public async Task InsertElementAsync_Uses_Studio_HotReload_Wait_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.InsertWaitMode.axaml";
+        var studioOptions = new SourceGenStudioOptions
+        {
+            WaitMode = SourceGenStudioWaitMode.WaitForLocalOnly,
+            FallbackPolicy = SourceGenStudioFallbackPolicy.NoFallback,
+            UpdateTimeout = TimeSpan.FromSeconds(1)
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(studioOptions);
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0");
+            viewModel.NewElementName = "Border";
+
+            var publishTask = PublishHotReloadCompletionAsync(typeof(StudioTarget));
+            await InvokePrivateTaskAsync(viewModel, "InsertElementAsync");
+            await publishTask;
+
+            var operation = Assert.Single(XamlSourceGenStudioManager.GetStatusSnapshot().Operations);
+            Assert.Null(operation.Request.WaitMode);
+            Assert.Null(operation.Request.PersistChangesToSource);
+            Assert.NotNull(operation.Result);
+            Assert.True(operation.Result!.LocalUpdateObserved);
+            Assert.Contains("<Border", File.ReadAllText(sourcePath), StringComparison.Ordinal);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
     private static void ResetRuntimeState()
     {
         XamlSourceGenStudioManager.Disable();
@@ -924,11 +1034,31 @@ public class XamlSourceGenStudioShellViewModelTests
         _ = method.Invoke(instance, arguments);
     }
 
+    private static async Task InvokePrivateTaskAsync(object instance, string methodName, params object?[]? arguments)
+    {
+        var method = instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        var result = method.Invoke(instance, arguments);
+        var task = Assert.IsAssignableFrom<Task>(result);
+        await task;
+    }
+
     private static void SetPrivateField<T>(object instance, string fieldName, T value)
     {
         var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(field);
         field.SetValue(instance, value);
+    }
+
+    private static async Task PublishHotReloadCompletionAsync(Type reloadedType)
+    {
+        await Task.Delay(100);
+        XamlSourceGenHotReloadEventBus.Instance.PublishPipelineCompleted(
+            new SourceGenHotReloadUpdateContext(
+                SourceGenHotReloadTrigger.MetadataUpdate,
+                requestedTypes: [reloadedType],
+                reloadedTypes: [reloadedType],
+                operationCount: 1));
     }
 
     private static string CreateTempXamlSource()

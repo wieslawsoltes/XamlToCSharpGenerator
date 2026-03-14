@@ -1214,9 +1214,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         {
             BuildUri = ActiveBuildUri,
             ParentElementId = SelectedElementId,
-            ElementName = elementName,
-            WaitForHotReload = false,
-            PersistChangesToSource = true
+            ElementName = elementName
         });
 
         StatusMessage = result.Message;
@@ -1246,9 +1244,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         var result = await XamlSourceGenHotDesignTool.RemoveElementAsync(new SourceGenHotDesignElementRemoveRequest
         {
             BuildUri = ActiveBuildUri,
-            ElementId = SelectedElementId,
-            WaitForHotReload = false,
-            PersistChangesToSource = true
+            ElementId = SelectedElementId
         });
 
         StatusMessage = result.Message;
@@ -1280,9 +1276,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             BuildUri = ActiveBuildUri,
             ElementId = SelectedElementId,
             PropertyName = PropertyName,
-            PropertyValue = PropertyValue,
-            WaitForHotReload = false,
-            PersistChangesToSource = true
+            PropertyValue = PropertyValue
         });
 
         StatusMessage = result.Message;
@@ -1308,9 +1302,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             BuildUri = ActiveBuildUri,
             ElementId = SelectedElementId,
             PropertyName = PropertyName,
-            RemoveProperty = true,
-            WaitForHotReload = false,
-            PersistChangesToSource = true
+            RemoveProperty = true
         });
 
         StatusMessage = result.Message;
