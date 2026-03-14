@@ -63,6 +63,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private IReadOnlyList<SourceGenHotDesignElementNode> _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
     private IReadOnlyList<SourceGenHotDesignPropertyEntry> _sourceProperties = Array.Empty<SourceGenHotDesignPropertyEntry>();
     private WeakReference<Control>? _liveRootControlReference;
+    private WeakReference<Control>? _lastProjectedLiveRootReference;
+    private string? _lastProjectedBuildUri;
+    private string? _lastProjectedSelectedSourceElementId;
+    private string? _lastProjectedSearchText;
+    private SourceGenHotDesignHitTestMode _lastProjectedHitTestMode;
+    private int _liveProjectionBuildCount;
     private string? _selectedLiveElementId;
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
     private SourceGenHotDesignPropertyFilterMode _propertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
@@ -572,6 +578,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     public void RefreshAll()
     {
+        InvalidateProjectedLiveTree();
         RefreshStudioStatus();
         RefreshWorkspace();
         RefreshCanvasPreview();
@@ -739,14 +746,35 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
-        _liveRootControlReference = new WeakReference<Control>(liveRootControl);
+        var preferredBuildUri = string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri;
+        var selectedSourceElementId = string.IsNullOrWhiteSpace(SelectedElementId) ? null : SelectedElementId;
+        var searchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText;
 
+        _liveRootControlReference = new WeakReference<Control>(liveRootControl);
+        if (CanReuseProjectedLiveTree(
+                liveRootControl,
+                preferredBuildUri,
+                selectedSourceElementId,
+                searchText,
+                HitTestMode))
+        {
+            return;
+        }
+
+        _liveProjectionBuildCount++;
         var projectedLiveElements = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
             liveRootControl,
             HitTestMode,
-            string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri,
-            string.IsNullOrWhiteSpace(SelectedElementId) ? null : SelectedElementId,
-            string.IsNullOrWhiteSpace(SearchText) ? null : SearchText);
+            preferredBuildUri,
+            selectedSourceElementId,
+            searchText);
+
+        CaptureProjectedLiveTreeInputs(
+            liveRootControl,
+            preferredBuildUri,
+            selectedSourceElementId,
+            searchText,
+            HitTestMode);
 
         if (LiveElementTreeEquals(_liveElements, projectedLiveElements))
         {
@@ -763,6 +791,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public void ClearLiveElementTree()
     {
         _liveRootControlReference = null;
+        InvalidateProjectedLiveTree();
         var wasUsingLiveElementTree = ShouldUseLiveElementTree();
         if (_liveElements.Count == 0)
         {
@@ -856,6 +885,48 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             element,
             string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri);
         return liveControl is not null;
+    }
+
+    private bool CanReuseProjectedLiveTree(
+        Control liveRootControl,
+        string? buildUri,
+        string? selectedSourceElementId,
+        string? searchText,
+        SourceGenHotDesignHitTestMode hitTestMode)
+    {
+        if (_lastProjectedLiveRootReference is null ||
+            !_lastProjectedLiveRootReference.TryGetTarget(out var lastProjectedRoot) ||
+            !ReferenceEquals(lastProjectedRoot, liveRootControl))
+        {
+            return false;
+        }
+
+        return hitTestMode == _lastProjectedHitTestMode &&
+               string.Equals(buildUri, _lastProjectedBuildUri, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(selectedSourceElementId, _lastProjectedSelectedSourceElementId, StringComparison.Ordinal) &&
+               string.Equals(searchText, _lastProjectedSearchText, StringComparison.Ordinal);
+    }
+
+    private void CaptureProjectedLiveTreeInputs(
+        Control liveRootControl,
+        string? buildUri,
+        string? selectedSourceElementId,
+        string? searchText,
+        SourceGenHotDesignHitTestMode hitTestMode)
+    {
+        _lastProjectedLiveRootReference = new WeakReference<Control>(liveRootControl);
+        _lastProjectedBuildUri = buildUri;
+        _lastProjectedSelectedSourceElementId = selectedSourceElementId;
+        _lastProjectedSearchText = searchText;
+        _lastProjectedHitTestMode = hitTestMode;
+    }
+
+    private void InvalidateProjectedLiveTree()
+    {
+        _lastProjectedLiveRootReference = null;
+        _lastProjectedBuildUri = null;
+        _lastProjectedSelectedSourceElementId = null;
+        _lastProjectedSearchText = null;
     }
 
     private bool ShouldUseLiveElementTree()

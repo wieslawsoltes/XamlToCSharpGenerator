@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Specialized;
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -139,17 +140,28 @@ public class XamlSourceGenStudioViewTests
 
             var initialChangeCount = collectionChanges;
             var initialRootNode = Assert.Single(viewModel.DisplayElements);
+            var initialBuildCount = GetLiveProjectionBuildCount(viewModel);
 
             viewModel.UpdateLiveElementTree(root);
 
             Assert.Equal(initialChangeCount, collectionChanges);
             Assert.Same(initialRootNode, Assert.Single(viewModel.DisplayElements));
+            Assert.Equal(initialBuildCount, GetLiveProjectionBuildCount(viewModel));
         }
         finally
         {
             viewModel.DisplayElements.CollectionChanged -= handler;
             ResetRuntimeState();
         }
+    }
+
+    private static int GetLiveProjectionBuildCount(XamlSourceGenStudioShellViewModel viewModel)
+    {
+        var field = typeof(XamlSourceGenStudioShellViewModel).GetField(
+            "_liveProjectionBuildCount",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return Assert.IsType<int>(field!.GetValue(viewModel));
     }
 
     private static void EnsureFluentTheme()
