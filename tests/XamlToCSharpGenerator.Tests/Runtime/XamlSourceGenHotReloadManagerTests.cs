@@ -82,6 +82,92 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task Register_MirrorRegistration_Remains_Blocked_During_Clear_Synchronization()
+    {
+        ResetManager();
+
+        using var registerEntered = new ManualResetEventSlim(false);
+        using var releaseRegister = new ManualResetEventSlim(false);
+        XamlSourceGenHotReloadManager.TestBeforeHotDesignMirrorRegistration = () =>
+        {
+            registerEntered.Set();
+            releaseRegister.Wait(TimeSpan.FromSeconds(5));
+        };
+
+        var registerTask = Task.Run(() =>
+            XamlSourceGenHotReloadManager.Register(
+                new HotReloadMirrorTarget(),
+                static _ => { },
+                new SourceGenHotReloadRegistrationOptions
+                {
+                    BuildUri = "avares://tests/ConcurrentMirrorRegister.axaml",
+                    SourcePath = "/tmp/ConcurrentMirrorRegister.axaml"
+                }));
+
+        Assert.True(registerEntered.Wait(TimeSpan.FromSeconds(5)));
+
+        var clearTask = Task.Run(XamlSourceGenHotReloadManager.ClearRegistrations);
+
+        await Task.Delay(100);
+        Assert.False(clearTask.IsCompleted);
+
+        releaseRegister.Set();
+
+        await registerTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await clearTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Empty(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+    }
+
+    [Fact]
+    public async Task ClearRegistrations_MirroredClear_Remains_Blocked_During_Register_Synchronization()
+    {
+        ResetManager();
+
+        XamlSourceGenHotReloadManager.Register(
+            new HotReloadMirrorTarget(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/ConcurrentMirrorClear.Initial.axaml",
+                SourcePath = "/tmp/ConcurrentMirrorClear.Initial.axaml"
+            });
+
+        using var clearEntered = new ManualResetEventSlim(false);
+        using var releaseClear = new ManualResetEventSlim(false);
+        XamlSourceGenHotReloadManager.TestBeforeMirroredHotDesignClear = () =>
+        {
+            clearEntered.Set();
+            releaseClear.Wait(TimeSpan.FromSeconds(5));
+        };
+
+        var clearTask = Task.Run(XamlSourceGenHotReloadManager.ClearRegistrations);
+
+        Assert.True(clearEntered.Wait(TimeSpan.FromSeconds(5)));
+
+        var registerTask = Task.Run(() =>
+            XamlSourceGenHotReloadManager.Register(
+                new HotReloadMirrorTarget(),
+                static _ => { },
+                new SourceGenHotReloadRegistrationOptions
+                {
+                    BuildUri = "avares://tests/ConcurrentMirrorClear.New.axaml",
+                    SourcePath = "/tmp/ConcurrentMirrorClear.New.axaml"
+                }));
+
+        await Task.Delay(100);
+        Assert.False(registerTask.IsCompleted);
+
+        releaseClear.Set();
+
+        await clearTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await registerTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var document = Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+        Assert.Equal("avares://tests/ConcurrentMirrorClear.New.axaml", document.BuildUri);
+    }
+
+    [Fact]
     public void UpdateApplication_Normalizes_Generic_Type_Keys()
     {
         ResetManager();
@@ -1312,12 +1398,17 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
 
     private static void ResetManager()
     {
+        XamlSourceGenHotReloadManager.ResetTestHooks();
         XamlSourceGenHotReloadManager.DisableIdePollingFallback();
+        XamlSourceGenHotDesignManager.Disable();
+        XamlSourceGenHotDesignManager.ClearRegistrations();
+        XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
         XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotReloadManager.ResetHandlersToDefaults();
         XamlIncludeGraphRegistry.Clear();
         XamlSourceGenArtifactRefreshRegistry.Clear();
         XamlSourceGenTypeUriRegistry.Clear();
+        XamlSourceGenHotDesignCoreTools.ResetWorkspace();
     }
 
     private static Type CreateDynamicType(string assemblyName, string typeFullName)
@@ -1404,6 +1495,10 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
     }
 
     private sealed class ArtifactRefreshTarget
+    {
+    }
+
+    private sealed class HotReloadMirrorTarget
     {
     }
 

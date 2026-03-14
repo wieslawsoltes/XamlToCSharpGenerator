@@ -58,6 +58,8 @@ public static class XamlSourceGenHotReloadManager
     private static bool MetadataHandshakePending;
     private static bool MetadataHandshakeCompleted;
     private static bool SuppressStatefulControlTreeStateTransfer;
+    internal static Action? TestBeforeHotDesignMirrorRegistration;
+    internal static Action? TestBeforeMirroredHotDesignClear;
 
     static XamlSourceGenHotReloadManager()
     {
@@ -164,14 +166,15 @@ public static class XamlSourceGenHotReloadManager
             {
                 BuildUrisByType[trackingType] = normalizedBuildUri;
             }
-        }
 
-        TryRegisterHotDesignMirror(
-            trackingType,
-            instance,
-            reloadAction,
-            normalizedBuildUri,
-            normalizedSourcePath);
+            TestBeforeHotDesignMirrorRegistration?.Invoke();
+            TryRegisterHotDesignMirror(
+                trackingType,
+                instance,
+                reloadAction,
+                normalizedBuildUri,
+                normalizedSourcePath);
+        }
     }
 
     public static void RegisterReplacementTypeMapping(Type replacementType, Type originalType)
@@ -225,9 +228,15 @@ public static class XamlSourceGenHotReloadManager
             ProcessedRemoteOperationIds.Clear();
             ProcessedRemoteOperationOrder.Clear();
             ResetTransportStateLocked();
+            TestBeforeMirroredHotDesignClear?.Invoke();
+            XamlSourceGenHotDesignManager.ClearMirroredRegistrations();
         }
+    }
 
-        XamlSourceGenHotDesignManager.ClearMirroredRegistrations();
+    internal static void ResetTestHooks()
+    {
+        TestBeforeHotDesignMirrorRegistration = null;
+        TestBeforeMirroredHotDesignClear = null;
     }
 
     public static void EnableIdePollingFallback(int intervalMs = 1000)
