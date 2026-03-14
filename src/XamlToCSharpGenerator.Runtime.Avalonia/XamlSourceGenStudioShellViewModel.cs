@@ -825,6 +825,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return null;
         }
 
+        var selected = FindBySourceElementId(DisplayElements, selectedElementId);
+        if (selected is not null)
+        {
+            return selected;
+        }
+
         if (ShouldUseLiveElementTree() && !string.IsNullOrWhiteSpace(_selectedLiveElementId))
         {
             var selectedLive = FindById(DisplayElements, _selectedLiveElementId);
@@ -832,12 +838,6 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             {
                 return selectedLive;
             }
-        }
-
-        var selected = FindBySourceElementId(DisplayElements, selectedElementId);
-        if (selected is not null)
-        {
-            return selected;
         }
 
         return FindById(DisplayElements, selectedElementId);

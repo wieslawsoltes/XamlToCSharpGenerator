@@ -426,6 +426,79 @@ public class XamlSourceGenStudioShellViewModelTests
     }
 
     [Fact]
+    public void Live_Mode_Prefers_Stable_Source_Selection_Over_Stale_Live_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.LiveSelectionStability.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+            var firstLiveButton = FindById(Assert.Single(viewModel.DisplayElements), "live:0/0");
+
+            viewModel.SelectedElement = firstLiveButton;
+
+            Assert.Equal("0/0/0", viewModel.SelectedElementId);
+            Assert.Equal("live:0/0", viewModel.SelectedElement!.Id);
+
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Border(),
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            Assert.NotNull(viewModel.SelectedElement);
+            Assert.Equal("Button", viewModel.SelectedElement!.TypeName);
+            Assert.Equal("0/0/0", viewModel.SelectedElement.SourceElementId);
+            Assert.Equal("live:0/1", viewModel.SelectedElement.Id);
+            Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
     public void Selecting_RuntimeOnly_Live_Node_Synchronizes_Selected_Property()
     {
         ResetRuntimeState();
