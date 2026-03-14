@@ -96,6 +96,63 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         }
     }
 
+    [AvaloniaFact]
+    public void BuildLiveTree_Assigns_Distinct_SourceElementIds_For_Duplicate_Unnamed_Siblings()
+    {
+        ResetRuntimeState();
+
+        var sourcePath = CreateTempDuplicateSiblingXamlSource();
+        const string buildUri = "avares://tests/StudioLiveTree.DuplicateSiblings.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var root = new UserControl
+            {
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        new Button { Content = "First" },
+                        new Button { Content = "Second" }
+                    }
+                }
+            };
+
+            var projected = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                preferredBuildUri: buildUri,
+                selectedSourceElementId: null);
+
+            var liveRoot = Assert.Single(projected);
+            var stackPanel = Assert.Single(liveRoot.Children);
+            Assert.Equal(2, stackPanel.Children.Count);
+            Assert.False(string.IsNullOrWhiteSpace(stackPanel.Children[0].SourceElementId));
+            Assert.False(string.IsNullOrWhiteSpace(stackPanel.Children[1].SourceElementId));
+            Assert.NotEqual(stackPanel.Children[0].SourceElementId, stackPanel.Children[1].SourceElementId);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
     [Fact]
     public void ResolveLiveControlForElement_Uses_Exact_Live_Node_Id_For_Duplicate_Type_Matches()
     {
@@ -132,6 +189,79 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
             preferredBuildUri: null);
 
         Assert.Same(firstBorder, resolved);
+    }
+
+    [AvaloniaFact]
+    public void ResolveLiveControlForElement_Uses_SourceElement_For_Duplicate_Unnamed_Siblings()
+    {
+        ResetRuntimeState();
+
+        var sourcePath = CreateTempDuplicateSiblingXamlSource();
+        const string buildUri = "avares://tests/StudioLiveTree.ResolveDuplicateSiblings.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            Assert.True(XamlSourceGenHotDesignCoreTools.TryBuildElementTreeForDocument(buildUri, out var sourceElements));
+            var sourceRoot = Assert.Single(sourceElements);
+            var sourceStackPanel = Assert.Single(sourceRoot.Children);
+            var secondSourceButton = sourceStackPanel.Children[1];
+
+            var firstButton = new Button { Content = "First" };
+            var secondButton = new Button { Content = "Second" };
+            var root = new UserControl
+            {
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        firstButton,
+                        secondButton
+                    }
+                }
+            };
+
+            var resolved = XamlSourceGenStudioLiveTreeProjectionService.ResolveLiveControlForElement(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                new SourceGenHotDesignElementNode(
+                    Id: secondSourceButton.Id,
+                    DisplayName: secondSourceButton.DisplayName,
+                    TypeName: secondSourceButton.TypeName,
+                    XamlName: secondSourceButton.XamlName,
+                    Classes: secondSourceButton.Classes,
+                    Depth: secondSourceButton.Depth,
+                    IsSelected: true,
+                    Line: secondSourceButton.Line,
+                    Children: secondSourceButton.Children,
+                    IsExpanded: secondSourceButton.IsExpanded,
+                    DescendantCount: secondSourceButton.DescendantCount,
+                    SourceBuildUri: buildUri,
+                    SourceElementId: secondSourceButton.Id,
+                    IsLive: false),
+                preferredBuildUri: buildUri);
+
+            Assert.Same(secondButton, resolved);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
     }
 
     private static SourceGenHotDesignElementNode? FindByName(SourceGenHotDesignElementNode node, string name)
@@ -174,6 +304,23 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
                 <StackPanel Name="RootPanel">
                     <Button Name="ActionButton" Content="Run" />
                     <TextBlock Name="StatusText" Text="Ready" />
+                </StackPanel>
+            </UserControl>
+            """;
+        File.WriteAllText(path, xaml);
+        return path;
+    }
+
+    private static string CreateTempDuplicateSiblingXamlSource()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioLiveTree-Duplicate-" + Guid.NewGuid().ToString("N") + ".axaml");
+        const string xaml =
+            """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                <StackPanel>
+                    <Button Content="First" />
+                    <Button Content="Second" />
                 </StackPanel>
             </UserControl>
             """;

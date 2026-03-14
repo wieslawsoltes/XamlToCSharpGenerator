@@ -31,8 +31,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
             mode,
             sourceLookupContext,
             selectedSourceElementId,
-            query,
-            sourceLookupContext.LookupCache);
+            query);
 
         if (root is null)
         {
@@ -61,6 +60,18 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
 
         if (!string.IsNullOrWhiteSpace(element.SourceElementId))
         {
+            if (mode == SourceGenHotDesignHitTestMode.Logical &&
+                TryResolveControlBySourceElementPath(
+                    rootControl,
+                    mode,
+                    element.SourceElementId,
+                    preferredBuildUri,
+                    element.SourceBuildUri,
+                    out var resolvedByPath))
+            {
+                return resolvedByPath;
+            }
+
             var resolvedBySourceElement = FindControlBySourceElement(
                 rootControl,
                 mode,
@@ -123,8 +134,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         SourceGenHotDesignHitTestMode mode,
         SourceElementLookupContext sourceLookupContext,
         string? selectedSourceElementId,
-        string? search,
-        Dictionary<string, (string? BuildUri, string? ElementId)> lookupCache)
+        string? search)
     {
         var children = EnumerateChildren(control, mode).ToArray();
         var childNodes = new List<SourceGenHotDesignElementNode>(children.Length);
@@ -138,15 +148,14 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
                 mode,
                 sourceLookupContext,
                 selectedSourceElementId,
-                search,
-                lookupCache);
+                search);
             if (childNode is not null)
             {
                 childNodes.Add(childNode);
             }
         }
 
-        var sourceMatch = ResolveSourceElement(control, mode, sourceLookupContext, lookupCache);
+        var sourceMatch = ResolveSourceElement(control, mode, sourceLookupContext, id);
         var sourceBuildUri = sourceMatch.BuildUri;
         var sourceElementId = sourceMatch.ElementId;
 
@@ -219,14 +228,12 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         string sourceElementId)
     {
         var lookupContext = CreateSourceLookupContext(preferredBuildUri ?? sourceBuildUri);
-        var lookupCache = new Dictionary<string, (string? BuildUri, string? ElementId)>(StringComparer.Ordinal);
         return FindControlBySourceElementCore(
             control,
             mode,
             lookupContext,
             sourceBuildUri,
-            sourceElementId,
-            lookupCache);
+            sourceElementId);
     }
 
     private static Control? FindControlBySourceElementCore(
@@ -234,10 +241,9 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         SourceGenHotDesignHitTestMode mode,
         SourceElementLookupContext lookupContext,
         string? sourceBuildUri,
-        string sourceElementId,
-        Dictionary<string, (string? BuildUri, string? ElementId)> lookupCache)
+        string sourceElementId)
     {
-        var match = ResolveSourceElement(control, mode, lookupContext, lookupCache);
+        var match = ResolveSourceElement(control, mode, lookupContext, liveNodeId: null);
         if (!string.IsNullOrWhiteSpace(match.ElementId) &&
             string.Equals(match.ElementId, sourceElementId, StringComparison.Ordinal) &&
             (string.IsNullOrWhiteSpace(sourceBuildUri) ||
@@ -253,8 +259,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
                 mode,
                 lookupContext,
                 sourceBuildUri,
-                sourceElementId,
-                lookupCache);
+                sourceElementId);
             if (resolved is not null)
             {
                 return resolved;
@@ -262,6 +267,78 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         }
 
         return null;
+    }
+
+    private static bool TryResolveControlBySourceElementPath(
+        Control rootControl,
+        SourceGenHotDesignHitTestMode mode,
+        string sourceElementId,
+        string? preferredBuildUri,
+        string? sourceBuildUri,
+        out Control? resolvedControl)
+    {
+        resolvedControl = null;
+        if (!TryResolveControlBySourceElementPathCore(rootControl, mode, sourceElementId, out var candidate))
+        {
+            return false;
+        }
+
+        if (candidate is null)
+        {
+            return false;
+        }
+
+        var lookupContext = CreateSourceLookupContext(preferredBuildUri ?? sourceBuildUri);
+        var match = ResolveSourceElement(candidate, mode, lookupContext, "live:" + sourceElementId);
+        if (string.IsNullOrWhiteSpace(match.ElementId) ||
+            !string.Equals(match.ElementId, sourceElementId, StringComparison.Ordinal) ||
+            (!string.IsNullOrWhiteSpace(sourceBuildUri) &&
+             !string.Equals(match.BuildUri, sourceBuildUri, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        resolvedControl = candidate;
+        return true;
+    }
+
+    private static bool TryResolveControlBySourceElementPathCore(
+        Control rootControl,
+        SourceGenHotDesignHitTestMode mode,
+        string sourceElementId,
+        out Control? resolvedControl)
+    {
+        resolvedControl = null;
+        if (string.IsNullOrWhiteSpace(sourceElementId))
+        {
+            return false;
+        }
+
+        var tokens = sourceElementId.Split('/');
+        if (tokens.Length == 0 || !string.Equals(tokens[0], "0", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var current = rootControl;
+        for (var index = 1; index < tokens.Length; index++)
+        {
+            if (!int.TryParse(tokens[index], out var childIndex) || childIndex < 0)
+            {
+                return false;
+            }
+
+            var children = EnumerateChildren(current, mode).ToArray();
+            if (childIndex >= children.Length)
+            {
+                return false;
+            }
+
+            current = children[childIndex];
+        }
+
+        resolvedControl = current;
+        return true;
     }
 
     private static Control? FindFirstControlByName(
@@ -368,7 +445,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         Control control,
         SourceGenHotDesignHitTestMode mode,
         SourceElementLookupContext sourceLookupContext,
-        IDictionary<string, (string? BuildUri, string? ElementId)> cache)
+        string? liveNodeId)
     {
         var controlNames = new List<string>(4);
         var controlTypeNames = new List<string>(6);
@@ -383,10 +460,14 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
             return (null, null);
         }
 
-        var key = BuildLookupKey(sourceLookupContext.PreferredBuildUri, controlNames, controlTypeNames);
-        if (cache.TryGetValue(key, out var cached))
+        if (mode == SourceGenHotDesignHitTestMode.Logical &&
+            TryResolveExactPreferredPathMatch(
+                control,
+                sourceLookupContext,
+                liveNodeId,
+                out var exactPreferredMatch))
         {
-            return cached;
+            return (sourceLookupContext.PreferredBuildUri, exactPreferredMatch!.Id);
         }
 
         if (sourceLookupContext.FlattenedPreferredElements.Count > 0 &&
@@ -396,9 +477,7 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
                 controlTypeNames,
                 out var matchedInPreferredDocument))
         {
-            var resolved = (sourceLookupContext.PreferredBuildUri, matchedInPreferredDocument!.Id);
-            cache[key] = resolved;
-            return resolved;
+            return (sourceLookupContext.PreferredBuildUri, matchedInPreferredDocument!.Id);
         }
 
         if (!XamlSourceGenHotDesignTool.TryResolveElementForLiveSelection(
@@ -410,12 +489,52 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
                 out var resolvedElementId) ||
             string.IsNullOrWhiteSpace(resolvedElementId))
         {
-            cache[key] = (null, null);
             return (null, null);
         }
 
-        cache[key] = (resolvedBuildUri, resolvedElementId);
         return (resolvedBuildUri, resolvedElementId);
+    }
+
+    private static bool TryResolveExactPreferredPathMatch(
+        Control control,
+        SourceElementLookupContext sourceLookupContext,
+        string? liveNodeId,
+        out SourceGenHotDesignElementNode? matched)
+    {
+        matched = null;
+        if (string.IsNullOrWhiteSpace(sourceLookupContext.PreferredBuildUri) ||
+            string.IsNullOrWhiteSpace(liveNodeId) ||
+            !TryConvertLiveNodeIdToSourceElementId(liveNodeId, out var sourceElementId) ||
+            !sourceLookupContext.PreferredElementsById.TryGetValue(sourceElementId, out var candidate))
+        {
+            return false;
+        }
+
+        if (!string.Equals(candidate.TypeName, control.GetType().Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.XamlName) &&
+            !string.Equals(candidate.XamlName, control.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        matched = candidate;
+        return true;
+    }
+
+    private static bool TryConvertLiveNodeIdToSourceElementId(string liveNodeId, out string sourceElementId)
+    {
+        sourceElementId = string.Empty;
+        if (!liveNodeId.StartsWith("live:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        sourceElementId = liveNodeId["live:".Length..];
+        return !string.IsNullOrWhiteSpace(sourceElementId);
     }
 
     private static SourceElementLookupContext CreateSourceLookupContext(string? preferredBuildUri)
@@ -425,10 +544,14 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         {
             return new SourceElementLookupContext(
                 preferredBuildUri,
-                FlattenElementTree(preferredElements));
+                FlattenElementTree(preferredElements),
+                CreateElementIdLookup(preferredElements));
         }
 
-        return new SourceElementLookupContext(preferredBuildUri, Array.Empty<SourceGenHotDesignElementNode>());
+        return new SourceElementLookupContext(
+            preferredBuildUri,
+            Array.Empty<SourceGenHotDesignElementNode>(),
+            new Dictionary<string, SourceGenHotDesignElementNode>(StringComparer.Ordinal));
     }
 
     private static List<SourceGenHotDesignElementNode> FlattenElementTree(
@@ -459,23 +582,31 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
         }
     }
 
-    private static string BuildLookupKey(
-        string? preferredBuildUri,
-        IReadOnlyList<string> controlNames,
-        IReadOnlyList<string> controlTypeNames)
+    private static Dictionary<string, SourceGenHotDesignElementNode> CreateElementIdLookup(
+        IReadOnlyList<SourceGenHotDesignElementNode> roots)
     {
-        var key = preferredBuildUri ?? string.Empty;
-        for (var index = 0; index < controlNames.Count; index++)
+        var lookup = new Dictionary<string, SourceGenHotDesignElementNode>(StringComparer.Ordinal);
+        for (var index = 0; index < roots.Count; index++)
         {
-            key += "|n:" + controlNames[index];
+            AddElementIdLookupEntries(roots[index], lookup);
         }
 
-        for (var index = 0; index < controlTypeNames.Count; index++)
+        return lookup;
+    }
+
+    private static void AddElementIdLookupEntries(
+        SourceGenHotDesignElementNode node,
+        Dictionary<string, SourceGenHotDesignElementNode> lookup)
+    {
+        if (!lookup.ContainsKey(node.Id))
         {
-            key += "|t:" + controlTypeNames[index];
+            lookup[node.Id] = node;
         }
 
-        return key;
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            AddElementIdLookupEntries(node.Children[index], lookup);
+        }
     }
 
     private static string BuildDisplayName(Control control)
@@ -509,17 +640,18 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
     {
         public SourceElementLookupContext(
             string? preferredBuildUri,
-            IReadOnlyList<SourceGenHotDesignElementNode> flattenedPreferredElements)
+            IReadOnlyList<SourceGenHotDesignElementNode> flattenedPreferredElements,
+            IReadOnlyDictionary<string, SourceGenHotDesignElementNode> preferredElementsById)
         {
             PreferredBuildUri = preferredBuildUri;
             FlattenedPreferredElements = flattenedPreferredElements;
+            PreferredElementsById = preferredElementsById;
         }
 
         public string? PreferredBuildUri { get; }
 
         public IReadOnlyList<SourceGenHotDesignElementNode> FlattenedPreferredElements { get; }
 
-        public Dictionary<string, (string? BuildUri, string? ElementId)> LookupCache { get; } =
-            new(StringComparer.Ordinal);
+        public IReadOnlyDictionary<string, SourceGenHotDesignElementNode> PreferredElementsById { get; }
     }
 }
