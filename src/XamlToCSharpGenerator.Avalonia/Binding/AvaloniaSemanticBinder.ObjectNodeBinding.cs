@@ -2297,6 +2297,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             namedArguments[canonicalName] = Unquote(assignment.Value).Trim();
         }
 
+        foreach (var propertyElement in node.PropertyElements)
+        {
+            var canonicalName = GetCanonicalBindingObjectNodeArgumentName(propertyElement.PropertyName);
+            if (canonicalName is null ||
+                !TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var value))
+            {
+                continue;
+            }
+
+            namedArguments[canonicalName] = Unquote(value).Trim();
+        }
+
         var positionalArguments = ImmutableArray.CreateBuilder<string>();
         if (!namedArguments.ContainsKey("Path"))
         {
@@ -2349,6 +2361,35 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             extensionKind,
             TryParseMarkupExtension,
             out bindingMarkup);
+    }
+
+    private static bool TryGetSingleBindingObjectNodeArgumentValue(
+        XamlPropertyElement propertyElement,
+        out string value)
+    {
+        value = string.Empty;
+
+        if (propertyElement.ObjectValues.Length == 1 &&
+            TryGetSingleMarkupExtensionArgumentValue(propertyElement.ObjectValues[0], out value))
+        {
+            return true;
+        }
+
+        var rawTextContent = propertyElement.RawTextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(rawTextContent))
+        {
+            value = rawTextContent!;
+            return true;
+        }
+
+        var textContent = propertyElement.TextContent?.Trim();
+        if (!string.IsNullOrWhiteSpace(textContent))
+        {
+            value = textContent!;
+            return true;
+        }
+
+        return false;
     }
 
     private static string? GetCanonicalBindingObjectNodeArgumentName(string propertyName)
