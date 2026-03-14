@@ -63,6 +63,29 @@ public class XamlSourceGenHotDesignManagerTests
     }
 
     [Fact]
+    public void HotReload_Register_Mirrors_Document_Into_HotDesign_Registry()
+    {
+        ResetManager();
+
+        var instance = new HotDesignTarget();
+        XamlSourceGenHotReloadManager.Register(
+            instance,
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/HotReloadMirror.axaml",
+                SourcePath = "/tmp/HotReloadMirror.axaml"
+            });
+
+        var document = Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+        Assert.Equal(typeof(HotDesignTarget), document.RootType);
+        Assert.Equal("avares://tests/HotReloadMirror.axaml", document.BuildUri);
+        Assert.Equal("/tmp/HotReloadMirror.axaml", document.SourcePath);
+        Assert.Equal(SourceGenHotDesignDocumentRole.Root, document.DocumentRole);
+        Assert.Equal(SourceGenHotDesignArtifactKind.View, document.ArtifactKind);
+    }
+
+    [Fact]
     public void ApplyUpdate_RuntimeOnly_Uses_RuntimeApply_Action()
     {
         ResetManager();
@@ -262,6 +285,8 @@ public class XamlSourceGenHotDesignManagerTests
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
+        XamlSourceGenHotDesignCoreTools.ResetWorkspace();
     }
 
     private sealed class HotDesignTarget

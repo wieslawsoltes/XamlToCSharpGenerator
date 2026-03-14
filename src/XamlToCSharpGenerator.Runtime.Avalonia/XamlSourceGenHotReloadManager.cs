@@ -125,6 +125,12 @@ public static class XamlSourceGenHotReloadManager
             options?.CaptureState,
             options?.RestoreState,
             options?.AfterReload);
+        var normalizedSourcePath = NormalizeSourcePath(options?.SourcePath);
+        string? normalizedBuildUri = null;
+        if (TryNormalizeBuildUri(options?.BuildUri, out var buildUri))
+        {
+            normalizedBuildUri = buildUri;
+        }
 
         lock (Sync)
         {
@@ -146,24 +152,26 @@ public static class XamlSourceGenHotReloadManager
                     "' (runtime type '" + instance.GetType().FullName + "').");
             }
 
-            var sourcePath = options?.SourcePath;
-            if (!string.IsNullOrWhiteSpace(sourcePath))
+            if (!string.IsNullOrWhiteSpace(normalizedSourcePath))
             {
-                var normalizedSourcePath = NormalizeSourcePath(sourcePath);
-                if (normalizedSourcePath is not null)
-                {
-                    IdeSourcePathWatchers[trackingType] = SourcePathWatchState.Create(normalizedSourcePath);
-                    Trace(
-                        "Registered source path watcher for tracking type '" + trackingType.FullName +
-                        "': " + normalizedSourcePath);
-                }
+                IdeSourcePathWatchers[trackingType] = SourcePathWatchState.Create(normalizedSourcePath);
+                Trace(
+                    "Registered source path watcher for tracking type '" + trackingType.FullName +
+                    "': " + normalizedSourcePath);
             }
 
-            if (TryNormalizeBuildUri(options?.BuildUri, out var buildUri))
+            if (!string.IsNullOrWhiteSpace(normalizedBuildUri))
             {
-                BuildUrisByType[trackingType] = buildUri;
+                BuildUrisByType[trackingType] = normalizedBuildUri;
             }
         }
+
+        TryRegisterHotDesignMirror(
+            trackingType,
+            instance,
+            reloadAction,
+            normalizedBuildUri,
+            normalizedSourcePath);
     }
 
     public static void RegisterReplacementTypeMapping(Type replacementType, Type originalType)
@@ -1321,8 +1329,13 @@ public static class XamlSourceGenHotReloadManager
         }
     }
 
-    private static string? NormalizeSourcePath(string sourcePath)
+    private static string? NormalizeSourcePath(string? sourcePath)
     {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return null;
+        }
+
         try
         {
             return Path.GetFullPath(sourcePath.Trim());
@@ -1337,6 +1350,77 @@ public static class XamlSourceGenHotReloadManager
     {
         normalizedBuildUri = UriMapper.Normalize(buildUri);
         return !string.IsNullOrWhiteSpace(normalizedBuildUri);
+    }
+
+    private static void TryRegisterHotDesignMirror(
+        Type trackingType,
+        object instance,
+        Action<object> reloadAction,
+        string? buildUri,
+        string? sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(buildUri))
+        {
+            return;
+        }
+
+        var artifactKind = InferHotDesignArtifactKind(trackingType, buildUri);
+        var documentRole = InferHotDesignDocumentRole(artifactKind);
+        XamlSourceGenHotDesignManager.Register(
+            instance,
+            reloadAction,
+            new SourceGenHotDesignRegistrationOptions
+            {
+                BuildUri = buildUri,
+                SourcePath = sourcePath,
+                DocumentRole = documentRole,
+                ArtifactKind = artifactKind
+            });
+    }
+
+    private static SourceGenHotDesignArtifactKind InferHotDesignArtifactKind(Type trackingType, string buildUri)
+    {
+        if (typeof(global::Avalonia.Application).IsAssignableFrom(trackingType))
+        {
+            return SourceGenHotDesignArtifactKind.Application;
+        }
+
+        if (typeof(global::Avalonia.Styling.ControlTheme).IsAssignableFrom(trackingType) ||
+            XamlControlThemeRegistry.GetAll(buildUri).Count > 0)
+        {
+            return SourceGenHotDesignArtifactKind.ControlTheme;
+        }
+
+        if (XamlTemplateRegistry.GetAll(buildUri).Count > 0)
+        {
+            return SourceGenHotDesignArtifactKind.Template;
+        }
+
+        if (typeof(global::Avalonia.Styling.Styles).IsAssignableFrom(trackingType) ||
+            XamlStyleRegistry.GetAll(buildUri).Count > 0)
+        {
+            return SourceGenHotDesignArtifactKind.Style;
+        }
+
+        if (typeof(global::Avalonia.Controls.ResourceDictionary).IsAssignableFrom(trackingType) ||
+            XamlResourceRegistry.HasEntries(buildUri))
+        {
+            return SourceGenHotDesignArtifactKind.ResourceDictionary;
+        }
+
+        return SourceGenHotDesignArtifactKind.View;
+    }
+
+    private static SourceGenHotDesignDocumentRole InferHotDesignDocumentRole(SourceGenHotDesignArtifactKind artifactKind)
+    {
+        return artifactKind switch
+        {
+            SourceGenHotDesignArtifactKind.Template => SourceGenHotDesignDocumentRole.Template,
+            SourceGenHotDesignArtifactKind.ControlTheme => SourceGenHotDesignDocumentRole.Theme,
+            SourceGenHotDesignArtifactKind.Style or
+            SourceGenHotDesignArtifactKind.ResourceDictionary => SourceGenHotDesignDocumentRole.Resources,
+            _ => SourceGenHotDesignDocumentRole.Root
+        };
     }
 
     private static Type[]? NormalizeUpdatedTypes(Type[]? types)
