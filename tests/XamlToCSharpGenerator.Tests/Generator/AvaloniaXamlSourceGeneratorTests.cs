@@ -11632,6 +11632,64 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Falls_Back_To_NonPublic_Method_Overload_When_Accessible_Overloads_Are_Incompatible()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+                public class TextBlock : Control
+                {
+                    public object? Text { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class MainVm
+                {
+                    public string FormatTitle(int value)
+                    {
+                        return "public:" + value.ToString();
+                    }
+
+                    private string FormatTitle(string value)
+                    {
+                        return "private:" + value;
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <TextBlock Text="{CompiledBinding FormatTitle('demo')}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("Name = \"FormatTitle\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Generates_Compiled_Binding_Accessor_With_Null_Conditional_Segment()
     {
         const string code = """

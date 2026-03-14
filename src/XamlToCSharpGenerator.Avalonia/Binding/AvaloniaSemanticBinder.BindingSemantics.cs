@@ -1671,9 +1671,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
         }
 
-        var candidates = accessibleCandidates.Count > 0 ? accessibleCandidates : inaccessibleCandidates;
-
-        if (candidates.Count == 0)
+        if (accessibleCandidates.Count == 0 && inaccessibleCandidates.Count == 0)
         {
             errorMessage = foundInaccessibleCandidate
                 ? $"method segment '{methodName}' is not accessible on '{targetType.ToDisplayString()}'"
@@ -1681,12 +1679,62 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
+        if (TrySelectBestMethodInvocationCandidate(
+                accessibleCandidates,
+                methodArguments,
+                out var bestCandidate,
+                out var bestArgumentExpressions,
+                out var bestNormalizedArguments) ||
+            TrySelectBestMethodInvocationCandidate(
+                inaccessibleCandidates,
+                methodArguments,
+                out bestCandidate,
+                out bestArgumentExpressions,
+                out bestNormalizedArguments))
+        {
+            if (compilation.IsSymbolAccessibleWithin(bestCandidate!, accessibilityWithin, targetType))
+            {
+                invocationExpression = targetExpression +
+                                       (acceptsNull ? "?." : ".") +
+                                       bestCandidate.Name +
+                                       "(" +
+                                       string.Join(", ", bestArgumentExpressions!) +
+                                       ")";
+            }
+            else
+            {
+                var helperMethodName = RegisterUnsafeAccessorDefinition(unsafeAccessors, bestCandidate);
+                invocationExpression = BuildUnsafeAccessorInvocationExpression(
+                    targetExpression,
+                    helperMethodName,
+                    acceptsNull,
+                    bestArgumentExpressions!,
+                    bestCandidate.ReturnType);
+                requiresConditionalContinuation = acceptsNull;
+            }
+
+            normalizedSegment = bestCandidate.Name + "(" + string.Join(", ", bestNormalizedArguments!) + ")";
+            returnType = bestCandidate.ReturnType;
+            return true;
+        }
+
+        errorMessage = $"method segment '{methodName}' arguments do not match available overloads on '{targetType.ToDisplayString()}'";
+        return false;
+    }
+
+    private static bool TrySelectBestMethodInvocationCandidate(
+        List<IMethodSymbol> candidates,
+        ImmutableArray<string> methodArguments,
+        out IMethodSymbol? bestCandidate,
+        out string[]? bestArgumentExpressions,
+        out string[]? bestNormalizedArguments)
+    {
         var bestScore = int.MaxValue;
         var bestObjectParameterCount = int.MaxValue;
         var bestSortKey = string.Empty;
-        string[]? bestArgumentExpressions = null;
-        string[]? bestNormalizedArguments = null;
-        IMethodSymbol? bestCandidate = null;
+        bestArgumentExpressions = null;
+        bestNormalizedArguments = null;
+        bestCandidate = null;
 
         foreach (var candidate in candidates.OrderBy(method => method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal))
         {
@@ -1742,36 +1790,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
         }
 
-        if (bestCandidate is not null && bestArgumentExpressions is not null && bestNormalizedArguments is not null)
-        {
-            if (compilation.IsSymbolAccessibleWithin(bestCandidate, accessibilityWithin, targetType))
-            {
-                invocationExpression = targetExpression +
-                                       (acceptsNull ? "?." : ".") +
-                                       bestCandidate.Name +
-                                       "(" +
-                                       string.Join(", ", bestArgumentExpressions) +
-                                       ")";
-            }
-            else
-            {
-                var helperMethodName = RegisterUnsafeAccessorDefinition(unsafeAccessors, bestCandidate);
-                invocationExpression = BuildUnsafeAccessorInvocationExpression(
-                    targetExpression,
-                    helperMethodName,
-                    acceptsNull,
-                    bestArgumentExpressions,
-                    bestCandidate.ReturnType);
-                requiresConditionalContinuation = acceptsNull;
-            }
-
-            normalizedSegment = bestCandidate.Name + "(" + string.Join(", ", bestNormalizedArguments) + ")";
-            returnType = bestCandidate.ReturnType;
-            return true;
-        }
-
-        errorMessage = $"method segment '{methodName}' arguments do not match available overloads on '{targetType.ToDisplayString()}'";
-        return false;
+        return bestCandidate is not null && bestArgumentExpressions is not null && bestNormalizedArguments is not null;
     }
 
     private static bool TryConvertMethodArgumentToken(
