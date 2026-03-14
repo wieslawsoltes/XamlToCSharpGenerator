@@ -2102,7 +2102,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         foreach (var assignment in ancestorScopeContext.Node.PropertyAssignments)
         {
             if (assignment.IsAttached ||
-                !NormalizePropertyName(assignment.PropertyName).Equals(ancestorItemsPropertyName, StringComparison.Ordinal))
+                !MatchesPresentedItemsProperty(
+                    compilation,
+                    document,
+                    ancestorScopeContext.NodeType,
+                    assignment.PropertyName,
+                    ancestorItemsPropertyName))
             {
                 continue;
             }
@@ -2188,7 +2193,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         foreach (var propertyElement in ancestorScopeContext.Node.PropertyElements)
         {
-            if (!NormalizePropertyName(propertyElement.PropertyName).Equals(ancestorItemsPropertyName, StringComparison.Ordinal) ||
+            if (!MatchesPresentedItemsProperty(
+                    compilation,
+                    document,
+                    ancestorScopeContext.NodeType,
+                    propertyElement.PropertyName,
+                    ancestorItemsPropertyName) ||
                 propertyElement.ObjectValues.Length != 1)
             {
                 continue;
@@ -2230,6 +2240,36 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static bool MatchesPresentedItemsProperty(
+        Compilation compilation,
+        XamlDocumentModel document,
+        INamedTypeSymbol ancestorNodeType,
+        string propertyToken,
+        string ancestorItemsPropertyName)
+    {
+        if (!TrySplitOwnerQualifiedPropertyToken(propertyToken, out var ownerTypeToken, out var propertyName))
+        {
+            return NormalizePropertyName(propertyToken).Equals(ancestorItemsPropertyName, StringComparison.Ordinal);
+        }
+
+        if (!propertyName.Equals(ancestorItemsPropertyName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var ancestorProperty = FindProperty(ancestorNodeType, ancestorItemsPropertyName);
+        var ownerType = ResolveTypeToken(compilation, document, ownerTypeToken, document.ClassNamespace);
+        if (ancestorProperty is null ||
+            ownerType is not INamedTypeSymbol ownerNamedType)
+        {
+            return false;
+        }
+
+        var ownerProperty = FindProperty(ownerNamedType, propertyName);
+        return ownerProperty is not null &&
+               SymbolEqualityComparer.Default.Equals(ownerProperty.OriginalDefinition, ancestorProperty.OriginalDefinition);
     }
 
     private static bool TryParseBindingMarkupFromObjectNode(
