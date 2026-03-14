@@ -281,9 +281,9 @@ public static class SourceGenMarkupExtensionRuntime
         string? baseUri,
         IReadOnlyList<object>? parentStack)
     {
-        if (targetObject is StyledElement styledTarget &&
-            !HasActiveBindingAnchorContext(styledTarget) &&
-            BuildDetachedDynamicResourceLookupChain(targetObject, parentStack) is { Count: > 0 } detachedLookupChain)
+        if (targetObject is AvaloniaObject &&
+            ShouldUseDetachedDynamicResourceLookup(targetObject) &&
+            BuildDetachedDynamicResourceLookupChain(targetObject, parentServiceProvider, parentStack) is { Count: > 0 } detachedLookupChain)
         {
             return InstancedBinding.OneWay(
                 new DetachedDynamicResourceObservable(
@@ -304,6 +304,15 @@ public static class SourceGenMarkupExtensionRuntime
 
         var extension = new DynamicResourceExtension(resourceKey);
         return extension.ProvideValue(contextProvider);
+    }
+
+    private static bool ShouldUseDetachedDynamicResourceLookup(object targetObject)
+    {
+        return targetObject switch
+        {
+            StyledElement styledTarget => !HasActiveBindingAnchorContext(styledTarget),
+            _ => true
+        };
     }
 
     public static T? AttachBindingNameScope<T>(T? binding, object? nameScope)
@@ -1945,6 +1954,7 @@ public static class SourceGenMarkupExtensionRuntime
 
     private static IReadOnlyList<object>? BuildDetachedDynamicResourceLookupChain(
         object targetObject,
+        IServiceProvider? parentServiceProvider,
         IReadOnlyList<object>? parentStack)
     {
         List<object>? lookupChain = null;
@@ -1975,6 +1985,16 @@ public static class SourceGenMarkupExtensionRuntime
             for (var index = 0; index < parentStack.Count; index++)
             {
                 AddLookupCandidate(parentStack[index]);
+            }
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IAvaloniaXamlIlParentStackProvider)) is IAvaloniaXamlIlParentStackProvider upstreamStack)
+        {
+            // Detached resource-backed objects (for example SolidColorBrush entries inside theme
+            // dictionaries) still need the ambient merged-dictionary providers from the outer load.
+            foreach (var upstreamParent in upstreamStack.Parents)
+            {
+                AddLookupCandidate(upstreamParent);
             }
         }
 

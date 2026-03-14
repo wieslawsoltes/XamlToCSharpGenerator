@@ -253,6 +253,40 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.IsType<InstancedBinding>(value);
     }
 
+    [AvaloniaFact]
+    public void ProvideDynamicResource_For_Detached_NonStyled_Target_Uses_Upstream_Resource_Parents()
+    {
+        var upstreamResources = new ResourceDictionary
+        {
+            ["AccentColor"] = Colors.Red
+        };
+        var parentProvider = new DictionaryServiceProvider(new Dictionary<Type, object>
+        {
+            [typeof(IAvaloniaXamlIlParentStackProvider)] = new TestParentStackProvider([upstreamResources])
+        });
+        var localThemeDictionary = new ResourceDictionary();
+        var brush = new SolidColorBrush();
+
+        var value = SourceGenMarkupExtensionRuntime.ProvideDynamicResource(
+            resourceKey: "AccentColor",
+            parentServiceProvider: parentProvider,
+            rootObject: upstreamResources,
+            intermediateRootObject: upstreamResources,
+            targetObject: brush,
+            targetProperty: SolidColorBrush.ColorProperty,
+            baseUri: "avares://Demo/Theme.axaml",
+            parentStack: [localThemeDictionary]);
+
+        var binding = Assert.IsType<InstancedBinding>(value);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            brush,
+            SolidColorBrush.ColorProperty,
+            binding);
+
+        Assert.Equal(Colors.Red, brush.Color);
+    }
+
     [Fact]
     public void ProvideReference_Uses_ProvideValueTarget_Property_For_Deferred_Name_Resolution()
     {
