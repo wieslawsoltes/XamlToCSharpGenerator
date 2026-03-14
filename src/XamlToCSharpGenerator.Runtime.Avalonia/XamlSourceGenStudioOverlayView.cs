@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System;
 using System.ComponentModel;
@@ -16,6 +17,8 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioOverlayView : UserControl
 {
+    private const int LayoutRefreshDebounceMilliseconds = 120;
+
     private static readonly IBrush HoverAdornerBorderBrush = new SolidColorBrush(Color.FromArgb(255, 255, 195, 45));
     private static readonly IBrush HoverAdornerFillBrush = new SolidColorBrush(Color.FromArgb(28, 255, 195, 45));
     private static readonly IBrush SelectionAdornerBorderBrush = new SolidColorBrush(Color.FromArgb(255, 86, 139, 255));
@@ -39,6 +42,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private TextBlock? _selectionLabelText;
     private Control? _hoveredControl;
     private Control? _selectedControl;
+    private DispatcherTimer? _layoutRefreshTimer;
 
     public XamlSourceGenStudioOverlayView(
         object? liveAppContent,
@@ -776,6 +780,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        if (_layoutRefreshTimer is not null)
+        {
+            _layoutRefreshTimer.Stop();
+            _layoutRefreshTimer = null;
+        }
+
         if (_liveLayer is not null)
         {
             _liveLayer.LayoutUpdated -= OnLiveLayerLayoutUpdated;
@@ -889,6 +899,36 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnLiveLayerLayoutUpdated(object? sender, EventArgs e)
     {
+        ScheduleLayoutRefresh();
+    }
+
+    private void ScheduleLayoutRefresh()
+    {
+        _layoutRefreshTimer ??= new DispatcherTimer(
+            TimeSpan.FromMilliseconds(LayoutRefreshDebounceMilliseconds),
+            DispatcherPriority.Background,
+            OnLayoutRefreshTimerTick);
+
+        if (_layoutRefreshTimer.IsEnabled)
+        {
+            _layoutRefreshTimer.Stop();
+        }
+
+        _layoutRefreshTimer.Start();
+    }
+
+    private void OnLayoutRefreshTimerTick(object? sender, EventArgs e)
+    {
+        if (_layoutRefreshTimer is not null)
+        {
+            _layoutRefreshTimer.Stop();
+        }
+
+        if (_liveLayer is null || _viewModel is null)
+        {
+            return;
+        }
+
         RefreshAdorners();
         RefreshLiveTreeProjection();
     }

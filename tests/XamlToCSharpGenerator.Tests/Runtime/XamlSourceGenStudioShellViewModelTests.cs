@@ -149,7 +149,7 @@ public class XamlSourceGenStudioShellViewModelTests
             using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
             Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
             Assert.Equal(appBuildUri, viewModel.SelectedScope?.BuildUri);
-            Assert.Equal("Preview unavailable for non-control artifact.", viewModel.PreviewStatus);
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
 
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
             {
@@ -161,6 +161,9 @@ public class XamlSourceGenStudioShellViewModelTests
             Assert.Equal(viewBuildUri, viewModel.SelectedScope?.BuildUri);
             Assert.NotNull(viewModel.SelectedElement);
             Assert.Equal("ActionButton", viewModel.SelectedElement!.XamlName);
+
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
+            viewModel.RefreshPreviewCommand.Execute(null);
             Assert.Equal("Preview ready for " + viewBuildUri, viewModel.PreviewStatus);
             Assert.IsType<TextBlock>(viewModel.CanvasPreviewContent);
         }
@@ -734,6 +737,63 @@ public class XamlSourceGenStudioShellViewModelTests
         }
         finally
         {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void RefreshPreviewCommand_Loads_Preview_On_Demand()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.PreviewOnDemand.axaml";
+        var previewCreateCount = 0;
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenRegistry.Register(buildUri, _ =>
+            {
+                previewCreateCount++;
+                return new TextBlock
+                {
+                    Text = "Preview"
+                };
+            });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            Assert.Equal(buildUri, viewModel.ActiveBuildUri);
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
+            Assert.Equal(0, previewCreateCount);
+
+            viewModel.RefreshPreviewCommand.Execute(null);
+
+            Assert.Equal(1, previewCreateCount);
+            Assert.Equal("Preview ready for " + buildUri, viewModel.PreviewStatus);
+            Assert.IsType<TextBlock>(viewModel.CanvasPreviewContent);
+        }
+        finally
+        {
+            XamlSourceGenRegistry.Unregister(buildUri);
             ResetRuntimeState();
             DeleteFileIfExists(sourcePath);
         }

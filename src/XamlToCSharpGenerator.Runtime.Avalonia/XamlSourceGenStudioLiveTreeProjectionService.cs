@@ -10,6 +10,10 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal static class XamlSourceGenStudioLiveTreeProjectionService
 {
+    private static readonly object SourceLookupCacheSync = new();
+    private static CachedSourceLookupEntry? CachedPreferredSourceLookup;
+    private static int _preferredSourceLookupBuildCount;
+
     public static IReadOnlyList<SourceGenHotDesignElementNode> BuildLiveTree(
         Control? rootControl,
         SourceGenHotDesignHitTestMode mode,
@@ -552,15 +556,50 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
 
     private static SourceElementLookupContext CreateSourceLookupContext(string? preferredBuildUri)
     {
-        if (!string.IsNullOrWhiteSpace(preferredBuildUri) &&
-            XamlSourceGenHotDesignCoreTools.TryBuildElementTreeForDocument(preferredBuildUri, out var preferredElements))
+        if (string.IsNullOrWhiteSpace(preferredBuildUri))
         {
-            return new SourceElementLookupContext(
+            return CreateEmptySourceLookupContext(preferredBuildUri);
+        }
+
+        if (!XamlSourceGenHotDesignTool.TryGetCurrentDocumentText(preferredBuildUri, out var xamlText))
+        {
+            return CreateEmptySourceLookupContext(preferredBuildUri);
+        }
+
+        lock (SourceLookupCacheSync)
+        {
+            if (CachedPreferredSourceLookup is not null &&
+                string.Equals(CachedPreferredSourceLookup.BuildUri, preferredBuildUri, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(CachedPreferredSourceLookup.XamlText, xamlText, StringComparison.Ordinal))
+            {
+                return CachedPreferredSourceLookup.LookupContext;
+            }
+        }
+
+        SourceElementLookupContext lookupContext;
+        if (XamlSourceGenHotDesignCoreTools.TryBuildElementTreeForDocument(preferredBuildUri, out var preferredElements))
+        {
+            lookupContext = new SourceElementLookupContext(
                 preferredBuildUri,
                 FlattenElementTree(preferredElements),
                 CreateElementIdLookup(preferredElements));
         }
+        else
+        {
+            lookupContext = CreateEmptySourceLookupContext(preferredBuildUri);
+        }
 
+        lock (SourceLookupCacheSync)
+        {
+            CachedPreferredSourceLookup = new CachedSourceLookupEntry(preferredBuildUri, xamlText, lookupContext);
+            _preferredSourceLookupBuildCount++;
+        }
+
+        return lookupContext;
+    }
+
+    private static SourceElementLookupContext CreateEmptySourceLookupContext(string? preferredBuildUri)
+    {
         return new SourceElementLookupContext(
             preferredBuildUri,
             Array.Empty<SourceGenHotDesignElementNode>(),
@@ -667,4 +706,9 @@ internal static class XamlSourceGenStudioLiveTreeProjectionService
 
         public IReadOnlyDictionary<string, SourceGenHotDesignElementNode> PreferredElementsById { get; }
     }
+
+    private sealed record CachedSourceLookupEntry(
+        string BuildUri,
+        string XamlText,
+        SourceElementLookupContext LookupContext);
 }

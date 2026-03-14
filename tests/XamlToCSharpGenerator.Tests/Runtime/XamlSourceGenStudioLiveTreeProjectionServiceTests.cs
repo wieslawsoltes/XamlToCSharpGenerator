@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -94,6 +95,68 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
             Assert.Equal(buildUri, actionButton!.SourceBuildUri);
             Assert.False(string.IsNullOrWhiteSpace(actionButton.SourceElementId));
             Assert.True(actionButton.IsLive);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
+    public void BuildLiveTree_Reuses_Cached_Preferred_Source_Lookup_When_Document_Text_Is_Unchanged()
+    {
+        ResetRuntimeState();
+
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioLiveTree.CachedLookup.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var root = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new Button { Name = "ActionButton", Content = "Run" }
+                }
+            };
+
+            var initialBuildCount = GetPreferredSourceLookupBuildCount();
+
+            _ = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                preferredBuildUri: buildUri,
+                selectedSourceElementId: null);
+
+            var afterFirstBuild = GetPreferredSourceLookupBuildCount();
+
+            _ = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+                root,
+                SourceGenHotDesignHitTestMode.Logical,
+                preferredBuildUri: buildUri,
+                selectedSourceElementId: null);
+
+            var afterSecondBuild = GetPreferredSourceLookupBuildCount();
+
+            Assert.Equal(initialBuildCount + 1, afterFirstBuild);
+            Assert.Equal(afterFirstBuild, afterSecondBuild);
         }
         finally
         {
@@ -407,6 +470,15 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         }
 
         application.RequestedThemeVariant = ThemeVariant.Default;
+    }
+
+    private static int GetPreferredSourceLookupBuildCount()
+    {
+        var field = typeof(XamlSourceGenStudioLiveTreeProjectionService).GetField(
+            "_preferredSourceLookupBuildCount",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(field);
+        return Assert.IsType<int>(field!.GetValue(null));
     }
 
     private static void ResetRuntimeState()

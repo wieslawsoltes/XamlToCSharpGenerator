@@ -15,6 +15,7 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged, IDisposable
 {
+    private readonly SourceGenStudioOptions _options;
     private readonly StudioRelayCommand _refreshCommand;
     private readonly StudioRelayCommand _refreshPreviewCommand;
     private readonly StudioRelayCommand _applyXamlCommand;
@@ -59,6 +60,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private bool _canRedo;
     private bool _isRefreshing;
     private bool _isDisposed;
+    private bool _isCanvasPreviewDirty = true;
     private object? _canvasPreviewContent;
     private IReadOnlyList<SourceGenHotDesignElementNode> _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
     private IReadOnlyList<SourceGenHotDesignPropertyEntry> _sourceProperties = Array.Empty<SourceGenHotDesignPropertyEntry>();
@@ -77,6 +79,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     public XamlSourceGenStudioShellViewModel(SourceGenStudioOptions options)
     {
+        _options = options.Clone();
         WorkspaceModes = Enum.GetValues<SourceGenHotDesignWorkspaceMode>();
         PropertyFilterModes = Enum.GetValues<SourceGenHotDesignPropertyFilterMode>();
         HitTestModes = Enum.GetValues<SourceGenHotDesignHitTestMode>();
@@ -581,6 +584,16 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         InvalidateProjectedLiveTree();
         RefreshStudioStatus();
         RefreshWorkspace();
+        InvalidateCanvasPreview();
+    }
+
+    public void EnsureCanvasPreviewLoaded()
+    {
+        if (!_isCanvasPreviewDirty && CanvasPreviewContent is not null)
+        {
+            return;
+        }
+
         RefreshCanvasPreview();
     }
 
@@ -988,6 +1001,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
     private void RefreshCanvasPreview()
     {
+        _isCanvasPreviewDirty = false;
+
         if (string.IsNullOrWhiteSpace(ActiveBuildUri))
         {
             CanvasPreviewContent = BuildInfoPreview("Select a document to preview.");
@@ -1039,6 +1054,19 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             CanvasPreviewContent = BuildInfoPreview("Preview failed: " + ex.Message);
             PreviewStatus = "Preview error.";
         }
+    }
+
+    private void InvalidateCanvasPreview()
+    {
+        _isCanvasPreviewDirty = true;
+
+        if (!_options.EnableExternalWindow)
+        {
+            return;
+        }
+
+        CanvasPreviewContent = BuildInfoPreview("Preview is loaded on demand. Use Refresh Preview.");
+        PreviewStatus = "Preview pending.";
     }
 
     private static Control BuildInfoPreview(string message)

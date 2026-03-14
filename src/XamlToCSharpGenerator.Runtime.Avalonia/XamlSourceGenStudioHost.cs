@@ -155,6 +155,7 @@ public static class XamlSourceGenStudioHost
             }
             DashboardWindow.Show();
             DashboardWindow.Activate();
+            shellViewModel?.EnsureCanvasPreviewLoaded();
         }, DispatcherPriority.Background);
     }
 
