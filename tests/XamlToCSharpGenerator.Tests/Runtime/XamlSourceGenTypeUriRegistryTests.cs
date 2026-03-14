@@ -3,8 +3,13 @@ using XamlToCSharpGenerator.Runtime;
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 [Collection("RuntimeStateful")]
-public class XamlSourceGenTypeUriRegistryTests
+public class XamlSourceGenTypeUriRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void Register_And_TryGetUri_Normalize_Value()
     {

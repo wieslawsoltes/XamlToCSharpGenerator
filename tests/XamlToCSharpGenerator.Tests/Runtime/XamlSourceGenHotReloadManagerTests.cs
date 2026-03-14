@@ -19,8 +19,13 @@ using XamlToCSharpGenerator.Runtime;
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 [Collection("RuntimeStateful")]
-public class XamlSourceGenHotReloadManagerTests
+public class XamlSourceGenHotReloadManagerTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void UpdateApplication_Reloads_Registered_Instance_For_Matching_Type()
     {

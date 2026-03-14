@@ -2,9 +2,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class XamlSourceGenRegistryTests
+[Collection("RuntimeStateful")]
+public class XamlSourceGenRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void Register_Duplicate_Uri_Raises_Conflict_Event_And_Replaces_Entry()
     {

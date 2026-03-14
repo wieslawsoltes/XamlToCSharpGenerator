@@ -3,9 +3,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class RuntimeRegistryUriClearTests
+[Collection("RuntimeStateful")]
+public class RuntimeRegistryUriClearTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void Clear_By_Uri_Removes_Only_Targeted_Resource_Metadata()
     {

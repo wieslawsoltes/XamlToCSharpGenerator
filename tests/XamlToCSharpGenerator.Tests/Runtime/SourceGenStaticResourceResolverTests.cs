@@ -8,9 +8,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class SourceGenStaticResourceResolverTests
+[Collection("RuntimeStateful")]
+public class SourceGenStaticResourceResolverTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void Resolve_Returns_Value_From_Transitive_Includes()
     {

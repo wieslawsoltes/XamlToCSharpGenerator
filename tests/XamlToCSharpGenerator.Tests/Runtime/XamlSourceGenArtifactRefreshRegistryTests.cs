@@ -3,8 +3,13 @@ using XamlToCSharpGenerator.Runtime;
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 [Collection("RuntimeStateful")]
-public class XamlSourceGenArtifactRefreshRegistryTests
+public class XamlSourceGenArtifactRefreshRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void TryRefresh_Invokes_Registered_Callback_For_Exact_Type()
     {

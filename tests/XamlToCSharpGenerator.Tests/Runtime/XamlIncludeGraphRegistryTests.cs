@@ -2,9 +2,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class XamlIncludeGraphRegistryTests
+[Collection("RuntimeStateful")]
+public class XamlIncludeGraphRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void GetTransitive_Returns_Deterministic_Depth_First_Include_Order()
     {
