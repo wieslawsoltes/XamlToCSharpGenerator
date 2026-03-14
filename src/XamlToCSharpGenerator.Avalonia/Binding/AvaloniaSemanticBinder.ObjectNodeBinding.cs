@@ -2101,8 +2101,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         foreach (var assignment in ancestorScopeContext.Node.PropertyAssignments)
         {
-            if (assignment.IsAttached ||
-                !MatchesPresentedItemsProperty(
+            if (!MatchesPresentedItemsProperty(
                     compilation,
                     document,
                     ancestorScopeContext.NodeType,
