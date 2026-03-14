@@ -54,12 +54,8 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         var scopeSelector = new ComboBox
         {
             Width = 240,
-            ItemTemplate = new FuncDataTemplate<SourceGenStudioScopeDescriptor>(
-                (scope, _) => new TextBlock
-                {
-                    Text = scope.ScopeKind + ": " + scope.DisplayName
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenStudioScopeDescriptor>(
+                static scope => scope.ScopeKind + ": " + scope.DisplayName)
         };
         scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Scopes)));
         scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedScope), BindingMode.TwoWay));
@@ -95,12 +91,8 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         var documentSelector = new ComboBox
         {
             Width = 260,
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         documentSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Documents)));
         documentSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedDocument), BindingMode.TwoWay));
@@ -497,12 +489,8 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
 
         var templateSelector = new ComboBox
         {
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         templateSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateDocuments)));
         templateSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedTemplateDocument), BindingMode.TwoWay));

@@ -165,12 +165,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var scopeSelector = new ComboBox
         {
             Width = 260,
-            ItemTemplate = new FuncDataTemplate<SourceGenStudioScopeDescriptor>(
-                (scope, _) => new TextBlock
-                {
-                    Text = scope.ScopeKind + ": " + scope.DisplayName
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenStudioScopeDescriptor>(
+                static scope => scope.ScopeKind + ": " + scope.DisplayName)
         };
         scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Scopes)));
         scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedScope), BindingMode.TwoWay));
@@ -667,12 +663,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var documents = new ComboBox
         {
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         documents.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Documents)));
         documents.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedDocument), BindingMode.TwoWay));
@@ -717,12 +709,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var templateDocs = new ComboBox
         {
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         templateDocs.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateDocuments)));
         templateDocs.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedTemplateDocument), BindingMode.TwoWay));
@@ -971,119 +959,17 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private Control? TryFindLiveControlForElement(SourceGenHotDesignElementNode element)
     {
-        var controls = CaptureLiveControls();
-        if (_viewModel?.HitTestMode == SourceGenHotDesignHitTestMode.Logical)
-        {
-            controls = controls.Where(IsLogicalDescendantOfLiveRoot).ToList();
-        }
-
-        if (controls.Count == 0)
+        var liveRoot = TryResolveLiveRootControl();
+        if (liveRoot is null || _viewModel is null)
         {
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(element.XamlName))
-        {
-            var byName = FindBestControlByName(controls, element.XamlName);
-            if (byName is not null)
-            {
-                return byName;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(element.TypeName))
-        {
-            return FindBestControlByTypeName(controls, element.TypeName);
-        }
-
-        return null;
-    }
-
-    private IReadOnlyList<Control> CaptureLiveControls()
-    {
-        if (_livePresenter?.Content is not Visual rootVisual)
-        {
-            return Array.Empty<Control>();
-        }
-
-        var controls = new List<Control>(64);
-        if (rootVisual is Control rootControl)
-        {
-            controls.Add(rootControl);
-        }
-
-        foreach (var visual in rootVisual.GetVisualDescendants())
-        {
-            if (visual is Control control)
-            {
-                controls.Add(control);
-            }
-        }
-
-        return controls;
-    }
-
-    private static Control? FindBestControlByName(IReadOnlyList<Control> controls, string name)
-    {
-        Control? best = null;
-        var bestDepth = -1;
-        for (var index = 0; index < controls.Count; index++)
-        {
-            var control = controls[index];
-            if (!string.Equals(control.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var depth = GetVisualDepth(control);
-            if (depth <= bestDepth)
-            {
-                continue;
-            }
-
-            best = control;
-            bestDepth = depth;
-        }
-
-        return best;
-    }
-
-    private static Control? FindBestControlByTypeName(IReadOnlyList<Control> controls, string typeName)
-    {
-        Control? best = null;
-        var bestDepth = -1;
-        for (var index = 0; index < controls.Count; index++)
-        {
-            var control = controls[index];
-            if (!string.Equals(control.GetType().Name, typeName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var depth = GetVisualDepth(control);
-            if (depth <= bestDepth)
-            {
-                continue;
-            }
-
-            best = control;
-            bestDepth = depth;
-        }
-
-        return best;
-    }
-
-    private static int GetVisualDepth(Visual visual)
-    {
-        var depth = 0;
-        var current = visual;
-        while (current.GetVisualParent() is { } parent)
-        {
-            depth++;
-            current = parent;
-        }
-
-        return depth;
+        return XamlSourceGenStudioLiveTreeProjectionService.ResolveLiveControlForElement(
+            liveRoot,
+            _viewModel.HitTestMode,
+            element,
+            string.IsNullOrWhiteSpace(_viewModel.ActiveBuildUri) ? null : _viewModel.ActiveBuildUri);
     }
 
     private Control? ResolveControlAtPointer(PointerEventArgs e)
@@ -1118,40 +1004,6 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         return IsDescendantOf(control, _livePresenter)
             ? control
             : null;
-    }
-
-    private bool IsLogicalDescendantOfLiveRoot(Control control)
-    {
-        if (_livePresenter?.Content is not StyledElement logicalRoot)
-        {
-            return false;
-        }
-
-        StyledElement? current = control;
-        while (current is not null)
-        {
-            if (ReferenceEquals(current, logicalRoot))
-            {
-                return true;
-            }
-
-            current = current.Parent as StyledElement;
-        }
-
-        return false;
-    }
-
-    private static int GetLogicalDepth(Control control)
-    {
-        var depth = 0;
-        StyledElement? current = control;
-        while (current?.Parent is StyledElement parent)
-        {
-            depth++;
-            current = parent;
-        }
-
-        return depth;
     }
 
     private static Control? TryResolveControl(object? pointerSource)

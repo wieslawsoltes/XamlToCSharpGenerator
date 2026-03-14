@@ -96,6 +96,44 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         }
     }
 
+    [Fact]
+    public void ResolveLiveControlForElement_Uses_Exact_Live_Node_Id_For_Duplicate_Type_Matches()
+    {
+        var firstBorder = new Border();
+        var secondBorder = new Border();
+        var root = new StackPanel
+        {
+            Children =
+            {
+                firstBorder,
+                secondBorder
+            }
+        };
+        var selectedLiveNode = new SourceGenHotDesignElementNode(
+            Id: "live:0/0",
+            DisplayName: "[Border]",
+            TypeName: "Border",
+            XamlName: null,
+            Classes: null,
+            Depth: 1,
+            IsSelected: true,
+            Line: 0,
+            Children: [],
+            IsExpanded: true,
+            DescendantCount: 0,
+            SourceBuildUri: null,
+            SourceElementId: null,
+            IsLive: true);
+
+        var resolved = XamlSourceGenStudioLiveTreeProjectionService.ResolveLiveControlForElement(
+            root,
+            SourceGenHotDesignHitTestMode.Logical,
+            selectedLiveNode,
+            preferredBuildUri: null);
+
+        Assert.Same(firstBorder, resolved);
+    }
+
     private static SourceGenHotDesignElementNode? FindByName(SourceGenHotDesignElementNode node, string name)
     {
         if (string.Equals(node.XamlName, name, StringComparison.Ordinal))
@@ -122,6 +160,7 @@ public class XamlSourceGenStudioLiveTreeProjectionServiceTests
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
     }
 
