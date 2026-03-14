@@ -67,6 +67,47 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void WorkspaceSnapshot_Uses_HotReload_Registrations_When_Studio_Is_Enabled()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Button Name=""ActionButton"" Content=""Run"" />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotReloadManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotReloadRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0/0/0");
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+
+            Assert.True(snapshot.Status.IsEnabled);
+            Assert.Equal(buildUri, snapshot.ActiveBuildUri);
+            Assert.Single(snapshot.Documents);
+            Assert.NotEmpty(snapshot.Elements);
+            Assert.Contains(snapshot.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public void WorkspaceSnapshot_AllPropertyMode_Includes_Default_Metadata()
     {
         ResetRuntimeState();
@@ -112,6 +153,60 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void WorkspaceSnapshot_SmartPropertyMode_Includes_Common_Metadata_For_Unset_Element()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel>
+    <Border />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignCoreTools.SetPropertyFilterMode(SourceGenHotDesignPropertyFilterMode.Smart);
+            XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, "0/0");
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+
+            Assert.NotEmpty(snapshot.Properties);
+
+            var name = Assert.Single(snapshot.Properties.Where(property => property.Name == "Name"));
+            Assert.False(name.IsSet);
+            Assert.Equal("Default", name.Source);
+
+            var width = Assert.Single(snapshot.Properties.Where(property => property.Name == "Width"));
+            Assert.False(width.IsSet);
+            Assert.Equal("Default", width.Source);
+
+            var isVisible = Assert.Single(snapshot.Properties.Where(property => property.Name == "IsVisible"));
+            Assert.False(isVisible.IsSet);
+            Assert.Equal("Default", isVisible.Source);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public void WorkspaceSnapshot_Property_Metadata_Detects_Markup_Expressions_Using_Envelope_Semantics()
     {
         ResetRuntimeState();
@@ -147,6 +242,51 @@ public class XamlSourceGenHotDesignCoreToolsTests
 
             var tagProperty = Assert.Single(snapshot.Properties.Where(property => property.Name == "Tag"));
             Assert.False(tagProperty.IsMarkupExtension);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void TryBuildElementTreeForDocument_Returns_Current_Document_Elements()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel x:Name=""RootPanel"">
+    <Button x:Name=""ActionButton"" Content=""Run"" />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var built = XamlSourceGenHotDesignCoreTools.TryBuildElementTreeForDocument(buildUri, out var elements);
+
+            Assert.True(built);
+            var root = Assert.Single(elements);
+            Assert.Equal("UserControl", root.TypeName);
+            Assert.Equal(buildUri, root.SourceBuildUri);
+            Assert.Equal("0", root.SourceElementId);
+            Assert.Contains(root.Children, child => child.TypeName == "StackPanel");
         }
         finally
         {
@@ -471,9 +611,12 @@ public class XamlSourceGenHotDesignCoreToolsTests
 
     private static void ResetRuntimeState()
     {
+        XamlSourceGenStudioManager.Disable();
+        XamlSourceGenStudioManager.StopSession();
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
     }
 

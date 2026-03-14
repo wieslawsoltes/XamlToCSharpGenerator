@@ -61,6 +61,9 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private bool _isDisposed;
     private object? _canvasPreviewContent;
     private IReadOnlyList<SourceGenHotDesignElementNode> _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
+    private IReadOnlyList<SourceGenHotDesignPropertyEntry> _sourceProperties = Array.Empty<SourceGenHotDesignPropertyEntry>();
+    private WeakReference<Control>? _liveRootControlReference;
+    private string? _selectedLiveElementId;
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
     private SourceGenHotDesignPropertyFilterMode _propertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
     private SourceGenHotDesignHitTestMode _hitTestMode = SourceGenHotDesignHitTestMode.Logical;
@@ -207,10 +210,16 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
                 return;
             }
 
-            var targetElementId = value.IsLive && !string.IsNullOrWhiteSpace(value.SourceElementId)
-                ? value.SourceElementId
-                : value.Id;
-            SelectElement(targetElementId);
+            if (value.IsLive)
+            {
+                SelectLiveElement(value);
+                return;
+            }
+
+            _selectedLiveElementId = null;
+            SelectSourceElement(
+                string.IsNullOrWhiteSpace(value.SourceBuildUri) ? ActiveBuildUri : value.SourceBuildUri,
+                string.IsNullOrWhiteSpace(value.SourceElementId) ? value.Id : value.SourceElementId);
         }
     }
 
@@ -335,6 +344,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
                 return;
             }
 
+            _selectedLiveElementId = null;
             XamlSourceGenHotDesignTool.SelectDocument(value);
             RefreshAll();
         }
@@ -538,6 +548,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             }
 
             XamlSourceGenHotDesignTool.SetHitTestMode(value);
+            if (value == SourceGenHotDesignHitTestMode.Logical)
+            {
+                _selectedLiveElementId = null;
+            }
+
+            RefreshWorkspace();
         }
     }
 
@@ -568,8 +584,47 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
+        _selectedLiveElementId = null;
+        SelectSourceElement(ActiveBuildUri, elementId);
+    }
+
+    private void SelectLiveElement(SourceGenHotDesignElementNode element)
+    {
+        _selectedLiveElementId = element.Id;
+
+        if (!string.IsNullOrWhiteSpace(element.SourceElementId))
+        {
+            SelectSourceElement(
+                string.IsNullOrWhiteSpace(element.SourceBuildUri) ? ActiveBuildUri : element.SourceBuildUri!,
+                element.SourceElementId,
+                retainLiveSelection: true);
+            return;
+        }
+
+        RefreshPropertiesForCurrentSelection(element);
+    }
+
+    private void SelectSourceElement(string? buildUri, string elementId, bool retainLiveSelection = false)
+    {
+        if (string.IsNullOrWhiteSpace(buildUri) || string.IsNullOrWhiteSpace(elementId))
+        {
+            return;
+        }
+
+        if (!retainLiveSelection)
+        {
+            _selectedLiveElementId = null;
+        }
+
+        if (!string.Equals(_activeBuildUri, buildUri, StringComparison.OrdinalIgnoreCase))
+        {
+            _activeBuildUri = buildUri;
+            XamlSourceGenHotDesignTool.SelectDocument(buildUri);
+            OnPropertyChanged(nameof(ActiveBuildUri));
+        }
+
         SelectedElementId = elementId;
-        XamlSourceGenHotDesignTool.SelectElement(ActiveBuildUri, elementId);
+        XamlSourceGenHotDesignTool.SelectElement(buildUri, elementId);
         RefreshWorkspace();
     }
 
@@ -602,15 +657,15 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         _isRefreshing = true;
         try
         {
-            ReplaceCollection(Documents, snapshot.Documents);
-            ReplaceCollection(Elements, snapshot.Elements);
+            ReplaceCollection(Documents, snapshot.Documents, DocumentDescriptorEquals);
+            ReplaceCollection(Elements, snapshot.Elements, ElementNodeEquals);
             RefreshDisplayElements(snapshot.SelectedElementId);
-            ReplaceCollection(ToolboxItems, FlattenToolbox(snapshot.Toolbox));
+            ReplaceCollection(ToolboxItems, FlattenToolbox(snapshot.Toolbox), ToolboxItemEquals);
 
             var templates = snapshot.Documents.Where(static document =>
                 document.ArtifactKind == SourceGenHotDesignArtifactKind.Template ||
                 document.DocumentRole == SourceGenHotDesignDocumentRole.Template).ToArray();
-            ReplaceCollection(TemplateDocuments, templates);
+            ReplaceCollection(TemplateDocuments, templates, DocumentDescriptorEquals);
 
             ActiveBuildUri = snapshot.ActiveBuildUri ?? string.Empty;
             SelectedElementId = snapshot.SelectedElementId ?? "0";
@@ -652,10 +707,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             _selectedElement = selectedElement;
             OnPropertyChanged(nameof(SelectedElement));
 
-            var pinnedProperties = ApplyPinnedStates(snapshot.Properties, snapshot.ActiveBuildUri, selectedElement?.TypeName);
-            ReplaceCollection(Properties, pinnedProperties);
-            RebuildPropertyFilters();
-            RefreshFilteredProperties();
+            _sourceProperties = snapshot.Properties;
+            RefreshPropertiesForCurrentSelection(selectedElement);
 
             var selectedProperty = Properties.FirstOrDefault(property =>
                 string.Equals(property.Name, PropertyName, StringComparison.OrdinalIgnoreCase));
@@ -680,26 +733,48 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
-        _liveElements = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
+        _liveRootControlReference = new WeakReference<Control>(liveRootControl);
+
+        var projectedLiveElements = XamlSourceGenStudioLiveTreeProjectionService.BuildLiveTree(
             liveRootControl,
             HitTestMode,
             string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri,
             string.IsNullOrWhiteSpace(SelectedElementId) ? null : SelectedElementId,
             string.IsNullOrWhiteSpace(SearchText) ? null : SearchText);
 
-        RefreshDisplayElements(SelectedElementId);
+        if (LiveElementTreeEquals(_liveElements, projectedLiveElements))
+        {
+            return;
+        }
+
+        _liveElements = projectedLiveElements;
+        if (ShouldUseLiveElementTree())
+        {
+            RefreshDisplayElements(SelectedElementId);
+        }
     }
 
     public void ClearLiveElementTree()
     {
+        _liveRootControlReference = null;
+        if (_liveElements.Count == 0)
+        {
+            return;
+        }
+
         _liveElements = Array.Empty<SourceGenHotDesignElementNode>();
-        RefreshDisplayElements(SelectedElementId);
+        if (ShouldUseLiveElementTree())
+        {
+            RefreshDisplayElements(SelectedElementId);
+        }
     }
 
     private void RefreshDisplayElements(string? selectedElementId)
     {
-        var source = _liveElements.Count > 0 ? _liveElements : Elements.ToArray();
-        ReplaceCollection(DisplayElements, source);
+        var source = ShouldUseLiveElementTree()
+            ? _liveElements
+            : Elements.ToArray();
+        ReplaceCollection(DisplayElements, source, ElementNodeEquals);
 
         _selectedElement = ResolveSelectedElement(selectedElementId);
         OnPropertyChanged(nameof(SelectedElement));
@@ -712,6 +787,15 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return null;
         }
 
+        if (ShouldUseLiveElementTree() && !string.IsNullOrWhiteSpace(_selectedLiveElementId))
+        {
+            var selectedLive = FindById(DisplayElements, _selectedLiveElementId);
+            if (selectedLive is not null)
+            {
+                return selectedLive;
+            }
+        }
+
         var selected = FindBySourceElementId(DisplayElements, selectedElementId);
         if (selected is not null)
         {
@@ -719,6 +803,49 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         return FindById(DisplayElements, selectedElementId);
+    }
+
+    private void RefreshPropertiesForCurrentSelection(SourceGenHotDesignElementNode? selectedElement)
+    {
+        IReadOnlyList<SourceGenHotDesignPropertyEntry> properties = _sourceProperties;
+        var propertyOwnerTypeName = selectedElement?.TypeName;
+
+        if (selectedElement?.IsLive == true &&
+            (string.IsNullOrWhiteSpace(selectedElement.SourceElementId) || _sourceProperties.Count == 0) &&
+            TryResolveLiveControl(selectedElement, out var liveControl) &&
+            liveControl is not null)
+        {
+            properties = XamlSourceGenHotDesignCoreTools.BuildRuntimePropertyEntries(liveControl, PropertyFilterMode);
+            propertyOwnerTypeName = liveControl.GetType().Name;
+        }
+
+        var pinnedProperties = ApplyPinnedStates(properties, ActiveBuildUri, propertyOwnerTypeName);
+        ReplaceCollection(Properties, pinnedProperties, PropertyEntryEquals);
+        RebuildPropertyFilters();
+        RefreshFilteredProperties();
+    }
+
+    private bool TryResolveLiveControl(SourceGenHotDesignElementNode element, out Control? liveControl)
+    {
+        liveControl = null;
+        if (_liveRootControlReference is null ||
+            !_liveRootControlReference.TryGetTarget(out var liveRootControl))
+        {
+            return false;
+        }
+
+        liveControl = XamlSourceGenStudioLiveTreeProjectionService.ResolveLiveControlForElement(
+            liveRootControl,
+            HitTestMode,
+            element,
+            string.IsNullOrWhiteSpace(ActiveBuildUri) ? null : ActiveBuildUri);
+        return liveControl is not null;
+    }
+
+    private bool ShouldUseLiveElementTree()
+    {
+        return _liveElements.Count > 0 &&
+               (HitTestMode == SourceGenHotDesignHitTestMode.Visual || Elements.Count == 0);
     }
 
     private void RefreshStudioStatus()
@@ -891,6 +1018,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (IsRuntimeOnlySelection())
+        {
+            StatusMessage = "The current visual selection is runtime-only and cannot be edited in XAML.";
+            return;
+        }
+
         var elementName = !string.IsNullOrWhiteSpace(NewElementName)
             ? NewElementName
             : SelectedToolboxItem?.Name;
@@ -921,6 +1054,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (IsRuntimeOnlySelection())
+        {
+            StatusMessage = "The current visual selection is runtime-only and cannot be removed from XAML.";
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(SelectedElementId) || string.Equals(SelectedElementId, "0", StringComparison.Ordinal))
         {
             StatusMessage = "Select a non-root element to remove.";
@@ -944,6 +1083,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(ActiveBuildUri))
         {
             StatusMessage = "Select a document first.";
+            return;
+        }
+
+        if (IsRuntimeOnlySelection())
+        {
+            StatusMessage = "The current visual selection is runtime-only; property edits must target an authored XAML element.";
             return;
         }
 
@@ -975,6 +1120,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (IsRuntimeOnlySelection())
+        {
+            StatusMessage = "The current visual selection is runtime-only; properties cannot be removed from XAML.";
+            return;
+        }
+
         var result = await XamlSourceGenHotDesignTool.ApplyPropertyUpdateAsync(new SourceGenHotDesignPropertyUpdateRequest
         {
             BuildUri = ActiveBuildUri,
@@ -998,6 +1149,12 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
         PropertyValue = SelectedQuickSet.Value;
         await ApplyPropertyAsync();
+    }
+
+    private bool IsRuntimeOnlySelection()
+    {
+        return SelectedElement?.IsLive == true &&
+               string.IsNullOrWhiteSpace(SelectedElement.SourceElementId);
     }
 
     private void TogglePanel(string? panelName)
@@ -1118,23 +1275,25 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
                     controlTypeNames,
                     out var matchInCurrentDocument))
             {
-                if (matchInCurrentDocument!.IsLive && !string.IsNullOrWhiteSpace(matchInCurrentDocument.SourceElementId))
+                if (matchInCurrentDocument!.IsLive)
                 {
-                    if (!string.IsNullOrWhiteSpace(matchInCurrentDocument.SourceBuildUri) &&
-                        !string.Equals(ActiveBuildUri, matchInCurrentDocument.SourceBuildUri, StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrWhiteSpace(matchInCurrentDocument.SourceElementId))
                     {
-                        ActiveBuildUri = matchInCurrentDocument.SourceBuildUri!;
-                        XamlSourceGenHotDesignTool.SelectDocument(ActiveBuildUri);
+                        SelectLiveElement(matchInCurrentDocument);
+                        return true;
                     }
 
-                    SelectElement(matchInCurrentDocument.SourceElementId);
-                }
-                else
-                {
-                    SelectElement(matchInCurrentDocument.Id);
+                    _selectedElement = matchInCurrentDocument;
+                    OnPropertyChanged(nameof(SelectedElement));
+                    SelectLiveElement(matchInCurrentDocument);
+                    return true;
                 }
 
-                return true;
+                if (!matchInCurrentDocument.IsLive)
+                {
+                    SelectSourceElement(ActiveBuildUri, matchInCurrentDocument.Id);
+                    return true;
+                }
             }
         }
 
@@ -1150,14 +1309,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             return false;
         }
 
-        if (!string.Equals(ActiveBuildUri, resolvedBuildUri, StringComparison.OrdinalIgnoreCase))
-        {
-            ActiveBuildUri = resolvedBuildUri;
-            XamlSourceGenHotDesignTool.SelectDocument(resolvedBuildUri);
-        }
-
-        XamlSourceGenHotDesignTool.SelectElement(resolvedBuildUri, resolvedElementId);
-        RefreshWorkspace();
+        SelectSourceElement(resolvedBuildUri, resolvedElementId);
         return true;
     }
 
@@ -1224,7 +1376,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         }
 
         var updatedProperties = ApplyPinnedStates(Properties, ActiveBuildUri, SelectedElement?.TypeName);
-        ReplaceCollection(Properties, updatedProperties);
+        ReplaceCollection(Properties, updatedProperties, PropertyEntryEquals);
         RefreshFilteredProperties();
 
         var selectedProperty = Properties.FirstOrDefault(candidate =>
@@ -1309,7 +1461,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             .ThenBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        ReplaceCollection(FilteredProperties, filtered);
+        ReplaceCollection(FilteredProperties, filtered, PropertyEntryEquals);
         if (SelectedProperty is not null &&
             FilteredProperties.All(property => !string.Equals(property.Name, SelectedProperty.Name, StringComparison.OrdinalIgnoreCase)))
         {
@@ -1405,13 +1557,165 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         return items;
     }
 
-    private static void ReplaceCollection<T>(ObservableCollection<T> target, IReadOnlyList<T> source)
+    private static void ReplaceCollection<T>(
+        ObservableCollection<T> target,
+        IReadOnlyList<T> source,
+        Func<T, T, bool>? itemEquals = null)
     {
+        itemEquals ??= static (left, right) => EqualityComparer<T>.Default.Equals(left, right);
+        if (CollectionEquals(target, source, itemEquals))
+        {
+            return;
+        }
+
         target.Clear();
         for (var index = 0; index < source.Count; index++)
         {
             target.Add(source[index]);
         }
+    }
+
+    private static bool CollectionEquals<T>(
+        IReadOnlyList<T> left,
+        IReadOnlyList<T> right,
+        Func<T, T, bool> itemEquals)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!itemEquals(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool LiveElementTreeEquals(
+        IReadOnlyList<SourceGenHotDesignElementNode> left,
+        IReadOnlyList<SourceGenHotDesignElementNode> right)
+    {
+        return CollectionEquals(left, right, ElementNodeEquals);
+    }
+
+    private static bool ElementNodeEquals(
+        SourceGenHotDesignElementNode left,
+        SourceGenHotDesignElementNode right)
+    {
+        if (!string.Equals(left.Id, right.Id, StringComparison.Ordinal) ||
+            !string.Equals(left.DisplayName, right.DisplayName, StringComparison.Ordinal) ||
+            !string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal) ||
+            !string.Equals(left.XamlName, right.XamlName, StringComparison.Ordinal) ||
+            !string.Equals(left.Classes, right.Classes, StringComparison.Ordinal) ||
+            left.Depth != right.Depth ||
+            left.IsSelected != right.IsSelected ||
+            left.Line != right.Line ||
+            left.IsExpanded != right.IsExpanded ||
+            left.DescendantCount != right.DescendantCount ||
+            !string.Equals(left.SourceBuildUri, right.SourceBuildUri, StringComparison.Ordinal) ||
+            !string.Equals(left.SourceElementId, right.SourceElementId, StringComparison.Ordinal) ||
+            left.IsLive != right.IsLive ||
+            left.Children.Count != right.Children.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Children.Count; index++)
+        {
+            if (!ElementNodeEquals(left.Children[index], right.Children[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool DocumentDescriptorEquals(
+        SourceGenHotDesignDocumentDescriptor left,
+        SourceGenHotDesignDocumentDescriptor right)
+    {
+        return left.RootType == right.RootType &&
+               string.Equals(left.BuildUri, right.BuildUri, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.SourcePath, right.SourcePath, StringComparison.OrdinalIgnoreCase) &&
+               left.LiveInstanceCount == right.LiveInstanceCount &&
+               left.DocumentRole == right.DocumentRole &&
+               left.ArtifactKind == right.ArtifactKind &&
+               StringListEquals(left.ScopeHints, right.ScopeHints, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool PropertyEntryEquals(
+        SourceGenHotDesignPropertyEntry left,
+        SourceGenHotDesignPropertyEntry right)
+    {
+        return string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+               string.Equals(left.Value, right.Value, StringComparison.Ordinal) &&
+               string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal) &&
+               left.IsSet == right.IsSet &&
+               left.IsAttached == right.IsAttached &&
+               left.IsMarkupExtension == right.IsMarkupExtension &&
+               string.Equals(left.Category, right.Category, StringComparison.Ordinal) &&
+               string.Equals(left.Source, right.Source, StringComparison.Ordinal) &&
+               string.Equals(left.OwnerTypeName, right.OwnerTypeName, StringComparison.Ordinal) &&
+               string.Equals(left.EditorKind, right.EditorKind, StringComparison.Ordinal) &&
+               left.IsPinned == right.IsPinned &&
+               left.IsReadOnly == right.IsReadOnly &&
+               left.CanReset == right.CanReset &&
+               CollectionEquals(left.QuickSets, right.QuickSets, EqualityComparer<SourceGenHotDesignPropertyQuickSet>.Default.Equals) &&
+               StringListEquals(left.EnumOptions, right.EnumOptions, StringComparer.Ordinal);
+    }
+
+    private static bool ToolboxItemEquals(
+        SourceGenHotDesignToolboxItem left,
+        SourceGenHotDesignToolboxItem right)
+    {
+        return string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+               string.Equals(left.DisplayName, right.DisplayName, StringComparison.Ordinal) &&
+               string.Equals(left.Category, right.Category, StringComparison.Ordinal) &&
+               string.Equals(left.XamlSnippet, right.XamlSnippet, StringComparison.Ordinal) &&
+               left.IsProjectControl == right.IsProjectControl &&
+               StringListEquals(left.Tags, right.Tags, StringComparer.Ordinal);
+    }
+
+    private static bool StringListEquals(
+        IReadOnlyList<string>? left,
+        IReadOnlyList<string>? right,
+        StringComparer comparer)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!comparer.Equals(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void PostUi(Action action)
