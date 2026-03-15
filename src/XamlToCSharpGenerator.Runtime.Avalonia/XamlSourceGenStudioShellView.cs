@@ -3,7 +3,6 @@ extern alias axeditor;
 #endif
 
 using System;
-using System.ComponentModel;
 using Avalonia;
 using global::Avalonia.Controls;
 using global::Avalonia.Controls.Primitives;
@@ -19,58 +18,9 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioShellView : UserControl
 {
-    private Grid? _canvasWorkspaceGrid;
-    private Border? _canvasPreviewPanel;
-    private Border? _canvasEditorPanel;
-    private GridSplitter? _canvasSplitter;
-    private XamlSourceGenStudioShellViewModel? _observedViewModel;
-
     public XamlSourceGenStudioShellView()
     {
-        DataContextChanged += OnDataContextChanged;
-        DetachedFromVisualTree += OnDetachedFromVisualTree;
         BuildContent();
-    }
-
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        if (ReferenceEquals(_observedViewModel, DataContext))
-        {
-            return;
-        }
-
-        if (_observedViewModel is not null)
-        {
-            _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        }
-
-        _observedViewModel = DataContext as XamlSourceGenStudioShellViewModel;
-        if (_observedViewModel is not null)
-        {
-            _observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
-        }
-
-        ApplyCanvasWorkspaceLayout();
-    }
-
-    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
-    {
-        if (_observedViewModel is null)
-        {
-            return;
-        }
-
-        _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        _observedViewModel = null;
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(e.PropertyName) ||
-            string.Equals(e.PropertyName, nameof(XamlSourceGenStudioShellViewModel.CanvasLayoutMode), StringComparison.Ordinal))
-        {
-            ApplyCanvasWorkspaceLayout();
-        }
     }
 
     private void BuildContent()
@@ -491,12 +441,8 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
 
         grid.Children.Add(toolbar);
 
-        _canvasWorkspaceGrid = new Grid();
-
-        _canvasPreviewPanel = BuildCanvasPreviewPanel();
-        _canvasWorkspaceGrid.Children.Add(_canvasPreviewPanel);
-
-        _canvasEditorPanel = new Border
+        var canvasPreviewPanel = BuildCanvasPreviewPanel();
+        var canvasEditorPanel = new Border
         {
             BorderBrush = global::Avalonia.Media.Brushes.SlateGray,
             BorderThickness = new Thickness(1),
@@ -506,18 +452,21 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                 nameof(XamlSourceGenStudioShellViewModel.CanvasEditorDocumentUri),
                 nameof(XamlSourceGenStudioShellViewModel.CanvasEditorWorkspaceRoot))
         };
-        _canvasWorkspaceGrid.Children.Add(_canvasEditorPanel);
 
-        _canvasSplitter = new GridSplitter
+        var canvasSplitter = new GridSplitter
         {
             Background = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromArgb(64, 112, 128, 144))
         };
-        _canvasWorkspaceGrid.Children.Add(_canvasSplitter);
+        var canvasWorkspace = new SourceGenStudioCanvasWorkspace(
+            canvasPreviewPanel,
+            canvasEditorPanel,
+            canvasSplitter);
+        canvasWorkspace.Bind(
+            SourceGenStudioCanvasWorkspace.LayoutModeProperty,
+            new Binding(nameof(XamlSourceGenStudioShellViewModel.CanvasLayoutMode), BindingMode.TwoWay));
 
-        ApplyCanvasWorkspaceLayout();
-
-        Grid.SetRow(_canvasWorkspaceGrid, 1);
-        grid.Children.Add(_canvasWorkspaceGrid);
+        Grid.SetRow(canvasWorkspace, 1);
+        grid.Children.Add(canvasWorkspace);
 
         var status = new TextBlock
         {
@@ -625,89 +574,6 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioOperationLines)));
         tab.Content = list;
         return tab;
-    }
-
-    private void ApplyCanvasWorkspaceLayout()
-    {
-        if (_canvasWorkspaceGrid is null ||
-            _canvasPreviewPanel is null ||
-            _canvasEditorPanel is null ||
-            _canvasSplitter is null)
-        {
-            return;
-        }
-
-        var mode = _observedViewModel?.CanvasLayoutMode ?? SourceGenStudioCanvasLayoutMode.SideBySide;
-        var showsPreview = mode != SourceGenStudioCanvasLayoutMode.EditorOnly;
-        var showsEditor = mode != SourceGenStudioCanvasLayoutMode.PreviewOnly;
-        var isSplit = showsPreview && showsEditor;
-
-        _canvasPreviewPanel.IsVisible = showsPreview;
-        _canvasEditorPanel.IsVisible = showsEditor;
-        _canvasSplitter.IsVisible = isSplit;
-
-        switch (mode)
-        {
-            case SourceGenStudioCanvasLayoutMode.Stacked:
-                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
-                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*,6,*");
-                ConfigureSplitterForRows(_canvasSplitter);
-                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
-                SetGridPosition(_canvasSplitter, row: 1, column: 0);
-                SetGridPosition(_canvasEditorPanel, row: 2, column: 0);
-                break;
-
-            case SourceGenStudioCanvasLayoutMode.PreviewOnly:
-                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
-                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
-                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
-                SetGridPosition(_canvasSplitter, row: 0, column: 0);
-                SetGridPosition(_canvasEditorPanel, row: 0, column: 0);
-                break;
-
-            case SourceGenStudioCanvasLayoutMode.EditorOnly:
-                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
-                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
-                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
-                SetGridPosition(_canvasSplitter, row: 0, column: 0);
-                SetGridPosition(_canvasEditorPanel, row: 0, column: 0);
-                break;
-
-            default:
-                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*,6,*");
-                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
-                ConfigureSplitterForColumns(_canvasSplitter);
-                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
-                SetGridPosition(_canvasSplitter, row: 0, column: 1);
-                SetGridPosition(_canvasEditorPanel, row: 0, column: 2);
-                break;
-        }
-    }
-
-    private static void ConfigureSplitterForColumns(GridSplitter splitter)
-    {
-        splitter.ResizeDirection = GridResizeDirection.Columns;
-        splitter.Width = 6;
-        splitter.Height = double.NaN;
-        splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
-        splitter.VerticalAlignment = VerticalAlignment.Stretch;
-    }
-
-    private static void ConfigureSplitterForRows(GridSplitter splitter)
-    {
-        splitter.ResizeDirection = GridResizeDirection.Rows;
-        splitter.Width = double.NaN;
-        splitter.Height = 6;
-        splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
-        splitter.VerticalAlignment = VerticalAlignment.Stretch;
-    }
-
-    private static void SetGridPosition(Control control, int row, int column)
-    {
-        Grid.SetRow(control, row);
-        Grid.SetColumn(control, column);
-        Grid.SetRowSpan(control, 1);
-        Grid.SetColumnSpan(control, 1);
     }
 
     private static Control CreateXamlEditor(string textProperty, string documentUriProperty, string workspaceRootProperty)
