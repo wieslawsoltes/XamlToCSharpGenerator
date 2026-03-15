@@ -12,7 +12,9 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
             throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia runtime XAML loader contract was not found.");
 
-        var proxy = RuntimeXamlLoaderProxyFactory.Create(loaderContractType, new SourceGeneratedRuntimeXamlLoader());
+        var proxy = RuntimeXamlLoaderProxyFactory.Create(
+            loaderContractType,
+            new SourceGeneratedRuntimeXamlLoader().Load);
         var locatorType = Type.GetType("Avalonia.AvaloniaLocator, Avalonia.Base", throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia locator type was not found.");
         var currentMutableProperty = locatorType.GetProperty(

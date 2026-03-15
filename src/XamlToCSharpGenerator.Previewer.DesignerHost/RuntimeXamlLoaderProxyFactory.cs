@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+using global::Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
@@ -8,11 +9,14 @@ internal static class RuntimeXamlLoaderProxyFactory
 {
     private static readonly object Sync = new();
     private static Type? s_proxyType;
+    private static Type? s_delegateType;
 
-    public static object Create(Type interfaceType, SourceGeneratedRuntimeXamlLoader target)
+    public static object Create(
+        Type interfaceType,
+        Func<RuntimeXamlLoaderDocument, RuntimeXamlLoaderConfiguration, object> loadHandler)
     {
         ArgumentNullException.ThrowIfNull(interfaceType);
-        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(loadHandler);
 
         if (!interfaceType.IsInterface)
         {
@@ -21,13 +25,33 @@ internal static class RuntimeXamlLoaderProxyFactory
 
         lock (Sync)
         {
-            s_proxyType ??= BuildProxyType(interfaceType);
-            return Activator.CreateInstance(s_proxyType, target)
+            s_delegateType ??= BuildDelegateType(interfaceType);
+            s_proxyType ??= BuildProxyType(interfaceType, s_delegateType);
+            return Activator.CreateInstance(s_proxyType, loadHandler)
                 ?? throw new InvalidOperationException("Failed to create runtime XAML loader proxy.");
         }
     }
 
-    private static Type BuildProxyType(Type interfaceType)
+    private static Type BuildDelegateType(Type interfaceType)
+    {
+        var interfaceMethod = interfaceType.GetMethod("Load", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("IRuntimeXamlLoader.Load method was not found.");
+        var parameterTypes = interfaceMethod.GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        if (parameterTypes.Length != 2)
+        {
+            throw new InvalidOperationException("IRuntimeXamlLoader.Load signature is not supported.");
+        }
+
+        return typeof(Func<,,>).MakeGenericType(
+            parameterTypes[0],
+            parameterTypes[1],
+            interfaceMethod.ReturnType);
+    }
+
+    private static Type BuildProxyType(Type interfaceType, Type delegateType)
     {
         var assemblyName = new AssemblyName("XamlToCSharpGenerator.Previewer.DesignerHost.Dynamic");
         var assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
@@ -40,14 +64,14 @@ internal static class RuntimeXamlLoaderProxyFactory
         typeBuilder.AddInterfaceImplementation(interfaceType);
 
         var targetField = typeBuilder.DefineField(
-            "_target",
-            typeof(SourceGeneratedRuntimeXamlLoader),
+            "_loadHandler",
+            delegateType,
             FieldAttributes.Private | FieldAttributes.InitOnly);
 
         var ctor = typeBuilder.DefineConstructor(
             MethodAttributes.Public,
             CallingConventions.Standard,
-            [typeof(SourceGeneratedRuntimeXamlLoader)]);
+            [delegateType]);
         var ctorIl = ctor.GetILGenerator();
         ctorIl.Emit(OpCodes.Ldarg_0);
         ctorIl.Emit(OpCodes.Call, typeof(object).GetConstructor(Type.EmptyTypes)!);
@@ -74,8 +98,8 @@ internal static class RuntimeXamlLoaderProxyFactory
         proxyIl.Emit(OpCodes.Ldarg_2);
         proxyIl.Emit(
             OpCodes.Callvirt,
-            typeof(SourceGeneratedRuntimeXamlLoader).GetMethod(nameof(SourceGeneratedRuntimeXamlLoader.Load), parameterTypes)
-            ?? throw new InvalidOperationException("SourceGeneratedRuntimeXamlLoader.Load method was not found."));
+            delegateType.GetMethod("Invoke", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new InvalidOperationException("Runtime XAML loader delegate Invoke method was not found."));
         proxyIl.Emit(OpCodes.Ret);
         typeBuilder.DefineMethodOverride(proxyMethod, interfaceMethod);
 
