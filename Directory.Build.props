@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.1.0</VersionPrefix>
-    <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha.9</VersionSuffix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha.10</VersionSuffix>
     <XamlToCSharpGeneratorStrictBuild Condition="'$(XamlToCSharpGeneratorStrictBuild)' == ''">false</XamlToCSharpGeneratorStrictBuild>
     <TreatWarningsAsErrors Condition="'$(XamlToCSharpGeneratorStrictBuild)' == 'true'">true</TreatWarningsAsErrors>
     <TreatWarningsAsErrors Condition="'$(XamlToCSharpGeneratorStrictBuild)' != 'true'">false</TreatWarningsAsErrors>
