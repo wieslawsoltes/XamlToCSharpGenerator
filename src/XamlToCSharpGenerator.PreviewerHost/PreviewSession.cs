@@ -14,6 +14,7 @@ internal sealed record PreviewSessionStartRequest(
     string RuntimeConfigPath,
     string DepsFilePath,
     string SourceAssemblyPath,
+    string? SourceFilePath,
     string XamlFileProjectPath,
     string XamlText,
     string CompilerMode,
@@ -334,6 +335,12 @@ internal sealed class PreviewSession : IAsyncDisposable
         {
             process.StartInfo.ArgumentList.Add("--axsg-preview-height");
             process.StartInfo.ArgumentList.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SourceFilePath))
+        {
+            process.StartInfo.ArgumentList.Add("--axsg-source-file");
+            process.StartInfo.ArgumentList.Add(request.SourceFilePath);
         }
 
         process.StartInfo.ArgumentList.Add(request.HostAssemblyPath);

@@ -9,4 +9,5 @@ internal enum PreviewCompilerMode
 internal sealed record PreviewHostOptions(
     PreviewCompilerMode CompilerMode,
     double? PreviewWidth,
-    double? PreviewHeight);
+    double? PreviewHeight,
+    string? SourceFilePath);

@@ -5,10 +5,12 @@ internal static class Program
     public static void Main(string[] args)
     {
         var (options, forwardedArguments) = ParseArguments(args);
+        PreviewHostRuntimeState.Configure(options);
         SourceGeneratedRuntimeXamlLoaderInstaller.Install(
             options.CompilerMode,
             options.PreviewWidth,
             options.PreviewHeight);
+        SourceGeneratedPreviewMarkupRuntimeInstaller.Install();
         global::Avalonia.DesignerSupport.Remote.RemoteDesignerEntryPoint.Main(forwardedArguments);
     }
 
@@ -18,6 +20,7 @@ internal static class Program
         var compilerMode = PreviewCompilerMode.Avalonia;
         double? previewWidth = null;
         double? previewHeight = null;
+        string? sourceFilePath = null;
 
         for (var index = 0; index < args.Length; index += 1)
         {
@@ -33,6 +36,9 @@ internal static class Program
                 case "--axsg-preview-height":
                     previewHeight = ParsePositiveDouble(GetRequiredValue(args, ref index, argument), argument);
                     break;
+                case "--axsg-source-file":
+                    sourceFilePath = Path.GetFullPath(GetRequiredValue(args, ref index, argument));
+                    break;
                 default:
                     forwardedArguments.Add(argument);
                     break;
@@ -40,7 +46,7 @@ internal static class Program
         }
 
         return (
-            new PreviewHostOptions(compilerMode, previewWidth, previewHeight),
+            new PreviewHostOptions(compilerMode, previewWidth, previewHeight, sourceFilePath),
             forwardedArguments.ToArray());
     }
 

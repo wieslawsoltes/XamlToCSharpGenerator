@@ -12,9 +12,12 @@
     <PackageReference Include="Avalonia" Version="11.3.12" />
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.12" />
     <PackageReference Include="Avalonia.Remote.Protocol" Version="11.3.12" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../XamlToCSharpGenerator.ExpressionSemantics/XamlToCSharpGenerator.ExpressionSemantics.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
     <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" />
   </ItemGroup>
 </Project>

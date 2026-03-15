@@ -85,4 +85,27 @@ public class SourceGeneratedDesignerHostTests
 
         Assert.Same(expected, result);
     }
+
+    [Fact]
+    public void CreateEvaluatorClassName_Returns_Deterministic_Identifier()
+    {
+        var assembly = Assembly.Load("XamlToCSharpGenerator.Previewer.DesignerHost");
+        var runtimeType = assembly.GetType(
+            "XamlToCSharpGenerator.Previewer.DesignerHost.SourceGeneratedPreviewMarkupRuntime",
+            throwOnError: true)
+            ?? throw new InvalidOperationException("Preview markup runtime type was not found.");
+        var createNameMethod = runtimeType.GetMethod(
+            "CreateEvaluatorClassName",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("CreateEvaluatorClassName was not found.");
+
+        var result = (string?)createNameMethod.Invoke(null, ["source.Quantity + 1"])
+            ?? throw new InvalidOperationException("CreateEvaluatorClassName returned null.");
+
+        Assert.StartsWith("__AXSGPreviewExpr_", result, StringComparison.Ordinal);
+        Assert.Matches("^__AXSGPreviewExpr_[A-F0-9]+$", result);
+        Assert.Equal(
+            result,
+            (string?)createNameMethod.Invoke(null, ["source.Quantity + 1"]));
+    }
 }

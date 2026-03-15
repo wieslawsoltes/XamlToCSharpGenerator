@@ -203,6 +203,7 @@ internal static class Program
         var depsFilePath = GetString(payload, "depsFilePath")
             ?? Path.ChangeExtension(hostAssemblyPath, ".deps.json");
         var sourceAssemblyPath = GetRequiredString(payload, "sourceAssemblyPath");
+        var sourceFilePath = GetString(payload, "sourceFilePath");
         var xamlFileProjectPath = GetRequiredString(payload, "xamlFileProjectPath");
         var xamlText = GetRequiredString(payload, "xamlText");
         var compilerMode = GetString(payload, "previewCompilerMode") ?? "avalonia";
@@ -217,6 +218,7 @@ internal static class Program
             Path.GetFullPath(runtimeConfigPath),
             Path.GetFullPath(depsFilePath),
             Path.GetFullPath(sourceAssemblyPath),
+            string.IsNullOrWhiteSpace(sourceFilePath) ? null : Path.GetFullPath(sourceFilePath),
             xamlFileProjectPath,
             xamlText,
             compilerMode,
