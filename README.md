@@ -61,7 +61,7 @@ code --install-extension ./axsg-language-server-x.y.z.vsix
 
 The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
 It also includes Avalonia preview support for `.xaml` and `.axaml` files through `AXSG: Open Avalonia Preview`.
-Preview sessions can run either Avalonia's XamlX previewer or the AXSG source-generated loader. The default `auto` mode prefers source-generated preview when the build output contains `XamlToCSharpGenerator.Runtime.Avalonia`, and falls back to Avalonia's previewer otherwise.
+Preview sessions can run either Avalonia's XamlX previewer or the AXSG source-generated loader. The default `auto` mode prefers Avalonia live preview so unsaved XAML edits refresh immediately. Set `axsg.preview.compilerMode=sourceGenerated` when you explicitly want previewing from the last successful AXSG build.
 
 ### CLI language server tool
 

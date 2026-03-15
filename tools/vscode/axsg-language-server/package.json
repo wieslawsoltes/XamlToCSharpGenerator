@@ -327,7 +327,7 @@
             "sourceGenerated"
           ],
           "default": "auto",
-          "description": "Selects the preview compiler. 'auto' prefers the AXSG source-generated loader when available, 'avalonia' uses Avalonia's XamlX previewer with live unsaved updates, and 'sourceGenerated' forces the AXSG source-generated loader."
+          "description": "Selects the preview compiler. 'auto' prefers Avalonia live preview for unsaved XAML updates, 'avalonia' uses Avalonia's XamlX previewer with live unsaved updates, and 'sourceGenerated' forces the AXSG source-generated loader."
         },
         "axsg.preview.targetFramework": {
           "type": "string",

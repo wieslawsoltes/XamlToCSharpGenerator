@@ -20,6 +20,7 @@ const MOBILE_TARGET_FRAMEWORK_MARKERS = [
   '-tvos',
   '-maccatalyst'
 ];
+const DEFAULT_PREVIEW_SCALE = 1;
 
 function buildArguments(projectPath, targetFramework, options = {}) {
   const args = ['build', projectPath, '-nologo', '-v:minimal'];
@@ -116,12 +117,7 @@ function isPreviewableProjectInfo(projectInfo) {
 }
 
 function isUsablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configuredMode) {
-  const previewPlan = resolvePreviewCompilerMode(configuredMode, sourceProjectInfo);
-  if (previewPlan.preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
-    return isExecutableProjectInfo(projectInfo);
-  }
-
-  return isPreviewableProjectInfo(projectInfo);
+  return isExecutableProjectInfo(projectInfo);
 }
 
 function isResolvablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configuredMode, allowAutoExecutableFallback = false) {
@@ -188,9 +184,7 @@ function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
 
   return {
     requestedMode,
-    preferredMode: sourceGeneratedSupported
-      ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
-      : PREVIEW_COMPILER_MODE_AVALONIA,
+    preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
     sourceGeneratedSupported
   };
 }
@@ -251,6 +245,44 @@ function resolveLoopbackPreviewWebviewTarget(previewUrl) {
   };
 }
 
+function normalizePreviewViewportMetrics(width, height, scale) {
+  const normalizedWidth = Number(width);
+  const normalizedHeight = Number(height);
+  if (!Number.isFinite(normalizedWidth) ||
+      !Number.isFinite(normalizedHeight) ||
+      normalizedWidth <= 0 ||
+      normalizedHeight <= 0) {
+    return null;
+  }
+
+  return {
+    width: Math.max(1, Math.round(normalizedWidth)),
+    height: Math.max(1, Math.round(normalizedHeight)),
+    scale: normalizePreviewScale(scale)
+  };
+}
+
+function getPreviewViewportMetricsKey(previewMetrics) {
+  if (!previewMetrics ||
+      !Number.isFinite(previewMetrics.width) ||
+      !Number.isFinite(previewMetrics.height) ||
+      !Number.isFinite(previewMetrics.scale) ||
+      previewMetrics.scale <= 0) {
+    return '';
+  }
+
+  return `${previewMetrics.width}x${previewMetrics.height}@${previewMetrics.scale.toFixed(3)}`;
+}
+
+function normalizePreviewScale(scale) {
+  const normalizedScale = Number(scale);
+  if (!Number.isFinite(normalizedScale) || normalizedScale <= 0) {
+    return DEFAULT_PREVIEW_SCALE;
+  }
+
+  return Math.round(normalizedScale * 1000) / 1000;
+}
+
 function createPreviewStartPlan(options) {
   const requestedMode = options && options.requestedMode
     ? options.requestedMode
@@ -258,17 +290,18 @@ function createPreviewStartPlan(options) {
   const preferredMode = options && options.preferredMode
     ? options.preferredMode
     : PREVIEW_COMPILER_MODE_AVALONIA;
-  const hasSourceGeneratedDesignerHost = Boolean(options && options.hasSourceGeneratedDesignerHost);
+  const hasBundledDesignerHost = Boolean(options && options.hasBundledDesignerHost);
   const hasAvaloniaPreviewer = Boolean(options && options.hasAvaloniaPreviewer);
+  const hasAvaloniaHost = hasBundledDesignerHost || hasAvaloniaPreviewer;
   const modes = [];
 
   if (preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
-    if (hasSourceGeneratedDesignerHost) {
+    if (hasBundledDesignerHost) {
       modes.push(PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
     } else if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
       return {
         modes,
-        requiresSourceGeneratedDesignerHost: true,
+        requiresBundledDesignerHost: true,
         requiresAvaloniaPreviewer: false
       };
     }
@@ -276,33 +309,33 @@ function createPreviewStartPlan(options) {
     if (requestedMode !== PREVIEW_COMPILER_MODE_AUTO) {
       return {
         modes,
-        requiresSourceGeneratedDesignerHost: false,
+        requiresBundledDesignerHost: false,
         requiresAvaloniaPreviewer: false
       };
     }
 
-    if (hasAvaloniaPreviewer) {
+    if (hasAvaloniaHost) {
       modes.push(PREVIEW_COMPILER_MODE_AVALONIA);
     }
 
     return {
       modes,
-      requiresSourceGeneratedDesignerHost: false,
+      requiresBundledDesignerHost: false,
       requiresAvaloniaPreviewer: false
     };
   }
 
-  if (!hasAvaloniaPreviewer) {
+  if (!hasAvaloniaHost) {
     return {
       modes,
-      requiresSourceGeneratedDesignerHost: false,
+      requiresBundledDesignerHost: false,
       requiresAvaloniaPreviewer: true
     };
   }
 
   return {
     modes: [PREVIEW_COMPILER_MODE_AVALONIA],
-    requiresSourceGeneratedDesignerHost: false,
+    requiresBundledDesignerHost: false,
     requiresAvaloniaPreviewer: false
   };
 }
@@ -517,6 +550,7 @@ module.exports = {
   createCommandFailureMessage,
   buildArguments,
   createPreviewBuildPlan,
+  getPreviewViewportMetricsKey,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
@@ -530,6 +564,7 @@ module.exports = {
   isUnderBuildOutput,
   normalizeFilePath,
   normalizePreviewCompilerMode,
+  normalizePreviewViewportMetrics,
   normalizeMaybeEmptyPath,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,

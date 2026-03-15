@@ -11,12 +11,14 @@ const {
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
   hasPendingPreviewText,
+  getPreviewViewportMetricsKey,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
   isResolvablePreviewHostProjectInfo,
   isUsablePreviewHostProjectInfo,
   normalizePreviewCompilerMode,
+  normalizePreviewViewportMetrics,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
   PREVIEW_COMPILER_MODE_AVALONIA,
@@ -61,6 +63,36 @@ test('normalizePreviewCompilerMode falls back to auto for unknown values', () =>
   assert.equal(normalizePreviewCompilerMode('unexpected'), PREVIEW_COMPILER_MODE_AUTO);
 });
 
+test('normalizePreviewViewportMetrics rounds viewport size and preserves device scale', () => {
+  assert.deepEqual(
+    normalizePreviewViewportMetrics(801.6, 599.2, 1.5),
+    {
+      width: 802,
+      height: 599,
+      scale: 1.5
+    });
+});
+
+test('normalizePreviewViewportMetrics falls back to default scale when the host scale is invalid', () => {
+  assert.deepEqual(
+    normalizePreviewViewportMetrics(640, 480, 0),
+    {
+      width: 640,
+      height: 480,
+      scale: 1
+    });
+});
+
+test('getPreviewViewportMetricsKey includes the viewport scale', () => {
+  assert.equal(
+    getPreviewViewportMetricsKey({
+      width: 1280,
+      height: 720,
+      scale: 1.25
+    }),
+    '1280x720@1.250');
+});
+
 test('hasPendingPreviewText keeps intentionally empty XAML updates', () => {
   assert.equal(hasPendingPreviewText(''), true);
   assert.equal(hasPendingPreviewText(null), false);
@@ -91,7 +123,7 @@ test('isPreviewableProjectInfo requires an executable output and previewer path'
   }), false);
 });
 
-test('isUsablePreviewHostProjectInfo accepts executable hosts without previewer path for source-generated mode', () => {
+test('isUsablePreviewHostProjectInfo accepts executable hosts without previewer path for bundled preview modes', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
   try {
     const targetPath = path.join(tempRoot, 'App.dll');
@@ -115,13 +147,13 @@ test('isUsablePreviewHostProjectInfo accepts executable hosts without previewer 
       true);
     assert.equal(
       isUsablePreviewHostProjectInfo(hostProjectInfo, sourceProjectInfo, PREVIEW_COMPILER_MODE_AVALONIA),
-      false);
+      true);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test('isResolvablePreviewHostProjectInfo allows executable hosts as provisional auto candidates before the first build', () => {
+test('isResolvablePreviewHostProjectInfo accepts executable hosts for auto mode without provisional fallback', () => {
   assert.equal(
     isResolvablePreviewHostProjectInfo({
       outputType: 'Exe',
@@ -141,7 +173,7 @@ test('isResolvablePreviewHostProjectInfo allows executable hosts as provisional 
       outputType: 'Exe',
       targetPath: '/tmp/App.dll'
     }, PREVIEW_COMPILER_MODE_AUTO, false),
-    false);
+    true);
 });
 
 test('tryParseMsbuildJson reads the property payload from stdout', () => {
@@ -227,7 +259,7 @@ test('supportsSourceGeneratedPreview detects the runtime dependency from deps.js
   }
 });
 
-test('resolvePreviewCompilerMode prefers source-generated preview in auto mode when supported', () => {
+test('resolvePreviewCompilerMode prefers Avalonia live preview in auto mode even when source-generated support is available', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
   try {
     const targetPath = path.join(tempRoot, 'Demo.dll');
@@ -237,7 +269,7 @@ test('resolvePreviewCompilerMode prefers source-generated preview in auto mode w
     const actual = resolvePreviewCompilerMode('auto', { targetPath });
     assert.deepEqual(actual, {
       requestedMode: PREVIEW_COMPILER_MODE_AUTO,
-      preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+      preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
       sourceGeneratedSupported: true
     });
   } finally {
@@ -318,13 +350,13 @@ test('createPreviewStartPlan allows forced source-generated preview without Aval
   const actual = createPreviewStartPlan({
     requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
     preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-    hasSourceGeneratedDesignerHost: true,
+    hasBundledDesignerHost: true,
     hasAvaloniaPreviewer: false
   });
 
   assert.deepEqual(actual, {
     modes: [PREVIEW_COMPILER_MODE_SOURCE_GENERATED],
-    requiresSourceGeneratedDesignerHost: false,
+    requiresBundledDesignerHost: false,
     requiresAvaloniaPreviewer: false
   });
 });
@@ -333,13 +365,13 @@ test('createPreviewStartPlan does not fall back to Avalonia when source-generate
   const actual = createPreviewStartPlan({
     requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
     preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-    hasSourceGeneratedDesignerHost: true,
+    hasBundledDesignerHost: true,
     hasAvaloniaPreviewer: true
   });
 
   assert.deepEqual(actual, {
     modes: [PREVIEW_COMPILER_MODE_SOURCE_GENERATED],
-    requiresSourceGeneratedDesignerHost: false,
+    requiresBundledDesignerHost: false,
     requiresAvaloniaPreviewer: false
   });
 });
@@ -348,13 +380,28 @@ test('createPreviewStartPlan falls back to Avalonia only in auto mode when sourc
   const actual = createPreviewStartPlan({
     requestedMode: PREVIEW_COMPILER_MODE_AUTO,
     preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-    hasSourceGeneratedDesignerHost: false,
+    hasBundledDesignerHost: false,
     hasAvaloniaPreviewer: true
   });
 
   assert.deepEqual(actual, {
     modes: [PREVIEW_COMPILER_MODE_AVALONIA],
-    requiresSourceGeneratedDesignerHost: false,
+    requiresBundledDesignerHost: false,
+    requiresAvaloniaPreviewer: false
+  });
+});
+
+test('createPreviewStartPlan uses the bundled designer host for Avalonia mode when available', () => {
+  const actual = createPreviewStartPlan({
+    requestedMode: PREVIEW_COMPILER_MODE_AVALONIA,
+    preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+    hasBundledDesignerHost: true,
+    hasAvaloniaPreviewer: false
+  });
+
+  assert.deepEqual(actual, {
+    modes: [PREVIEW_COMPILER_MODE_AVALONIA],
+    requiresBundledDesignerHost: false,
     requiresAvaloniaPreviewer: false
   });
 });
@@ -363,13 +410,13 @@ test('createPreviewStartPlan requires the bundled designer host when source-gene
   const actual = createPreviewStartPlan({
     requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
     preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-    hasSourceGeneratedDesignerHost: false,
+    hasBundledDesignerHost: false,
     hasAvaloniaPreviewer: true
   });
 
   assert.deepEqual(actual, {
     modes: [],
-    requiresSourceGeneratedDesignerHost: true,
+    requiresBundledDesignerHost: true,
     requiresAvaloniaPreviewer: false
   });
 });

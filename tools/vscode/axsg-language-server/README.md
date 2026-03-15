@@ -51,6 +51,8 @@ Relevant settings:
 - `axsg.preview.buildBeforeLaunch`
 - `axsg.preview.autoUpdateDelayMs`
 
+`axsg.preview.compilerMode = auto` now prefers Avalonia live preview so unsaved XAML edits refresh immediately. Use `sourceGenerated` only when you explicitly want previewing from the last successful AXSG build.
+
 ## Development
 
 ```bash

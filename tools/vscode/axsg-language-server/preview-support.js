@@ -12,6 +12,7 @@ const {
   createPreviewBuildPlan,
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
+  getPreviewViewportMetricsKey,
   hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
@@ -22,6 +23,7 @@ const {
   isUnderBuildOutput,
   normalizeFilePath,
   normalizePreviewCompilerMode,
+  normalizePreviewViewportMetrics,
   normalizeMaybeEmptyPath,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
@@ -46,7 +48,9 @@ const PROJECT_INFO_PROPERTIES = [
 ];
 
 const DEFAULT_UPDATE_DELAY_MS = 300;
+const DEFAULT_RESIZE_DELAY_MS = 150;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const DEFAULT_PREVIEW_SIZE_WAIT_MS = 750;
 const HOST_PROJECT_STATE_PREFIX = 'axsg.preview.hostProject::';
 const PREVIEW_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.PreviewerHost.dll';
 const SOURCE_GENERATED_DESIGNER_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Previewer.DesignerHost.dll';
@@ -212,6 +216,11 @@ class AvaloniaPreviewSession {
     this.activeCompilerMode = null;
     this.previewUrlUpdateToken = 0;
     this.rawPreviewUrl = '';
+    this.previewSize = null;
+    this.previewSizeReady = createDeferred();
+    this.previewSizeReadyResolved = false;
+    this.resizeTimer = null;
+    this.lastAppliedPreviewSizeKey = '';
   }
 
   reveal() {
@@ -348,6 +357,11 @@ class AvaloniaPreviewSession {
       this.updateTimer = null;
     }
 
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
+    }
+
     if (this.panel) {
       const panel = this.panel;
       this.panel = null;
@@ -381,6 +395,11 @@ class AvaloniaPreviewSession {
     panel.webview.html = createPreviewWebviewHtml(panel.webview, this.fileName, this.currentPreviewUrl, this.currentStatus);
     panel.webview.onDidReceiveMessage(message => {
       if (!message || !message.type) {
+        return;
+      }
+
+      if (message.type === 'viewportSize') {
+        this.handleViewportSizeMessage(message);
         return;
       }
 
@@ -422,6 +441,7 @@ class AvaloniaPreviewSession {
         this.setStatus(`Starting ${attempt.label} preview...`);
         await this.startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt);
         this.activeCompilerMode = attempt.mode;
+        await this.applyPreviewSizeAsync();
         this.setStatus(getPreviewReadyStatus(this.fileName, attempt.mode));
         this.updatePanel();
         return;
@@ -461,14 +481,24 @@ class AvaloniaPreviewSession {
       void this.handleHostUnavailableAsync(helper, exitText, true);
     });
 
+    const previewSize = await this.waitForInitialPreviewSizeAsync();
     const payload = {
       dotNetCommand,
       hostAssemblyPath: this.launchInfo.hostProject.targetPath,
       previewerToolPath: attempt.previewerToolPath,
       sourceAssemblyPath: this.launchInfo.sourceProject.targetPath,
       xamlFileProjectPath: normalizePreviewTargetPath(this.launchInfo.projectContext.targetPath),
-      xamlText: this.launchInfo.documentText
+      xamlText: this.launchInfo.documentText,
+      previewCompilerMode: attempt.mode
     };
+    if (previewSize) {
+      payload.previewWidth = previewSize.width;
+      payload.previewHeight = previewSize.height;
+      payload.previewScale = previewSize.scale;
+      this.lastAppliedPreviewSizeKey = getPreviewViewportMetricsKey(previewSize);
+    } else {
+      this.lastAppliedPreviewSizeKey = '';
+    }
 
     const startResult = await helper.sendCommand('start', payload);
     const previewUrl = startResult?.previewUrl || '';
@@ -577,6 +607,7 @@ class AvaloniaPreviewSession {
       this.currentPreviewUrl = '';
       this.currentLoopbackPreview = null;
       this.activeCompilerMode = null;
+      this.lastAppliedPreviewSizeKey = '';
       this.applyWebviewOptions();
     }
 
@@ -616,6 +647,114 @@ class AvaloniaPreviewSession {
     }
 
     this.panel.webview.options = createPreviewWebviewOptions(portMapping);
+  }
+
+  handleViewportSizeMessage(message) {
+    if (this.disposed) {
+      return;
+    }
+
+    const previewSize = normalizePreviewViewportMetrics(
+      message.width,
+      message.height,
+      message.devicePixelRatio);
+    if (!previewSize) {
+      return;
+    }
+
+    if (getPreviewViewportMetricsKey(this.previewSize) === getPreviewViewportMetricsKey(previewSize)) {
+      return;
+    }
+
+    this.previewSize = previewSize;
+    if (!this.previewSizeReadyResolved) {
+      this.previewSizeReadyResolved = true;
+      this.previewSizeReady.resolve(previewSize);
+    }
+
+    if (this.activeCompilerMode && this.helper) {
+      this.scheduleViewportResize();
+    }
+  }
+
+  async waitForInitialPreviewSizeAsync() {
+    if (this.previewSize) {
+      return this.previewSize;
+    }
+
+    const timeoutMs = DEFAULT_PREVIEW_SIZE_WAIT_MS;
+    if (timeoutMs === 0) {
+      return null;
+    }
+
+    return Promise.race([
+      this.previewSizeReady.promise.then(() => this.previewSize),
+      delayAsync(timeoutMs).then(() => this.previewSize)
+    ]);
+  }
+
+  scheduleViewportResize() {
+    if (this.disposed || !this.helper || !this.activeCompilerMode) {
+      return;
+    }
+
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+    }
+
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = null;
+      this.updateChain = this.updateChain
+        .then(() => this.applyPreviewSizeAsync())
+        .catch(error => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.controller.getOutputChannel().appendLine(
+            `[preview] failed to resize ${this.fileName} preview: ${message}`);
+        });
+    }, DEFAULT_RESIZE_DELAY_MS);
+  }
+
+  async applyPreviewSizeAsync() {
+    if (this.disposed || !this.helper || !this.previewSize || !this.activeCompilerMode) {
+      return;
+    }
+
+    const helper = this.helper;
+    const previewSizeKey = getPreviewViewportMetricsKey(this.previewSize);
+    if (!previewSizeKey || previewSizeKey === this.lastAppliedPreviewSizeKey) {
+      return;
+    }
+
+    if (this.helper !== helper) {
+      return;
+    }
+
+    this.setStatus('Resizing preview...');
+    this.captureCurrentDocumentText();
+    await this.resetHelperAsync(helper);
+    await this.start();
+  }
+
+  captureCurrentDocumentText() {
+    const openDocument = vscode.workspace.textDocuments.find(document =>
+      document.uri.toString() === this.documentUri);
+    if (!openDocument) {
+      return;
+    }
+
+    try {
+      this.launchInfo.documentText = resolvePreviewDocumentText(
+        openDocument.getText(),
+        tryReadDocumentTextFromDisk(openDocument.fileName),
+        openDocument.isDirty,
+        this.usesSourceGeneratedRefreshFlow()
+          ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+          : PREVIEW_COMPILER_MODE_AVALONIA);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.controller.getOutputChannel().appendLine(
+        `[preview] failed to capture current document text for resize: ${message}`);
+    }
   }
 
   async updatePreviewUrlAsync(previewUrl) {
@@ -1339,6 +1478,44 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     let previewSocket = null;
     let previewSocketKey = '';
     let nextFrame = null;
+    let pendingViewportReport = 0;
+    let displayScaleWatcher = null;
+
+    function getViewportScale() {
+      const scale = Number(window.devicePixelRatio || 1);
+      if (!Number.isFinite(scale) || scale <= 0) {
+        return 1;
+      }
+
+      return scale;
+    }
+
+    function reportViewportSize() {
+      if (!vscodeApi) {
+        return;
+      }
+
+      const bounds = content.getBoundingClientRect();
+      const width = Math.max(1, Math.round(bounds.width));
+      const height = Math.max(1, Math.round(bounds.height));
+      vscodeApi.postMessage({
+        type: 'viewportSize',
+        width,
+        height,
+        devicePixelRatio: getViewportScale()
+      });
+    }
+
+    function scheduleViewportSizeReport() {
+      if (pendingViewportReport) {
+        return;
+      }
+
+      pendingViewportReport = window.requestAnimationFrame(() => {
+        pendingViewportReport = 0;
+        reportViewportSize();
+      });
+    }
 
     function logTransport(message) {
       if (!message || !vscodeApi) {
@@ -1349,6 +1526,35 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         type: 'transportLog',
         message
       });
+    }
+
+    function watchDisplayScaleChanges() {
+      if (typeof window.matchMedia !== 'function') {
+        return;
+      }
+
+      if (displayScaleWatcher) {
+        const watcher = displayScaleWatcher;
+        if (typeof watcher.removeEventListener === 'function') {
+          watcher.removeEventListener('change', watcher._axsgHandler);
+        } else if (typeof watcher.removeListener === 'function') {
+          watcher.removeListener(watcher._axsgHandler);
+        }
+      }
+
+      const watcher = window.matchMedia('(resolution: ' + getViewportScale() + 'dppx)');
+      const handleChange = () => {
+        watchDisplayScaleChanges();
+        scheduleViewportSizeReport();
+      };
+      watcher._axsgHandler = handleChange;
+      if (typeof watcher.addEventListener === 'function') {
+        watcher.addEventListener('change', handleChange);
+      } else if (typeof watcher.addListener === 'function') {
+        watcher.addListener(handleChange);
+      }
+
+      displayScaleWatcher = watcher;
     }
 
     function disposePreviewSocket() {
@@ -1415,11 +1621,13 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       if (iframe.src !== previewUrl) {
         iframe.src = previewUrl;
       }
+
+      scheduleViewportSizeReport();
     }
 
     function getCanvasPoint(event, canvas) {
       const rect = canvas.getBoundingClientRect();
-      const scale = window.devicePixelRatio || 1;
+      const scale = getViewportScale();
       return {
         x: (event.clientX - rect.left) * scale,
         y: (event.clientY - rect.top) * scale
@@ -1536,8 +1744,9 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const canvas = ensureCanvas();
       canvas.width = nextFrame.width;
       canvas.height = nextFrame.height;
-      canvas.style.width = (nextFrame.width / (window.devicePixelRatio || 1)) + 'px';
-      canvas.style.height = (nextFrame.height / (window.devicePixelRatio || 1)) + 'px';
+      const scale = getViewportScale();
+      canvas.style.width = (nextFrame.width / scale) + 'px';
+      canvas.style.height = (nextFrame.height / scale) + 'px';
 
       const context = canvas.getContext('2d');
       const imageData = new ImageData(new Uint8ClampedArray(frameBuffer), nextFrame.width, nextFrame.height);
@@ -1545,6 +1754,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       if (previewSocket && previewSocket.readyState === WebSocket.OPEN) {
         previewSocket.send('frame-received:' + nextFrame.sequenceId);
       }
+
+      scheduleViewportSizeReport();
     }
 
     function connectLoopbackPreview(loopbackPreview) {
@@ -1644,6 +1855,13 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         updatePreview(message.previewUrl, message.loopbackPreview, message.status);
       }
     });
+    window.addEventListener('resize', scheduleViewportSizeReport);
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(() => scheduleViewportSizeReport());
+      observer.observe(content);
+    }
+    watchDisplayScaleChanges();
+    scheduleViewportSizeReport();
   </script>
 </body>
 </html>`;
@@ -1728,6 +1946,14 @@ async function fetchTextFromUrlAsync(urlText) {
 
 function delayAsync(delayMs) {
   return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+function createDeferred() {
+  const deferred = {};
+  deferred.promise = new Promise(resolve => {
+    deferred.resolve = resolve;
+  });
+  return deferred;
 }
 
 async function execFileAsync(command, args, options) {
@@ -1833,15 +2059,16 @@ function buildStartAttempts(extensionPath, launchInfo) {
     : PREVIEW_COMPILER_MODE_AVALONIA;
 
   const designerHostPath = resolveBundledSourceGeneratedDesignerHostPath(extensionPath);
+  const hasBundledDesignerHost = fs.existsSync(designerHostPath);
   const startPlan = createPreviewStartPlan({
     requestedMode,
     preferredMode,
-    hasSourceGeneratedDesignerHost: fs.existsSync(designerHostPath),
+    hasBundledDesignerHost,
     hasAvaloniaPreviewer: Boolean(launchInfo.hostProject.previewerToolPath)
   });
 
-  if (startPlan.requiresSourceGeneratedDesignerHost) {
-    throw new Error(`Bundled source-generated designer host not found at ${designerHostPath}. Run the extension packaging step first.`);
+  if (startPlan.requiresBundledDesignerHost) {
+    throw new Error(`Bundled designer host not found at ${designerHostPath}. Run the extension packaging step first.`);
   }
 
   if (startPlan.requiresAvaloniaPreviewer) {
@@ -1862,7 +2089,9 @@ function buildStartAttempts(extensionPath, launchInfo) {
       attempts.push({
         label: 'Avalonia XamlX',
         mode,
-        previewerToolPath: launchInfo.hostProject.previewerToolPath
+        previewerToolPath: hasBundledDesignerHost
+          ? designerHostPath
+          : launchInfo.hostProject.previewerToolPath
       });
     }
   }
