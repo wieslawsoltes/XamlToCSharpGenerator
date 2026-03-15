@@ -39,6 +39,10 @@ const {
   supportsSourceGeneratedLivePreview,
   tryParseMsbuildJson
 } = require('./preview-utils');
+const {
+  mapPreviewClientPointToRemotePoint,
+  normalizePreviewRenderScale
+} = require('./preview-webview-helpers');
 
 const PROJECT_INFO_PROPERTIES = [
   'TargetPath',
@@ -769,7 +773,10 @@ class AvaloniaPreviewSession {
         previewUrl: loopbackTarget.previewUrl,
         webSocketUrl: loopbackTarget.webSocketUrl,
         port: loopbackTarget.port,
-        securityCookie
+        securityCookie,
+        previewScale: this.previewSize && Number.isFinite(this.previewSize.scale)
+          ? this.previewSize.scale
+          : 1
       };
       this.applyWebviewOptions();
       this.updatePanel();
@@ -1465,12 +1472,15 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       : `<div class="placeholder">Preview is starting...</div>`}</div>
   </div>
   <script>
+    ${normalizePreviewRenderScale.toString()}
+    ${mapPreviewClientPointToRemotePoint.toString()}
     const content = document.getElementById('content');
     const status = document.getElementById('status');
     const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
     let previewSocket = null;
     let previewSocketKey = '';
     let nextFrame = null;
+    let activePreviewRenderScale = 1;
     let pendingViewportReport = 0;
     let displayScaleWatcher = null;
 
@@ -1559,6 +1569,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     function disposePreviewSocket() {
       previewSocketKey = '';
       nextFrame = null;
+      activePreviewRenderScale = 1;
       if (!previewSocket) {
         return;
       }
@@ -1626,11 +1637,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     function getCanvasPoint(event, canvas) {
       const rect = canvas.getBoundingClientRect();
-      const scale = getViewportScale();
-      return {
-        x: (event.clientX - rect.left) * scale,
-        y: (event.clientY - rect.top) * scale
-      };
+      return mapPreviewClientPointToRemotePoint(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        getViewportScale(),
+        activePreviewRenderScale);
     }
 
     function getMouseButton(event) {
@@ -1780,6 +1791,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       }
 
       previewSocket = socket;
+      activePreviewRenderScale = normalizePreviewRenderScale(loopbackPreview.previewScale, getViewportScale());
       socket.binaryType = 'arraybuffer';
       socket.onopen = () => {
         if (previewSocket !== socket) {
@@ -1801,8 +1813,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
             nextFrame = {
               sequenceId: parts[1],
               width: Number.parseInt(parts[2], 10),
-              height: Number.parseInt(parts[3], 10)
+              height: Number.parseInt(parts[3], 10),
+              dpiX: Number.parseFloat(parts[5]),
+              dpiY: Number.parseFloat(parts[6])
             };
+            activePreviewRenderScale = normalizePreviewRenderScale(nextFrame.dpiX, activePreviewRenderScale);
           }
           return;
         }
