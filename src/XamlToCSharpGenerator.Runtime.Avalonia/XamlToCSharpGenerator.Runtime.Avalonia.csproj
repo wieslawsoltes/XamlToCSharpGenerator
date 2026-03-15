@@ -23,6 +23,14 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true' and '$(TargetFramework)' == 'net10.0'">
+    <Reference Include="XamlToCSharpGenerator.Editor.Avalonia">
+      <HintPath>..\XamlToCSharpGenerator.Editor.Avalonia\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Editor.Avalonia.dll</HintPath>
+      <Aliases>axeditor</Aliases>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.12" />
