@@ -1644,7 +1644,7 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         if (type.Namespace is not null &&
-            type.Namespace.StartsWith("global::Avalonia.", StringComparison.Ordinal))
+            type.Namespace.StartsWith("Avalonia.", StringComparison.Ordinal))
         {
             return;
         }
