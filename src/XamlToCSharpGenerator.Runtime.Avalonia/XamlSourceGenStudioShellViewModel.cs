@@ -1813,6 +1813,25 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
 
         try
         {
+            var currentDirectory = Path.GetDirectoryName(Path.GetFullPath(sourcePath));
+            while (!string.IsNullOrWhiteSpace(currentDirectory))
+            {
+                if (Directory.EnumerateFiles(currentDirectory, "*.csproj", SearchOption.TopDirectoryOnly).Any() ||
+                    Directory.EnumerateFiles(currentDirectory, "*.sln", SearchOption.TopDirectoryOnly).Any())
+                {
+                    return currentDirectory;
+                }
+
+                var parentDirectory = Path.GetDirectoryName(currentDirectory);
+                if (string.IsNullOrWhiteSpace(parentDirectory) ||
+                    string.Equals(parentDirectory, currentDirectory, StringComparison.Ordinal))
+                {
+                    break;
+                }
+
+                currentDirectory = parentDirectory;
+            }
+
             return Path.GetDirectoryName(Path.GetFullPath(sourcePath)) ?? string.Empty;
         }
         catch
