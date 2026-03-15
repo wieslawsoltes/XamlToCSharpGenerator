@@ -201,8 +201,6 @@ function resolveLoopbackPreviewWebviewTarget(previewUrl) {
     return null;
   }
 
-  parsedUrl.hostname = 'localhost';
-
   return {
     iframeUrl: parsedUrl.toString(),
     portMapping: {

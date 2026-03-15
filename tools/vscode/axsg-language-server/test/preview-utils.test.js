@@ -229,11 +229,11 @@ test('resolvePreviewDocumentText requires saved content for dirty source-generat
     /requires the file to be saved/i);
 });
 
-test('resolveLoopbackPreviewWebviewTarget maps loopback preview URLs to localhost with port mapping', () => {
+test('resolveLoopbackPreviewWebviewTarget preserves the loopback host while adding port mapping', () => {
   assert.deepEqual(
     resolveLoopbackPreviewWebviewTarget('http://127.0.0.1:52704/'),
     {
-      iframeUrl: 'http://localhost:52704/',
+      iframeUrl: 'http://127.0.0.1:52704/',
       portMapping: {
         webviewPort: 52704,
         extensionHostPort: 52704
