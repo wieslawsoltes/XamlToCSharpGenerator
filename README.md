@@ -60,6 +60,7 @@ code --install-extension ./axsg-language-server-x.y.z.vsix
 ```
 
 The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
+It also includes Avalonia preview support for `.xaml` and `.axaml` files through `AXSG: Open Avalonia Preview`.
 
 ### CLI language server tool
 
@@ -341,6 +342,11 @@ When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses 
 | `axsg.languageServer.trace` | `off` | LSP trace level. |
 | `axsg.inlayHints.bindingTypeHints.enabled` | `true` | Enables semantic binding type hints. |
 | `axsg.inlayHints.typeDisplayStyle` | `short` | Shows short or fully qualified type names in hints. |
+| `axsg.preview.dotNetCommand` | `dotnet` | Dotnet executable used for preview build and launch steps. |
+| `axsg.preview.targetFramework` | `""` | Optional target framework override for preview host/source evaluation. |
+| `axsg.preview.hostProject` | `""` | Optional Avalonia executable project used when the current XAML file lives in a library. |
+| `axsg.preview.buildBeforeLaunch` | `true` | Builds the preview host project before starting the preview session. |
+| `axsg.preview.autoUpdateDelayMs` | `300` | Debounce interval before unsaved XAML edits are pushed to preview. |
 
 ## Repository Layout
 

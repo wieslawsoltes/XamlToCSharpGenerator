@@ -38,7 +38,8 @@
     "workspaceContains:**/*.xaml",
     "onLanguage:axaml",
     "onLanguage:xaml",
-    "onCommand:axsg.refactor.renameSymbol"
+    "onCommand:axsg.refactor.renameSymbol",
+    "onCommand:axsg.preview.open"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -316,6 +317,32 @@
           ],
           "default": "short",
           "description": "Controls whether AXSG XAML type hints use short type names or qualified CLR names."
+        },
+        "axsg.preview.dotNetCommand": {
+          "type": "string",
+          "default": "dotnet",
+          "description": "Path to the dotnet executable used for AXSG Avalonia preview build and launch steps."
+        },
+        "axsg.preview.targetFramework": {
+          "type": "string",
+          "default": "",
+          "description": "Optional target framework override used when resolving preview host and source assemblies."
+        },
+        "axsg.preview.hostProject": {
+          "type": "string",
+          "default": "",
+          "description": "Optional preview host project (.csproj or folder). Use this when the current XAML file lives in a library and previewing should run against a different Avalonia executable."
+        },
+        "axsg.preview.buildBeforeLaunch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Build the selected Avalonia preview host project before starting the AXSG preview session."
+        },
+        "axsg.preview.autoUpdateDelayMs": {
+          "type": "number",
+          "minimum": 0,
+          "default": 300,
+          "description": "Debounce interval, in milliseconds, before unsaved XAML edits are pushed to the Avalonia previewer."
         }
       }
     },
@@ -329,6 +356,11 @@
         "command": "axsg.refactor.renameSymbol",
         "title": "AXSG: Rename Symbol Across C# and XAML",
         "category": "AXSG"
+      },
+      {
+        "command": "axsg.preview.open",
+        "title": "AXSG: Open Avalonia Preview",
+        "category": "AXSG"
       }
     ],
     "menus": {
@@ -337,10 +369,23 @@
           "command": "axsg.languageServer.showInfo"
         },
         {
+          "command": "axsg.preview.open"
+        },
+        {
           "command": "axsg.refactor.renameSymbol"
         }
       ],
       "editor/context": [
+        {
+          "command": "axsg.preview.open",
+          "when": "resourceScheme == file && editorLangId == xaml",
+          "group": "navigation@10"
+        },
+        {
+          "command": "axsg.preview.open",
+          "when": "resourceScheme == file && editorLangId == axaml",
+          "group": "navigation@10"
+        },
         {
           "command": "axsg.refactor.renameSymbol",
           "when": "resourceScheme == file && editorLangId == csharp",
@@ -355,6 +400,18 @@
           "command": "axsg.refactor.renameSymbol",
           "when": "resourceScheme == file && editorLangId == axaml",
           "group": "1_modification@100"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "axsg.preview.open",
+          "when": "resourceScheme == file && editorLangId == xaml",
+          "group": "navigation@10"
+        },
+        {
+          "command": "axsg.preview.open",
+          "when": "resourceScheme == file && editorLangId == axaml",
+          "group": "navigation@10"
         }
       ]
     },
@@ -380,7 +437,8 @@
     "prepare:server": "node ./scripts/prepare-server.js",
     "vscode:prepublish": "npm run prepare:server",
     "lint": "echo \"no lint configured\"",
-    "package": "npx @vscode/vsce package"
+    "package": "npx @vscode/vsce package",
+    "test": "node --test ./test/*.test.js"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

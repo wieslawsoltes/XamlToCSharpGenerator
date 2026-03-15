@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const vscode = require('vscode');
 const lc = require('vscode-languageclient/node');
+const { AvaloniaPreviewController } = require('./preview-support');
 
 let client;
 let clientStartPromise;
@@ -28,6 +29,7 @@ const AXSG_REFACTOR_RENAME_KIND = new vscode.CodeActionKind('refactor.rename');
 const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
 const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
 let suppressCSharpRenameProvider = false;
+let previewController;
 
 function decodeQueryValue(value) {
   try {
@@ -64,6 +66,11 @@ function renderMetadataDocument(uri) {
   }
 
   return renderMetadataProjectionFallback(query);
+}
+
+function getOutputChannel() {
+  outputChannel = outputChannel ?? vscode.window.createOutputChannel('AXSG Language Server');
+  return outputChannel;
 }
 
 function renderMetadataProjectionFallback(query) {
@@ -991,7 +998,7 @@ async function tryEnsureClientStarted() {
 }
 
 function resolveClientOptions(context) {
-  outputChannel = outputChannel ?? vscode.window.createOutputChannel('AXSG Language Server');
+  outputChannel = getOutputChannel();
   const configuration = vscode.workspace.getConfiguration('axsg');
   return {
     documentSelector: [
@@ -1455,6 +1462,14 @@ async function activate(context) {
     async argument => {
       await executeCrossLanguageRenameCommand(argument);
     }));
+  previewController = new AvaloniaPreviewController({
+    context,
+    ensureClientStarted: tryEnsureClientStarted,
+    getOutputChannel,
+    isXamlDocument,
+    workspaceRoot: resolveWorkspaceRoot()
+  });
+  previewController.register(context);
   context.subscriptions.push(vscode.languages.registerCodeActionsProvider(
     [
       { scheme: 'file', language: 'csharp' }
@@ -1566,6 +1581,10 @@ async function activate(context) {
 
   context.subscriptions.push({
     dispose: async () => {
+      if (previewController) {
+        await previewController.dispose?.();
+        previewController = undefined;
+      }
       if (client) {
         await client.stop();
         client = undefined;
@@ -1584,6 +1603,11 @@ async function activate(context) {
 }
 
 async function deactivate() {
+  if (previewController) {
+    await previewController.dispose?.();
+    previewController = undefined;
+  }
+
   if (!client) {
     if (statusBarItem) {
       statusBarItem.dispose();
