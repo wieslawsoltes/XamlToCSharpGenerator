@@ -245,12 +245,13 @@ test('resolvePreviewDocumentText requires saved content for dirty source-generat
     /requires the file to be saved/i);
 });
 
-test('resolveLoopbackPreviewWebviewTarget preserves the loopback host and builds the websocket URL', () => {
+test('resolveLoopbackPreviewWebviewTarget preserves the preview URL and maps the websocket through localhost', () => {
   assert.deepEqual(
     resolveLoopbackPreviewWebviewTarget('http://127.0.0.1:52704/'),
     {
       previewUrl: 'http://127.0.0.1:52704/',
-      webSocketUrl: 'ws://127.0.0.1:52704/ws'
+      webSocketUrl: 'ws://localhost:52704/ws',
+      port: 52704
     });
 });
 

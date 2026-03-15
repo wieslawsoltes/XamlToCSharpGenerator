@@ -378,6 +378,15 @@ class AvaloniaPreviewSession {
         createPreviewWebviewOptions()));
 
     panel.webview.html = createPreviewWebviewHtml(panel.webview, this.fileName, this.currentPreviewUrl, this.currentStatus);
+    panel.webview.onDidReceiveMessage(message => {
+      if (!message || !message.type) {
+        return;
+      }
+
+      if (message.type === 'transportLog' && message.message) {
+        this.controller.getOutputChannel().appendLine(`[preview-webview] ${message.message}`);
+      }
+    });
     panel.onDidDispose(() => {
       if (!this.disposed) {
         this.controller.removeSession(this.documentUri);
@@ -386,6 +395,7 @@ class AvaloniaPreviewSession {
     });
 
     this.panel = panel;
+    this.applyWebviewOptions();
   }
 
   async startCore() {
@@ -566,6 +576,7 @@ class AvaloniaPreviewSession {
       this.currentPreviewUrl = '';
       this.currentLoopbackPreview = null;
       this.activeCompilerMode = null;
+      this.applyWebviewOptions();
     }
 
     helper.removeAllListeners();
@@ -590,6 +601,22 @@ class AvaloniaPreviewSession {
     });
   }
 
+  applyWebviewOptions() {
+    if (!this.panel) {
+      return;
+    }
+
+    const portMapping = [];
+    if (this.currentLoopbackPreview && Number.isInteger(this.currentLoopbackPreview.port)) {
+      portMapping.push({
+        webviewPort: this.currentLoopbackPreview.port,
+        extensionHostPort: this.currentLoopbackPreview.port
+      });
+    }
+
+    this.panel.webview.options = createPreviewWebviewOptions(portMapping);
+  }
+
   async updatePreviewUrlAsync(previewUrl) {
     const normalizedPreviewUrl = String(previewUrl || '').trim();
     const updateToken = ++this.previewUrlUpdateToken;
@@ -598,6 +625,7 @@ class AvaloniaPreviewSession {
     if (!normalizedPreviewUrl) {
       this.currentPreviewUrl = '';
       this.currentLoopbackPreview = null;
+      this.applyWebviewOptions();
       this.updatePanel();
       return;
     }
@@ -618,8 +646,10 @@ class AvaloniaPreviewSession {
       this.currentLoopbackPreview = {
         previewUrl: loopbackTarget.previewUrl,
         webSocketUrl: loopbackTarget.webSocketUrl,
+        port: loopbackTarget.port,
         securityCookie
       };
+      this.applyWebviewOptions();
       this.updatePanel();
       return;
     }
@@ -640,6 +670,7 @@ class AvaloniaPreviewSession {
 
     this.currentLoopbackPreview = null;
     this.currentPreviewUrl = resolvedPreviewUrl;
+    this.applyWebviewOptions();
     this.updatePanel();
   }
 }
@@ -1260,9 +1291,21 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   <script>
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
     let previewSocket = null;
     let previewSocketKey = '';
     let nextFrame = null;
+
+    function logTransport(message) {
+      if (!message || !vscodeApi) {
+        return;
+      }
+
+      vscodeApi.postMessage({
+        type: 'transportLog',
+        message
+      });
+    }
 
     function disposePreviewSocket() {
       previewSocketKey = '';
@@ -1284,8 +1327,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       }
     }
 
-    function renderPlaceholder(text) {
-      disposePreviewSocket();
+    function renderPlaceholder(text, disposeTransport = true) {
+      if (disposeTransport) {
+        disposePreviewSocket();
+      }
       content.innerHTML = '';
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder';
@@ -1470,13 +1515,25 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       renderPlaceholder('Connecting to preview transport...');
       previewSocketKey = connectionKey;
 
-      const socket = previewSocket = new WebSocket(loopbackPreview.webSocketUrl);
+      let socket;
+      try {
+        socket = new WebSocket(loopbackPreview.webSocketUrl);
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        logTransport('failed to create preview websocket: ' + message);
+        renderPlaceholder('Preview transport failed to initialize.');
+        return;
+      }
+
+      previewSocket = socket;
       socket.binaryType = 'arraybuffer';
       socket.onopen = () => {
         if (previewSocket !== socket) {
           return;
         }
 
+        logTransport('connected to ' + loopbackPreview.webSocketUrl);
+        renderPlaceholder('Waiting for first preview frame...', false);
         socket.send(loopbackPreview.securityCookie);
       };
       socket.onmessage = event => {
@@ -1505,6 +1562,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
           return;
         }
 
+        logTransport('preview websocket error for ' + loopbackPreview.webSocketUrl);
         renderPlaceholder('Preview transport failed to connect.');
       };
       socket.onclose = () => {
@@ -1512,6 +1570,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
           return;
         }
 
+        logTransport('preview websocket closed for ' + loopbackPreview.webSocketUrl);
         previewSocket = null;
         previewSocketKey = '';
         if (!document.getElementById('preview-canvas')) {
@@ -1546,9 +1605,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 </html>`;
 }
 
-function createPreviewWebviewOptions() {
+function createPreviewWebviewOptions(portMapping = []) {
   return {
-    enableScripts: true
+    enableScripts: true,
+    portMapping
   };
 }
 

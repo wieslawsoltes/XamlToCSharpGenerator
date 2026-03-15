@@ -235,7 +235,8 @@ function resolveLoopbackPreviewWebviewTarget(previewUrl) {
 
   return {
     previewUrl: parsedUrl.toString(),
-    webSocketUrl: `${parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${parsedUrl.host}/ws`
+    webSocketUrl: `${parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//localhost:${port}/ws`,
+    port
   };
 }
 
