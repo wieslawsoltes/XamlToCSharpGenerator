@@ -260,12 +260,6 @@ class AvaloniaPreviewSession {
       return;
     }
 
-    if (this.usesSourceGeneratedRefreshFlow()) {
-      this.pendingUpdateText = null;
-      this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
-      return;
-    }
-
     this.scheduleLiveUpdate(document);
   }
 
@@ -275,7 +269,7 @@ class AvaloniaPreviewSession {
     }
 
     if (!this.controller.getConfiguration().get('preview.buildBeforeLaunch', true)) {
-      this.setStatus('Source-generated preview shows the last successful build. Build the project manually or enable axsg.preview.buildBeforeLaunch, then reopen the preview to refresh.');
+      this.setStatus('Source-generated preview is using live XAML updates. Build the project manually or enable axsg.preview.buildBeforeLaunch to realign generated output.');
       return;
     }
 
@@ -283,16 +277,6 @@ class AvaloniaPreviewSession {
   }
 
   async handleOpenRequest(document) {
-    if (this.usesSourceGeneratedRefreshFlow()) {
-      if (document.isDirty) {
-        this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
-        return;
-      }
-
-      await this.refreshSourceGeneratedPreview(document, 'Refreshing source-generated preview...');
-      return;
-    }
-
     this.scheduleLiveUpdate(document);
   }
 
@@ -488,6 +472,7 @@ class AvaloniaPreviewSession {
       hostAssemblyPath: this.launchInfo.hostProject.targetPath,
       previewerToolPath: attempt.previewerToolPath,
       sourceAssemblyPath: this.launchInfo.sourceProject.targetPath,
+      sourceFilePath: this.launchInfo.projectContext.filePath || '',
       xamlFileProjectPath: normalizePreviewTargetPath(this.launchInfo.projectContext.targetPath),
       xamlText: this.launchInfo.documentText,
       previewCompilerMode: attempt.mode
@@ -522,11 +507,6 @@ class AvaloniaPreviewSession {
     this.updateChain = this.updateChain
       .then(async () => {
         await this.start();
-        if (this.usesSourceGeneratedRefreshFlow()) {
-          this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
-          return;
-        }
-
         if (!this.helper) {
           throw new Error('Preview host is not available.');
         }
@@ -933,7 +913,7 @@ class AvaloniaPreviewController {
     const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
     const preferredTargetFramework = configuration.get('preview.targetFramework', '');
     const requestedCompilerMode = normalizePreviewCompilerMode(
-      configuration.get('preview.compilerMode', PREVIEW_COMPILER_MODE_AUTO));
+      configuration.get('preview.compilerMode', PREVIEW_COMPILER_MODE_SOURCE_GENERATED));
     const projectState = await this.resolveProjectLaunchState({
       projectContext,
       workspaceRoot,
@@ -964,7 +944,7 @@ class AvaloniaPreviewController {
     const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
     const preferredTargetFramework = configuration.get('preview.targetFramework', '');
     const requestedCompilerMode = normalizePreviewCompilerMode(
-      configuration.get('preview.compilerMode', launchInfo.previewPlan.requestedMode || PREVIEW_COMPILER_MODE_AUTO));
+      configuration.get('preview.compilerMode', launchInfo.previewPlan.requestedMode || PREVIEW_COMPILER_MODE_SOURCE_GENERATED));
     const projectState = await this.resolveProjectLaunchState({
       projectContext: launchInfo.projectContext,
       workspaceRoot: launchInfo.workspaceRoot,
@@ -2121,7 +2101,7 @@ function tryReadDocumentTextFromDisk(filePath) {
 
 function getPreviewReadyStatus(fileName, compilerMode) {
   if (compilerMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
-    return `Source-generated preview ready for ${fileName}. Showing the last successful build; save to rebuild and refresh.`;
+    return `Source-generated preview ready for ${fileName}. Live unsaved XAML updates are enabled; save to rebuild generated output.`;
   }
 
   return `Preview ready for ${fileName}.`;

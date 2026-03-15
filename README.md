@@ -61,7 +61,7 @@ code --install-extension ./axsg-language-server-x.y.z.vsix
 
 The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
 It also includes Avalonia preview support for `.xaml` and `.axaml` files through `AXSG: Open Avalonia Preview`.
-Preview sessions can run either Avalonia's XamlX previewer or the AXSG source-generated loader. The default `auto` mode prefers Avalonia live preview so unsaved XAML edits refresh immediately. Set `axsg.preview.compilerMode=sourceGenerated` when you explicitly want previewing from the last successful AXSG build.
+Preview sessions can run either Avalonia's XamlX previewer or the AXSG source-generated loader. The default mode is now `sourceGenerated`, which keeps live unsaved XAML edits in sync in the preview while still rebuilding on save to realign generated output. `auto` also prefers source-generated preview when AXSG runtime output is available and falls back to Avalonia/XamlX otherwise.
 
 ### CLI language server tool
 
@@ -344,11 +344,11 @@ When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses 
 | `axsg.inlayHints.bindingTypeHints.enabled` | `true` | Enables semantic binding type hints. |
 | `axsg.inlayHints.typeDisplayStyle` | `short` | Shows short or fully qualified type names in hints. |
 | `axsg.preview.dotNetCommand` | `dotnet` | Dotnet executable used for preview build and launch steps. |
-| `axsg.preview.compilerMode` | `auto` | Chooses `auto`, `sourceGenerated`, or `avalonia` preview compilation. |
+| `axsg.preview.compilerMode` | `sourceGenerated` | Chooses `auto`, `sourceGenerated`, or `avalonia` preview compilation. |
 | `axsg.preview.targetFramework` | `""` | Optional target framework override for preview host/source evaluation. |
 | `axsg.preview.hostProject` | `""` | Optional Avalonia executable project used when the current XAML file lives in a library. |
 | `axsg.preview.buildBeforeLaunch` | `true` | Builds preview projects only when fresh outputs are needed. Source-generated save refresh rebuilds just the source project when the host output can be reused. |
-| `axsg.preview.autoUpdateDelayMs` | `300` | Debounce interval before unsaved XAML edits are pushed to the Avalonia/XamlX previewer. |
+| `axsg.preview.autoUpdateDelayMs` | `300` | Debounce interval before unsaved XAML edits are pushed to the active preview session. |
 
 ## Repository Layout
 

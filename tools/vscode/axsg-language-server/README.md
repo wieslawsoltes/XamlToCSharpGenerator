@@ -33,7 +33,7 @@ If the current XAML file belongs to a library, set `axsg.preview.hostProject` to
 Preview compiler modes:
 
 - `auto`: prefer AXSG source-generated preview when available, otherwise use Avalonia/XamlX
-- `sourceGenerated`: force AXSG source-generated preview; the preview reflects the last successful build and refreshes on save when `axsg.preview.buildBeforeLaunch` is enabled
+- `sourceGenerated`: force AXSG source-generated preview; this is the default mode, it keeps live unsaved XAML edits in sync in the preview, and save/build refresh keeps the generated baseline aligned when `axsg.preview.buildBeforeLaunch` is enabled
 - `avalonia`: force Avalonia's official XamlX previewer and keep live unsaved XAML updates
 
 Build behavior is optimized for preview latency:
@@ -51,7 +51,7 @@ Relevant settings:
 - `axsg.preview.buildBeforeLaunch`
 - `axsg.preview.autoUpdateDelayMs`
 
-`axsg.preview.compilerMode = auto` now prefers Avalonia live preview so unsaved XAML edits refresh immediately. Use `sourceGenerated` only when you explicitly want previewing from the last successful AXSG build.
+`axsg.preview.compilerMode = sourceGenerated` is now the default. `auto` also prefers source-generated preview when AXSG runtime output is available, and falls back to Avalonia/XamlX only when it is not.
 
 ## Development
 

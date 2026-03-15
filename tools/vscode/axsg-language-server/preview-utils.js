@@ -184,20 +184,14 @@ function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
 
   return {
     requestedMode,
-    preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+    preferredMode: sourceGeneratedSupported
+      ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+      : PREVIEW_COMPILER_MODE_AVALONIA,
     sourceGeneratedSupported
   };
 }
 
 function resolvePreviewDocumentText(documentText, persistedText, isDirty, previewMode) {
-  if (previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED && isDirty) {
-    if (typeof persistedText !== 'string') {
-      throw new Error('Source-generated preview requires the file to be saved before preview startup when the editor has unsaved changes.');
-    }
-
-    return persistedText;
-  }
-
   return documentText;
 }
 

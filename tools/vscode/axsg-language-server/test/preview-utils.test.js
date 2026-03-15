@@ -260,7 +260,7 @@ test('supportsSourceGeneratedPreview detects the runtime dependency from deps.js
   }
 });
 
-test('resolvePreviewCompilerMode prefers Avalonia live preview in auto mode even when source-generated support is available', () => {
+test('resolvePreviewCompilerMode prefers source-generated preview in auto mode when AXSG runtime output is available', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
   try {
     const targetPath = path.join(tempRoot, 'Demo.dll');
@@ -270,7 +270,7 @@ test('resolvePreviewCompilerMode prefers Avalonia live preview in auto mode even
     const actual = resolvePreviewCompilerMode('auto', { targetPath });
     assert.deepEqual(actual, {
       requestedMode: PREVIEW_COMPILER_MODE_AUTO,
-      preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
       sourceGeneratedSupported: true
     });
   } finally {
@@ -290,16 +290,16 @@ test('resolvePreviewCompilerMode falls back to Avalonia mode when source-generat
 test('resolvePreviewDocumentText uses persisted text for dirty source-generated startup', () => {
   assert.equal(
     resolvePreviewDocumentText('<UserControl Text="Dirty" />', '<UserControl Text="Saved" />', true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
-    '<UserControl Text="Saved" />');
+    '<UserControl Text="Dirty" />');
   assert.equal(
     resolvePreviewDocumentText('<UserControl Text="Dirty" />', '<UserControl Text="Saved" />', true, PREVIEW_COMPILER_MODE_AVALONIA),
     '<UserControl Text="Dirty" />');
 });
 
-test('resolvePreviewDocumentText requires saved content for dirty source-generated startup', () => {
-  assert.throws(
-    () => resolvePreviewDocumentText('<UserControl />', undefined, true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
-    /requires the file to be saved/i);
+test('resolvePreviewDocumentText keeps unsaved source-generated content in memory', () => {
+  assert.equal(
+    resolvePreviewDocumentText('<UserControl />', undefined, true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
+    '<UserControl />');
 });
 
 test('resolveLoopbackPreviewWebviewTarget preserves the preview URL and maps the websocket through localhost', () => {
