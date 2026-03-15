@@ -11,11 +11,13 @@ const {
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
+  isUsablePreviewHostProjectInfo,
   normalizePreviewCompilerMode,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
   PREVIEW_COMPILER_MODE_AVALONIA,
   resolveConfiguredProjectPath,
+  resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
@@ -80,6 +82,36 @@ test('isPreviewableProjectInfo requires an executable output and previewer path'
     targetPath: '/tmp/Demo.dll',
     previewerToolPath: '/tmp/Avalonia.Designer.HostApp.dll'
   }), false);
+});
+
+test('isUsablePreviewHostProjectInfo accepts executable hosts without previewer path for source-generated mode', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'App.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), '', 'utf8');
+
+    const sourceProjectInfo = {
+      targetPath
+    };
+    const hostProjectInfo = {
+      outputType: 'Exe',
+      targetPath,
+      previewerToolPath: ''
+    };
+
+    assert.equal(
+      isUsablePreviewHostProjectInfo(hostProjectInfo, sourceProjectInfo, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
+      true);
+    assert.equal(
+      isUsablePreviewHostProjectInfo(hostProjectInfo, sourceProjectInfo, PREVIEW_COMPILER_MODE_AUTO),
+      true);
+    assert.equal(
+      isUsablePreviewHostProjectInfo(hostProjectInfo, sourceProjectInfo, PREVIEW_COMPILER_MODE_AVALONIA),
+      false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('tryParseMsbuildJson reads the property payload from stdout', () => {
@@ -178,6 +210,21 @@ test('resolvePreviewCompilerMode falls back to Avalonia mode when source-generat
     preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
     sourceGeneratedSupported: false
   });
+});
+
+test('resolvePreviewDocumentText uses persisted text for dirty source-generated startup', () => {
+  assert.equal(
+    resolvePreviewDocumentText('<UserControl Text="Dirty" />', '<UserControl Text="Saved" />', true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
+    '<UserControl Text="Saved" />');
+  assert.equal(
+    resolvePreviewDocumentText('<UserControl Text="Dirty" />', '<UserControl Text="Saved" />', true, PREVIEW_COMPILER_MODE_AVALONIA),
+    '<UserControl Text="Dirty" />');
+});
+
+test('resolvePreviewDocumentText requires saved content for dirty source-generated startup', () => {
+  assert.throws(
+    () => resolvePreviewDocumentText('<UserControl />', undefined, true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
+    /requires the file to be saved/i);
 });
 
 test('shouldUseNoRestoreBuild detects an existing project.assets.json file', () => {

@@ -93,6 +93,15 @@ function isPreviewableProjectInfo(projectInfo) {
     projectInfo.previewerToolPath);
 }
 
+function isUsablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configuredMode) {
+  const previewPlan = resolvePreviewCompilerMode(configuredMode, sourceProjectInfo);
+  if (previewPlan.preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    return isExecutableProjectInfo(projectInfo);
+  }
+
+  return isPreviewableProjectInfo(projectInfo);
+}
+
 function supportsSourceGeneratedPreview(projectInfo) {
   const targetPath = normalizeMaybeEmptyPath(projectInfo && projectInfo.targetPath);
   if (!targetPath) {
@@ -151,6 +160,18 @@ function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
       : PREVIEW_COMPILER_MODE_AVALONIA,
     sourceGeneratedSupported
   };
+}
+
+function resolvePreviewDocumentText(documentText, persistedText, isDirty, previewMode) {
+  if (previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED && isDirty) {
+    if (typeof persistedText !== 'string') {
+      throw new Error('Source-generated preview requires the file to be saved before preview startup when the editor has unsaved changes.');
+    }
+
+    return persistedText;
+  }
+
+  return documentText;
 }
 
 function resolveConfiguredProjectPath(configuredProjectPath, workspaceRoot) {
@@ -356,6 +377,7 @@ module.exports = {
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
+  isUsablePreviewHostProjectInfo,
   isUnderBuildOutput,
   normalizeFilePath,
   normalizePreviewCompilerMode,
@@ -367,6 +389,7 @@ module.exports = {
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
   shouldUseNoRestoreBuild,

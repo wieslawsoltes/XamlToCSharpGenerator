@@ -11,6 +11,7 @@ const {
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+  isUsablePreviewHostProjectInfo,
   isPreviewableProjectInfo,
   isUnderBuildOutput,
   normalizeFilePath,
@@ -20,6 +21,7 @@ const {
   pickPreviewTargetFramework,
   projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
   shouldUseNoRestoreBuild,
@@ -702,14 +704,19 @@ class AvaloniaPreviewController {
       buildReason: 'launch',
       documentFilePath: document.fileName
     });
-
-    return this.createLaunchInfo(
+    const launchInfo = this.createLaunchInfo(
       projectContext,
       workspaceRoot,
       document.getText(),
       projectState.sourceProject,
       projectState.hostProject,
       requestedCompilerMode);
+    launchInfo.documentText = resolvePreviewDocumentText(
+      document.getText(),
+      tryReadDocumentTextFromDisk(document.fileName),
+      document.isDirty,
+      launchInfo.previewPlan.preferredMode);
+    return launchInfo;
   }
 
   async refreshLaunchInfoForSession(launchInfo, document) {
@@ -730,14 +737,19 @@ class AvaloniaPreviewController {
       documentFilePath: document.fileName,
       activePreviewMode: launchInfo.previewPlan.preferredMode
     });
-
-    return this.createLaunchInfo(
+    const refreshedLaunchInfo = this.createLaunchInfo(
       launchInfo.projectContext,
       launchInfo.workspaceRoot,
       document.getText(),
       projectState.sourceProject,
       projectState.hostProject,
       requestedCompilerMode);
+    refreshedLaunchInfo.documentText = resolvePreviewDocumentText(
+      document.getText(),
+      tryReadDocumentTextFromDisk(document.fileName),
+      document.isDirty,
+      refreshedLaunchInfo.previewPlan.preferredMode);
+    return refreshedLaunchInfo;
   }
 
   createLaunchInfo(projectContext, workspaceRoot, documentText, sourceProject, hostProject, requestedCompilerMode) {
@@ -802,7 +814,8 @@ class AvaloniaPreviewController {
         projectContext.projectPath,
         sourceProject,
         dotNetCommand,
-        workspaceRoot);
+        workspaceRoot,
+        requestedCompilerMode);
     }
 
     return this.buildAndRefreshProjectState({
@@ -922,8 +935,8 @@ class AvaloniaPreviewController {
     return result;
   }
 
-  async resolveHostProject(sourceProjectPath, sourceProjectInfo, dotNetCommand, workspaceRoot) {
-    if (isPreviewableProjectInfo(sourceProjectInfo)) {
+  async resolveHostProject(sourceProjectPath, sourceProjectInfo, dotNetCommand, workspaceRoot, requestedCompilerMode) {
+    if (isUsablePreviewHostProjectInfo(sourceProjectInfo, sourceProjectInfo, requestedCompilerMode)) {
       return sourceProjectInfo;
     }
 
@@ -937,8 +950,8 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (!isPreviewableProjectInfo(configuredInfo)) {
-        throw new Error(`Configured preview host project is not previewable: ${resolvedConfiguredProject}`);
+      if (!isUsablePreviewHostProjectInfo(configuredInfo, sourceProjectInfo, requestedCompilerMode)) {
+        throw new Error(`Configured preview host project is not usable for the selected preview mode: ${resolvedConfiguredProject}`);
       }
 
       return configuredInfo;
@@ -953,7 +966,7 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (isPreviewableProjectInfo(rememberedInfo)) {
+      if (isUsablePreviewHostProjectInfo(rememberedInfo, sourceProjectInfo, requestedCompilerMode)) {
         return rememberedInfo;
       }
     }
@@ -972,13 +985,13 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (isPreviewableProjectInfo(candidateInfo)) {
+      if (isUsablePreviewHostProjectInfo(candidateInfo, sourceProjectInfo, requestedCompilerMode)) {
         previewableCandidates.push(candidateInfo);
       }
     }
 
     if (previewableCandidates.length === 0) {
-      throw new Error('No previewable Avalonia executable project was found in the workspace. Set axsg.preview.hostProject to choose one explicitly.');
+      throw new Error('No usable Avalonia executable project was found in the workspace. Set axsg.preview.hostProject to choose one explicitly.');
     }
 
     if (previewableCandidates.length === 1) {
@@ -1322,6 +1335,18 @@ function buildStartAttempts(extensionPath, launchInfo) {
   });
 
   return attempts;
+}
+
+function tryReadDocumentTextFromDisk(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 function getPreviewReadyStatus(fileName, compilerMode) {
