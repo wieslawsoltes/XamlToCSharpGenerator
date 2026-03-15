@@ -1,11 +1,12 @@
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
-const http = require('http');
-const https = require('https');
 const readline = require('readline');
 const { EventEmitter } = require('events');
 const vscode = require('vscode');
+const {
+  fetchPreviewPageHtmlAsync
+} = require('./preview-fetch');
 const {
   buildArguments,
   createCommandFailureMessage,
@@ -55,7 +56,6 @@ const PROJECT_INFO_PROPERTIES = [
 
 const DEFAULT_UPDATE_DELAY_MS = 300;
 const DEFAULT_RESIZE_DELAY_MS = 150;
-const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_PREVIEW_SIZE_WAIT_MS = 750;
 const HOST_PROJECT_STATE_PREFIX = 'axsg.preview.hostProject::';
 const PREVIEW_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.PreviewerHost.dll';
@@ -1887,80 +1887,6 @@ function createPreviewWebviewOptions(portMapping = []) {
     enableScripts: true,
     portMapping
   };
-}
-
-async function fetchPreviewPageHtmlAsync(previewUrl, attemptCount = 10, delayMs = 150) {
-  let lastError = null;
-
-  for (let attemptIndex = 0; attemptIndex < attemptCount; attemptIndex += 1) {
-    try {
-      return await fetchTextFromUrlAsync(previewUrl);
-    } catch (error) {
-      lastError = error;
-      if (attemptIndex < attemptCount - 1) {
-        await delayAsync(delayMs);
-      }
-    }
-  }
-
-  throw lastError || new Error(`Failed to fetch ${previewUrl}.`);
-}
-
-async function fetchTextFromUrlAsync(urlText) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const parsedUrl = new URL(urlText);
-    const client = parsedUrl.protocol === 'https:' ? https : http;
-    const request = client.get(parsedUrl, response => {
-      if (response.statusCode && response.statusCode >= 400) {
-        settled = true;
-        response.resume();
-        reject(new Error(`HTTP ${response.statusCode} while fetching ${urlText}.`));
-        return;
-      }
-
-      const chunks = [];
-      response.setEncoding('utf8');
-      response.on('data', chunk => chunks.push(chunk));
-      response.on('end', () => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        resolve(chunks.join(''));
-      });
-      response.on('error', error => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        reject(error);
-      });
-    });
-
-    request.setTimeout(DEFAULT_REQUEST_TIMEOUT_MS, () => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      request.destroy(new Error(`Timed out fetching ${urlText}.`));
-    });
-    request.on('error', error => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      reject(error);
-    });
-  });
-}
-
-function delayAsync(delayMs) {
-  return new Promise(resolve => setTimeout(resolve, delayMs));
 }
 
 function createDeferred() {
