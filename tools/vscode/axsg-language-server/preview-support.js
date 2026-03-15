@@ -8,6 +8,7 @@ const { EventEmitter } = require('events');
 const vscode = require('vscode');
 const {
   buildArguments,
+  createCommandFailureMessage,
   createPreviewBuildPlan,
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
@@ -1652,14 +1653,25 @@ async function runDotNetCommand(command, args, cwd, outputChannel) {
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
+    let stdoutText = '';
     let stderrText = '';
     child.stdout.on('data', chunk => {
-      outputChannel.appendLine(String(chunk).trimEnd());
+      const text = String(chunk).trimEnd();
+      if (text) {
+        stdoutText = stdoutText
+          ? `${stdoutText}\n${text}`
+          : text;
+        outputChannel.appendLine(text);
+      }
     });
     child.stderr.on('data', chunk => {
       const text = String(chunk).trimEnd();
-      stderrText += text;
-      outputChannel.appendLine(text);
+      if (text) {
+        stderrText = stderrText
+          ? `${stderrText}\n${text}`
+          : text;
+        outputChannel.appendLine(text);
+      }
     });
     child.on('error', error => {
       reject(error);
@@ -1670,7 +1682,7 @@ async function runDotNetCommand(command, args, cwd, outputChannel) {
         return;
       }
 
-      reject(new Error(stderrText || `Command '${command} ${args.join(' ')}' failed with exit code ${exitCode}.`));
+      reject(new Error(createCommandFailureMessage(command, args, stdoutText, stderrText, exitCode)));
     });
   });
 }

@@ -34,6 +34,28 @@ function buildArguments(projectPath, targetFramework, options = {}) {
   return args;
 }
 
+function appendCommandOutputText(existingText, nextText) {
+  const normalizedNextText = String(nextText || '').trim();
+  if (!normalizedNextText) {
+    return existingText;
+  }
+
+  return existingText
+    ? `${existingText}\n${normalizedNextText}`
+    : normalizedNextText;
+}
+
+function createCommandFailureMessage(command, args, stdoutText, stderrText, exitCode) {
+  let diagnostics = '';
+  diagnostics = appendCommandOutputText(diagnostics, stderrText);
+  diagnostics = appendCommandOutputText(diagnostics, stdoutText);
+  if (diagnostics) {
+    return diagnostics;
+  }
+
+  return `Command '${command} ${args.join(' ')}' failed with exit code ${exitCode}.`;
+}
+
 function pickPreviewTargetFramework(targetFrameworks, preferredTargetFramework) {
   const candidates = String(targetFrameworks || '')
     .split(';')
@@ -480,6 +502,7 @@ function isUnderBuildOutput(filePath) {
 }
 
 module.exports = {
+  createCommandFailureMessage,
   buildArguments,
   createPreviewBuildPlan,
   resolveLoopbackPreviewWebviewTarget,

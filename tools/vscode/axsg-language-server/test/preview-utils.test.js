@@ -6,6 +6,7 @@ const path = require('path');
 
 const {
   buildArguments,
+  createCommandFailureMessage,
   createPreviewBuildPlan,
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
@@ -157,6 +158,18 @@ test('buildArguments adds the target framework and no-restore when provided', ()
     '--no-restore',
     '-p:TargetFramework=net10.0'
   ]);
+});
+
+test('createCommandFailureMessage preserves stdout diagnostics when stderr is empty', () => {
+  assert.equal(
+    createCommandFailureMessage('dotnet', ['build', 'Demo.csproj'], 'NETSDK1004: project.assets.json not found', '', 1),
+    'NETSDK1004: project.assets.json not found');
+});
+
+test('createCommandFailureMessage keeps stderr and stdout diagnostics together', () => {
+  assert.equal(
+    createCommandFailureMessage('dotnet', ['build', 'Demo.csproj'], 'project.assets.json missing', 'Build FAILED.', 1),
+    'Build FAILED.\nproject.assets.json missing');
 });
 
 test('supportsSourceGeneratedPreview detects the runtime assembly in the output directory', () => {
