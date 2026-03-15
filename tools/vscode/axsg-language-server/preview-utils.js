@@ -174,6 +174,62 @@ function resolvePreviewDocumentText(documentText, persistedText, isDirty, previe
   return documentText;
 }
 
+function createPreviewStartPlan(options) {
+  const requestedMode = options && options.requestedMode
+    ? options.requestedMode
+    : PREVIEW_COMPILER_MODE_AUTO;
+  const preferredMode = options && options.preferredMode
+    ? options.preferredMode
+    : PREVIEW_COMPILER_MODE_AVALONIA;
+  const hasSourceGeneratedDesignerHost = Boolean(options && options.hasSourceGeneratedDesignerHost);
+  const hasAvaloniaPreviewer = Boolean(options && options.hasAvaloniaPreviewer);
+  const modes = [];
+
+  if (preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    if (hasSourceGeneratedDesignerHost) {
+      modes.push(PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
+    } else if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+      return {
+        modes,
+        requiresSourceGeneratedDesignerHost: true,
+        requiresAvaloniaPreviewer: false
+      };
+    }
+
+    if (requestedMode !== PREVIEW_COMPILER_MODE_AUTO) {
+      return {
+        modes,
+        requiresSourceGeneratedDesignerHost: false,
+        requiresAvaloniaPreviewer: false
+      };
+    }
+
+    if (hasAvaloniaPreviewer) {
+      modes.push(PREVIEW_COMPILER_MODE_AVALONIA);
+    }
+
+    return {
+      modes,
+      requiresSourceGeneratedDesignerHost: false,
+      requiresAvaloniaPreviewer: false
+    };
+  }
+
+  if (!hasAvaloniaPreviewer) {
+    return {
+      modes,
+      requiresSourceGeneratedDesignerHost: false,
+      requiresAvaloniaPreviewer: true
+    };
+  }
+
+  return {
+    modes: [PREVIEW_COMPILER_MODE_AVALONIA],
+    requiresSourceGeneratedDesignerHost: false,
+    requiresAvaloniaPreviewer: false
+  };
+}
+
 function resolveConfiguredProjectPath(configuredProjectPath, workspaceRoot) {
   const normalized = String(configuredProjectPath || '').trim();
   if (!normalized) {
@@ -372,6 +428,7 @@ function isUnderBuildOutput(filePath) {
 module.exports = {
   buildArguments,
   createPreviewBuildPlan,
+  createPreviewStartPlan,
   getFileModifiedTimeMs,
   hasPendingPreviewText,
   isExecutableProjectInfo,

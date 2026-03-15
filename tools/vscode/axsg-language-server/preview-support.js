@@ -7,6 +7,7 @@ const vscode = require('vscode');
 const {
   buildArguments,
   createPreviewBuildPlan,
+  createPreviewStartPlan,
   hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
@@ -1330,43 +1331,40 @@ function buildStartAttempts(extensionPath, launchInfo) {
     ? launchInfo.previewPlan.preferredMode
     : PREVIEW_COMPILER_MODE_AVALONIA;
 
-  if (preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
-    const designerHostPath = resolveBundledSourceGeneratedDesignerHostPath(extensionPath);
-    if (!fs.existsSync(designerHostPath)) {
-      if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
-        throw new Error(`Bundled source-generated designer host not found at ${designerHostPath}. Run the extension packaging step first.`);
-      }
-    } else {
-      attempts.push({
-        label: 'AXSG source-generated',
-        mode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-        previewerToolPath: designerHostPath
-      });
-    }
+  const designerHostPath = resolveBundledSourceGeneratedDesignerHostPath(extensionPath);
+  const startPlan = createPreviewStartPlan({
+    requestedMode,
+    preferredMode,
+    hasSourceGeneratedDesignerHost: fs.existsSync(designerHostPath),
+    hasAvaloniaPreviewer: Boolean(launchInfo.hostProject.previewerToolPath)
+  });
 
-    if (requestedMode === PREVIEW_COMPILER_MODE_AUTO) {
-      if (!launchInfo.hostProject.previewerToolPath) {
-        return attempts;
-      }
-
-      attempts.push({
-        label: 'Avalonia XamlX',
-        mode: PREVIEW_COMPILER_MODE_AVALONIA,
-        previewerToolPath: launchInfo.hostProject.previewerToolPath
-      });
-      return attempts;
-    }
+  if (startPlan.requiresSourceGeneratedDesignerHost) {
+    throw new Error(`Bundled source-generated designer host not found at ${designerHostPath}. Run the extension packaging step first.`);
   }
 
-  if (!launchInfo.hostProject.previewerToolPath) {
+  if (startPlan.requiresAvaloniaPreviewer) {
     throw new Error('Avalonia previewer host path is unavailable for the selected project.');
   }
 
-  attempts.push({
-    label: 'Avalonia XamlX',
-    mode: PREVIEW_COMPILER_MODE_AVALONIA,
-    previewerToolPath: launchInfo.hostProject.previewerToolPath
-  });
+  for (const mode of startPlan.modes) {
+    if (mode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+      attempts.push({
+        label: 'AXSG source-generated',
+        mode,
+        previewerToolPath: designerHostPath
+      });
+      continue;
+    }
+
+    if (mode === PREVIEW_COMPILER_MODE_AVALONIA) {
+      attempts.push({
+        label: 'Avalonia XamlX',
+        mode,
+        previewerToolPath: launchInfo.hostProject.previewerToolPath
+      });
+    }
+  }
 
   return attempts;
 }

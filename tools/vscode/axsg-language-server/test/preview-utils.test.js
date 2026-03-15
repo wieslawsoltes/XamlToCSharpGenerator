@@ -7,6 +7,7 @@ const path = require('path');
 const {
   buildArguments,
   createPreviewBuildPlan,
+  createPreviewStartPlan,
   hasPendingPreviewText,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
@@ -225,6 +226,66 @@ test('resolvePreviewDocumentText requires saved content for dirty source-generat
   assert.throws(
     () => resolvePreviewDocumentText('<UserControl />', undefined, true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
     /requires the file to be saved/i);
+});
+
+test('createPreviewStartPlan allows forced source-generated preview without Avalonia host metadata', () => {
+  const actual = createPreviewStartPlan({
+    requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    hasSourceGeneratedDesignerHost: true,
+    hasAvaloniaPreviewer: false
+  });
+
+  assert.deepEqual(actual, {
+    modes: [PREVIEW_COMPILER_MODE_SOURCE_GENERATED],
+    requiresSourceGeneratedDesignerHost: false,
+    requiresAvaloniaPreviewer: false
+  });
+});
+
+test('createPreviewStartPlan does not fall back to Avalonia when source-generated mode is forced', () => {
+  const actual = createPreviewStartPlan({
+    requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    hasSourceGeneratedDesignerHost: true,
+    hasAvaloniaPreviewer: true
+  });
+
+  assert.deepEqual(actual, {
+    modes: [PREVIEW_COMPILER_MODE_SOURCE_GENERATED],
+    requiresSourceGeneratedDesignerHost: false,
+    requiresAvaloniaPreviewer: false
+  });
+});
+
+test('createPreviewStartPlan falls back to Avalonia only in auto mode when source-generated host is unavailable', () => {
+  const actual = createPreviewStartPlan({
+    requestedMode: PREVIEW_COMPILER_MODE_AUTO,
+    preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    hasSourceGeneratedDesignerHost: false,
+    hasAvaloniaPreviewer: true
+  });
+
+  assert.deepEqual(actual, {
+    modes: [PREVIEW_COMPILER_MODE_AVALONIA],
+    requiresSourceGeneratedDesignerHost: false,
+    requiresAvaloniaPreviewer: false
+  });
+});
+
+test('createPreviewStartPlan requires the bundled designer host when source-generated mode is forced', () => {
+  const actual = createPreviewStartPlan({
+    requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+    hasSourceGeneratedDesignerHost: false,
+    hasAvaloniaPreviewer: true
+  });
+
+  assert.deepEqual(actual, {
+    modes: [],
+    requiresSourceGeneratedDesignerHost: true,
+    requiresAvaloniaPreviewer: false
+  });
 });
 
 test('shouldUseNoRestoreBuild detects an existing project.assets.json file', () => {
