@@ -1,7 +1,7 @@
 using System;
-using Avalonia.Markup.Xaml;
-using Avalonia.Markup.Xaml.MarkupExtensions;
-using Avalonia.Metadata;
+using global::Avalonia.Markup.Xaml;
+using global::Avalonia.Markup.Xaml.MarkupExtensions;
+using global::Avalonia.Metadata;
 
 namespace XamlToCSharpGenerator.Runtime
 {

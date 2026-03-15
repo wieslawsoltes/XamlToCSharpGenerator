@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Presenters;
-using Avalonia.Controls.Shapes;
-using Avalonia.Layout;
-using Avalonia.Styling;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Primitives;
+using global::Avalonia.Controls.Presenters;
+using global::Avalonia.Controls.Shapes;
+using global::Avalonia.Layout;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -20,30 +20,30 @@ public static class SourceGenKnownTypeRegistry
     private static readonly Dictionary<string, HashSet<string>> XmlNamespaceToClrNamespaces = new(StringComparer.Ordinal);
     private static readonly string[] AvaloniaDefaultNamespaceCandidates =
     [
-        "Avalonia.Controls",
-        "Avalonia.Controls.Primitives",
-        "Avalonia.Controls.Presenters",
-        "Avalonia.Controls.Shapes",
-        "Avalonia.Controls.Documents",
-        "Avalonia.Controls.Chrome",
-        "Avalonia.Controls.Embedding",
-        "Avalonia.Controls.Notifications",
-        "Avalonia.Controls.Converters",
-        "Avalonia.Markup.Xaml.Templates",
-        "Avalonia.Markup.Xaml.Styling",
-        "Avalonia.Markup.Xaml.MarkupExtensions",
-        "Avalonia.Styling",
-        "Avalonia.Controls.Templates",
-        "Avalonia.Input",
-        "Avalonia.Automation",
-        "Avalonia.Dialogs",
-        "Avalonia.Dialogs.Internal",
-        "Avalonia.Layout",
-        "Avalonia.Media",
-        "Avalonia.Media.Transformation",
-        "Avalonia.Media.Imaging",
-        "Avalonia.Animation",
-        "Avalonia.Animation.Easings",
+        "global::Avalonia.Controls",
+        "global::Avalonia.Controls.Primitives",
+        "global::Avalonia.Controls.Presenters",
+        "global::Avalonia.Controls.Shapes",
+        "global::Avalonia.Controls.Documents",
+        "global::Avalonia.Controls.Chrome",
+        "global::Avalonia.Controls.Embedding",
+        "global::Avalonia.Controls.Notifications",
+        "global::Avalonia.Controls.Converters",
+        "global::Avalonia.Markup.Xaml.Templates",
+        "global::Avalonia.Markup.Xaml.Styling",
+        "global::Avalonia.Markup.Xaml.MarkupExtensions",
+        "global::Avalonia.Styling",
+        "global::Avalonia.Controls.Templates",
+        "global::Avalonia.Input",
+        "global::Avalonia.Automation",
+        "global::Avalonia.Dialogs",
+        "global::Avalonia.Dialogs.Internal",
+        "global::Avalonia.Layout",
+        "global::Avalonia.Media",
+        "global::Avalonia.Media.Transformation",
+        "global::Avalonia.Media.Imaging",
+        "global::Avalonia.Animation",
+        "global::Avalonia.Animation.Easings",
         "Avalonia"
     ];
 
@@ -372,7 +372,7 @@ public static class SourceGenKnownTypeRegistry
             typeof(Slider),
             typeof(Rectangle),
             typeof(Ellipse),
-            typeof(Avalonia.Controls.Shapes.Path),
+            typeof(global::Avalonia.Controls.Shapes.Path),
             typeof(Style),
             typeof(Setter),
             typeof(ControlTheme)

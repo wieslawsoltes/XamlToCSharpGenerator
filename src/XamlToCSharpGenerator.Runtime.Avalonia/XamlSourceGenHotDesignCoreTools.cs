@@ -6,8 +6,8 @@ using System.Threading;
 using System.Xml.Linq;
 using System.Xml;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media;
+using global::Avalonia.Controls;
+using global::Avalonia.Media;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -1644,7 +1644,7 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         if (type.Namespace is not null &&
-            type.Namespace.StartsWith("Avalonia.", StringComparison.Ordinal))
+            type.Namespace.StartsWith("global::Avalonia.", StringComparison.Ordinal))
         {
             return;
         }

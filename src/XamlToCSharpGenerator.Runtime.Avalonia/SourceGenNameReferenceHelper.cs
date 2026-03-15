@@ -1,6 +1,6 @@
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.LogicalTree;
+using global::Avalonia.Controls;
+using global::Avalonia.LogicalTree;
 
 namespace XamlToCSharpGenerator.Runtime;
 

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using Avalonia.Styling;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 

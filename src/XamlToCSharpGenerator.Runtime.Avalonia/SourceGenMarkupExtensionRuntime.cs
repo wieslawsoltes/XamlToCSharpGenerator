@@ -6,18 +6,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Data;
-using Avalonia.Data.Core;
-using Avalonia.LogicalTree;
-using Avalonia.Markup.Xaml;
-using Avalonia.Markup.Xaml.Converters;
-using Avalonia.Markup.Xaml.MarkupExtensions;
-using Avalonia.Markup.Xaml.XamlIl.Runtime;
-using Avalonia.Platform;
-using Avalonia.Styling;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
+using global::Avalonia.Controls;
+using global::Avalonia.Data;
+using global::Avalonia.Data.Core;
+using global::Avalonia.LogicalTree;
+using global::Avalonia.Markup.Xaml;
+using global::Avalonia.Markup.Xaml.Converters;
+using global::Avalonia.Markup.Xaml.MarkupExtensions;
+using global::Avalonia.Markup.Xaml.XamlIl.Runtime;
+using global::Avalonia.Platform;
+using global::Avalonia.Styling;
+using global::Avalonia.Threading;
+using global::Avalonia.VisualTree;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -239,11 +239,11 @@ public static class SourceGenMarkupExtensionRuntime
             return value;
         }
 
-        if ((targetType == typeof(Avalonia.Media.IBrush) ||
-             targetType == typeof(Avalonia.Media.Brush)) &&
-            value is Avalonia.Media.Color colorValue)
+        if ((targetType == typeof(global::Avalonia.Media.IBrush) ||
+             targetType == typeof(global::Avalonia.Media.Brush)) &&
+            value is global::Avalonia.Media.Color colorValue)
         {
-            return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(colorValue);
+            return new global::Avalonia.Media.Immutable.ImmutableSolidColorBrush(colorValue);
         }
 
         if (value is not string textValue)
@@ -257,15 +257,15 @@ public static class SourceGenMarkupExtensionRuntime
             return value;
         }
 
-        if (targetType == typeof(Avalonia.Media.IBrush) ||
-            targetType == typeof(Avalonia.Media.Brush))
+        if (targetType == typeof(global::Avalonia.Media.IBrush) ||
+            targetType == typeof(global::Avalonia.Media.Brush))
         {
-            return Avalonia.Media.Brush.Parse(trimmed);
+            return global::Avalonia.Media.Brush.Parse(trimmed);
         }
 
-        if (targetType == typeof(Avalonia.Media.Color))
+        if (targetType == typeof(global::Avalonia.Media.Color))
         {
-            return Avalonia.Media.Color.Parse(trimmed);
+            return global::Avalonia.Media.Color.Parse(trimmed);
         }
 
         return value;
@@ -1066,7 +1066,7 @@ public static class SourceGenMarkupExtensionRuntime
         return ancestorType is null || ancestorType.IsInstanceOfType(candidate);
     }
 
-    public static Avalonia.Media.Imaging.Bitmap? LoadBitmapAsset(string path, string? baseUri)
+    public static global::Avalonia.Media.Imaging.Bitmap? LoadBitmapAsset(string path, string? baseUri)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -1080,11 +1080,11 @@ public static class SourceGenMarkupExtensionRuntime
 
         if (uri.IsAbsoluteUri && uri.IsFile)
         {
-            return new Avalonia.Media.Imaging.Bitmap(uri.LocalPath);
+            return new global::Avalonia.Media.Imaging.Bitmap(uri.LocalPath);
         }
 
         var contextBaseUri = TryCreateAbsoluteUri(baseUri);
-        return new Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(uri, contextBaseUri));
+        return new global::Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(uri, contextBaseUri));
     }
 
     public static WindowIcon? LoadWindowIconAsset(string path, string? baseUri)
@@ -1108,14 +1108,14 @@ public static class SourceGenMarkupExtensionRuntime
         return new WindowIcon(AssetLoader.Open(uri, contextBaseUri));
     }
 
-    public static Avalonia.Media.FontFeatureCollection? ParseFontFeatureCollection(string? value)
+    public static global::Avalonia.Media.FontFeatureCollection? ParseFontFeatureCollection(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
         }
 
-        var collection = new Avalonia.Media.FontFeatureCollection();
+        var collection = new global::Avalonia.Media.FontFeatureCollection();
         var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         for (var index = 0; index < parts.Length; index++)
         {
@@ -1125,17 +1125,17 @@ public static class SourceGenMarkupExtensionRuntime
                 continue;
             }
 
-            collection.Add(Avalonia.Media.FontFeature.Parse(token));
+            collection.Add(global::Avalonia.Media.FontFeature.Parse(token));
         }
 
         return collection;
     }
 
-    public static Avalonia.Media.FontFamily ParseFontFamily(string? value, string? baseUri)
+    public static global::Avalonia.Media.FontFamily ParseFontFamily(string? value, string? baseUri)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return Avalonia.Media.FontFamily.Default;
+            return global::Avalonia.Media.FontFamily.Default;
         }
 
         var trimmedValue = value.Trim();
@@ -1144,12 +1144,12 @@ public static class SourceGenMarkupExtensionRuntime
 
         try
         {
-            return Avalonia.Media.FontFamily.Parse(trimmedValue, resolvedBaseUri);
+            return global::Avalonia.Media.FontFamily.Parse(trimmedValue, resolvedBaseUri);
         }
         catch (ArgumentException)
         {
             // Keep font parsing non-fatal when a family source can't be resolved.
-            return Avalonia.Media.FontFamily.Default;
+            return global::Avalonia.Media.FontFamily.Default;
         }
     }
 

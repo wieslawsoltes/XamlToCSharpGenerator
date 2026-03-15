@@ -6,9 +6,9 @@ using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
-using Avalonia.Markup.Xaml;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
+using global::Avalonia.Markup.Xaml;
+using global::Avalonia.Threading;
+using global::Avalonia.VisualTree;
 
 [assembly: MetadataUpdateHandler(typeof(XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
 

@@ -2,9 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using Avalonia.Controls;
-using Avalonia.Controls.Templates;
-using Avalonia.Styling;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Templates;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 

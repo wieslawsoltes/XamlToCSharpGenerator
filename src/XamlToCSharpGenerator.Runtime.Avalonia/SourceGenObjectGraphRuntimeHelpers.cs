@@ -2,12 +2,12 @@ using System;
 using System.Collections;
 using System.ComponentModel;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Templates;
-using Avalonia.Markup.Xaml;
-using Avalonia.Markup.Xaml.Styling;
-using Avalonia.Markup.Xaml.XamlIl.Runtime;
-using Avalonia.Styling;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Templates;
+using global::Avalonia.Markup.Xaml;
+using global::Avalonia.Markup.Xaml.Styling;
+using global::Avalonia.Markup.Xaml.XamlIl.Runtime;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 

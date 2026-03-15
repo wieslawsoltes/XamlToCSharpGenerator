@@ -1,5 +1,5 @@
 using System;
-using Avalonia.Markup.Xaml;
+using global::Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -30,7 +30,7 @@ public static class SourceGenRuntimeXamlCompiler
         {
             throw new XamlLoadException(
                 "Avalonia runtime XAML compiler type is unavailable. " +
-                "Ensure Avalonia.Markup.Xaml.Loader is referenced.", ex);
+                "Ensure global::Avalonia.Markup.Xaml.Loader is referenced.", ex);
         }
         catch (MissingMethodException ex)
         {

@@ -1,6 +1,6 @@
 using System;
 using System.Threading;
-using Avalonia.Threading;
+using global::Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
 
