@@ -30,6 +30,8 @@ const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
 const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
 let suppressCSharpRenameProvider = false;
 let previewController;
+let runtimeGeneration = 0;
+let shutdownPromise;
 
 function decodeQueryValue(value) {
   try {
@@ -71,6 +73,111 @@ function renderMetadataDocument(uri) {
 function getOutputChannel() {
   outputChannel = outputChannel ?? vscode.window.createOutputChannel('AXSG Language Server');
   return outputChannel;
+}
+
+function beginRuntimeGeneration() {
+  runtimeGeneration += 1;
+  return runtimeGeneration;
+}
+
+function isRuntimeGenerationCurrent(generation) {
+  return generation === runtimeGeneration;
+}
+
+function clearInMemoryCaches() {
+  metadataDocumentCache.clear();
+  metadataUriSubscriptions.clear();
+  sourceLinkDocumentCache.clear();
+  sourceLinkUriSubscriptions.clear();
+  inlineCSharpProjectionCache.clear();
+  inlineCSharpProjectionFetches.clear();
+  inlineCSharpProjectionUriCache.clear();
+  inlineCSharpPresenceCache.clear();
+  suppressCSharpRenameProvider = false;
+}
+
+async function shutdownExtensionRuntime() {
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
+
+  beginRuntimeGeneration();
+
+  const existingPreviewController = previewController;
+  const existingClient = client;
+  const existingStatusBarItem = statusBarItem;
+  const existingSourceLinkChangeEmitter = sourceLinkChangeEmitter;
+  const existingMetadataChangeEmitter = metadataChangeEmitter;
+  const existingInlineCSharpProjectionChangeEmitter = inlineCSharpProjectionChangeEmitter;
+  const existingOutputChannel = outputChannel;
+
+  previewController = undefined;
+  client = undefined;
+  clientStartPromise = undefined;
+  statusBarItem = undefined;
+  sourceLinkChangeEmitter = undefined;
+  metadataChangeEmitter = undefined;
+  inlineCSharpProjectionChangeEmitter = undefined;
+  resolvedClientOptions = undefined;
+  resolvedServerStartup = undefined;
+  extensionContext = undefined;
+  clearInMemoryCaches();
+
+  shutdownPromise = (async () => {
+    if (existingPreviewController) {
+      try {
+        await existingPreviewController.dispose?.();
+      } catch {
+        // Best effort shutdown.
+      }
+    }
+
+    if (existingClient) {
+      try {
+        await existingClient.stop();
+      } catch {
+        // Best effort shutdown.
+      }
+    }
+
+    try {
+      existingStatusBarItem?.dispose();
+    } catch {
+      // Best effort shutdown.
+    }
+
+    try {
+      existingSourceLinkChangeEmitter?.dispose();
+    } catch {
+      // Best effort shutdown.
+    }
+
+    try {
+      existingMetadataChangeEmitter?.dispose();
+    } catch {
+      // Best effort shutdown.
+    }
+
+    try {
+      existingInlineCSharpProjectionChangeEmitter?.dispose();
+    } catch {
+      // Best effort shutdown.
+    }
+
+    try {
+      existingOutputChannel?.dispose();
+    } catch {
+      // Best effort shutdown.
+    }
+
+    outputChannel = undefined;
+  })();
+
+  try {
+    await shutdownPromise;
+  } finally {
+    shutdownPromise = undefined;
+  }
 }
 
 function renderMetadataProjectionFallback(query) {
@@ -139,12 +246,17 @@ function trackMetadataUri(documentId, uri) {
 }
 
 async function fetchAndCacheMetadataDocument(documentId, uri) {
+  const generation = runtimeGeneration;
   const cached = metadataDocumentCache.get(documentId);
   if (cached && cached.state !== 'loading') {
     return;
   }
 
   const activeClient = await tryEnsureClientStarted();
+  if (!isRuntimeGenerationCurrent(generation)) {
+    return;
+  }
+
   if (!activeClient) {
     updateMetadataCacheAndNotify(documentId, 'error', renderMetadataProjectionFallback(new URLSearchParams(uri.query || '')));
     return;
@@ -152,6 +264,10 @@ async function fetchAndCacheMetadataDocument(documentId, uri) {
 
   try {
     const response = await activeClient.sendRequest('axsg/metadataDocument', { id: documentId });
+    if (!isRuntimeGenerationCurrent(generation)) {
+      return;
+    }
+
     if (!response || typeof response.text !== 'string' || response.text.length === 0) {
       updateMetadataCacheAndNotify(documentId, 'error', padVirtualLoadingDocument(renderMetadataProjectionFallback(new URLSearchParams(uri.query || ''))));
       return;
@@ -159,6 +275,10 @@ async function fetchAndCacheMetadataDocument(documentId, uri) {
 
     updateMetadataCacheAndNotify(documentId, 'ready', response.text);
   } catch {
+    if (!isRuntimeGenerationCurrent(generation)) {
+      return;
+    }
+
     updateMetadataCacheAndNotify(documentId, 'error', padVirtualLoadingDocument(renderMetadataProjectionFallback(new URLSearchParams(uri.query || ''))));
   }
 }
@@ -195,6 +315,7 @@ function trackSourceLinkUri(sourceUrl, uri) {
 }
 
 async function fetchAndCacheSourceLinkDocument(sourceUrl) {
+  const generation = runtimeGeneration;
   const cached = sourceLinkDocumentCache.get(sourceUrl);
   if (cached && cached.state !== 'loading') {
     return;
@@ -208,14 +329,26 @@ async function fetchAndCacheSourceLinkDocument(sourceUrl) {
     });
 
     if (!response.ok) {
+      if (!isRuntimeGenerationCurrent(generation)) {
+        return;
+      }
+
       const failure = padVirtualLoadingDocument(`// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// HTTP ${response.status} ${response.statusText}\n`);
       updateSourceLinkCacheAndNotify(sourceUrl, 'error', failure);
       return;
     }
 
     const text = await response.text();
+    if (!isRuntimeGenerationCurrent(generation)) {
+      return;
+    }
+
     updateSourceLinkCacheAndNotify(sourceUrl, 'ready', text);
   } catch (error) {
+    if (!isRuntimeGenerationCurrent(generation)) {
+      return;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     const failure = padVirtualLoadingDocument(`// AXSG source-link projection\n// Failed to load source from ${sourceUrl}.\n// ${message}\n`);
     updateSourceLinkCacheAndNotify(sourceUrl, 'error', failure);
@@ -447,11 +580,16 @@ function mapXamlRangeToProjectedRange(sourceText, projection, xamlRange) {
 }
 
 async function fetchInlineCSharpProjections(document, token) {
+  const generation = runtimeGeneration;
   if (!documentMayContainInlineCSharp(document)) {
     return undefined;
   }
 
   const activeClient = await tryEnsureClientStarted();
+  if (!isRuntimeGenerationCurrent(generation)) {
+    return undefined;
+  }
+
   if (!activeClient) {
     return undefined;
   }
@@ -477,6 +615,9 @@ async function fetchInlineCSharpProjections(document, token) {
       version,
       documentText: document.getText()
     }, token);
+    if (!isRuntimeGenerationCurrent(generation)) {
+      return undefined;
+    }
 
     const responseItems = Array.isArray(response) ? response : [];
     const projections = responseItems
@@ -954,6 +1095,7 @@ function createLanguageClient() {
 }
 
 async function ensureClientStarted() {
+  const generation = runtimeGeneration;
   if (clientStartPromise) {
     return clientStartPromise;
   }
@@ -972,11 +1114,22 @@ async function ensureClientStarted() {
   clientStartPromise = (async () => {
     try {
       await startingClient.start();
+      if (!isRuntimeGenerationCurrent(generation)) {
+        try {
+          await startingClient.stop();
+        } catch {
+          // Best effort shutdown of a stale client startup.
+        }
+        return undefined;
+      }
+
       setStatusBarState('running', resolvedServerStartup.details);
       return startingClient;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatusBarState('error', resolvedServerStartup.details, message);
+      if (isRuntimeGenerationCurrent(generation) && resolvedServerStartup) {
+        setStatusBarState('error', resolvedServerStartup.details, message);
+      }
       if (client === startingClient) {
         client = undefined;
       }
@@ -1417,6 +1570,8 @@ function setStatusBarState(state, details, errorMessage) {
 }
 
 async function activate(context) {
+  await shutdownExtensionRuntime();
+  beginRuntimeGeneration();
   extensionContext = context;
   resolvedServerStartup = resolveServerOptions(context);
   metadataChangeEmitter = new vscode.EventEmitter();
@@ -1579,23 +1734,9 @@ async function activate(context) {
     }
   }));
 
-  context.subscriptions.push({
-    dispose: async () => {
-      if (previewController) {
-        await previewController.dispose?.();
-        previewController = undefined;
-      }
-      if (client) {
-        await client.stop();
-        client = undefined;
-      }
-      clientStartPromise = undefined;
-      if (statusBarItem) {
-        statusBarItem.dispose();
-        statusBarItem = undefined;
-      }
-    }
-  });
+  context.subscriptions.push(new vscode.Disposable(() => {
+    void shutdownExtensionRuntime();
+  }));
 
   if (vscode.window.visibleTextEditors.some(editor => isXamlDocument(editor.document))) {
     void tryEnsureClientStarted();
@@ -1603,46 +1744,7 @@ async function activate(context) {
 }
 
 async function deactivate() {
-  if (previewController) {
-    await previewController.dispose?.();
-    previewController = undefined;
-  }
-
-  if (!client) {
-    if (statusBarItem) {
-      statusBarItem.dispose();
-      statusBarItem = undefined;
-    }
-    clientStartPromise = undefined;
-    return;
-  }
-
-  await client.stop();
-  client = undefined;
-  clientStartPromise = undefined;
-  if (statusBarItem) {
-    statusBarItem.dispose();
-    statusBarItem = undefined;
-  }
-
-  if (sourceLinkChangeEmitter) {
-    sourceLinkChangeEmitter.dispose();
-    sourceLinkChangeEmitter = undefined;
-  }
-
-  if (metadataChangeEmitter) {
-    metadataChangeEmitter.dispose();
-    metadataChangeEmitter = undefined;
-  }
-
-  if (inlineCSharpProjectionChangeEmitter) {
-    inlineCSharpProjectionChangeEmitter.dispose();
-    inlineCSharpProjectionChangeEmitter = undefined;
-  }
-
-  resolvedClientOptions = undefined;
-  resolvedServerStartup = undefined;
-  extensionContext = undefined;
+  await shutdownExtensionRuntime();
 }
 
 module.exports = {
