@@ -1,5 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
 using XamlToCSharpGenerator.Previewer.DesignerHost;
 
 namespace XamlToCSharpGenerator.Tests.PreviewerHost;
@@ -42,5 +44,59 @@ public class PreviewSizingRootDecoratorTests
 
         Assert.Equal(800, control.Width);
         Assert.Equal(600, control.Height);
+    }
+
+    [AvaloniaFact]
+    public void Apply_Returns_Sized_Host_For_ResourceDictionary_Without_PreviewWith()
+    {
+        var dictionary = new ResourceDictionary();
+
+        PreviewSizingRootDecorator.Configure(720, 480);
+        var result = Assert.IsType<Border>(PreviewSizingRootDecorator.Apply(dictionary));
+
+        Assert.Equal(720, result.Width);
+        Assert.Equal(480, result.Height);
+        Assert.NotNull(result.Resources);
+        Assert.Contains(dictionary, result.Resources!.MergedDictionaries);
+    }
+
+    [AvaloniaFact]
+    public void Apply_Uses_DesignPreviewWith_For_ResourceDictionary_When_Available()
+    {
+        var dictionary = new ResourceDictionary();
+        var previewHost = new Border();
+        Design.SetPreviewWith(dictionary, previewHost);
+
+        PreviewSizingRootDecorator.Configure(640, 360);
+        var result = PreviewSizingRootDecorator.Apply(dictionary);
+        Assert.Same(previewHost, result);
+
+        Assert.Equal(640, previewHost.Width);
+        Assert.Equal(360, previewHost.Height);
+        Assert.NotNull(previewHost.Resources);
+        Assert.Contains(dictionary, previewHost.Resources!.MergedDictionaries);
+    }
+
+    [AvaloniaFact]
+    public void Apply_Returns_Sized_Host_For_Style_Without_PreviewWith()
+    {
+        var style = new Style(static selector => selector.OfType<Button>());
+
+        PreviewSizingRootDecorator.Configure(700, 420);
+        var result = Assert.IsType<Border>(PreviewSizingRootDecorator.Apply(style));
+
+        Assert.Equal(700, result.Width);
+        Assert.Equal(420, result.Height);
+        Assert.Contains(style, result.Styles);
+    }
+
+    [AvaloniaFact]
+    public void Apply_Returns_Info_Text_For_Application_Root()
+    {
+        var application = new Application();
+
+        var result = Assert.IsType<TextBlock>(PreviewSizingRootDecorator.Apply(application));
+
+        Assert.Equal("This file cannot be previewed in design view", result.Text);
     }
 }

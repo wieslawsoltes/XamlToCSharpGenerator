@@ -1,5 +1,9 @@
+using global::Avalonia;
 using global::Avalonia.Controls;
+using global::Avalonia.Controls.Primitives;
 using global::Avalonia.Layout;
+using global::Avalonia.Media;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
@@ -22,11 +26,6 @@ internal static class PreviewSizingRootDecorator
     {
         ArgumentNullException.ThrowIfNull(loadedRoot);
 
-        if (loadedRoot is not Control control)
-        {
-            return loadedRoot;
-        }
-
         double? previewWidth;
         double? previewHeight;
         lock (Sync)
@@ -35,13 +34,34 @@ internal static class PreviewSizingRootDecorator
             previewHeight = s_previewHeight;
         }
 
-        if (previewWidth is null && previewHeight is null)
+        if (loadedRoot is IStyle style)
         {
-            return loadedRoot;
+            return PrepareStylePreview(style, previewWidth, previewHeight);
         }
 
-        ApplySize(control, previewWidth, previewHeight);
-        return loadedRoot;
+        if (loadedRoot is ResourceDictionary resources)
+        {
+            return PrepareResourceDictionaryPreview(resources, previewWidth, previewHeight);
+        }
+
+        if (loadedRoot is Control control)
+        {
+            return ApplyConfiguredSize(control, previewWidth, previewHeight);
+        }
+
+        if (loadedRoot is Application)
+        {
+            return CreateInfoTextBlock("This file cannot be previewed in design view");
+        }
+
+        if (loadedRoot is AvaloniaObject avaloniaObject &&
+            loadedRoot is not Window &&
+            TryGetPreviewWith(avaloniaObject) is { } previewWith)
+        {
+            return ApplyConfiguredSize(previewWith, previewWidth, previewHeight);
+        }
+
+        return CreateInfoTextBlock("This file cannot be previewed in design view");
     }
 
     internal static void ApplySize(Control control, double? previewWidth, double? previewHeight)
@@ -62,5 +82,143 @@ internal static class PreviewSizingRootDecorator
     private static double? NormalizeSize(double? value)
     {
         return value is > 0 ? value : null;
+    }
+
+    private static object PrepareStylePreview(IStyle style, double? previewWidth, double? previewHeight)
+    {
+        ArgumentNullException.ThrowIfNull(style);
+
+        var substitute = (style as AvaloniaObject is { } styleObject
+            ? TryGetPreviewWith(styleObject)
+            : null) ?? CreateDefaultPreviewHost();
+        substitute.Styles.Add(style);
+        return ApplyConfiguredSize(substitute, previewWidth, previewHeight);
+    }
+
+    private static object PrepareResourceDictionaryPreview(
+        ResourceDictionary resources,
+        double? previewWidth,
+        double? previewHeight)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+
+        var substitute = TryGetPreviewWith(resources) ?? CreateDefaultPreviewHost();
+        EnsureResources(substitute).MergedDictionaries.Add(resources);
+        return ApplyConfiguredSize(substitute, previewWidth, previewHeight);
+    }
+
+    private static Control ApplyConfiguredSize(Control control, double? previewWidth, double? previewHeight)
+    {
+        if (previewWidth is null && previewHeight is null)
+        {
+            return control;
+        }
+
+        ApplySize(control, previewWidth, previewHeight);
+        return control;
+    }
+
+    private static IResourceDictionary EnsureResources(Control control)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+
+        control.Resources ??= new ResourceDictionary();
+        return control.Resources;
+    }
+
+    private static Control? TryGetPreviewWith(AvaloniaObject avaloniaObject)
+    {
+        ArgumentNullException.ThrowIfNull(avaloniaObject);
+
+        try
+        {
+            return Design.GetPreviewWith(avaloniaObject);
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static Control? TryGetPreviewWith(ResourceDictionary resourceDictionary)
+    {
+        ArgumentNullException.ThrowIfNull(resourceDictionary);
+
+        try
+        {
+            return Design.GetPreviewWith(resourceDictionary);
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static Control CreateDefaultPreviewHost()
+    {
+        var samplePanel = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "AXSG preview sample",
+                    FontWeight = FontWeight.SemiBold
+                },
+                new Button
+                {
+                    Content = "Sample Button",
+                    HorizontalAlignment = HorizontalAlignment.Left
+                },
+                new ToggleButton
+                {
+                    Content = "Sample Toggle",
+                    IsChecked = true,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                },
+                new CheckBox
+                {
+                    Content = "Sample CheckBox",
+                    IsChecked = true,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                },
+                new TextBox
+                {
+                    Width = 240,
+                    Text = "Sample Text",
+                    Watermark = "Preview Watermark"
+                },
+                new ComboBox
+                {
+                    Width = 240,
+                    SelectedIndex = 0,
+                    ItemsSource = new[] { "First", "Second", "Third" }
+                },
+                new Slider
+                {
+                    Width = 240,
+                    Minimum = 0,
+                    Maximum = 100,
+                    Value = 42
+                }
+            }
+        };
+
+        return new Border
+        {
+            Padding = new Thickness(16),
+            Child = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = samplePanel
+            }
+        };
+    }
+
+    private static Control CreateInfoTextBlock(string message)
+    {
+        return new TextBlock { Text = message };
     }
 }

@@ -2,7 +2,11 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using global::Avalonia;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Templates;
 using global::Avalonia.Markup.Xaml;
+using global::Avalonia.Styling;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Previewer.DesignerHost;
@@ -21,7 +25,8 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
 
         var xamlText = ReadXamlText(document);
         var baseline = LoadGeneratedBaseline(document, configuration, xamlText);
-        if (!ShouldApplyLiveOverlay(
+        if (!ShouldApplyPreviewOverlay(
+                baseline,
                 xamlText,
                 PreviewHostRuntimeState.Current.SourceFilePath,
                 localAssembly?.Location))
@@ -50,6 +55,19 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
 
         Log("Live preview XAML was invalid. Falling back to the last successful build output.");
         return baseline;
+    }
+
+    internal static bool ShouldApplyPreviewOverlay(
+        object baselineRoot,
+        string xamlText,
+        string? sourceFilePath,
+        string? assemblyPath)
+    {
+        ArgumentNullException.ThrowIfNull(baselineRoot);
+        ArgumentNullException.ThrowIfNull(xamlText);
+
+        return RequiresDesignOverlay(baselineRoot) ||
+               ShouldApplyLiveOverlay(xamlText, sourceFilePath, assemblyPath);
     }
 
     internal static bool ShouldApplyLiveOverlay(string xamlText, string? sourceFilePath, string? assemblyPath)
@@ -93,6 +111,22 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         {
             return true;
         }
+    }
+
+    internal static bool RequiresDesignOverlay(object baselineRoot)
+    {
+        ArgumentNullException.ThrowIfNull(baselineRoot);
+
+        return baselineRoot switch
+        {
+            Application => true,
+            Control => false,
+            ResourceDictionary => true,
+            IStyle => true,
+            IDataTemplate => true,
+            AvaloniaObject => true,
+            _ => false
+        };
     }
 
     internal static string ReadXamlText(RuntimeXamlLoaderDocument document)
