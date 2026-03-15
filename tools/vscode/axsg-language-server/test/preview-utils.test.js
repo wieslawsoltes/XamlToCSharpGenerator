@@ -8,6 +8,7 @@ const {
   buildArguments,
   createPreviewBuildPlan,
   createPreviewStartPlan,
+  extractPreviewSecurityCookie,
   hasPendingPreviewText,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
@@ -25,6 +26,7 @@ const {
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   projectReferencesProject,
   samePath,
+  shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
   supportsSourceGeneratedPreview,
   tryParseMsbuildJson
@@ -230,15 +232,12 @@ test('resolvePreviewDocumentText requires saved content for dirty source-generat
     /requires the file to be saved/i);
 });
 
-test('resolveLoopbackPreviewWebviewTarget preserves the loopback host while adding port mapping', () => {
+test('resolveLoopbackPreviewWebviewTarget preserves the loopback host and builds the websocket URL', () => {
   assert.deepEqual(
     resolveLoopbackPreviewWebviewTarget('http://127.0.0.1:52704/'),
     {
-      iframeUrl: 'http://127.0.0.1:52704/',
-      portMapping: {
-        webviewPort: 52704,
-        extensionHostPort: 52704
-      }
+      previewUrl: 'http://127.0.0.1:52704/',
+      webSocketUrl: 'ws://127.0.0.1:52704/ws'
     });
 });
 
@@ -246,6 +245,23 @@ test('resolveLoopbackPreviewWebviewTarget ignores non-loopback preview URLs', ()
   assert.equal(
     resolveLoopbackPreviewWebviewTarget('https://example.com/preview'),
     null);
+});
+
+test('extractPreviewSecurityCookie reads the Avalonia preview cookie from index html', () => {
+  assert.equal(
+    extractPreviewSecurityCookie(`
+      <script>
+        window["avaloniaPreviewerSecurityCookie"] = "abc-123";
+      </script>`),
+    'abc-123');
+  assert.equal(extractPreviewSecurityCookie('<html></html>'), '');
+});
+
+test('shouldUseInlineLoopbackPreviewClient only enables the direct websocket client for local desktop sessions', () => {
+  assert.equal(shouldUseInlineLoopbackPreviewClient('', 1), true);
+  assert.equal(shouldUseInlineLoopbackPreviewClient(undefined, 1), true);
+  assert.equal(shouldUseInlineLoopbackPreviewClient('ssh-remote', 1), false);
+  assert.equal(shouldUseInlineLoopbackPreviewClient('', 2), false);
 });
 
 test('samePath compares Windows paths case-insensitively', () => {

@@ -174,6 +174,16 @@ function resolvePreviewDocumentText(documentText, persistedText, isDirty, previe
   return documentText;
 }
 
+function shouldUseInlineLoopbackPreviewClient(remoteName, uiKind) {
+  return !String(remoteName || '').trim() && Number(uiKind) === 1;
+}
+
+function extractPreviewSecurityCookie(previewHtml) {
+  const match = String(previewHtml || '')
+    .match(/avaloniaPreviewerSecurityCookie"\]\s*=\s*"([^"]+)"/);
+  return match ? match[1] : '';
+}
+
 function resolveLoopbackPreviewWebviewTarget(previewUrl) {
   const normalized = String(previewUrl || '').trim();
   if (!normalized) {
@@ -202,11 +212,8 @@ function resolveLoopbackPreviewWebviewTarget(previewUrl) {
   }
 
   return {
-    iframeUrl: parsedUrl.toString(),
-    portMapping: {
-      webviewPort: port,
-      extensionHostPort: port
-    }
+    previewUrl: parsedUrl.toString(),
+    webSocketUrl: `${parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${parsedUrl.host}/ws`
   };
 }
 
@@ -477,6 +484,7 @@ module.exports = {
   createPreviewBuildPlan,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
+  extractPreviewSecurityCookie,
   getFileModifiedTimeMs,
   hasPendingPreviewText,
   isExecutableProjectInfo,
@@ -497,6 +505,7 @@ module.exports = {
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
+  shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
   supportsSourceGeneratedPreview,
   tryParseMsbuildJson

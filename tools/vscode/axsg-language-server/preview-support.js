@@ -1,6 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
+const http = require('http');
+const https = require('https');
 const readline = require('readline');
 const { EventEmitter } = require('events');
 const vscode = require('vscode');
@@ -8,6 +10,7 @@ const {
   buildArguments,
   createPreviewBuildPlan,
   createPreviewStartPlan,
+  extractPreviewSecurityCookie,
   hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
@@ -26,6 +29,7 @@ const {
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
+  shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
   tryParseMsbuildJson
 } = require('./preview-utils');
@@ -196,6 +200,7 @@ class AvaloniaPreviewSession {
     this.helper = null;
     this.panel = null;
     this.currentPreviewUrl = '';
+    this.currentLoopbackPreview = null;
     this.currentStatus = 'Starting preview...';
     this.pendingUpdateText = null;
     this.updateTimer = null;
@@ -558,6 +563,7 @@ class AvaloniaPreviewSession {
       this.previewUrlUpdateToken += 1;
       this.rawPreviewUrl = '';
       this.currentPreviewUrl = '';
+      this.currentLoopbackPreview = null;
       this.activeCompilerMode = null;
     }
 
@@ -578,6 +584,7 @@ class AvaloniaPreviewSession {
     this.panel.webview.postMessage({
       type: 'update',
       previewUrl: this.currentPreviewUrl,
+      loopbackPreview: this.currentLoopbackPreview,
       status: this.currentStatus
     });
   }
@@ -588,25 +595,33 @@ class AvaloniaPreviewSession {
     this.rawPreviewUrl = normalizedPreviewUrl;
 
     if (!normalizedPreviewUrl) {
-      this.applyWebviewOptions(null);
       this.currentPreviewUrl = '';
+      this.currentLoopbackPreview = null;
       this.updatePanel();
       return;
     }
 
     const loopbackTarget = resolveLoopbackPreviewWebviewTarget(normalizedPreviewUrl);
-    if (loopbackTarget) {
-      this.applyWebviewOptions(loopbackTarget.portMapping);
+    if (loopbackTarget && shouldUseInlineLoopbackPreviewClient(vscode.env.remoteName, vscode.env.uiKind)) {
+      const previewHtml = await fetchPreviewPageHtmlAsync(loopbackTarget.previewUrl);
+      const securityCookie = extractPreviewSecurityCookie(previewHtml);
+      if (!securityCookie) {
+        throw new Error(`Could not extract the Avalonia preview security cookie from ${loopbackTarget.previewUrl}.`);
+      }
+
       if (this.disposed || updateToken !== this.previewUrlUpdateToken || this.rawPreviewUrl !== normalizedPreviewUrl) {
         return;
       }
 
-      this.currentPreviewUrl = loopbackTarget.iframeUrl;
+      this.currentPreviewUrl = '';
+      this.currentLoopbackPreview = {
+        previewUrl: loopbackTarget.previewUrl,
+        webSocketUrl: loopbackTarget.webSocketUrl,
+        securityCookie
+      };
       this.updatePanel();
       return;
     }
-
-    this.applyWebviewOptions(null);
 
     let resolvedPreviewUrl = normalizedPreviewUrl;
     try {
@@ -622,16 +637,9 @@ class AvaloniaPreviewSession {
       return;
     }
 
+    this.currentLoopbackPreview = null;
     this.currentPreviewUrl = resolvedPreviewUrl;
     this.updatePanel();
-  }
-
-  applyWebviewOptions(portMapping) {
-    if (!this.panel) {
-      return;
-    }
-
-    this.panel.webview.options = createPreviewWebviewOptions(portMapping);
   }
 }
 
@@ -1175,7 +1183,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src ${frameSourcePolicy};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src ${frameSourcePolicy}; connect-src ${frameSourcePolicy} ws: wss:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapedTitle}</title>
   <style>
@@ -1189,6 +1197,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       padding: 0;
       background: var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
+      overflow: hidden;
     }
 
     .shell {
@@ -1203,6 +1212,25 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       background: var(--vscode-editorWidget-background);
       font-size: 12px;
       line-height: 1.4;
+    }
+
+    #content {
+      min-height: 0;
+    }
+
+    .preview-frame {
+      display: grid;
+      place-items: start center;
+      overflow: auto;
+      height: 100%;
+      background: white;
+    }
+
+    .preview-canvas {
+      display: block;
+      margin: 0;
+      outline: none;
+      image-rendering: pixelated;
     }
 
     iframe {
@@ -1231,33 +1259,285 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   <script>
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    let previewSocket = null;
+    let previewSocketKey = '';
+    let nextFrame = null;
 
-    function updatePreview(previewUrl, statusText) {
-      status.textContent = statusText || 'Preview ready.';
-      if (previewUrl) {
-        const escapedUrl = String(previewUrl);
-        let iframe = document.getElementById('preview');
-        if (!iframe) {
-          content.innerHTML = '';
-          iframe = document.createElement('iframe');
-          iframe.id = 'preview';
-          iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-pointer-lock');
-          content.appendChild(iframe);
-        }
-
-        if (iframe.src !== escapedUrl) {
-          iframe.src = escapedUrl;
-        }
+    function disposePreviewSocket() {
+      previewSocketKey = '';
+      nextFrame = null;
+      if (!previewSocket) {
         return;
       }
 
-      content.innerHTML = '<div class="placeholder">Preview is starting...</div>';
+      const socket = previewSocket;
+      previewSocket = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+      try {
+        socket.close();
+      } catch {
+        // Best effort cleanup.
+      }
+    }
+
+    function renderPlaceholder(text) {
+      disposePreviewSocket();
+      content.innerHTML = '';
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      placeholder.textContent = text || 'Preview is starting...';
+      content.appendChild(placeholder);
+    }
+
+    function ensureCanvas() {
+      let canvas = document.getElementById('preview-canvas');
+      if (canvas) {
+        return canvas;
+      }
+
+      content.innerHTML = '';
+      const frame = document.createElement('div');
+      frame.className = 'preview-frame';
+      canvas = document.createElement('canvas');
+      canvas.id = 'preview-canvas';
+      canvas.className = 'preview-canvas';
+      canvas.tabIndex = 0;
+      wireCanvasInput(canvas);
+      frame.appendChild(canvas);
+      content.appendChild(frame);
+      return canvas;
+    }
+
+    function renderIframe(previewUrl) {
+      disposePreviewSocket();
+      let iframe = document.getElementById('preview');
+      if (!iframe) {
+        content.innerHTML = '';
+        iframe = document.createElement('iframe');
+        iframe.id = 'preview';
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-pointer-lock');
+        content.appendChild(iframe);
+      }
+
+      if (iframe.src !== previewUrl) {
+        iframe.src = previewUrl;
+      }
+    }
+
+    function getCanvasPoint(event, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      return {
+        x: (event.clientX - rect.left) * scale,
+        y: (event.clientY - rect.top) * scale
+      };
+    }
+
+    function getMouseButton(event) {
+      if (event.button === 0) {
+        return 1;
+      }
+      if (event.button === 1) {
+        return 3;
+      }
+      if (event.button === 2) {
+        return 2;
+      }
+
+      return 0;
+    }
+
+    function getModifiers(event) {
+      const modifiers = [];
+      if (event.altKey) {
+        modifiers.push(0);
+      }
+      if (event.ctrlKey) {
+        modifiers.push(1);
+      }
+      if (event.shiftKey) {
+        modifiers.push(2);
+      }
+      if (event.metaKey) {
+        modifiers.push(3);
+      }
+      if (event.buttons !== 0) {
+        if ((event.buttons & 1) !== 0) {
+          modifiers.push(4);
+        }
+        if ((event.buttons & 2) !== 0) {
+          modifiers.push(5);
+        }
+        if ((event.buttons & 4) !== 0) {
+          modifiers.push(6);
+        }
+      }
+
+      return modifiers.join(',');
+    }
+
+    function sendPointerMessage(kind, event, includeButton) {
+      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      const canvas = document.getElementById('preview-canvas');
+      if (!canvas) {
+        return;
+      }
+
+      const point = getCanvasPoint(event, canvas);
+      const modifiers = getModifiers(event);
+      const parts = [kind, modifiers, point.x, point.y];
+      if (includeButton) {
+        parts.push(getMouseButton(event));
+      }
+
+      previewSocket.send(parts.join(':'));
+    }
+
+    function sendWheelMessage(event) {
+      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      const canvas = document.getElementById('preview-canvas');
+      if (!canvas) {
+        return;
+      }
+
+      const point = getCanvasPoint(event, canvas);
+      previewSocket.send([
+        'scroll',
+        getModifiers(event),
+        point.x,
+        point.y,
+        -event.deltaX,
+        -event.deltaY
+      ].join(':'));
+    }
+
+    function wireCanvasInput(canvas) {
+      canvas.addEventListener('pointerdown', event => {
+        canvas.focus();
+        sendPointerMessage('pointer-pressed', event, true);
+      });
+      canvas.addEventListener('pointerup', event => {
+        sendPointerMessage('pointer-released', event, true);
+      });
+      canvas.addEventListener('pointermove', event => {
+        sendPointerMessage('pointer-moved', event, false);
+      });
+      canvas.addEventListener('wheel', event => {
+        event.preventDefault();
+        sendWheelMessage(event);
+      }, { passive: false });
+      canvas.addEventListener('contextmenu', event => event.preventDefault());
+    }
+
+    function renderFrame(frameBuffer) {
+      if (!nextFrame) {
+        return;
+      }
+
+      const canvas = ensureCanvas();
+      canvas.width = nextFrame.width;
+      canvas.height = nextFrame.height;
+      canvas.style.width = (nextFrame.width / (window.devicePixelRatio || 1)) + 'px';
+      canvas.style.height = (nextFrame.height / (window.devicePixelRatio || 1)) + 'px';
+
+      const context = canvas.getContext('2d');
+      const imageData = new ImageData(new Uint8ClampedArray(frameBuffer), nextFrame.width, nextFrame.height);
+      context.putImageData(imageData, 0, 0);
+      if (previewSocket && previewSocket.readyState === WebSocket.OPEN) {
+        previewSocket.send('frame-received:' + nextFrame.sequenceId);
+      }
+    }
+
+    function connectLoopbackPreview(loopbackPreview) {
+      const connectionKey = loopbackPreview.webSocketUrl + '|' + loopbackPreview.securityCookie;
+      if (previewSocket &&
+          previewSocketKey === connectionKey &&
+          (previewSocket.readyState === WebSocket.CONNECTING || previewSocket.readyState === WebSocket.OPEN)) {
+        return;
+      }
+
+      disposePreviewSocket();
+      renderPlaceholder('Connecting to preview transport...');
+      previewSocketKey = connectionKey;
+
+      const socket = previewSocket = new WebSocket(loopbackPreview.webSocketUrl);
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = () => {
+        if (previewSocket !== socket) {
+          return;
+        }
+
+        socket.send(loopbackPreview.securityCookie);
+      };
+      socket.onmessage = event => {
+        if (previewSocket !== socket) {
+          return;
+        }
+
+        if (typeof event.data === 'string') {
+          if (event.data.startsWith('frame:')) {
+            const parts = event.data.split(':');
+            nextFrame = {
+              sequenceId: parts[1],
+              width: Number.parseInt(parts[2], 10),
+              height: Number.parseInt(parts[3], 10)
+            };
+          }
+          return;
+        }
+
+        if (event.data instanceof ArrayBuffer) {
+          renderFrame(event.data);
+        }
+      };
+      socket.onerror = () => {
+        if (previewSocket !== socket) {
+          return;
+        }
+
+        renderPlaceholder('Preview transport failed to connect.');
+      };
+      socket.onclose = () => {
+        if (previewSocket !== socket) {
+          return;
+        }
+
+        previewSocket = null;
+        previewSocketKey = '';
+        if (!document.getElementById('preview-canvas')) {
+          renderPlaceholder('Preview transport disconnected.');
+        }
+      };
+    }
+
+    function updatePreview(previewUrl, loopbackPreview, statusText) {
+      status.textContent = statusText || 'Preview ready.';
+      if (loopbackPreview && loopbackPreview.webSocketUrl && loopbackPreview.securityCookie) {
+        connectLoopbackPreview(loopbackPreview);
+        return;
+      }
+
+      if (previewUrl) {
+        renderIframe(String(previewUrl));
+        return;
+      }
+
+      renderPlaceholder('Preview is starting...');
     }
 
     window.addEventListener('message', event => {
       const message = event.data || {};
       if (message.type === 'update') {
-        updatePreview(message.previewUrl, message.status);
+        updatePreview(message.previewUrl, message.loopbackPreview, message.status);
       }
     });
   </script>
@@ -1265,11 +1545,84 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 </html>`;
 }
 
-function createPreviewWebviewOptions(portMapping) {
+function createPreviewWebviewOptions() {
   return {
-    enableScripts: true,
-    portMapping: portMapping ? [portMapping] : []
+    enableScripts: true
   };
+}
+
+async function fetchPreviewPageHtmlAsync(previewUrl, attemptCount = 10, delayMs = 150) {
+  let lastError = null;
+
+  for (let attemptIndex = 0; attemptIndex < attemptCount; attemptIndex += 1) {
+    try {
+      return await fetchTextFromUrlAsync(previewUrl);
+    } catch (error) {
+      lastError = error;
+      if (attemptIndex < attemptCount - 1) {
+        await delayAsync(delayMs);
+      }
+    }
+  }
+
+  throw lastError || new Error(`Failed to fetch ${previewUrl}.`);
+}
+
+async function fetchTextFromUrlAsync(urlText) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const parsedUrl = new URL(urlText);
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+    const request = client.get(parsedUrl, response => {
+      if (response.statusCode && response.statusCode >= 400) {
+        settled = true;
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode} while fetching ${urlText}.`));
+        return;
+      }
+
+      const chunks = [];
+      response.setEncoding('utf8');
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve(chunks.join(''));
+      });
+      response.on('error', error => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        reject(error);
+      });
+    });
+
+    request.setTimeout(DEFAULT_REQUEST_TIMEOUT_MS, () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      request.destroy(new Error(`Timed out fetching ${urlText}.`));
+    });
+    request.on('error', error => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
+function delayAsync(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
 }
 
 async function execFileAsync(command, args, options) {
