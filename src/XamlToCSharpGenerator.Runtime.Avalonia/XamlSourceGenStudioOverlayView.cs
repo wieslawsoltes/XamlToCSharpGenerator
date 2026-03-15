@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System;
 using System.ComponentModel;
@@ -16,6 +17,8 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioOverlayView : UserControl
 {
+    private const int LayoutRefreshIntervalMilliseconds = 120;
+
     private static readonly IBrush HoverAdornerBorderBrush = new SolidColorBrush(Color.FromArgb(255, 255, 195, 45));
     private static readonly IBrush HoverAdornerFillBrush = new SolidColorBrush(Color.FromArgb(28, 255, 195, 45));
     private static readonly IBrush SelectionAdornerBorderBrush = new SolidColorBrush(Color.FromArgb(255, 86, 139, 255));
@@ -39,6 +42,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     private TextBlock? _selectionLabelText;
     private Control? _hoveredControl;
     private Control? _selectedControl;
+    private DispatcherTimer? _layoutRefreshTimer;
+    private bool _layoutRefreshRequested;
 
     public XamlSourceGenStudioOverlayView(
         object? liveAppContent,
@@ -165,12 +170,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var scopeSelector = new ComboBox
         {
             Width = 260,
-            ItemTemplate = new FuncDataTemplate<SourceGenStudioScopeDescriptor>(
-                (scope, _) => new TextBlock
-                {
-                    Text = scope.ScopeKind + ": " + scope.DisplayName
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenStudioScopeDescriptor>(
+                static scope => scope.ScopeKind + ": " + scope.DisplayName)
         };
         scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Scopes)));
         scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedScope), BindingMode.TwoWay));
@@ -667,12 +668,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var documents = new ComboBox
         {
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         documents.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Documents)));
         documents.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedDocument), BindingMode.TwoWay));
@@ -717,12 +714,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var templateDocs = new ComboBox
         {
-            ItemTemplate = new FuncDataTemplate<SourceGenHotDesignDocumentDescriptor>(
-                (document, _) => new TextBlock
-                {
-                    Text = document.BuildUri
-                },
-                supportsRecycling: true)
+            ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
+                static document => document.BuildUri)
         };
         templateDocs.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateDocuments)));
         templateDocs.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedTemplateDocument), BindingMode.TwoWay));
@@ -788,6 +781,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        StopLayoutRefreshTimer(dispose: true);
+
         if (_liveLayer is not null)
         {
             _liveLayer.LayoutUpdated -= OnLiveLayerLayoutUpdated;
@@ -836,6 +831,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         if (interactive)
         {
+            StopLayoutRefreshTimer();
             _hoveredControl = null;
             _selectedControl = null;
             HideAdorners();
@@ -901,8 +897,61 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnLiveLayerLayoutUpdated(object? sender, EventArgs e)
     {
+        if (_viewModel?.IsInteractiveMode != false)
+        {
+            StopLayoutRefreshTimer();
+            return;
+        }
+
+        ScheduleLayoutRefresh();
+    }
+
+    private void ScheduleLayoutRefresh()
+    {
+        _layoutRefreshTimer ??= new DispatcherTimer(
+            TimeSpan.FromMilliseconds(LayoutRefreshIntervalMilliseconds),
+            DispatcherPriority.Background,
+            OnLayoutRefreshTimerTick);
+
+        _layoutRefreshRequested = true;
+
+        if (!_layoutRefreshTimer.IsEnabled)
+        {
+            _layoutRefreshTimer.Start();
+        }
+    }
+
+    private void OnLayoutRefreshTimerTick(object? sender, EventArgs e)
+    {
+        if (_viewModel?.IsInteractiveMode != false)
+        {
+            StopLayoutRefreshTimer();
+            return;
+        }
+
+        if (_layoutRefreshTimer is not null)
+        {
+            if (!_layoutRefreshRequested)
+            {
+                _layoutRefreshTimer.Stop();
+                return;
+            }
+        }
+
+        _layoutRefreshRequested = false;
+
+        if (_liveLayer is null || _viewModel is null)
+        {
+            return;
+        }
+
         RefreshAdorners();
         RefreshLiveTreeProjection();
+
+        if (_layoutRefreshTimer is not null && !_layoutRefreshRequested)
+        {
+            _layoutRefreshTimer.Stop();
+        }
     }
 
     private void RefreshLiveTreeProjection()
@@ -914,7 +963,6 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         if (_viewModel.IsInteractiveMode)
         {
-            _viewModel.ClearLiveElementTree();
             return;
         }
 
@@ -952,7 +1000,19 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void SynchronizeSelectionFromWorkspace()
     {
-        if (_viewModel?.SelectedElement is null)
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_viewModel.IsInteractiveMode)
+        {
+            _selectedControl = null;
+            RefreshSelectionAdorner();
+            return;
+        }
+
+        if (_viewModel.SelectedElement is null)
         {
             return;
         }
@@ -969,121 +1029,33 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         RefreshSelectionAdorner();
     }
 
-    private Control? TryFindLiveControlForElement(SourceGenHotDesignElementNode element)
+    private void StopLayoutRefreshTimer(bool dispose = false)
     {
-        var controls = CaptureLiveControls();
-        if (_viewModel?.HitTestMode == SourceGenHotDesignHitTestMode.Logical)
+        if (_layoutRefreshTimer is not null)
         {
-            controls = controls.Where(IsLogicalDescendantOfLiveRoot).ToList();
+            _layoutRefreshTimer.Stop();
+            if (dispose)
+            {
+                _layoutRefreshTimer = null;
+            }
         }
 
-        if (controls.Count == 0)
+        _layoutRefreshRequested = false;
+    }
+
+    private Control? TryFindLiveControlForElement(SourceGenHotDesignElementNode element)
+    {
+        var liveRoot = TryResolveLiveRootControl();
+        if (liveRoot is null || _viewModel is null)
         {
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(element.XamlName))
-        {
-            var byName = FindBestControlByName(controls, element.XamlName);
-            if (byName is not null)
-            {
-                return byName;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(element.TypeName))
-        {
-            return FindBestControlByTypeName(controls, element.TypeName);
-        }
-
-        return null;
-    }
-
-    private IReadOnlyList<Control> CaptureLiveControls()
-    {
-        if (_livePresenter?.Content is not Visual rootVisual)
-        {
-            return Array.Empty<Control>();
-        }
-
-        var controls = new List<Control>(64);
-        if (rootVisual is Control rootControl)
-        {
-            controls.Add(rootControl);
-        }
-
-        foreach (var visual in rootVisual.GetVisualDescendants())
-        {
-            if (visual is Control control)
-            {
-                controls.Add(control);
-            }
-        }
-
-        return controls;
-    }
-
-    private static Control? FindBestControlByName(IReadOnlyList<Control> controls, string name)
-    {
-        Control? best = null;
-        var bestDepth = -1;
-        for (var index = 0; index < controls.Count; index++)
-        {
-            var control = controls[index];
-            if (!string.Equals(control.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var depth = GetVisualDepth(control);
-            if (depth <= bestDepth)
-            {
-                continue;
-            }
-
-            best = control;
-            bestDepth = depth;
-        }
-
-        return best;
-    }
-
-    private static Control? FindBestControlByTypeName(IReadOnlyList<Control> controls, string typeName)
-    {
-        Control? best = null;
-        var bestDepth = -1;
-        for (var index = 0; index < controls.Count; index++)
-        {
-            var control = controls[index];
-            if (!string.Equals(control.GetType().Name, typeName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var depth = GetVisualDepth(control);
-            if (depth <= bestDepth)
-            {
-                continue;
-            }
-
-            best = control;
-            bestDepth = depth;
-        }
-
-        return best;
-    }
-
-    private static int GetVisualDepth(Visual visual)
-    {
-        var depth = 0;
-        var current = visual;
-        while (current.GetVisualParent() is { } parent)
-        {
-            depth++;
-            current = parent;
-        }
-
-        return depth;
+        return XamlSourceGenStudioLiveTreeProjectionService.ResolveLiveControlForElement(
+            liveRoot,
+            _viewModel.HitTestMode,
+            element,
+            string.IsNullOrWhiteSpace(_viewModel.ActiveBuildUri) ? null : _viewModel.ActiveBuildUri);
     }
 
     private Control? ResolveControlAtPointer(PointerEventArgs e)
@@ -1118,40 +1090,6 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         return IsDescendantOf(control, _livePresenter)
             ? control
             : null;
-    }
-
-    private bool IsLogicalDescendantOfLiveRoot(Control control)
-    {
-        if (_livePresenter?.Content is not StyledElement logicalRoot)
-        {
-            return false;
-        }
-
-        StyledElement? current = control;
-        while (current is not null)
-        {
-            if (ReferenceEquals(current, logicalRoot))
-            {
-                return true;
-            }
-
-            current = current.Parent as StyledElement;
-        }
-
-        return false;
-    }
-
-    private static int GetLogicalDepth(Control control)
-    {
-        var depth = 0;
-        StyledElement? current = control;
-        while (current?.Parent is StyledElement parent)
-        {
-            depth++;
-            current = parent;
-        }
-
-        return depth;
     }
 
     private static Control? TryResolveControl(object? pointerSource)

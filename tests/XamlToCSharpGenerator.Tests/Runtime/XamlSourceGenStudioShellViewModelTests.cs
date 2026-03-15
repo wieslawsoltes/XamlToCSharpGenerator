@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Specialized;
 using System.IO;
+using System.Reflection;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using XamlToCSharpGenerator.Runtime;
 
@@ -136,11 +139,19 @@ public class XamlSourceGenStudioShellViewModelTests
                     ArtifactKind = SourceGenHotDesignArtifactKind.View
                 });
 
+            XamlSourceGenRegistry.Register(appBuildUri, static _ => new object());
+            XamlSourceGenRegistry.Register(viewBuildUri, static _ => new TextBlock
+            {
+                Text = "Preview"
+            });
+
             XamlSourceGenHotDesignCoreTools.SelectDocument(appBuildUri);
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
             using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
             Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
+            Assert.Equal(appBuildUri, viewModel.SelectedScope?.BuildUri);
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
 
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
             {
@@ -149,11 +160,19 @@ public class XamlSourceGenStudioShellViewModelTests
 
             Assert.True(handled);
             Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
+            Assert.Equal(viewBuildUri, viewModel.SelectedScope?.BuildUri);
             Assert.NotNull(viewModel.SelectedElement);
             Assert.Equal("ActionButton", viewModel.SelectedElement!.XamlName);
+
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
+            viewModel.RefreshPreviewCommand.Execute(null);
+            Assert.Equal("Preview ready for " + viewBuildUri, viewModel.PreviewStatus);
+            Assert.IsType<TextBlock>(viewModel.CanvasPreviewContent);
         }
         finally
         {
+            XamlSourceGenRegistry.Unregister(appBuildUri);
+            XamlSourceGenRegistry.Unregister(viewBuildUri);
             ResetRuntimeState();
             DeleteFileIfExists(appSourcePath);
             DeleteFileIfExists(viewSourcePath);
@@ -222,6 +241,743 @@ public class XamlSourceGenStudioShellViewModelTests
         }
     }
 
+    [Fact]
+    public void Logical_Mode_Selection_Populates_Source_Properties()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.Properties.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            var buttonNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/0");
+
+            viewModel.SelectedElement = buttonNode;
+
+            Assert.NotNull(viewModel.SelectedElement);
+            Assert.Equal("0/0/0", viewModel.SelectedElementId);
+            Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void Selecting_Source_Node_Uses_Node_BuildUri_When_Active_Document_Differs()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        var appSourcePath = CreateTempAppXamlSource();
+        const string viewBuildUri = "avares://tests/StudioShell.Primary.axaml";
+        const string appBuildUri = "avares://tests/StudioShell.App.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = viewBuildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new global::Avalonia.Application(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = appBuildUri,
+                    SourcePath = appSourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            var buttonNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/0");
+            Assert.Equal(viewBuildUri, buttonNode.SourceBuildUri);
+
+            viewModel.SelectedDocument = Assert.Single(viewModel.Documents.Where(document => document.BuildUri == appBuildUri));
+            Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
+
+            viewModel.SelectedElement = buttonNode;
+
+            Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
+            Assert.Equal("0/0/0", viewModel.SelectedElementId);
+            Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+            DeleteFileIfExists(appSourcePath);
+        }
+    }
+
+    [Fact]
+    public void HitTestMode_Switches_DisplayElements_Between_Source_And_Live_Trees()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.ModeSwitch.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            var logicalRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.False(logicalRoot.IsLive);
+            Assert.Equal("0", logicalRoot.Id);
+
+            viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+
+            var visualRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.True(visualRoot.IsLive);
+            Assert.Equal("live:0", visualRoot.Id);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void Selecting_Live_Runtime_Node_Populates_Runtime_Properties()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        viewModel.UpdateLiveElementTree(new StackPanel
+        {
+            Children =
+            {
+                new Button
+                {
+                    Name = "ActionButton",
+                    Content = "Run"
+                }
+            }
+        });
+
+        viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+        var liveRoot = Assert.Single(viewModel.DisplayElements);
+        var liveButton = Assert.Single(liveRoot.Children);
+
+        viewModel.SelectedElement = liveButton;
+
+        Assert.NotNull(viewModel.SelectedElement);
+        Assert.Equal(liveButton.Id, viewModel.SelectedElement!.Id);
+        Assert.NotEmpty(viewModel.Properties);
+        Assert.Contains(viewModel.Properties, property => property.Name == "Name");
+        Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+    }
+
+    [Fact]
+    public void Live_Mode_Prefers_Stable_Source_Selection_Over_Stale_Live_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.LiveSelectionStability.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+            var firstLiveButton = FindById(Assert.Single(viewModel.DisplayElements), "live:0/0");
+
+            viewModel.SelectedElement = firstLiveButton;
+
+            Assert.Equal("0/0/0", viewModel.SelectedElementId);
+            Assert.Equal("live:0/0", viewModel.SelectedElement!.Id);
+
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Border(),
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            Assert.NotNull(viewModel.SelectedElement);
+            Assert.Equal("Button", viewModel.SelectedElement!.TypeName);
+            Assert.Equal("0/0/0", viewModel.SelectedElement.SourceElementId);
+            Assert.Equal("live:0/1", viewModel.SelectedElement.Id);
+            Assert.Contains(viewModel.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void Selecting_RuntimeOnly_Live_Node_Synchronizes_Selected_Property()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.RuntimeOnlyPropertySync.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            var statusTextNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
+            viewModel.SelectedElement = statusTextNode;
+            viewModel.SelectedProperty = Assert.Single(viewModel.Properties, property => property.Name == "Text");
+            Assert.Equal("Text", viewModel.PropertyName);
+            Assert.Equal("Ready", viewModel.PropertyValue);
+
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Children =
+                {
+                    new Border()
+                }
+            });
+
+            viewModel.SelectedElement = new SourceGenHotDesignElementNode(
+                Id: "live:0/0",
+                DisplayName: "[Border]",
+                TypeName: "Border",
+                XamlName: null,
+                Classes: null,
+                Depth: 1,
+                IsSelected: true,
+                Line: 0,
+                Children: [],
+                IsExpanded: true,
+                DescendantCount: 0,
+                SourceBuildUri: null,
+                SourceElementId: null,
+                IsLive: true);
+
+            Assert.Null(viewModel.SelectedProperty);
+            Assert.Equal(string.Empty, viewModel.PropertyName);
+            Assert.Equal(string.Empty, viewModel.PropertyValue);
+            Assert.NotEmpty(viewModel.Properties);
+            Assert.DoesNotContain(viewModel.Properties, property => property.Name == "Text");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void RefreshDisplayElements_Preserves_RuntimeOnly_Live_Selection()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+
+        var runtimeOnlyLiveNode = new SourceGenHotDesignElementNode(
+            Id: "live:0/1",
+            DisplayName: "[Border]",
+            TypeName: "Border",
+            XamlName: null,
+            Classes: null,
+            Depth: 1,
+            IsSelected: false,
+            Line: 0,
+            Children: [],
+            IsExpanded: true,
+            DescendantCount: 0,
+            SourceBuildUri: null,
+            SourceElementId: null,
+            IsLive: true);
+
+        var sourceBackedLiveNode = new SourceGenHotDesignElementNode(
+            Id: "live:0/0",
+            DisplayName: "[TextBlock] StatusText",
+            TypeName: "TextBlock",
+            XamlName: "StatusText",
+            Classes: null,
+            Depth: 1,
+            IsSelected: false,
+            Line: 0,
+            Children: [],
+            IsExpanded: true,
+            DescendantCount: 0,
+            SourceBuildUri: "avares://tests/StudioShell.RuntimeOnlySelection.axaml",
+            SourceElementId: "0/0/1",
+            IsLive: true);
+
+        var liveRoot = new SourceGenHotDesignElementNode(
+            Id: "live:0",
+            DisplayName: "[StackPanel]",
+            TypeName: "StackPanel",
+            XamlName: null,
+            Classes: null,
+            Depth: 0,
+            IsSelected: false,
+            Line: 0,
+            Children: [sourceBackedLiveNode, runtimeOnlyLiveNode],
+            IsExpanded: true,
+            DescendantCount: 2,
+            SourceBuildUri: "avares://tests/StudioShell.RuntimeOnlySelection.axaml",
+            SourceElementId: "0/0",
+            IsLive: true);
+
+        SetPrivateField(viewModel, "_liveElements", new[] { liveRoot });
+        SetPrivateField(viewModel, "_selectedLiveElementId", runtimeOnlyLiveNode.Id);
+        viewModel.SelectedElementId = sourceBackedLiveNode.SourceElementId!;
+
+        InvokePrivateMethod(viewModel, "RefreshDisplayElements", viewModel.SelectedElementId);
+
+        Assert.NotNull(viewModel.SelectedElement);
+        Assert.Equal(runtimeOnlyLiveNode.Id, viewModel.SelectedElement!.Id);
+        Assert.Null(viewModel.SelectedElement.SourceElementId);
+    }
+
+    [Fact]
+    public void ClearLiveElementTree_Clears_RuntimeOnly_Live_Properties_And_Selection()
+    {
+        ResetRuntimeState();
+        XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        viewModel.UpdateLiveElementTree(new StackPanel
+        {
+            Children =
+            {
+                new Button
+                {
+                    Name = "ActionButton",
+                    Content = "Run"
+                }
+            }
+        });
+
+        viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+        var liveRoot = Assert.Single(viewModel.DisplayElements);
+        var liveButton = Assert.Single(liveRoot.Children);
+
+        viewModel.SelectedElement = liveButton;
+        viewModel.SelectedProperty = Assert.Single(viewModel.Properties, property => property.Name == "Content");
+
+        viewModel.ClearLiveElementTree();
+
+        Assert.Null(viewModel.SelectedElement);
+        Assert.Null(viewModel.SelectedProperty);
+        Assert.Empty(viewModel.Properties);
+        Assert.Empty(viewModel.FilteredProperties);
+        Assert.Equal(string.Empty, viewModel.PropertyName);
+        Assert.Equal(string.Empty, viewModel.PropertyValue);
+    }
+
+    [Fact]
+    public void ClearLiveElementTree_Falls_Back_To_Source_DisplayElements()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.LiveFallback.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            viewModel.UpdateLiveElementTree(new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new Button
+                    {
+                        Name = "ActionButton",
+                        Content = "Run"
+                    }
+                }
+            });
+
+            viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
+            var liveRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.True(liveRoot.IsLive);
+
+            viewModel.ClearLiveElementTree();
+
+            var sourceRoot = Assert.Single(viewModel.DisplayElements);
+            Assert.False(sourceRoot.IsLive);
+            Assert.Equal("0", sourceRoot.Id);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void RefreshCommand_Does_Not_Republish_Unchanged_Workspace_Collections()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.Refresh.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            var documentChanges = 0;
+            var elementChanges = 0;
+            var displayElementChanges = 0;
+            var propertyChanges = 0;
+            var toolboxChanges = 0;
+
+            NotifyCollectionChangedEventHandler documentHandler = (_, _) => documentChanges++;
+            NotifyCollectionChangedEventHandler elementHandler = (_, _) => elementChanges++;
+            NotifyCollectionChangedEventHandler displayElementHandler = (_, _) => displayElementChanges++;
+            NotifyCollectionChangedEventHandler propertyHandler = (_, _) => propertyChanges++;
+            NotifyCollectionChangedEventHandler toolboxHandler = (_, _) => toolboxChanges++;
+
+            viewModel.Documents.CollectionChanged += documentHandler;
+            viewModel.Elements.CollectionChanged += elementHandler;
+            viewModel.DisplayElements.CollectionChanged += displayElementHandler;
+            viewModel.Properties.CollectionChanged += propertyHandler;
+            viewModel.ToolboxItems.CollectionChanged += toolboxHandler;
+
+            try
+            {
+                viewModel.RefreshCommand.Execute(null);
+                documentChanges = 0;
+                elementChanges = 0;
+                displayElementChanges = 0;
+                propertyChanges = 0;
+                toolboxChanges = 0;
+
+                viewModel.RefreshCommand.Execute(null);
+
+                Assert.Equal(0, documentChanges);
+                Assert.Equal(0, elementChanges);
+                Assert.Equal(0, displayElementChanges);
+                Assert.Equal(0, propertyChanges);
+                Assert.Equal(0, toolboxChanges);
+            }
+            finally
+            {
+                viewModel.Documents.CollectionChanged -= documentHandler;
+                viewModel.Elements.CollectionChanged -= elementHandler;
+                viewModel.DisplayElements.CollectionChanged -= displayElementHandler;
+                viewModel.Properties.CollectionChanged -= propertyHandler;
+                viewModel.ToolboxItems.CollectionChanged -= toolboxHandler;
+            }
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void RefreshPreviewCommand_Loads_Preview_On_Demand()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.PreviewOnDemand.axaml";
+        var previewCreateCount = 0;
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenRegistry.Register(buildUri, _ =>
+            {
+                previewCreateCount++;
+                return new TextBlock
+                {
+                    Text = "Preview"
+                };
+            });
+
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            Assert.Equal(buildUri, viewModel.ActiveBuildUri);
+            Assert.Equal("Preview pending.", viewModel.PreviewStatus);
+            Assert.Equal(0, previewCreateCount);
+
+            viewModel.RefreshPreviewCommand.Execute(null);
+
+            Assert.Equal(1, previewCreateCount);
+            Assert.Equal("Preview ready for " + buildUri, viewModel.PreviewStatus);
+            Assert.IsType<TextBlock>(viewModel.CanvasPreviewContent);
+        }
+        finally
+        {
+            XamlSourceGenRegistry.Unregister(buildUri);
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public async Task ApplyPropertyAsync_Uses_Studio_HotReload_Wait_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.PropertyWaitMode.axaml";
+        var studioOptions = new SourceGenStudioOptions
+        {
+            WaitMode = SourceGenStudioWaitMode.WaitForLocalOnly,
+            FallbackPolicy = SourceGenStudioFallbackPolicy.NoFallback,
+            UpdateTimeout = TimeSpan.FromSeconds(1)
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(studioOptions);
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
+            viewModel.PropertyName = "Text";
+            viewModel.PropertyValue = "Updated";
+
+            var publishTask = PublishHotReloadCompletionAsync(typeof(StudioTarget));
+            await InvokePrivateTaskAsync(viewModel, "ApplyPropertyAsync");
+            await publishTask;
+
+            var operation = Assert.Single(XamlSourceGenStudioManager.GetStatusSnapshot().Operations);
+            Assert.Null(operation.Request.WaitMode);
+            Assert.Null(operation.Request.PersistChangesToSource);
+            Assert.NotNull(operation.Result);
+            Assert.True(operation.Result!.LocalUpdateObserved);
+            Assert.Equal("Updated", File.ReadAllText(sourcePath).Contains("Text=\"Updated\"", StringComparison.Ordinal) ? "Updated" : "Missing");
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
+    [Fact]
+    public async Task InsertElementAsync_Uses_Studio_HotReload_Wait_Path()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempXamlSource();
+        const string buildUri = "avares://tests/StudioShell.InsertWaitMode.axaml";
+        var studioOptions = new SourceGenStudioOptions
+        {
+            WaitMode = SourceGenStudioWaitMode.WaitForLocalOnly,
+            FallbackPolicy = SourceGenStudioFallbackPolicy.NoFallback,
+            UpdateTimeout = TimeSpan.FromSeconds(1)
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            XamlSourceGenStudioManager.Enable(studioOptions);
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0");
+            viewModel.NewElementName = "Border";
+
+            var publishTask = PublishHotReloadCompletionAsync(typeof(StudioTarget));
+            await InvokePrivateTaskAsync(viewModel, "InsertElementAsync");
+            await publishTask;
+
+            var operation = Assert.Single(XamlSourceGenStudioManager.GetStatusSnapshot().Operations);
+            Assert.Null(operation.Request.WaitMode);
+            Assert.Null(operation.Request.PersistChangesToSource);
+            Assert.NotNull(operation.Result);
+            Assert.True(operation.Result!.LocalUpdateObserved);
+            Assert.Contains("<Border", File.ReadAllText(sourcePath), StringComparison.Ordinal);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteFileIfExists(sourcePath);
+        }
+    }
+
     private static void ResetRuntimeState()
     {
         XamlSourceGenStudioManager.Disable();
@@ -229,7 +985,80 @@ public class XamlSourceGenStudioShellViewModelTests
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+    }
+
+    private static SourceGenHotDesignElementNode FindById(SourceGenHotDesignElementNode node, string id)
+    {
+        if (string.Equals(node.Id, id, StringComparison.Ordinal))
+        {
+            return node;
+        }
+
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            var found = TryFindById(node.Children[index], id);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        throw new InvalidOperationException("Could not find element id: " + id);
+    }
+
+    private static SourceGenHotDesignElementNode? TryFindById(SourceGenHotDesignElementNode node, string id)
+    {
+        if (string.Equals(node.Id, id, StringComparison.Ordinal))
+        {
+            return node;
+        }
+
+        for (var index = 0; index < node.Children.Count; index++)
+        {
+            var found = TryFindById(node.Children[index], id);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static void InvokePrivateMethod(object instance, string methodName, params object?[]? arguments)
+    {
+        var method = instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        _ = method.Invoke(instance, arguments);
+    }
+
+    private static async Task InvokePrivateTaskAsync(object instance, string methodName, params object?[]? arguments)
+    {
+        var method = instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        var result = method.Invoke(instance, arguments);
+        var task = Assert.IsAssignableFrom<Task>(result);
+        await task;
+    }
+
+    private static void SetPrivateField<T>(object instance, string fieldName, T value)
+    {
+        var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field.SetValue(instance, value);
+    }
+
+    private static async Task PublishHotReloadCompletionAsync(Type reloadedType)
+    {
+        await Task.Delay(100);
+        XamlSourceGenHotReloadEventBus.Instance.PublishPipelineCompleted(
+            new SourceGenHotReloadUpdateContext(
+                SourceGenHotReloadTrigger.MetadataUpdate,
+                requestedTypes: [reloadedType],
+                reloadedTypes: [reloadedType],
+                operationCount: 1));
     }
 
     private static string CreateTempXamlSource()

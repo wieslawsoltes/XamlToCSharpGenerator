@@ -130,9 +130,32 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         var selectedDocument = ResolveDocument(documents, currentActiveBuildUri, null, null);
-        var currentText = selectedDocument is null ? null : ReadCurrentXamlText(selectedDocument, status.Options.MaxHistoryEntries);
+        if (selectedDocument is not null &&
+            !string.Equals(currentActiveBuildUri, selectedDocument.BuildUri, StringComparison.OrdinalIgnoreCase))
+        {
+            currentActiveBuildUri = selectedDocument.BuildUri;
+            lock (Sync)
+            {
+                ActiveBuildUri = currentActiveBuildUri;
+            }
+        }
 
-        var elements = BuildElementTree(currentText, currentSelectedElementId, search, out var selectionExists);
+        var currentText = TryReadCurrentXamlDocument(
+            selectedDocument,
+            status.Options.MaxHistoryEntries,
+            out var currentDocument,
+            out var currentXamlText)
+            ? currentXamlText
+            : selectedDocument is null
+                ? null
+                : ReadCurrentXamlText(selectedDocument, status.Options.MaxHistoryEntries);
+
+        var elements = BuildElementTree(
+            currentDocument,
+            currentSelectedElementId,
+            search,
+            currentActiveBuildUri,
+            out var selectionExists);
         if (!selectionExists)
         {
             currentSelectedElementId = SelectPreferredElementId(elements);
@@ -142,7 +165,7 @@ public static class XamlSourceGenHotDesignCoreTools
             }
         }
 
-        var properties = BuildPropertyEntries(currentText, currentSelectedElementId, currentPropertyFilterMode);
+        var properties = BuildPropertyEntries(currentDocument, currentSelectedElementId, currentPropertyFilterMode);
 
         bool canUndo;
         bool canRedo;
@@ -175,7 +198,7 @@ public static class XamlSourceGenHotDesignCoreTools
             Documents: documents,
             Elements: elements,
             Properties: properties,
-            Toolbox: BuildToolboxCategories(search));
+            Toolbox: BuildToolboxCategories(documents, search));
     }
 
     public static bool TryResolveElementForLiveSelection(
@@ -231,7 +254,12 @@ public static class XamlSourceGenHotDesignCoreTools
                 continue;
             }
 
-            var elements = BuildElementTree(text, selectedElementId: null, search: null, out _);
+            var elements = BuildElementTree(
+                text,
+                selectedElementId: null,
+                search: null,
+                document.BuildUri,
+                out _);
             if (elements.Count == 0)
             {
                 continue;
@@ -295,7 +323,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var status = XamlSourceGenHotDesignManager.GetStatus();
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
-        var document = ResolveDocument(documents, buildUri, targetType: null, targetTypeName: null);
+        var document = FindDocumentByBuildUri(documents, buildUri);
         if (document is null)
         {
             return false;
@@ -309,6 +337,93 @@ public static class XamlSourceGenHotDesignCoreTools
 
         xamlText = text;
         return true;
+    }
+
+    internal static bool TryBuildElementTreeForDocument(
+        string buildUri,
+        out IReadOnlyList<SourceGenHotDesignElementNode> elements)
+    {
+        elements = Array.Empty<SourceGenHotDesignElementNode>();
+        if (string.IsNullOrWhiteSpace(buildUri))
+        {
+            return false;
+        }
+
+        var status = XamlSourceGenHotDesignManager.GetStatus();
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
+        var document = FindDocumentByBuildUri(documents, buildUri);
+        if (!TryReadCurrentXamlDocument(document, status.Options.MaxHistoryEntries, out var xamlDocument, out _))
+        {
+            return false;
+        }
+
+        elements = BuildElementTree(
+            xamlDocument,
+            selectedElementId: null,
+            search: null,
+            buildUri,
+            out _);
+        return elements.Count > 0;
+    }
+
+    internal static IReadOnlyList<SourceGenHotDesignPropertyEntry> BuildRuntimePropertyEntries(
+        AvaloniaObject target,
+        SourceGenHotDesignPropertyFilterMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        var descriptors = EnumerateAvaloniaProperties(target.GetType());
+        if (descriptors.Count == 0)
+        {
+            return Array.Empty<SourceGenHotDesignPropertyEntry>();
+        }
+
+        var properties = new List<SourceGenHotDesignPropertyEntry>(descriptors.Count);
+        for (var index = 0; index < descriptors.Count; index++)
+        {
+            var descriptor = descriptors[index];
+            global::Avalonia.Diagnostics.AvaloniaPropertyValue diagnostic;
+            try
+            {
+                diagnostic = global::Avalonia.Diagnostics.AvaloniaObjectExtensions.GetDiagnostic(target, descriptor.Property);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var isSet = target.IsSet(descriptor.Property) ||
+                        diagnostic.Priority != global::Avalonia.Data.BindingPriority.Unset;
+            if (mode == SourceGenHotDesignPropertyFilterMode.Smart &&
+                !ShouldIncludeRuntimePropertyInSmartFilter(descriptor, isSet))
+            {
+                continue;
+            }
+
+            var value = diagnostic.Value;
+            properties.Add(new SourceGenHotDesignPropertyEntry(
+                Name: descriptor.Name,
+                Value: FormatRuntimePropertyValue(value),
+                TypeName: descriptor.PropertyType.Name,
+                IsSet: isSet,
+                IsAttached: descriptor.IsAttached,
+                IsMarkupExtension: false,
+                QuickSets: GetQuickSets(descriptor.Name, descriptor.PropertyType),
+                Category: ClassifyPropertyCategory(descriptor.Name, descriptor.PropertyType, descriptor.IsAttached),
+                Source: GetRuntimePropertySource(diagnostic.Priority, target.IsSet(descriptor.Property)),
+                OwnerTypeName: descriptor.OwnerType.Name,
+                EditorKind: GetEditorKind(descriptor.PropertyType, isMarkupExtension: false),
+                IsReadOnly: descriptor.IsReadOnly,
+                CanReset: !descriptor.IsReadOnly && target.IsSet(descriptor.Property),
+                EnumOptions: GetEnumOptions(descriptor.PropertyType)));
+        }
+
+        return properties
+            .OrderByDescending(static property => property.IsPinned)
+            .ThenByDescending(static property => property.IsSet)
+            .ThenBy(static property => property.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public static void SetWorkspaceMode(SourceGenHotDesignWorkspaceMode mode)
@@ -469,11 +584,6 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var targetElementId = request.ElementId;
         if (string.IsNullOrWhiteSpace(targetElementId))
         {
@@ -487,32 +597,42 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         targetElementId ??= "0";
-        var targetElement = TryFindElementById(xamlDocument.Root, targetElementId);
-        if (targetElement is null)
+
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate element '" + targetElementId + "' in the document.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        var propertyName = request.PropertyName.Trim();
-        var attributeName = ResolveAttributeName(targetElement, propertyName);
-        if (request.RemoveProperty)
+        if (!editor.TryApplyPropertyUpdate(
+                targetElementId,
+                request.PropertyName.Trim(),
+                request.PropertyValue,
+                request.RemoveProperty,
+                out var updatedText,
+                out var updateError))
         {
-            var existing = targetElement.Attributes(attributeName).FirstOrDefault();
-            if (existing is not null)
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to apply property update.");
+        }
+
+        if (string.Equals(updatedText, text, StringComparison.Ordinal))
+        {
+            lock (Sync)
             {
-                existing.Remove();
+                ActiveBuildUri = resolvedDocument.BuildUri;
+                SelectedElementId = targetElementId;
             }
-        }
-        else
-        {
-            targetElement.SetAttributeValue(attributeName, request.PropertyValue ?? string.Empty);
+
+            return new SourceGenHotDesignApplyResult(
+                true,
+                request.RemoveProperty ? "Property was already removed." : "Property is already up to date.",
+                BuildUri: resolvedDocument.BuildUri,
+                SourcePersisted: false);
         }
 
-        var serialized = SerializeXaml(xamlDocument);
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -554,11 +674,6 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var parentId = request.ParentElementId;
         if (string.IsNullOrWhiteSpace(parentId))
         {
@@ -572,38 +687,39 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         parentId ??= "0";
-        var parentElement = TryFindElementById(xamlDocument.Root, parentId);
-        if (parentElement is null)
+
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate parent element '" + parentId + "' for insert.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        XElement elementToInsert;
-        if (!string.IsNullOrWhiteSpace(request.XamlFragment))
+        if (!editor.TryInsertElement(
+                parentId,
+                request.ElementName,
+                request.XamlFragment,
+                out var updatedText,
+                out var updateError))
         {
-            try
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to insert element.");
+        }
+
+        if (string.Equals(updatedText, text, StringComparison.Ordinal))
+        {
+            lock (Sync)
             {
-                elementToInsert = XElement.Parse(request.XamlFragment!, LoadOptions.SetLineInfo);
+                ActiveBuildUri = resolvedDocument.BuildUri;
             }
-            catch (Exception ex)
-            {
-                return new SourceGenHotDesignApplyResult(false, "Could not parse XAML fragment: " + ex.Message, Error: ex);
-            }
-        }
-        else
-        {
-            var elementName = request.ElementName.Trim();
-            var xName = ResolveElementName(parentElement, elementName);
-            elementToInsert = new XElement(xName);
-        }
 
-        parentElement.Add(elementToInsert);
-
-        var serialized = SerializeXaml(xamlDocument);
+            return new SourceGenHotDesignApplyResult(
+                true,
+                "Element insert produced no changes.",
+                BuildUri: resolvedDocument.BuildUri,
+                SourcePersisted: false);
+        }
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -644,30 +760,26 @@ public static class XamlSourceGenHotDesignCoreTools
             return new SourceGenHotDesignApplyResult(false, "Target document has no source text available.");
         }
 
-        if (!TryParseXaml(text, out var xamlDocument, out var parseError) || xamlDocument?.Root is null)
-        {
-            return new SourceGenHotDesignApplyResult(false, "Failed to parse target XAML document: " + parseError);
-        }
-
         var elementId = request.ElementId.Trim();
         if (string.Equals(elementId, "0", StringComparison.Ordinal))
         {
             return new SourceGenHotDesignApplyResult(false, "Cannot remove the root element.");
         }
 
-        var element = TryFindElementById(xamlDocument.Root, elementId);
-        if (element is null)
+        if (!XamlSourceGenHotDesignDocumentEditor.TryCreate(text, out var editor, out var editorError) || editor is null)
         {
-            return new SourceGenHotDesignApplyResult(false, "Could not locate element '" + elementId + "' for remove.");
+            return new SourceGenHotDesignApplyResult(false, editorError ?? "Failed to parse target XAML document.");
         }
 
-        element.Remove();
+        if (!editor.TryRemoveElement(elementId, out var updatedText, out var updateError))
+        {
+            return new SourceGenHotDesignApplyResult(false, updateError ?? "Failed to remove element.");
+        }
 
-        var serialized = SerializeXaml(xamlDocument);
         var updateRequest = new SourceGenHotDesignUpdateRequest
         {
             BuildUri = resolvedDocument.BuildUri,
-            XamlText = serialized,
+            XamlText = updatedText,
             PersistChangesToSource = request.PersistChangesToSource,
             WaitForHotReload = request.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = request.FallbackToRuntimeApplyOnTimeout
@@ -968,24 +1080,27 @@ public static class XamlSourceGenHotDesignCoreTools
     }
 
     private static IReadOnlyList<SourceGenHotDesignElementNode> BuildElementTree(
-        string? xamlText,
+        XDocument? xamlDocument,
         string? selectedElementId,
         string? search,
+        string? sourceBuildUri,
         out bool selectionExists)
     {
         selectionExists = false;
-        if (string.IsNullOrWhiteSpace(xamlText))
-        {
-            return Array.Empty<SourceGenHotDesignElementNode>();
-        }
-
-        if (!TryParseXaml(xamlText, out var document, out _) || document?.Root is null)
+        if (xamlDocument?.Root is null)
         {
             return Array.Empty<SourceGenHotDesignElementNode>();
         }
 
         var query = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
-        var node = BuildElementNode(document.Root, "0", 0, selectedElementId, query, ref selectionExists);
+        var node = BuildElementNode(
+            xamlDocument.Root,
+            "0",
+            0,
+            selectedElementId,
+            query,
+            sourceBuildUri,
+            ref selectionExists);
         if (node is null)
         {
             return Array.Empty<SourceGenHotDesignElementNode>();
@@ -994,12 +1109,29 @@ public static class XamlSourceGenHotDesignCoreTools
         return [node];
     }
 
+    private static IReadOnlyList<SourceGenHotDesignElementNode> BuildElementTree(
+        string? xamlText,
+        string? selectedElementId,
+        string? search,
+        string? sourceBuildUri,
+        out bool selectionExists)
+    {
+        selectionExists = false;
+        if (!TryParseXamlDocument(xamlText, out var xamlDocument))
+        {
+            return Array.Empty<SourceGenHotDesignElementNode>();
+        }
+
+        return BuildElementTree(xamlDocument, selectedElementId, search, sourceBuildUri, out selectionExists);
+    }
+
     private static SourceGenHotDesignElementNode? BuildElementNode(
         XElement element,
         string elementId,
         int depth,
         string? selectedElementId,
         string? search,
+        string? sourceBuildUri,
         ref bool selectionExists)
     {
         var children = new List<SourceGenHotDesignElementNode>();
@@ -1007,7 +1139,14 @@ public static class XamlSourceGenHotDesignCoreTools
         foreach (var child in element.Elements())
         {
             var childId = elementId + "/" + index;
-            var childNode = BuildElementNode(child, childId, depth + 1, selectedElementId, search, ref selectionExists);
+            var childNode = BuildElementNode(
+                child,
+                childId,
+                depth + 1,
+                selectedElementId,
+                search,
+                sourceBuildUri,
+                ref selectionExists);
             if (childNode is not null)
             {
                 children.Add(childNode);
@@ -1057,26 +1196,23 @@ public static class XamlSourceGenHotDesignCoreTools
                         !string.IsNullOrWhiteSpace(search) ||
                         isSelected ||
                         children.Any(static child => child.IsSelected || child.IsExpanded),
-            DescendantCount: CountDescendants(children));
+            DescendantCount: CountDescendants(children),
+            SourceBuildUri: sourceBuildUri,
+            SourceElementId: elementId);
     }
 
     private static IReadOnlyList<SourceGenHotDesignPropertyEntry> BuildPropertyEntries(
-        string? xamlText,
+        XDocument? xamlDocument,
         string? selectedElementId,
         SourceGenHotDesignPropertyFilterMode mode)
     {
-        if (string.IsNullOrWhiteSpace(xamlText))
+        if (xamlDocument?.Root is null)
         {
             return Array.Empty<SourceGenHotDesignPropertyEntry>();
         }
 
-        if (!TryParseXaml(xamlText, out var document, out _) || document?.Root is null)
-        {
-            return Array.Empty<SourceGenHotDesignPropertyEntry>();
-        }
-
-        var targetElement = TryFindElementById(document.Root, string.IsNullOrWhiteSpace(selectedElementId) ? "0" : selectedElementId!);
-        targetElement ??= document.Root;
+        var targetElement = TryFindElementById(xamlDocument.Root, string.IsNullOrWhiteSpace(selectedElementId) ? "0" : selectedElementId!);
+        targetElement ??= xamlDocument.Root;
         var resolvedType = ResolveElementType(targetElement);
         var descriptors = resolvedType is null
             ? new Dictionary<string, AvaloniaPropertyDescriptor>(StringComparer.OrdinalIgnoreCase)
@@ -1144,6 +1280,35 @@ public static class XamlSourceGenHotDesignCoreTools
                     EnumOptions: GetEnumOptions(descriptor.PropertyType));
             }
         }
+        else
+        {
+            foreach (var descriptor in descriptors.Values)
+            {
+                var isSet = HasPropertyEntryForDescriptor(properties, descriptor);
+                if (!ShouldIncludePropertyInSmartFilter(descriptor, isSet) ||
+                    isSet)
+                {
+                    continue;
+                }
+
+                var displayName = descriptor.Name;
+                properties[displayName] = new SourceGenHotDesignPropertyEntry(
+                    Name: displayName,
+                    Value: null,
+                    TypeName: descriptor.PropertyType.Name,
+                    IsSet: false,
+                    IsAttached: descriptor.IsAttached,
+                    IsMarkupExtension: false,
+                    QuickSets: GetQuickSets(displayName, descriptor.PropertyType),
+                    Category: ClassifyPropertyCategory(displayName, descriptor.PropertyType, descriptor.IsAttached),
+                    Source: "Default",
+                    OwnerTypeName: descriptor.OwnerType.Name,
+                    EditorKind: GetEditorKind(descriptor.PropertyType, isMarkupExtension: false),
+                    IsReadOnly: descriptor.IsReadOnly,
+                    CanReset: false,
+                    EnumOptions: GetEnumOptions(descriptor.PropertyType));
+            }
+        }
 
         return properties.Values
             .OrderByDescending(static property => property.IsPinned)
@@ -1151,6 +1316,19 @@ public static class XamlSourceGenHotDesignCoreTools
             .ThenBy(static property => property.Category, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static property => property.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static IReadOnlyList<SourceGenHotDesignPropertyEntry> BuildPropertyEntries(
+        string? xamlText,
+        string? selectedElementId,
+        SourceGenHotDesignPropertyFilterMode mode)
+    {
+        if (!TryParseXamlDocument(xamlText, out var xamlDocument))
+        {
+            return Array.Empty<SourceGenHotDesignPropertyEntry>();
+        }
+
+        return BuildPropertyEntries(xamlDocument, selectedElementId, mode);
     }
 
     private static int CountDescendants(IReadOnlyList<SourceGenHotDesignElementNode> children)
@@ -1297,7 +1475,66 @@ public static class XamlSourceGenHotDesignCoreTools
         return "Text";
     }
 
-    private static IReadOnlyList<SourceGenHotDesignToolboxCategory> BuildToolboxCategories(string? search)
+    private static bool ShouldIncludePropertyInSmartFilter(
+        AvaloniaPropertyDescriptor descriptor,
+        bool isSet)
+    {
+        if (isSet)
+        {
+            return true;
+        }
+
+        if (descriptor.IsAttached)
+        {
+            return false;
+        }
+
+        return LayoutPropertyNames.Contains(descriptor.Name) ||
+               AppearancePropertyNames.Contains(descriptor.Name) ||
+               DataPropertyNames.Contains(descriptor.Name) ||
+               InteractionPropertyNames.Contains(descriptor.Name) ||
+               string.Equals(descriptor.Name, "Name", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(descriptor.Name, "Content", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(descriptor.Name, "Text", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(descriptor.Name, "Classes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldIncludeRuntimePropertyInSmartFilter(
+        AvaloniaPropertyDescriptor descriptor,
+        bool isSet)
+    {
+        return ShouldIncludePropertyInSmartFilter(descriptor, isSet);
+    }
+
+    private static string? FormatRuntimePropertyValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string text => text,
+            IBrush brush => brush.ToString(),
+            Thickness thickness => thickness.ToString(),
+            CornerRadius cornerRadius => cornerRadius.ToString(),
+            Color color => color.ToString(),
+            _ => value.ToString()
+        };
+    }
+
+    private static string GetRuntimePropertySource(global::Avalonia.Data.BindingPriority priority, bool isLocallySet)
+    {
+        if (isLocallySet || priority == global::Avalonia.Data.BindingPriority.LocalValue)
+        {
+            return "Local";
+        }
+
+        return priority == global::Avalonia.Data.BindingPriority.Unset
+            ? "Default"
+            : priority.ToString();
+    }
+
+    private static IReadOnlyList<SourceGenHotDesignToolboxCategory> BuildToolboxCategories(
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents,
+        string? search)
     {
         var query = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var allItems = new List<SourceGenHotDesignToolboxItem>
@@ -1326,7 +1563,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var projectControlTypes = new HashSet<Type>();
         var projectAssemblyNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var document in XamlSourceGenHotDesignManager.GetRegisteredDocuments())
+        foreach (var document in documents)
         {
             AddProjectControlType(projectControlTypes, document.RootType);
             var assemblyName = document.RootType.Assembly.GetName().Name;
@@ -1415,6 +1652,20 @@ public static class XamlSourceGenHotDesignCoreTools
         collector.Add(type);
     }
 
+    private static SourceGenHotDesignDocumentDescriptor? FindDocumentByBuildUri(
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents,
+        string? buildUri)
+    {
+        if (string.IsNullOrWhiteSpace(buildUri))
+        {
+            return null;
+        }
+
+        var normalizedBuildUri = buildUri.Trim();
+        return documents.FirstOrDefault(document =>
+            string.Equals(document.BuildUri, normalizedBuildUri, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryResolveDocument(string? buildUri, Type? targetType, string? targetTypeName, out SourceGenHotDesignDocumentDescriptor? document)
     {
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
@@ -1437,9 +1688,7 @@ public static class XamlSourceGenHotDesignCoreTools
     {
         if (!string.IsNullOrWhiteSpace(buildUri))
         {
-            var normalizedBuildUri = buildUri.Trim();
-            var byBuildUri = documents.FirstOrDefault(document =>
-                string.Equals(document.BuildUri, normalizedBuildUri, StringComparison.OrdinalIgnoreCase));
+            var byBuildUri = FindDocumentByBuildUri(documents, buildUri);
             if (byBuildUri is not null)
             {
                 return byBuildUri;
@@ -1565,9 +1814,34 @@ public static class XamlSourceGenHotDesignCoreTools
         }
     }
 
-    private static string SerializeXaml(XDocument document)
+    private static bool TryParseXamlDocument(string? xamlText, out XDocument? xamlDocument)
     {
-        return document.ToString(SaveOptions.None);
+        if (string.IsNullOrWhiteSpace(xamlText) ||
+            !TryParseXaml(xamlText, out xamlDocument, out _) ||
+            xamlDocument?.Root is null)
+        {
+            xamlDocument = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadCurrentXamlDocument(
+        SourceGenHotDesignDocumentDescriptor? document,
+        int maxHistoryEntries,
+        out XDocument? xamlDocument,
+        out string? xamlText)
+    {
+        xamlDocument = null;
+        xamlText = null;
+        if (document is null)
+        {
+            return false;
+        }
+
+        xamlText = ReadCurrentXamlText(document, maxHistoryEntries);
+        return TryParseXamlDocument(xamlText, out xamlDocument);
     }
 
     private static XElement? TryFindElementById(XElement root, string elementId)
@@ -1780,40 +2054,6 @@ public static class XamlSourceGenHotDesignCoreTools
             ?.Value;
     }
 
-    private static XName ResolveAttributeName(XElement element, string propertyName)
-    {
-        if (propertyName.Contains(':', StringComparison.Ordinal))
-        {
-            var parts = propertyName.Split(':', 2);
-            var prefix = parts[0];
-            var localName = parts[1];
-            var ns = element.GetNamespaceOfPrefix(prefix);
-            return ns is null ? XName.Get(propertyName) : ns + localName;
-        }
-
-        return XName.Get(propertyName);
-    }
-
-    private static XName ResolveElementName(XElement parent, string elementName)
-    {
-        if (elementName.Contains(':', StringComparison.Ordinal))
-        {
-            var parts = elementName.Split(':', 2);
-            var prefix = parts[0];
-            var localName = parts[1];
-            var ns = parent.GetNamespaceOfPrefix(prefix);
-            return ns is null ? XName.Get(elementName) : ns + localName;
-        }
-
-        var defaultNamespace = parent.GetDefaultNamespace();
-        if (defaultNamespace == XNamespace.None)
-        {
-            return XName.Get(elementName);
-        }
-
-        return defaultNamespace + elementName;
-    }
-
     private static string GetParentElementId(string elementId)
     {
         var slashIndex = elementId.LastIndexOf("/", StringComparison.Ordinal);
@@ -1877,13 +2117,24 @@ public static class XamlSourceGenHotDesignCoreTools
     private static IReadOnlyList<AvaloniaPropertyDescriptor> EnumerateAvaloniaProperties(Type type)
     {
         var descriptors = new Dictionary<string, AvaloniaPropertyDescriptor>(StringComparer.OrdinalIgnoreCase);
+        var registry = AvaloniaPropertyRegistry.Instance;
 
-        foreach (var property in AvaloniaPropertyRegistry.Instance.GetRegistered(type))
+        foreach (var property in registry.GetRegistered(type))
         {
             AddAvaloniaPropertyDescriptor(descriptors, property);
         }
 
-        foreach (var attachedProperty in AvaloniaPropertyRegistry.Instance.GetRegisteredAttached(type))
+        foreach (var directProperty in registry.GetRegisteredDirect(type))
+        {
+            AddAvaloniaPropertyDescriptor(descriptors, directProperty);
+        }
+
+        foreach (var inheritedProperty in registry.GetRegisteredInherited(type))
+        {
+            AddAvaloniaPropertyDescriptor(descriptors, inheritedProperty);
+        }
+
+        foreach (var attachedProperty in registry.GetRegisteredAttached(type))
         {
             AddAvaloniaPropertyDescriptor(descriptors, attachedProperty);
         }
@@ -1908,6 +2159,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
         descriptors[propertyName] = new AvaloniaPropertyDescriptor(
             propertyName,
+            property,
             property.PropertyType,
             property.IsAttached,
             property.OwnerType,
@@ -2072,6 +2324,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
     private sealed record AvaloniaPropertyDescriptor(
         string Name,
+        AvaloniaProperty Property,
         Type PropertyType,
         bool IsAttached,
         Type OwnerType,

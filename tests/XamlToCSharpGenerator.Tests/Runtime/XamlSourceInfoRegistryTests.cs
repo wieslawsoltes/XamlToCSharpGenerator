@@ -3,9 +3,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class XamlSourceInfoRegistryTests
+[Collection("RuntimeStateful")]
+public class XamlSourceInfoRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void GetAll_Returns_Deterministic_Ordering()
     {

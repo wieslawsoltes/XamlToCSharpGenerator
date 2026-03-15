@@ -4,9 +4,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class XamlControlThemeRegistryTests
+[Collection("RuntimeStateful")]
+public class XamlControlThemeRegistryTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void TryMaterialize_By_Key_Resolves_BasedOn_Chain()
     {

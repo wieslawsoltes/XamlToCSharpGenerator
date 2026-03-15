@@ -3,8 +3,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-public class AvaloniaSourceGeneratedXamlLoaderTests
+[Collection("RuntimeStateful")]
+public class AvaloniaSourceGeneratedXamlLoaderTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void TryLoad_Resolves_Relative_Uri_Against_UriContext_BaseUri()
     {

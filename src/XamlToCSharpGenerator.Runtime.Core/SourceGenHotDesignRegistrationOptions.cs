@@ -2,6 +2,8 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public sealed class SourceGenHotDesignRegistrationOptions
 {
+    public Type? TrackingType { get; init; }
+
     public string BuildUri { get; init; } = string.Empty;
 
     public string? SourcePath { get; init; }

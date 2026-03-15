@@ -16,9 +16,9 @@ internal static class XamlSourceGenStudioHitTestingService
         SourceGenHotDesignHitTestMode mode)
     {
         var logicalRoot = livePresenter.Content as StyledElement;
-        foreach (var visual in liveLayer.GetVisualsAt(point, visual => IsHitCandidate(visual, livePresenter)))
+        foreach (var visual in liveLayer.GetVisualsAt(point))
         {
-            if (visual is not Control control)
+            if (visual is not Control control || !IsHitCandidate(control, livePresenter))
             {
                 continue;
             }
@@ -33,8 +33,6 @@ internal static class XamlSourceGenStudioHitTestingService
             {
                 return logicalSelection;
             }
-
-            return control;
         }
 
         return null;
@@ -76,7 +74,7 @@ internal static class XamlSourceGenStudioHitTestingService
             return false;
         }
 
-        var transformedBounds = control.Bounds.TransformToAABB(matrix.Value);
+        var transformedBounds = new Rect(control.Bounds.Size).TransformToAABB(matrix.Value);
         if (transformedBounds.Width <= 0 || transformedBounds.Height <= 0)
         {
             return false;
@@ -100,7 +98,7 @@ internal static class XamlSourceGenStudioHitTestingService
                     return false;
                 }
 
-                var parentBounds = parent.Bounds.TransformToAABB(parentMatrix.Value);
+                var parentBounds = new Rect(parent.Bounds.Size).TransformToAABB(parentMatrix.Value);
                 clipped = clipped.Intersect(parentBounds);
                 if (clipped.Width <= 0 || clipped.Height <= 0)
                 {
@@ -147,7 +145,7 @@ internal static class XamlSourceGenStudioHitTestingService
                IsDescendantOf(control, livePresenter);
     }
 
-    private static Control? ResolveLogicalSelectionControl(Control control, StyledElement logicalRoot)
+    internal static Control? ResolveLogicalSelectionControl(Control control, StyledElement logicalRoot)
     {
         Control? unnamedFallback = null;
         StyledElement? current = control;
@@ -164,6 +162,22 @@ internal static class XamlSourceGenStudioHitTestingService
             }
 
             current = current.Parent as StyledElement;
+        }
+
+        var visual = control as Visual;
+        while (visual is not null)
+        {
+            if (visual is Control visualControl && IsLogicalDescendant(visualControl, logicalRoot))
+            {
+                if (!string.IsNullOrWhiteSpace(visualControl.Name))
+                {
+                    return visualControl;
+                }
+
+                unnamedFallback ??= visualControl;
+            }
+
+            visual = visual.GetVisualParent();
         }
 
         return unnamedFallback;

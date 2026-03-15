@@ -3,9 +3,14 @@ using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
-[Collection("RuntimeRegistry")]
-public class RuntimeRegistrySchemaSerializationTests
+[Collection("RuntimeStateful")]
+public class RuntimeRegistrySchemaSerializationTests : IDisposable
 {
+    public void Dispose()
+    {
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
+    }
+
     [Fact]
     public void Resource_Registry_Serializes_And_Restores_Descriptor()
     {

@@ -63,6 +63,123 @@ public class XamlSourceGenHotDesignManagerTests
     }
 
     [Fact]
+    public void HotReload_Register_Mirrors_Document_Into_HotDesign_Registry()
+    {
+        ResetManager();
+
+        var instance = new HotDesignTarget();
+        XamlSourceGenHotReloadManager.Register(
+            instance,
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/HotReloadMirror.axaml",
+                SourcePath = "/tmp/HotReloadMirror.axaml"
+            });
+
+        var document = Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+        Assert.Equal(typeof(HotDesignTarget), document.RootType);
+        Assert.Equal("avares://tests/HotReloadMirror.axaml", document.BuildUri);
+        Assert.Equal("/tmp/HotReloadMirror.axaml", document.SourcePath);
+        Assert.Equal(SourceGenHotDesignDocumentRole.Root, document.DocumentRole);
+        Assert.Equal(SourceGenHotDesignArtifactKind.View, document.ArtifactKind);
+    }
+
+    [Fact]
+    public void HotReload_Register_Mirror_Preserves_Explicit_Tracking_Type()
+    {
+        ResetManager();
+
+        XamlSourceGenHotReloadManager.Register(
+            new global::Avalonia.Controls.ResourceDictionary(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(HotReloadMirrorDictionaryA),
+                BuildUri = "avares://tests/HotReloadMirrorA.axaml",
+                SourcePath = "/tmp/HotReloadMirrorA.axaml"
+            });
+
+        XamlSourceGenHotReloadManager.Register(
+            new global::Avalonia.Controls.ResourceDictionary(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                TrackingType = typeof(HotReloadMirrorDictionaryB),
+                BuildUri = "avares://tests/HotReloadMirrorB.axaml",
+                SourcePath = "/tmp/HotReloadMirrorB.axaml"
+            });
+
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
+            .OrderBy(static document => document.BuildUri, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.Equal(2, documents.Length);
+        Assert.Equal(typeof(HotReloadMirrorDictionaryA), documents[0].RootType);
+        Assert.Equal("avares://tests/HotReloadMirrorA.axaml", documents[0].BuildUri);
+        Assert.Equal(typeof(HotReloadMirrorDictionaryB), documents[1].RootType);
+        Assert.Equal("avares://tests/HotReloadMirrorB.axaml", documents[1].BuildUri);
+    }
+
+    [Fact]
+    public void HotReload_ClearRegistrations_Removes_Mirrored_HotDesign_Documents()
+    {
+        ResetManager();
+
+        var instance = new HotReloadMirrorTarget();
+        XamlSourceGenHotReloadManager.Register(
+            instance,
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/HotReloadMirrorClear.axaml",
+                SourcePath = "/tmp/HotReloadMirrorClear.axaml"
+            });
+
+        Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+
+        XamlSourceGenHotReloadManager.ClearRegistrations();
+
+        Assert.Empty(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+    }
+
+    [Fact]
+    public void HotReload_ClearRegistrations_Preserves_Explicit_HotDesign_Documents()
+    {
+        ResetManager();
+
+        XamlSourceGenHotDesignManager.Register(
+            new HotDesignTarget(),
+            static target => ((HotDesignTarget)target).ApplyCount++,
+            new SourceGenHotDesignRegistrationOptions
+            {
+                BuildUri = "avares://tests/ExplicitHotDesign.axaml",
+                SourcePath = "/tmp/ExplicitHotDesign.axaml"
+            });
+
+        XamlSourceGenHotReloadManager.Register(
+            new HotReloadMirrorTarget(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/MirroredHotDesign.axaml",
+                SourcePath = "/tmp/MirroredHotDesign.axaml"
+            });
+
+        var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
+            .OrderBy(static document => document.BuildUri, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Assert.Equal(2, documents.Length);
+
+        XamlSourceGenHotReloadManager.ClearRegistrations();
+
+        var remaining = Assert.Single(XamlSourceGenHotDesignManager.GetRegisteredDocuments());
+        Assert.Equal(typeof(HotDesignTarget), remaining.RootType);
+        Assert.Equal("avares://tests/ExplicitHotDesign.axaml", remaining.BuildUri);
+        Assert.Equal("/tmp/ExplicitHotDesign.axaml", remaining.SourcePath);
+    }
+
+    [Fact]
     public void ApplyUpdate_RuntimeOnly_Uses_RuntimeApply_Action()
     {
         ResetManager();
@@ -262,11 +379,25 @@ public class XamlSourceGenHotDesignManagerTests
         XamlSourceGenHotDesignManager.Disable();
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
+        XamlSourceGenHotReloadManager.ClearRegistrations();
+        XamlSourceGenHotDesignCoreTools.ResetWorkspace();
     }
 
     private sealed class HotDesignTarget
     {
         public int ApplyCount { get; set; }
+    }
+
+    private sealed class HotReloadMirrorDictionaryA : global::Avalonia.Controls.ResourceDictionary
+    {
+    }
+
+    private sealed class HotReloadMirrorDictionaryB : global::Avalonia.Controls.ResourceDictionary
+    {
+    }
+
+    private sealed class HotReloadMirrorTarget
+    {
     }
 
     private sealed class RecordingHotDesignApplier : ISourceGenHotDesignUpdateApplier
