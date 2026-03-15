@@ -6,6 +6,11 @@ namespace XamlToCSharpGenerator.PreviewerHost.Protocol;
 
 internal sealed class AvaloniaDesignerTransport : IAsyncDisposable
 {
+    internal const double DefaultViewportWidth = 1280;
+    internal const double DefaultViewportHeight = 800;
+    internal const double DefaultDpi = 96;
+    internal const double DefaultViewportScale = 1;
+
     private readonly NetworkStream _stream;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
 
@@ -34,6 +39,36 @@ internal sealed class AvaloniaDesignerTransport : IAsyncDisposable
         await SendMessageAsync(
             AvaloniaDesignerMessageGuids.UpdateXaml,
             MinimalBson.SerializeDocument(document),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SendInitialClientBootstrapAsync(
+        double? viewportWidth,
+        double? viewportHeight,
+        double? viewportScale,
+        CancellationToken cancellationToken)
+    {
+        var dpi = NormalizeViewportDpi(viewportScale);
+        var renderInfo = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["DpiX"] = dpi,
+            ["DpiY"] = dpi
+        };
+        await SendMessageAsync(
+            AvaloniaDesignerMessageGuids.ClientRenderInfo,
+            MinimalBson.SerializeDocument(renderInfo),
+            cancellationToken).ConfigureAwait(false);
+
+        var viewportAllocated = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Width"] = NormalizeViewportSize(viewportWidth, DefaultViewportWidth),
+            ["Height"] = NormalizeViewportSize(viewportHeight, DefaultViewportHeight),
+            ["DpiX"] = dpi,
+            ["DpiY"] = dpi
+        };
+        await SendMessageAsync(
+            AvaloniaDesignerMessageGuids.ClientViewportAllocated,
+            MinimalBson.SerializeDocument(viewportAllocated),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -177,5 +212,20 @@ internal sealed class AvaloniaDesignerTransport : IAsyncDisposable
 
         value = default!;
         return false;
+    }
+
+    private static double NormalizeViewportSize(double? viewportSize, double fallbackValue)
+    {
+        return viewportSize is > 0
+            ? viewportSize.Value
+            : fallbackValue;
+    }
+
+    private static double NormalizeViewportDpi(double? viewportScale)
+    {
+        var normalizedScale = viewportScale is > 0
+            ? viewportScale.Value
+            : DefaultViewportScale;
+        return DefaultDpi * normalizedScale;
     }
 }

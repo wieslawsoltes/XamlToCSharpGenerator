@@ -13,12 +13,39 @@ public class SourceGeneratedDesignerHostTests
             "XamlToCSharpGenerator.Previewer.DesignerHost.SourceGeneratedRuntimeXamlLoaderInstaller",
             throwOnError: true)
             ?? throw new InvalidOperationException("Installer type was not found.");
-        var installMethod = installerType.GetMethod(
-            "Install",
-            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+        var installMethod = installerType.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .FirstOrDefault(method => method.Name == "Install" && method.GetParameters().Length == 0)
             ?? throw new InvalidOperationException("Install method was not found.");
 
         var exception = Record.Exception(() => installMethod.Invoke(null, null));
+        if (exception is TargetInvocationException invocationException)
+        {
+            exception = invocationException.InnerException ?? invocationException;
+        }
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Install_Avalonia_Mode_With_Preview_Size_Does_Not_Throw()
+    {
+        var assembly = Assembly.Load("XamlToCSharpGenerator.Previewer.DesignerHost");
+        var installerType = assembly.GetType(
+            "XamlToCSharpGenerator.Previewer.DesignerHost.SourceGeneratedRuntimeXamlLoaderInstaller",
+            throwOnError: true)
+            ?? throw new InvalidOperationException("Installer type was not found.");
+        var compilerModeType = assembly.GetType(
+            "XamlToCSharpGenerator.Previewer.DesignerHost.PreviewCompilerMode",
+            throwOnError: true)
+            ?? throw new InvalidOperationException("Preview compiler mode type was not found.");
+        var avaloniaMode = Enum.Parse(compilerModeType, "Avalonia");
+        var installMethod = installerType.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .FirstOrDefault(method =>
+                method.Name == "Install" &&
+                method.GetParameters().Length == 3)
+            ?? throw new InvalidOperationException("Avalonia overload of Install was not found.");
+
+        var exception = Record.Exception(() => installMethod.Invoke(null, [avaloniaMode, 640d, 480d]));
         if (exception is TargetInvocationException invocationException)
         {
             exception = invocationException.InnerException ?? invocationException;

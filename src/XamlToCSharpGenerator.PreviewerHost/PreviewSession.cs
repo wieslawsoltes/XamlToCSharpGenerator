@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,7 +15,11 @@ internal sealed record PreviewSessionStartRequest(
     string DepsFilePath,
     string SourceAssemblyPath,
     string XamlFileProjectPath,
-    string XamlText);
+    string XamlText,
+    string CompilerMode,
+    double? PreviewWidth,
+    double? PreviewHeight,
+    double? PreviewScale);
 
 internal sealed record PreviewSessionStartResult(
     string PreviewUrl,
@@ -48,6 +53,9 @@ internal sealed class PreviewSession : IAsyncDisposable
     private AvaloniaDesignerTransport? _transport;
     private string? _sourceAssemblyPath;
     private string? _xamlFileProjectPath;
+    private double? _previewWidth;
+    private double? _previewHeight;
+    private double? _previewScale;
     private bool _sessionStarted;
 
     public event Action<string>? Log;
@@ -74,6 +82,9 @@ internal sealed class PreviewSession : IAsyncDisposable
         {
             _sourceAssemblyPath = request.SourceAssemblyPath;
             _xamlFileProjectPath = NormalizeProjectPath(request.XamlFileProjectPath);
+            _previewWidth = request.PreviewWidth;
+            _previewHeight = request.PreviewHeight;
+            _previewScale = request.PreviewScale;
 
             Exception? lastException = null;
 
@@ -81,6 +92,7 @@ internal sealed class PreviewSession : IAsyncDisposable
             {
                 var clientAccepted = CreateCompletionSource<TcpClient>();
                 var previewUrlAvailable = CreateCompletionSource<string>();
+                var designerSessionStarted = CreateCompletionSource<string>();
                 var hostDiagnostics = new StringBuilder();
                 TcpListener? previewPortReservation = null;
 
@@ -97,6 +109,7 @@ internal sealed class PreviewSession : IAsyncDisposable
                         previewPortReservation,
                         clientAccepted,
                         previewUrlAvailable,
+                        designerSessionStarted,
                         hostDiagnostics);
                     previewPortReservation = null;
 
@@ -108,8 +121,20 @@ internal sealed class PreviewSession : IAsyncDisposable
 
                     _transport = new AvaloniaDesignerTransport(acceptedClient.GetStream());
                     _readLoopTask = Task.Run(
-                        () => RunReadLoopAsync(_transport, previewUrlAvailable, _disposeSource.Token),
+                        () => RunReadLoopAsync(_transport, previewUrlAvailable, designerSessionStarted, _disposeSource.Token),
                         _disposeSource.Token);
+
+                    await WaitWithTimeoutAsync(
+                        designerSessionStarted.Task,
+                        _startupTimeout,
+                        linkedCancellationToken.Token,
+                        "Timed out waiting for the Avalonia preview session to start.").ConfigureAwait(false);
+
+                    await _transport.SendInitialClientBootstrapAsync(
+                        _previewWidth,
+                        _previewHeight,
+                        _previewScale,
+                        linkedCancellationToken.Token).ConfigureAwait(false);
 
                     await _transport.SendUpdateXamlAsync(
                         request.XamlText,
@@ -198,6 +223,7 @@ internal sealed class PreviewSession : IAsyncDisposable
         ArgumentException.ThrowIfNullOrEmpty(request.DepsFilePath);
         ArgumentException.ThrowIfNullOrEmpty(request.SourceAssemblyPath);
         ArgumentException.ThrowIfNullOrEmpty(request.XamlFileProjectPath);
+        ArgumentException.ThrowIfNullOrEmpty(request.CompilerMode);
 
         if (!File.Exists(request.HostAssemblyPath))
         {
@@ -262,6 +288,7 @@ internal sealed class PreviewSession : IAsyncDisposable
         TcpListener previewPortReservation,
         TaskCompletionSource<TcpClient> clientAccepted,
         TaskCompletionSource<string> previewUrlAvailable,
+        TaskCompletionSource<string> designerSessionStarted,
         StringBuilder hostDiagnostics)
     {
         var sessionId = GetSessionId().ToString("D");
@@ -295,6 +322,20 @@ internal sealed class PreviewSession : IAsyncDisposable
         process.StartInfo.ArgumentList.Add("html");
         process.StartInfo.ArgumentList.Add("--html-url");
         process.StartInfo.ArgumentList.Add(previewUrl);
+        process.StartInfo.ArgumentList.Add("--axsg-compiler-mode");
+        process.StartInfo.ArgumentList.Add(request.CompilerMode);
+        if (request.PreviewWidth is > 0)
+        {
+            process.StartInfo.ArgumentList.Add("--axsg-preview-width");
+            process.StartInfo.ArgumentList.Add(request.PreviewWidth.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (request.PreviewHeight is > 0)
+        {
+            process.StartInfo.ArgumentList.Add("--axsg-preview-height");
+            process.StartInfo.ArgumentList.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
         process.StartInfo.ArgumentList.Add(request.HostAssemblyPath);
 
         process.OutputDataReceived += (_, args) =>
@@ -328,6 +369,7 @@ internal sealed class PreviewSession : IAsyncDisposable
                     (exitCode.HasValue ? " Exit code: " + exitCode.Value + "." : string.Empty));
                 clientAccepted.TrySetException(exception);
                 previewUrlAvailable.TrySetException(exception);
+                designerSessionStarted.TrySetException(exception);
                 if (_sessionStarted)
                 {
                     HostExited?.Invoke(exitCode);
@@ -354,6 +396,7 @@ internal sealed class PreviewSession : IAsyncDisposable
     private async Task RunReadLoopAsync(
         AvaloniaDesignerTransport transport,
         TaskCompletionSource<string> previewUrlAvailable,
+        TaskCompletionSource<string> designerSessionStarted,
         CancellationToken cancellationToken)
     {
         try
@@ -384,6 +427,7 @@ internal sealed class PreviewSession : IAsyncDisposable
                         break;
 
                     case StartDesignerSessionPayload sessionStarted:
+                        designerSessionStarted.TrySetResult(sessionStarted.SessionId);
                         Log?.Invoke("[previewer] session started: " + sessionStarted.SessionId);
                         break;
 
@@ -401,6 +445,7 @@ internal sealed class PreviewSession : IAsyncDisposable
         {
             Log?.Invoke("[previewer] transport failed: " + ex.Message);
             previewUrlAvailable.TrySetException(ex);
+            designerSessionStarted.TrySetException(ex);
         }
     }
 

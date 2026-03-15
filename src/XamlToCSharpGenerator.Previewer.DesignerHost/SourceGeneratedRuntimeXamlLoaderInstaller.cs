@@ -6,15 +6,27 @@ namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 internal static class SourceGeneratedRuntimeXamlLoaderInstaller
 {
     public static void Install()
+        => Install(PreviewCompilerMode.SourceGenerated, null, null);
+
+    public static void Install(
+        PreviewCompilerMode compilerMode,
+        double? previewWidth,
+        double? previewHeight)
     {
+        PreviewSizingRootDecorator.Configure(previewWidth, previewHeight);
+
         var loaderContractType = typeof(AvaloniaXamlLoader).Assembly.GetType(
             "Avalonia.Markup.Xaml.AvaloniaXamlLoader+IRuntimeXamlLoader",
             throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia runtime XAML loader contract was not found.");
+        Func<RuntimeXamlLoaderDocument, RuntimeXamlLoaderConfiguration, object> loadHandler = compilerMode == PreviewCompilerMode.SourceGenerated
+            ? new SourceGeneratedRuntimeXamlLoader().Load
+            : AvaloniaRuntimeXamlLoader.Load;
 
         var proxy = RuntimeXamlLoaderProxyFactory.Create(
             loaderContractType,
-            new SourceGeneratedRuntimeXamlLoader().Load);
+            (document, configuration) =>
+                PreviewSizingRootDecorator.Apply(loadHandler(document, configuration)));
         var locatorType = Type.GetType("Avalonia.AvaloniaLocator, Avalonia.Base", throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia locator type was not found.");
         var currentMutableProperty = locatorType.GetProperty(

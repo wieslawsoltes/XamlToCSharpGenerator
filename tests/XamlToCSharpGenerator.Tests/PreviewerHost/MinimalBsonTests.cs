@@ -51,4 +51,24 @@ public sealed class MinimalBsonTests
         Assert.Equal(true, roundTripped["IsEnabled"]);
         Assert.Equal(45831, roundTripped["Port"]);
     }
+
+    [Fact]
+    public void SerializeDocument_RoundTrips_Double_Values()
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Width"] = 1280d,
+            ["Height"] = 800d,
+            ["DpiX"] = 96d,
+            ["DpiY"] = 96d
+        };
+
+        var bson = MinimalBson.SerializeDocument(payload);
+        var roundTripped = MinimalBson.DeserializeDocument(bson);
+
+        Assert.Equal(1280d, Assert.IsType<double>(roundTripped["Width"]));
+        Assert.Equal(800d, Assert.IsType<double>(roundTripped["Height"]));
+        Assert.Equal(96d, Assert.IsType<double>(roundTripped["DpiX"]));
+        Assert.Equal(96d, Assert.IsType<double>(roundTripped["DpiY"]));
+    }
 }

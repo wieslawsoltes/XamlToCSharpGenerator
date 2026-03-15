@@ -6,6 +6,7 @@ namespace XamlToCSharpGenerator.PreviewerHost.Protocol;
 
 internal static class MinimalBson
 {
+    private const byte TypeDouble = 0x01;
     private const byte TypeString = 0x02;
     private const byte TypeDocument = 0x03;
     private const byte TypeBoolean = 0x08;
@@ -75,6 +76,7 @@ internal static class MinimalBson
     {
         return elementType switch
         {
+            TypeDouble => ReadDouble(payload, ref offset),
             TypeString => ReadString(payload, ref offset),
             TypeDocument => ReadDocument(payload, ref offset),
             TypeBoolean => ReadBoolean(payload, ref offset),
@@ -144,6 +146,18 @@ internal static class MinimalBson
         return value;
     }
 
+    private static double ReadDouble(ReadOnlySpan<byte> payload, ref int offset)
+    {
+        if (offset + 8 > payload.Length)
+        {
+            throw new InvalidDataException("BSON double payload is truncated.");
+        }
+
+        var bits = BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(offset, 8));
+        offset += 8;
+        return BitConverter.Int64BitsToDouble(bits);
+    }
+
     private static long ReadInt64(ReadOnlySpan<byte> payload, ref int offset)
     {
         if (offset + 8 > payload.Length)
@@ -165,6 +179,12 @@ internal static class MinimalBson
             case null:
                 stream.WriteByte(TypeNull);
                 WriteCString(stream, name);
+                return;
+
+            case double doubleValue:
+                stream.WriteByte(TypeDouble);
+                WriteCString(stream, name);
+                WriteDouble(stream, doubleValue);
                 return;
 
             case string stringValue:
@@ -234,6 +254,13 @@ internal static class MinimalBson
     {
         Span<byte> buffer = stackalloc byte[8];
         BinaryPrimitives.WriteInt64LittleEndian(buffer, value);
+        stream.Write(buffer);
+    }
+
+    private static void WriteDouble(Stream stream, double value)
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer, BitConverter.DoubleToInt64Bits(value));
         stream.Write(buffer);
     }
 }

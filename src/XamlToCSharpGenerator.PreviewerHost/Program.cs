@@ -205,6 +205,10 @@ internal static class Program
         var sourceAssemblyPath = GetRequiredString(payload, "sourceAssemblyPath");
         var xamlFileProjectPath = GetRequiredString(payload, "xamlFileProjectPath");
         var xamlText = GetRequiredString(payload, "xamlText");
+        var compilerMode = GetString(payload, "previewCompilerMode") ?? "avalonia";
+        var previewWidth = GetNullableDouble(payload, "previewWidth");
+        var previewHeight = GetNullableDouble(payload, "previewHeight");
+        var previewScale = GetNullableDouble(payload, "previewScale");
 
         return new PreviewSessionStartRequest(
             dotNetCommand,
@@ -214,7 +218,11 @@ internal static class Program
             Path.GetFullPath(depsFilePath),
             Path.GetFullPath(sourceAssemblyPath),
             xamlFileProjectPath,
-            xamlText);
+            xamlText,
+            compilerMode,
+            previewWidth,
+            previewHeight,
+            previewScale);
     }
 
     private static string ParseUpdateText(JsonElement payload)
@@ -239,6 +247,18 @@ internal static class Program
                property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+    }
+
+    private static double? GetNullableDouble(JsonElement payload, string propertyName)
+    {
+        if (!payload.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetDouble(out var value))
+        {
+            return null;
+        }
+
+        return value;
     }
 
     private static Task WriteEventAsync(string eventName, object payload)

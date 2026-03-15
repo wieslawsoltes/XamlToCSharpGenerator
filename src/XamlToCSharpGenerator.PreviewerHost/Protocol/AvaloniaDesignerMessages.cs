@@ -8,6 +8,8 @@ internal static class AvaloniaDesignerMessageGuids
     public static readonly Guid UpdateXamlResult = new("B7A70093-0C5D-47FD-9261-22086D43A2E2");
     public static readonly Guid StartDesignerSession = new("854887CF-2694-4EB6-B499-7461B6FB96C7");
     public static readonly Guid HtmlTransportStarted = new("53778004-78FA-4381-8EC3-176A6F2328B6");
+    public static readonly Guid ClientViewportAllocated = new("BD7A8DE6-3DB8-4A13-8583-D6D4AB189A31");
+    public static readonly Guid ClientRenderInfo = new("7A3C25D3-3652-438D-8EF1-86E942CC96C0");
 }
 
 internal sealed record StartDesignerSessionPayload(string SessionId);
