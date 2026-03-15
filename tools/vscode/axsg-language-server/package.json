@@ -370,7 +370,8 @@
       {
         "command": "axsg.preview.open",
         "title": "AXSG: Open Avalonia Preview",
-        "category": "AXSG"
+        "category": "AXSG",
+        "icon": "$(open-preview)"
       }
     ],
     "menus": {
