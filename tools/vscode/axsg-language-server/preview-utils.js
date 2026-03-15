@@ -321,8 +321,19 @@ function normalizeMaybeEmptyPath(filePath) {
   return normalizeFilePath(filePath);
 }
 
+function normalizePathForComparison(filePath) {
+  const normalizedPath = normalizeMaybeEmptyPath(filePath);
+  if (!normalizedPath) {
+    return '';
+  }
+
+  return process.platform === 'win32'
+    ? normalizedPath.toLowerCase()
+    : normalizedPath;
+}
+
 function samePath(left, right) {
-  return normalizeFilePath(left) === normalizeFilePath(right);
+  return normalizePathForComparison(left) === normalizePathForComparison(right);
 }
 
 function getFileModifiedTimeMs(filePath) {

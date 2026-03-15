@@ -701,7 +701,7 @@ class AvaloniaPreviewController {
       return;
     }
 
-    const session = await vscode.window.withProgress(
+    await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: `AXSG Preview: ${path.basename(document.fileName)}`,
@@ -712,16 +712,16 @@ class AvaloniaPreviewController {
         const launchInfo = await this.resolveLaunchInfo(document, progress);
         progress.report({ message: 'Starting preview host...' });
         const createdSession = new AvaloniaPreviewSession(this, document, launchInfo);
+        this.sessions.set(document.uri.toString(), createdSession);
         try {
           await createdSession.start();
-          return createdSession;
+          return;
         } catch (error) {
+          this.removeSession(document.uri.toString());
           await createdSession.dispose();
           throw error;
         }
       });
-
-    this.sessions.set(document.uri.toString(), session);
   }
 
   removeSession(documentUri) {

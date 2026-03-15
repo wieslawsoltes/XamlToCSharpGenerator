@@ -24,6 +24,7 @@ const {
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   projectReferencesProject,
+  samePath,
   shouldUseNoRestoreBuild,
   supportsSourceGeneratedPreview,
   tryParseMsbuildJson
@@ -245,6 +246,18 @@ test('resolveLoopbackPreviewWebviewTarget ignores non-loopback preview URLs', ()
   assert.equal(
     resolveLoopbackPreviewWebviewTarget('https://example.com/preview'),
     null);
+});
+
+test('samePath compares Windows paths case-insensitively', () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    assert.equal(
+      samePath('C:\\Repo\\Samples\\App.csproj', 'c:\\repo\\samples\\APP.csproj'),
+      true);
+  } finally {
+    Object.defineProperty(process, 'platform', originalPlatform);
+  }
 });
 
 test('createPreviewStartPlan allows forced source-generated preview without Avalonia host metadata', () => {
