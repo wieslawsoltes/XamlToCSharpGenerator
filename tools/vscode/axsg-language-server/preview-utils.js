@@ -174,6 +174,44 @@ function resolvePreviewDocumentText(documentText, persistedText, isDirty, previe
   return documentText;
 }
 
+function resolveLoopbackPreviewWebviewTarget(previewUrl) {
+  const normalized = String(previewUrl || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(normalized);
+  } catch {
+    return null;
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return null;
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1' && hostname !== '[::1]') {
+    return null;
+  }
+
+  const port = Number.parseInt(parsedUrl.port, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    return null;
+  }
+
+  parsedUrl.hostname = 'localhost';
+
+  return {
+    iframeUrl: parsedUrl.toString(),
+    portMapping: {
+      webviewPort: port,
+      extensionHostPort: port
+    }
+  };
+}
+
 function createPreviewStartPlan(options) {
   const requestedMode = options && options.requestedMode
     ? options.requestedMode
@@ -428,6 +466,7 @@ function isUnderBuildOutput(filePath) {
 module.exports = {
   buildArguments,
   createPreviewBuildPlan,
+  resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
   getFileModifiedTimeMs,
   hasPendingPreviewText,

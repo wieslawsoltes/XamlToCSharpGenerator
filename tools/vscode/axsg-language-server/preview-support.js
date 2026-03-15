@@ -22,6 +22,7 @@ const {
   pickPreviewTargetFramework,
   projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolveLoopbackPreviewWebviewTarget,
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
@@ -364,10 +365,11 @@ class AvaloniaPreviewSession {
       'axsgPreview',
       `AXSG Preview: ${this.fileName}`,
       vscode.ViewColumn.Beside,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true
-      });
+      Object.assign(
+        {
+          retainContextWhenHidden: true
+        },
+        createPreviewWebviewOptions()));
 
     panel.webview.html = createPreviewWebviewHtml(panel.webview, this.fileName, this.currentPreviewUrl, this.currentStatus);
     panel.onDidDispose(() => {
@@ -586,10 +588,25 @@ class AvaloniaPreviewSession {
     this.rawPreviewUrl = normalizedPreviewUrl;
 
     if (!normalizedPreviewUrl) {
+      this.applyWebviewOptions(null);
       this.currentPreviewUrl = '';
       this.updatePanel();
       return;
     }
+
+    const loopbackTarget = resolveLoopbackPreviewWebviewTarget(normalizedPreviewUrl);
+    if (loopbackTarget) {
+      this.applyWebviewOptions(loopbackTarget.portMapping);
+      if (this.disposed || updateToken !== this.previewUrlUpdateToken || this.rawPreviewUrl !== normalizedPreviewUrl) {
+        return;
+      }
+
+      this.currentPreviewUrl = loopbackTarget.iframeUrl;
+      this.updatePanel();
+      return;
+    }
+
+    this.applyWebviewOptions(null);
 
     let resolvedPreviewUrl = normalizedPreviewUrl;
     try {
@@ -607,6 +624,14 @@ class AvaloniaPreviewSession {
 
     this.currentPreviewUrl = resolvedPreviewUrl;
     this.updatePanel();
+  }
+
+  applyWebviewOptions(portMapping) {
+    if (!this.panel) {
+      return;
+    }
+
+    this.panel.webview.options = createPreviewWebviewOptions(portMapping);
   }
 }
 
@@ -1238,6 +1263,13 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   </script>
 </body>
 </html>`;
+}
+
+function createPreviewWebviewOptions(portMapping) {
+  return {
+    enableScripts: true,
+    portMapping: portMapping ? [portMapping] : []
+  };
 }
 
 async function execFileAsync(command, args, options) {

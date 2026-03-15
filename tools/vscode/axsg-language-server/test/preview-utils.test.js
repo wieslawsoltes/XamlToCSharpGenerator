@@ -17,6 +17,7 @@ const {
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
   PREVIEW_COMPILER_MODE_AVALONIA,
+  resolveLoopbackPreviewWebviewTarget,
   resolveConfiguredProjectPath,
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
@@ -226,6 +227,24 @@ test('resolvePreviewDocumentText requires saved content for dirty source-generat
   assert.throws(
     () => resolvePreviewDocumentText('<UserControl />', undefined, true, PREVIEW_COMPILER_MODE_SOURCE_GENERATED),
     /requires the file to be saved/i);
+});
+
+test('resolveLoopbackPreviewWebviewTarget maps loopback preview URLs to localhost with port mapping', () => {
+  assert.deepEqual(
+    resolveLoopbackPreviewWebviewTarget('http://127.0.0.1:52704/'),
+    {
+      iframeUrl: 'http://localhost:52704/',
+      portMapping: {
+        webviewPort: 52704,
+        extensionHostPort: 52704
+      }
+    });
+});
+
+test('resolveLoopbackPreviewWebviewTarget ignores non-loopback preview URLs', () => {
+  assert.equal(
+    resolveLoopbackPreviewWebviewTarget('https://example.com/preview'),
+    null);
 });
 
 test('createPreviewStartPlan allows forced source-generated preview without Avalonia host metadata', () => {
