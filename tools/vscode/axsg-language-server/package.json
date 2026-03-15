@@ -35,11 +35,7 @@
   ],
   "activationEvents": [
     "workspaceContains:**/*.axaml",
-    "workspaceContains:**/*.xaml",
-    "onLanguage:axaml",
-    "onLanguage:xaml",
-    "onCommand:axsg.refactor.renameSymbol",
-    "onCommand:axsg.preview.open"
+    "workspaceContains:**/*.xaml"
   ],
   "main": "./extension.js",
   "contributes": {

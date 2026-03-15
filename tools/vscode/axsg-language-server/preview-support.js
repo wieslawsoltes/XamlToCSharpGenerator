@@ -201,6 +201,8 @@ class AvaloniaPreviewSession {
     this.disposed = false;
     this.startPromise = null;
     this.activeCompilerMode = null;
+    this.previewUrlUpdateToken = 0;
+    this.rawPreviewUrl = '';
   }
 
   reveal() {
@@ -454,7 +456,7 @@ class AvaloniaPreviewSession {
       throw new Error('Avalonia preview host did not return a preview URL.');
     }
 
-    this.currentPreviewUrl = previewUrl;
+    await this.updatePreviewUrlAsync(previewUrl);
   }
 
   async flushPendingUpdate() {
@@ -493,7 +495,7 @@ class AvaloniaPreviewSession {
     const eventName = message.event;
     const payload = message.payload || {};
     if (eventName === 'previewStarted' && payload.previewUrl) {
-      this.currentPreviewUrl = payload.previewUrl;
+      void this.updatePreviewUrlAsync(payload.previewUrl);
       this.setStatus(getPreviewReadyStatus(this.fileName, this.activeCompilerMode));
       this.updatePanel();
       return;
@@ -550,6 +552,8 @@ class AvaloniaPreviewSession {
     if (this.helper === helper) {
       this.helper = null;
       this.startPromise = null;
+      this.previewUrlUpdateToken += 1;
+      this.rawPreviewUrl = '';
       this.currentPreviewUrl = '';
       this.activeCompilerMode = null;
     }
@@ -573,6 +577,35 @@ class AvaloniaPreviewSession {
       previewUrl: this.currentPreviewUrl,
       status: this.currentStatus
     });
+  }
+
+  async updatePreviewUrlAsync(previewUrl) {
+    const normalizedPreviewUrl = String(previewUrl || '').trim();
+    const updateToken = ++this.previewUrlUpdateToken;
+    this.rawPreviewUrl = normalizedPreviewUrl;
+
+    if (!normalizedPreviewUrl) {
+      this.currentPreviewUrl = '';
+      this.updatePanel();
+      return;
+    }
+
+    let resolvedPreviewUrl = normalizedPreviewUrl;
+    try {
+      const externalUri = await vscode.env.asExternalUri(vscode.Uri.parse(normalizedPreviewUrl));
+      resolvedPreviewUrl = externalUri.toString(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.controller.getOutputChannel().appendLine(
+        `[preview] failed to externalize preview URL '${normalizedPreviewUrl}': ${message}`);
+    }
+
+    if (this.disposed || updateToken !== this.previewUrlUpdateToken || this.rawPreviewUrl !== normalizedPreviewUrl) {
+      return;
+    }
+
+    this.currentPreviewUrl = resolvedPreviewUrl;
+    this.updatePanel();
   }
 }
 
@@ -1111,11 +1144,12 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   const iframeUrl = previewUrl ? escapeHtml(previewUrl) : '';
   const statusText = escapeHtml(status || 'Preview starting...');
   const escapedTitle = escapeHtml(title);
+  const frameSourcePolicy = `${webview.cspSource} http: https: vscode-remote: vscode-webview: vscode-webview-resource:`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src http: https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src ${frameSourcePolicy};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapedTitle}</title>
   <style>
