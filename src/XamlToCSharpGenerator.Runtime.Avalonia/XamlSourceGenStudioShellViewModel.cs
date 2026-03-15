@@ -2,15 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.LogicalTree;
-using Avalonia.VisualTree;
-using Avalonia.Threading;
+using global::Avalonia.Controls;
+using global::Avalonia.LogicalTree;
+using global::Avalonia.VisualTree;
+using global::Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -46,6 +47,10 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private string _previewStatus = "Preview unavailable.";
     private string _xamlText = string.Empty;
     private string _templateXamlText = string.Empty;
+    private string _canvasEditorDocumentUri = string.Empty;
+    private string _canvasEditorWorkspaceRoot = string.Empty;
+    private string _templateEditorDocumentUri = string.Empty;
+    private string _templateEditorWorkspaceRoot = string.Empty;
     private string _activeBuildUri = string.Empty;
     private string _selectedElementId = "0";
     private string _propertyName = string.Empty;
@@ -75,6 +80,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private int _liveProjectionBuildCount;
     private string? _selectedLiveElementId;
     private SourceGenHotDesignWorkspaceMode _workspaceMode = SourceGenHotDesignWorkspaceMode.Design;
+    private SourceGenStudioCanvasLayoutMode _canvasLayoutMode = SourceGenStudioCanvasLayoutMode.SideBySide;
     private SourceGenHotDesignPropertyFilterMode _propertyFilterMode = SourceGenHotDesignPropertyFilterMode.Smart;
     private SourceGenHotDesignHitTestMode _hitTestMode = SourceGenHotDesignHitTestMode.Logical;
     private readonly HashSet<string> _pinnedPropertyKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -83,8 +89,10 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     {
         _options = options.Clone();
         WorkspaceModes = Enum.GetValues<SourceGenHotDesignWorkspaceMode>();
+        CanvasLayoutModes = Enum.GetValues<SourceGenStudioCanvasLayoutMode>();
         PropertyFilterModes = Enum.GetValues<SourceGenHotDesignPropertyFilterMode>();
         HitTestModes = Enum.GetValues<SourceGenHotDesignHitTestMode>();
+        _canvasLayoutMode = _options.CanvasLayoutMode;
 
         _refreshCommand = new StudioRelayCommand(_ => RefreshAll());
         _refreshPreviewCommand = new StudioRelayCommand(_ => RefreshCanvasPreview());
@@ -135,6 +143,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public ObservableCollection<string> StudioOperationLines { get; } = [];
 
     public IReadOnlyList<SourceGenHotDesignWorkspaceMode> WorkspaceModes { get; }
+
+    public IReadOnlyList<SourceGenStudioCanvasLayoutMode> CanvasLayoutModes { get; }
 
     public IReadOnlyList<SourceGenHotDesignPropertyFilterMode> PropertyFilterModes { get; }
 
@@ -339,6 +349,30 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         set => SetProperty(ref _templateXamlText, value);
     }
 
+    public string CanvasEditorDocumentUri
+    {
+        get => _canvasEditorDocumentUri;
+        private set => SetProperty(ref _canvasEditorDocumentUri, value);
+    }
+
+    public string CanvasEditorWorkspaceRoot
+    {
+        get => _canvasEditorWorkspaceRoot;
+        private set => SetProperty(ref _canvasEditorWorkspaceRoot, value);
+    }
+
+    public string TemplateEditorDocumentUri
+    {
+        get => _templateEditorDocumentUri;
+        private set => SetProperty(ref _templateEditorDocumentUri, value);
+    }
+
+    public string TemplateEditorWorkspaceRoot
+    {
+        get => _templateEditorWorkspaceRoot;
+        private set => SetProperty(ref _templateEditorWorkspaceRoot, value);
+    }
+
     public object? CanvasPreviewContent
     {
         get => _canvasPreviewContent;
@@ -525,6 +559,35 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     public bool IsDesignMode => WorkspaceMode == SourceGenHotDesignWorkspaceMode.Design;
 
     public bool IsAgentMode => WorkspaceMode == SourceGenHotDesignWorkspaceMode.Agent;
+
+    public SourceGenStudioCanvasLayoutMode CanvasLayoutMode
+    {
+        get => _canvasLayoutMode;
+        set
+        {
+            if (!SetProperty(ref _canvasLayoutMode, value))
+            {
+                return;
+            }
+
+            _options.CanvasLayoutMode = value;
+            NotifyCanvasLayoutChanged();
+        }
+    }
+
+    public bool IsCanvasPreviewVisible =>
+        CanvasLayoutMode is SourceGenStudioCanvasLayoutMode.SideBySide or
+            SourceGenStudioCanvasLayoutMode.Stacked or
+            SourceGenStudioCanvasLayoutMode.PreviewOnly;
+
+    public bool IsCanvasEditorVisible =>
+        CanvasLayoutMode is SourceGenStudioCanvasLayoutMode.SideBySide or
+            SourceGenStudioCanvasLayoutMode.Stacked or
+            SourceGenStudioCanvasLayoutMode.EditorOnly;
+
+    public bool IsCanvasSplitVisible =>
+        CanvasLayoutMode is SourceGenStudioCanvasLayoutMode.SideBySide or
+            SourceGenStudioCanvasLayoutMode.Stacked;
 
     public string LiveSurfaceModeText => WorkspaceMode switch
     {
@@ -733,6 +796,8 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             {
                 TemplateXamlText = string.Empty;
             }
+
+            RefreshEditorContexts(selectedDocument, selectedTemplateDocument);
 
             var selectedElement = ResolveSelectedElement(snapshot.SelectedElementId);
             _selectedElement = selectedElement;
@@ -1139,7 +1204,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
             Child = new TextBlock
             {
                 Text = message,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
             }
         };
     }
@@ -1703,6 +1768,57 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDesignMode));
         OnPropertyChanged(nameof(IsAgentMode));
         OnPropertyChanged(nameof(LiveSurfaceModeText));
+    }
+
+    private void NotifyCanvasLayoutChanged()
+    {
+        OnPropertyChanged(nameof(IsCanvasPreviewVisible));
+        OnPropertyChanged(nameof(IsCanvasEditorVisible));
+        OnPropertyChanged(nameof(IsCanvasSplitVisible));
+    }
+
+    private void RefreshEditorContexts(
+        SourceGenHotDesignDocumentDescriptor? selectedDocument,
+        SourceGenHotDesignDocumentDescriptor? selectedTemplateDocument)
+    {
+        CanvasEditorDocumentUri = BuildDocumentUri(selectedDocument?.SourcePath);
+        CanvasEditorWorkspaceRoot = BuildWorkspaceRoot(selectedDocument?.SourcePath);
+        TemplateEditorDocumentUri = BuildDocumentUri(selectedTemplateDocument?.SourcePath);
+        TemplateEditorWorkspaceRoot = BuildWorkspaceRoot(selectedTemplateDocument?.SourcePath);
+    }
+
+    private static string BuildDocumentUri(string? sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return new Uri(Path.GetFullPath(sourcePath)).AbsoluteUri;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string BuildWorkspaceRoot(string? sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(sourcePath)) ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static IReadOnlyList<SourceGenHotDesignToolboxItem> FlattenToolbox(

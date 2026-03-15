@@ -11,6 +11,12 @@
     <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true' and '$(TargetFramework)' == 'net10.0'">
+    <ProjectReference Include="../XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj">
+      <Aliases>axeditor</Aliases>
+    </ProjectReference>
+  </ItemGroup>
+
   <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
     <Reference Include="XamlToCSharpGenerator.Runtime.Core">
       <HintPath>..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\$(TargetFramework)\XamlToCSharpGenerator.Runtime.Core.dll</HintPath>
@@ -20,6 +26,10 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.12" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.0" />
   </ItemGroup>
 
   <ItemGroup>

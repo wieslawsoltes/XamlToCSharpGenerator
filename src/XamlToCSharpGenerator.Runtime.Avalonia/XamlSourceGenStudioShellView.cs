@@ -1,18 +1,76 @@
+#if NET10_0_OR_GREATER
+extern alias axeditor;
+#endif
+
+using System;
+using System.ComponentModel;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives;
-using Avalonia.Data;
-using Avalonia.Layout;
-using Avalonia.Styling;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Primitives;
+using global::Avalonia.Controls.Templates;
+using global::Avalonia.Data;
+using global::Avalonia.Layout;
+using global::Avalonia.Styling;
+#if NET10_0_OR_GREATER
+using AxamlTextEditor = axeditor::XamlToCSharpGenerator.Editor.Avalonia.AxamlTextEditor;
+#endif
 
 namespace XamlToCSharpGenerator.Runtime;
 
 internal sealed class XamlSourceGenStudioShellView : UserControl
 {
+    private Grid? _canvasWorkspaceGrid;
+    private Border? _canvasPreviewPanel;
+    private Border? _canvasEditorPanel;
+    private GridSplitter? _canvasSplitter;
+    private XamlSourceGenStudioShellViewModel? _observedViewModel;
+
     public XamlSourceGenStudioShellView()
     {
+        DataContextChanged += OnDataContextChanged;
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
         BuildContent();
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (ReferenceEquals(_observedViewModel, DataContext))
+        {
+            return;
+        }
+
+        if (_observedViewModel is not null)
+        {
+            _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        _observedViewModel = DataContext as XamlSourceGenStudioShellViewModel;
+        if (_observedViewModel is not null)
+        {
+            _observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        }
+
+        ApplyCanvasWorkspaceLayout();
+    }
+
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (_observedViewModel is null)
+        {
+            return;
+        }
+
+        _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _observedViewModel = null;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(e.PropertyName) ||
+            string.Equals(e.PropertyName, nameof(XamlSourceGenStudioShellViewModel.CanvasLayoutMode), StringComparison.Ordinal))
+        {
+            ApplyCanvasWorkspaceLayout();
+        }
     }
 
     private void BuildContent()
@@ -37,7 +95,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         var toolbar = new Border
         {
             Padding = new Thickness(8),
-            BorderBrush = Avalonia.Media.Brushes.SteelBlue,
+            BorderBrush = global::Avalonia.Media.Brushes.SteelBlue,
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = new Grid
             {
@@ -146,9 +204,9 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         var remoteStatus = new TextBlock
         {
             VerticalAlignment = VerticalAlignment.Center,
-            TextAlignment = Avalonia.Media.TextAlignment.Right,
+            TextAlignment = global::Avalonia.Media.TextAlignment.Right,
             FontSize = 11,
-            Foreground = Avalonia.Media.Brushes.Gray
+            Foreground = global::Avalonia.Media.Brushes.Gray
         };
         remoteStatus.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteStatusText)));
         remoteStatus.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteVncEndpoint)));
@@ -191,7 +249,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
 
         var elementsPanel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -204,7 +262,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         elementsGrid.Children.Add(new TextBlock
         {
             Text = "Element Tree",
-            FontWeight = Avalonia.Media.FontWeight.Bold
+            FontWeight = global::Avalonia.Media.FontWeight.Bold
         });
 
         var tree = new TreeView
@@ -220,19 +278,19 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                             new TextBlock
                             {
                                 Text = item.DisplayName,
-                                FontWeight = item.IsSelected ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal
+                                FontWeight = item.IsSelected ? global::Avalonia.Media.FontWeight.SemiBold : global::Avalonia.Media.FontWeight.Normal
                             },
                             new TextBlock
                             {
                                 Text = item.Id,
                                 FontSize = 11,
-                                Foreground = Avalonia.Media.Brushes.Gray
+                                Foreground = global::Avalonia.Media.Brushes.Gray
                             },
                             new TextBlock
                             {
                                 Text = item.DescendantCount > 0 ? "(" + item.DescendantCount + ")" : string.Empty,
                                 FontSize = 11,
-                                Foreground = Avalonia.Media.Brushes.DarkGray
+                                Foreground = global::Avalonia.Media.Brushes.DarkGray
                             }
                         }
                     },
@@ -263,7 +321,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
 
         var toolboxPanel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -276,7 +334,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         toolboxGrid.Children.Add(new TextBlock
         {
             Text = "Toolbox",
-            FontWeight = Avalonia.Media.FontWeight.Bold
+            FontWeight = global::Avalonia.Media.FontWeight.Bold
         });
 
         var toolboxList = new ListBox
@@ -293,7 +351,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                         {
                             Text = item.Category,
                             FontSize = 11,
-                            Foreground = Avalonia.Media.Brushes.Gray
+                            Foreground = global::Avalonia.Media.Brushes.Gray
                         }
                     }
                 },
@@ -331,7 +389,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
     {
         var centerPanel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -355,13 +413,13 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
 
         var grid = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,2*,3*,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
             RowSpacing = 8
         };
 
         var toolbar = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,120,Auto,110,Auto,*"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,120,Auto,110,Auto,150,Auto,*"),
             ColumnSpacing = 8
         };
 
@@ -397,28 +455,89 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         Grid.SetColumn(formFactor, 3);
         toolbar.Children.Add(formFactor);
 
+        var layoutLabel = new TextBlock
+        {
+            Text = "Layout",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(layoutLabel, 4);
+        toolbar.Children.Add(layoutLabel);
+
+        var layoutMode = new ComboBox
+        {
+            Width = 150
+        };
+        layoutMode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.CanvasLayoutModes)));
+        layoutMode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.CanvasLayoutMode), BindingMode.TwoWay));
+        Grid.SetColumn(layoutMode, 5);
+        toolbar.Children.Add(layoutMode);
+
         var refreshPreview = new Button
         {
             Content = "Refresh Preview"
         };
         refreshPreview.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RefreshPreviewCommand)));
-        Grid.SetColumn(refreshPreview, 4);
+        Grid.SetColumn(refreshPreview, 6);
         toolbar.Children.Add(refreshPreview);
 
         var studioState = new TextBlock
         {
             VerticalAlignment = VerticalAlignment.Center,
-            TextAlignment = Avalonia.Media.TextAlignment.Right
+            TextAlignment = global::Avalonia.Media.TextAlignment.Right
         };
         studioState.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioStateText)));
-        Grid.SetColumn(studioState, 5);
+        Grid.SetColumn(studioState, 7);
         toolbar.Children.Add(studioState);
 
         grid.Children.Add(toolbar);
 
+        _canvasWorkspaceGrid = new Grid();
+
+        _canvasPreviewPanel = BuildCanvasPreviewPanel();
+        _canvasWorkspaceGrid.Children.Add(_canvasPreviewPanel);
+
+        _canvasEditorPanel = new Border
+        {
+            BorderBrush = global::Avalonia.Media.Brushes.SlateGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4),
+            Child = CreateXamlEditor(
+                nameof(XamlSourceGenStudioShellViewModel.XamlText),
+                nameof(XamlSourceGenStudioShellViewModel.CanvasEditorDocumentUri),
+                nameof(XamlSourceGenStudioShellViewModel.CanvasEditorWorkspaceRoot))
+        };
+        _canvasWorkspaceGrid.Children.Add(_canvasEditorPanel);
+
+        _canvasSplitter = new GridSplitter
+        {
+            Background = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromArgb(64, 112, 128, 144))
+        };
+        _canvasWorkspaceGrid.Children.Add(_canvasSplitter);
+
+        ApplyCanvasWorkspaceLayout();
+
+        Grid.SetRow(_canvasWorkspaceGrid, 1);
+        grid.Children.Add(_canvasWorkspaceGrid);
+
+        var status = new TextBlock
+        {
+            TextWrapping = global::Avalonia.Media.TextWrapping.Wrap,
+            FontSize = 11,
+            Foreground = global::Avalonia.Media.Brushes.Gray
+        };
+        status.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StatusMessage)));
+        Grid.SetRow(status, 2);
+        grid.Children.Add(status);
+
+        tab.Content = grid;
+        return tab;
+    }
+
+    private Border BuildCanvasPreviewPanel()
+    {
         var previewBorder = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.SlateGray,
+            BorderBrush = global::Avalonia.Media.Brushes.SlateGray,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8)
         };
@@ -437,41 +556,14 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         var previewStatus = new TextBlock
         {
             FontSize = 11,
-            Foreground = Avalonia.Media.Brushes.Gray
+            Foreground = global::Avalonia.Media.Brushes.Gray
         };
         previewStatus.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PreviewStatus)));
         Grid.SetRow(previewStatus, 1);
         previewGrid.Children.Add(previewStatus);
 
         previewBorder.Child = previewGrid;
-        Grid.SetRow(previewBorder, 1);
-        grid.Children.Add(previewBorder);
-
-        var xamlEditor = new TextBox
-        {
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            FontFamily = Avalonia.Media.FontFamily.Parse("Consolas"),
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap
-        };
-        xamlEditor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.XamlText), BindingMode.TwoWay));
-        Grid.SetRow(xamlEditor, 2);
-        grid.Children.Add(xamlEditor);
-
-        var status = new TextBlock
-        {
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            FontSize = 11,
-            Foreground = Avalonia.Media.Brushes.Gray
-        };
-        status.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StatusMessage)));
-        Grid.SetRow(status, 3);
-        grid.Children.Add(status);
-
-        tab.Content = grid;
-        return tab;
+        return previewBorder;
     }
 
     private TabItem BuildTemplateEditorTab()
@@ -496,18 +588,18 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         templateSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedTemplateDocument), BindingMode.TwoWay));
         grid.Children.Add(templateSelector);
 
-        var templateEditor = new TextBox
+        var templateEditorHost = new Border
         {
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            FontFamily = Avalonia.Media.FontFamily.Parse("Consolas"),
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap
+            BorderBrush = global::Avalonia.Media.Brushes.SlateGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4),
+            Child = CreateXamlEditor(
+                nameof(XamlSourceGenStudioShellViewModel.TemplateXamlText),
+                nameof(XamlSourceGenStudioShellViewModel.TemplateEditorDocumentUri),
+                nameof(XamlSourceGenStudioShellViewModel.TemplateEditorWorkspaceRoot))
         };
-        templateEditor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateXamlText), BindingMode.TwoWay));
-        Grid.SetRow(templateEditor, 1);
-        grid.Children.Add(templateEditor);
+        Grid.SetRow(templateEditorHost, 1);
+        grid.Children.Add(templateEditorHost);
 
         var applyTemplate = new Button
         {
@@ -535,11 +627,122 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         return tab;
     }
 
+    private void ApplyCanvasWorkspaceLayout()
+    {
+        if (_canvasWorkspaceGrid is null ||
+            _canvasPreviewPanel is null ||
+            _canvasEditorPanel is null ||
+            _canvasSplitter is null)
+        {
+            return;
+        }
+
+        var mode = _observedViewModel?.CanvasLayoutMode ?? SourceGenStudioCanvasLayoutMode.SideBySide;
+        var showsPreview = mode != SourceGenStudioCanvasLayoutMode.EditorOnly;
+        var showsEditor = mode != SourceGenStudioCanvasLayoutMode.PreviewOnly;
+        var isSplit = showsPreview && showsEditor;
+
+        _canvasPreviewPanel.IsVisible = showsPreview;
+        _canvasEditorPanel.IsVisible = showsEditor;
+        _canvasSplitter.IsVisible = isSplit;
+
+        switch (mode)
+        {
+            case SourceGenStudioCanvasLayoutMode.Stacked:
+                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*,6,*");
+                ConfigureSplitterForRows(_canvasSplitter);
+                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
+                SetGridPosition(_canvasSplitter, row: 1, column: 0);
+                SetGridPosition(_canvasEditorPanel, row: 2, column: 0);
+                break;
+
+            case SourceGenStudioCanvasLayoutMode.PreviewOnly:
+                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
+                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
+                SetGridPosition(_canvasSplitter, row: 0, column: 0);
+                SetGridPosition(_canvasEditorPanel, row: 0, column: 0);
+                break;
+
+            case SourceGenStudioCanvasLayoutMode.EditorOnly:
+                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
+                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
+                SetGridPosition(_canvasSplitter, row: 0, column: 0);
+                SetGridPosition(_canvasEditorPanel, row: 0, column: 0);
+                break;
+
+            default:
+                _canvasWorkspaceGrid.ColumnDefinitions = new ColumnDefinitions("*,6,*");
+                _canvasWorkspaceGrid.RowDefinitions = new RowDefinitions("*");
+                ConfigureSplitterForColumns(_canvasSplitter);
+                SetGridPosition(_canvasPreviewPanel, row: 0, column: 0);
+                SetGridPosition(_canvasSplitter, row: 0, column: 1);
+                SetGridPosition(_canvasEditorPanel, row: 0, column: 2);
+                break;
+        }
+    }
+
+    private static void ConfigureSplitterForColumns(GridSplitter splitter)
+    {
+        splitter.ResizeDirection = GridResizeDirection.Columns;
+        splitter.Width = 6;
+        splitter.Height = double.NaN;
+        splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
+        splitter.VerticalAlignment = VerticalAlignment.Stretch;
+    }
+
+    private static void ConfigureSplitterForRows(GridSplitter splitter)
+    {
+        splitter.ResizeDirection = GridResizeDirection.Rows;
+        splitter.Width = double.NaN;
+        splitter.Height = 6;
+        splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
+        splitter.VerticalAlignment = VerticalAlignment.Stretch;
+    }
+
+    private static void SetGridPosition(Control control, int row, int column)
+    {
+        Grid.SetRow(control, row);
+        Grid.SetColumn(control, column);
+        Grid.SetRowSpan(control, 1);
+        Grid.SetColumnSpan(control, 1);
+    }
+
+    private static Control CreateXamlEditor(string textProperty, string documentUriProperty, string workspaceRootProperty)
+    {
+#if NET10_0_OR_GREATER
+        var editor = new AxamlTextEditor
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas")
+        };
+        editor.Bind(AxamlTextEditor.TextProperty, new Binding(textProperty, BindingMode.TwoWay));
+        editor.Bind(AxamlTextEditor.DocumentUriProperty, new Binding(documentUriProperty));
+        editor.Bind(AxamlTextEditor.WorkspaceRootProperty, new Binding(workspaceRootProperty));
+        return editor;
+#else
+        var editor = new TextBox
+        {
+            AcceptsReturn = true,
+            AcceptsTab = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas"),
+            TextWrapping = global::Avalonia.Media.TextWrapping.NoWrap
+        };
+        editor.Bind(TextBox.TextProperty, new Binding(textProperty, BindingMode.TwoWay));
+        return editor;
+#endif
+    }
+
     private static Control BuildPropertiesPanel()
     {
         var panel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -554,7 +757,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
         grid.Children.Add(new TextBlock
         {
             Text = "Properties",
-            FontWeight = Avalonia.Media.FontWeight.Bold
+            FontWeight = global::Avalonia.Media.FontWeight.Bold
         });
 
         var filters = new Grid
@@ -611,7 +814,7 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                         new TextBlock
                         {
                             Text = property.IsPinned ? "★" : "☆",
-                            Foreground = property.IsPinned ? Avalonia.Media.Brushes.Goldenrod : Avalonia.Media.Brushes.Gray
+                            Foreground = property.IsPinned ? global::Avalonia.Media.Brushes.Goldenrod : global::Avalonia.Media.Brushes.Gray
                         },
                         new StackPanel
                         {
@@ -622,27 +825,27 @@ internal sealed class XamlSourceGenStudioShellView : UserControl
                                 new TextBlock
                                 {
                                     Text = property.Name,
-                                    FontWeight = Avalonia.Media.FontWeight.SemiBold
+                                    FontWeight = global::Avalonia.Media.FontWeight.SemiBold
                                 },
                                 new TextBlock
                                 {
                                     Text = property.Category + " | " + property.EditorKind,
                                     FontSize = 11,
-                                    Foreground = Avalonia.Media.Brushes.Gray
+                                    Foreground = global::Avalonia.Media.Brushes.Gray
                                 }
                             }
                         },
                         new TextBlock
                         {
                             Text = property.Value ?? string.Empty,
-                            Foreground = Avalonia.Media.Brushes.Gray,
+                            Foreground = global::Avalonia.Media.Brushes.Gray,
                             [Grid.ColumnProperty] = 2
                         },
                         new Border
                         {
                             Background = property.IsSet
-                                ? new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 86, 139, 255))
-                                : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(45, 120, 120, 120)),
+                                ? new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromArgb(60, 86, 139, 255))
+                                : new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromArgb(45, 120, 120, 120)),
                             CornerRadius = new CornerRadius(3),
                             Padding = new Thickness(4, 1),
                             VerticalAlignment = VerticalAlignment.Center,
