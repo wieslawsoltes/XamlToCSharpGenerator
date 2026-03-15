@@ -356,7 +356,15 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             return Task.FromResult<XamlPreviewProjectContext?>(null);
         }
 
-        var projectPath = XamlProjectFileDiscoveryService.ResolveProjectPath(options.WorkspaceRoot, filePath);
+        var projectPath = XamlProjectFileDiscoveryService.ResolveProjectPath(
+            projectPath: null,
+            currentFilePath: filePath);
+        if (string.IsNullOrWhiteSpace(projectPath) &&
+            !string.IsNullOrWhiteSpace(options.WorkspaceRoot))
+        {
+            projectPath = XamlProjectFileDiscoveryService.ResolveProjectPath(options.WorkspaceRoot, filePath);
+        }
+
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             return Task.FromResult<XamlPreviewProjectContext?>(null);

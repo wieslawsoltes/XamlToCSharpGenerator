@@ -7,6 +7,7 @@ const path = require('path');
 const {
   buildArguments,
   createPreviewBuildPlan,
+  hasPendingPreviewText,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
@@ -49,6 +50,12 @@ test('normalizePreviewCompilerMode falls back to auto for unknown values', () =>
   assert.equal(normalizePreviewCompilerMode('sourceGenerated'), PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
   assert.equal(normalizePreviewCompilerMode('avalonia'), PREVIEW_COMPILER_MODE_AVALONIA);
   assert.equal(normalizePreviewCompilerMode('unexpected'), PREVIEW_COMPILER_MODE_AUTO);
+});
+
+test('hasPendingPreviewText keeps intentionally empty XAML updates', () => {
+  assert.equal(hasPendingPreviewText(''), true);
+  assert.equal(hasPendingPreviewText(null), false);
+  assert.equal(hasPendingPreviewText(undefined), false);
 });
 
 test('isExecutableProjectInfo requires an executable output and target path', () => {

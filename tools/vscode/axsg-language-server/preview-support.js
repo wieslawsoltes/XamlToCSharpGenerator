@@ -7,6 +7,7 @@ const vscode = require('vscode');
 const {
   buildArguments,
   createPreviewBuildPlan,
+  hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
@@ -455,7 +456,7 @@ class AvaloniaPreviewSession {
   }
 
   async flushPendingUpdate() {
-    if (this.disposed || !this.pendingUpdateText) {
+    if (this.disposed || !hasPendingPreviewText(this.pendingUpdateText)) {
       return;
     }
 

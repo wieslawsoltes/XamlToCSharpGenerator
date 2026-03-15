@@ -77,6 +77,10 @@ function normalizePreviewCompilerMode(mode) {
   return PREVIEW_COMPILER_MODE_AUTO;
 }
 
+function hasPendingPreviewText(value) {
+  return value !== null && value !== undefined;
+}
+
 function isExecutableProjectInfo(projectInfo) {
   return Boolean(projectInfo &&
     PREVIEWABLE_OUTPUT_TYPES.has(projectInfo.outputType) &&
@@ -348,6 +352,7 @@ module.exports = {
   buildArguments,
   createPreviewBuildPlan,
   getFileModifiedTimeMs,
+  hasPendingPreviewText,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
