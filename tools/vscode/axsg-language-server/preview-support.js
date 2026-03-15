@@ -36,6 +36,7 @@ const {
   samePath,
   shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
+  supportsSourceGeneratedLivePreview,
   tryParseMsbuildJson
 } = require('./preview-utils');
 
@@ -1114,7 +1115,10 @@ class AvaloniaPreviewController {
       sourceTargetPath: options.sourceProject.targetPath,
       hostProjectPath: options.hostProject.projectPath,
       hostTargetPath: options.hostProject.targetPath,
-      hostBuildIncludesSource
+      hostBuildIncludesSource,
+      requiresSourceGeneratedCapabilityRefresh:
+        buildPreviewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED &&
+        !supportsSourceGeneratedLivePreview(options.sourceProject)
     });
 
     if (!buildPlan.buildHost && !buildPlan.buildSource) {
@@ -1398,20 +1402,28 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     .shell {
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: 34px minmax(0, 1fr);
       height: 100vh;
     }
 
     .status {
-      padding: 8px 12px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 12px;
       border-bottom: 1px solid var(--vscode-panel-border);
       background: var(--vscode-editorWidget-background);
       font-size: 12px;
       line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #content {
       min-height: 0;
+      min-width: 0;
     }
 
     .preview-frame {
@@ -1477,14 +1489,20 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       }
 
       const bounds = content.getBoundingClientRect();
-      const width = Math.max(1, Math.round(bounds.width));
-      const height = Math.max(1, Math.round(bounds.height));
+      const width = Math.max(1, Math.round(content.clientWidth || bounds.width));
+      const height = Math.max(1, Math.round(content.clientHeight || bounds.height));
       vscodeApi.postMessage({
         type: 'viewportSize',
         width,
         height,
         devicePixelRatio: getViewportScale()
       });
+    }
+
+    function updateStatusText(text) {
+      const nextText = text || 'Preview ready.';
+      status.textContent = nextText;
+      status.title = nextText;
     }
 
     function scheduleViewportSizeReport() {
@@ -1816,7 +1834,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     function updatePreview(previewUrl, loopbackPreview, statusText) {
-      status.textContent = statusText || 'Preview ready.';
+      updateStatusText(statusText);
       if (loopbackPreview && loopbackPreview.webSocketUrl && loopbackPreview.securityCookie) {
         connectLoopbackPreview(loopbackPreview);
         return;
@@ -1841,6 +1859,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const observer = new ResizeObserver(() => scheduleViewportSizeReport());
       observer.observe(content);
     }
+    updateStatusText(status.textContent);
     watchDisplayScaleChanges();
     scheduleViewportSizeReport();
   </script>

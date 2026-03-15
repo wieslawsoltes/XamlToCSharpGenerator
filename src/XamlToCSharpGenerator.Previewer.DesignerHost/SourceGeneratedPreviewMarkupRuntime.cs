@@ -11,11 +11,10 @@ using global::Avalonia;
 using global::Avalonia.Data;
 using global::Avalonia.Data.Converters;
 using global::Avalonia.Markup.Xaml;
-using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
-internal sealed class SourceGeneratedPreviewMarkupRuntime : ISourceGenPreviewMarkupRuntime
+internal sealed class SourceGeneratedPreviewMarkupRuntime
 {
     private static readonly ConcurrentDictionary<string, Func<object?, object?, object?, object?>> EvaluatorCache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<Type, Delegate> NoOpDelegateCache = new();

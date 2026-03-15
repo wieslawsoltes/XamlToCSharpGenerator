@@ -175,7 +175,9 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         try
         {
             var localAssembly = configuration.LocalAssembly ?? baselineRoot.GetType().Assembly;
-            var rewrittenXaml = SourceGeneratedPreviewXamlPreprocessor.Rewrite(xamlText, localAssembly);
+            var rewrittenXaml = SourceGeneratedPreviewMarkupRuntimeInstaller.IsInstalled
+                ? SourceGeneratedPreviewXamlPreprocessor.Rewrite(xamlText, localAssembly)
+                : xamlText;
             result = AvaloniaRuntimeXamlLoader.Load(
                 CloneDocument(document, baselineRoot, rewrittenXaml),
                 CloneConfiguration(configuration));

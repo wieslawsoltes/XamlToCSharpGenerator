@@ -33,6 +33,7 @@ const {
   samePath,
   shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
+  supportsSourceGeneratedLivePreview,
   supportsSourceGeneratedPreview,
   tryParseMsbuildJson
 } = require('../preview-utils');
@@ -255,6 +256,34 @@ test('supportsSourceGeneratedPreview detects the runtime dependency from deps.js
     }), 'utf8');
 
     assert.equal(supportsSourceGeneratedPreview({ targetPath }), true);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('supportsSourceGeneratedLivePreview detects the preview runtime marker in the runtime assembly', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    const runtimeAssemblyPath = path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(runtimeAssemblyPath, '...SourceGenPreviewMarkupRuntime...', 'utf8');
+
+    assert.equal(supportsSourceGeneratedLivePreview({ targetPath }), true);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('supportsSourceGeneratedLivePreview returns false when the runtime marker is missing', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    const runtimeAssemblyPath = path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(runtimeAssemblyPath, 'old-runtime', 'utf8');
+
+    assert.equal(supportsSourceGeneratedLivePreview({ targetPath }), false);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -569,6 +598,33 @@ test('createPreviewBuildPlan rebuilds source-generated outputs on launch when th
       hostProjectPath: path.join(tempRoot, 'App.csproj'),
       hostTargetPath: sourceTargetPath,
       hostBuildIncludesSource: true
+    });
+
+    assert.deepEqual(actual, {
+      buildHost: true,
+      buildSource: false,
+      hostBuildIncludesSource: true
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('createPreviewBuildPlan rebuilds source-generated outputs on launch when live preview support is stale', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const sourceTargetPath = path.join(tempRoot, 'App.dll');
+    fs.writeFileSync(sourceTargetPath, '', 'utf8');
+
+    const actual = createPreviewBuildPlan({
+      buildReason: 'launch',
+      previewMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+      sourceProjectPath: path.join(tempRoot, 'App.csproj'),
+      sourceTargetPath,
+      hostProjectPath: path.join(tempRoot, 'App.csproj'),
+      hostTargetPath: sourceTargetPath,
+      hostBuildIncludesSource: true,
+      requiresSourceGeneratedCapabilityRefresh: true
     });
 
     assert.deepEqual(actual, {

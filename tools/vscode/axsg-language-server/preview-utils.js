@@ -12,6 +12,7 @@ const VALID_PREVIEW_COMPILER_MODES = new Set([
 ]);
 const SOURCE_GENERATED_RUNTIME_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia.dll';
 const SOURCE_GENERATED_RUNTIME_LIBRARY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia';
+const SOURCE_GENERATED_LIVE_PREVIEW_MARKER = 'SourceGenPreviewMarkupRuntime';
 const MOBILE_TARGET_FRAMEWORK_MARKERS = [
   '-android',
   '-ios',
@@ -157,6 +158,25 @@ function supportsSourceGeneratedPreview(projectInfo) {
     return libraries.some(library =>
       library === SOURCE_GENERATED_RUNTIME_LIBRARY_NAME ||
       library.startsWith(`${SOURCE_GENERATED_RUNTIME_LIBRARY_NAME}/`));
+  } catch {
+    return false;
+  }
+}
+
+function supportsSourceGeneratedLivePreview(projectInfo) {
+  const targetPath = normalizeMaybeEmptyPath(projectInfo && projectInfo.targetPath);
+  if (!targetPath) {
+    return false;
+  }
+
+  const runtimeAssemblyPath = path.join(path.dirname(targetPath), SOURCE_GENERATED_RUNTIME_ASSEMBLY_NAME);
+  if (!fs.existsSync(runtimeAssemblyPath)) {
+    return false;
+  }
+
+  try {
+    const assemblyBytes = fs.readFileSync(runtimeAssemblyPath);
+    return assemblyBytes.includes(Buffer.from(SOURCE_GENERATED_LIVE_PREVIEW_MARKER, 'utf8'));
   } catch {
     return false;
   }
@@ -503,6 +523,7 @@ function createPreviewBuildPlan(options) {
   const hostTargetPath = normalizeMaybeEmptyPath(options.hostTargetPath);
   const sameProject = sourceProjectPath && hostProjectPath && samePath(sourceProjectPath, hostProjectPath);
   const hostBuildIncludesSource = Boolean(options.hostBuildIncludesSource || sameProject);
+  const requiresSourceGeneratedCapabilityRefresh = Boolean(options.requiresSourceGeneratedCapabilityRefresh);
   const sourceOutputMissing = !sourceTargetPath || !fs.existsSync(sourceTargetPath);
   const hostOutputMissing = !hostTargetPath || !fs.existsSync(hostTargetPath);
   const documentChangedSinceBuild = isInputNewerThanOutput(options.documentFilePath, sourceTargetPath);
@@ -532,7 +553,7 @@ function createPreviewBuildPlan(options) {
       };
     }
 
-    const buildSource = sourceOutputMissing || documentChangedSinceBuild;
+    const buildSource = sourceOutputMissing || documentChangedSinceBuild || requiresSourceGeneratedCapabilityRefresh;
     const buildHost = hostOutputMissing || (sameProject && buildSource);
     return {
       buildHost,
@@ -595,6 +616,7 @@ module.exports = {
   samePath,
   shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
+  supportsSourceGeneratedLivePreview,
   supportsSourceGeneratedPreview,
   tryParseMsbuildJson
 };

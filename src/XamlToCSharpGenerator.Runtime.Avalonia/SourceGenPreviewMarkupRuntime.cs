@@ -18,12 +18,21 @@ public interface ISourceGenPreviewMarkupRuntime
 }
 
 /// <summary>
+/// Delegate used by preview-only markup evaluation paths.
+/// </summary>
+public delegate object? SourceGenPreviewMarkupValueProvider(
+    string? code,
+    string? codeBase64Url,
+    string? dependencyNamesBase64Url,
+    IServiceProvider serviceProvider);
+
+/// <summary>
 /// Hosts the currently installed preview-only markup runtime.
 /// </summary>
 public static class SourceGenPreviewMarkupRuntime
 {
     private static readonly object Sync = new();
-    private static ISourceGenPreviewMarkupRuntime? _runtime;
+    private static SourceGenPreviewMarkupValueProvider? _provider;
 
     /// <summary>
     /// Gets a value indicating whether a preview runtime is currently installed.
@@ -34,8 +43,21 @@ public static class SourceGenPreviewMarkupRuntime
         {
             lock (Sync)
             {
-                return _runtime is not null;
+                return _provider is not null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Installs a preview-only markup runtime callback.
+    /// </summary>
+    public static void Install(SourceGenPreviewMarkupValueProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        lock (Sync)
+        {
+            _provider = provider;
         }
     }
 
@@ -45,11 +67,7 @@ public static class SourceGenPreviewMarkupRuntime
     public static void Install(ISourceGenPreviewMarkupRuntime runtime)
     {
         ArgumentNullException.ThrowIfNull(runtime);
-
-        lock (Sync)
-        {
-            _runtime = runtime;
-        }
+        Install(runtime.ProvideValue);
     }
 
     /// <summary>
@@ -59,7 +77,7 @@ public static class SourceGenPreviewMarkupRuntime
     {
         lock (Sync)
         {
-            _runtime = null;
+            _provider = null;
         }
     }
 
@@ -73,19 +91,19 @@ public static class SourceGenPreviewMarkupRuntime
         IServiceProvider serviceProvider,
         out object? value)
     {
-        ISourceGenPreviewMarkupRuntime? runtime;
+        SourceGenPreviewMarkupValueProvider? provider;
         lock (Sync)
         {
-            runtime = _runtime;
+            provider = _provider;
         }
 
-        if (runtime is null)
+        if (provider is null)
         {
             value = null;
             return false;
         }
 
-        value = runtime.ProvideValue(code, codeBase64Url, dependencyNamesBase64Url, serviceProvider);
+        value = provider(code, codeBase64Url, dependencyNamesBase64Url, serviceProvider);
         return true;
     }
 
