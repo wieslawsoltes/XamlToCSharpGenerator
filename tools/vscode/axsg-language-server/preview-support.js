@@ -16,6 +16,7 @@ const {
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+  isResolvablePreviewHostProjectInfo,
   isUsablePreviewHostProjectInfo,
   isPreviewableProjectInfo,
   isUnderBuildOutput,
@@ -884,6 +885,8 @@ class AvaloniaPreviewController {
     const buildReason = options.buildReason || 'launch';
     const documentFilePath = options.documentFilePath || '';
     const activePreviewMode = options.activePreviewMode || '';
+    const buildBeforeLaunch = this.getConfiguration().get('preview.buildBeforeLaunch', true);
+    const allowProvisionalAutoHost = requestedCompilerMode === PREVIEW_COMPILER_MODE_AUTO && buildBeforeLaunch;
 
     if (progress) {
       progress.report({ message: 'Evaluating source project...' });
@@ -914,10 +917,13 @@ class AvaloniaPreviewController {
         sourceProject,
         dotNetCommand,
         workspaceRoot,
-        requestedCompilerMode);
+        requestedCompilerMode,
+        {
+          allowAutoExecutableFallback: allowProvisionalAutoHost
+        });
     }
 
-    return this.buildAndRefreshProjectState({
+    let resolvedState = await this.buildAndRefreshProjectState({
       projectContext,
       workspaceRoot,
       dotNetCommand,
@@ -930,6 +936,40 @@ class AvaloniaPreviewController {
       documentFilePath,
       activePreviewMode
     });
+
+    if (!isUsablePreviewHostProjectInfo(resolvedState.hostProject, resolvedState.sourceProject, requestedCompilerMode)) {
+      if (progress) {
+        progress.report({ message: 'Re-evaluating preview host project...' });
+      }
+
+      const resolvedHostProject = await this.resolveHostProject(
+        projectContext.projectPath,
+        resolvedState.sourceProject,
+        dotNetCommand,
+        workspaceRoot,
+        requestedCompilerMode,
+        {
+          allowAutoExecutableFallback: false
+        });
+
+      if (!samePath(resolvedHostProject.projectPath, resolvedState.hostProject.projectPath)) {
+        resolvedState = await this.buildAndRefreshProjectState({
+          projectContext,
+          workspaceRoot,
+          dotNetCommand,
+          preferredTargetFramework,
+          sourceProject: resolvedState.sourceProject,
+          hostProject: resolvedHostProject,
+          progress,
+          requestedCompilerMode,
+          buildReason,
+          documentFilePath,
+          activePreviewMode: resolvePreviewCompilerMode(requestedCompilerMode, resolvedState.sourceProject).preferredMode
+        });
+      }
+    }
+
+    return resolvedState;
   }
 
   async buildAndRefreshProjectState(options) {
@@ -1034,8 +1074,12 @@ class AvaloniaPreviewController {
     return result;
   }
 
-  async resolveHostProject(sourceProjectPath, sourceProjectInfo, dotNetCommand, workspaceRoot, requestedCompilerMode) {
-    if (isUsablePreviewHostProjectInfo(sourceProjectInfo, sourceProjectInfo, requestedCompilerMode)) {
+  async resolveHostProject(sourceProjectPath, sourceProjectInfo, dotNetCommand, workspaceRoot, requestedCompilerMode, options = {}) {
+    const allowAutoExecutableFallback = Boolean(options.allowAutoExecutableFallback);
+    const isHostCandidateUsable = projectInfo =>
+      isResolvablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, requestedCompilerMode, allowAutoExecutableFallback);
+
+    if (isHostCandidateUsable(sourceProjectInfo)) {
       return sourceProjectInfo;
     }
 
@@ -1049,7 +1093,7 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (!isUsablePreviewHostProjectInfo(configuredInfo, sourceProjectInfo, requestedCompilerMode)) {
+      if (!isHostCandidateUsable(configuredInfo)) {
         throw new Error(`Configured preview host project is not usable for the selected preview mode: ${resolvedConfiguredProject}`);
       }
 
@@ -1065,7 +1109,7 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (isUsablePreviewHostProjectInfo(rememberedInfo, sourceProjectInfo, requestedCompilerMode)) {
+      if (isHostCandidateUsable(rememberedInfo)) {
         return rememberedInfo;
       }
     }
@@ -1084,7 +1128,7 @@ class AvaloniaPreviewController {
         dotNetCommand,
         false,
         workspaceRoot);
-      if (isUsablePreviewHostProjectInfo(candidateInfo, sourceProjectInfo, requestedCompilerMode)) {
+      if (isHostCandidateUsable(candidateInfo)) {
         previewableCandidates.push(candidateInfo);
       }
     }

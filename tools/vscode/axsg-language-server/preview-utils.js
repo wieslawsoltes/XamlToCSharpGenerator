@@ -124,6 +124,17 @@ function isUsablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configur
   return isPreviewableProjectInfo(projectInfo);
 }
 
+function isResolvablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configuredMode, allowAutoExecutableFallback = false) {
+  if (isUsablePreviewHostProjectInfo(projectInfo, sourceProjectInfo, configuredMode)) {
+    return true;
+  }
+
+  return Boolean(
+    allowAutoExecutableFallback &&
+    normalizePreviewCompilerMode(configuredMode) === PREVIEW_COMPILER_MODE_AUTO &&
+    isExecutableProjectInfo(projectInfo));
+}
+
 function supportsSourceGeneratedPreview(projectInfo) {
   const targetPath = normalizeMaybeEmptyPath(projectInfo && projectInfo.targetPath);
   if (!targetPath) {
@@ -514,6 +525,7 @@ module.exports = {
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
+  isResolvablePreviewHostProjectInfo,
   isUsablePreviewHostProjectInfo,
   isUnderBuildOutput,
   normalizeFilePath,

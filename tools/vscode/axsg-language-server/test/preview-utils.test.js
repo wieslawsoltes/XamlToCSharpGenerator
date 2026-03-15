@@ -14,6 +14,7 @@ const {
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
+  isResolvablePreviewHostProjectInfo,
   isUsablePreviewHostProjectInfo,
   normalizePreviewCompilerMode,
   normalizePreviewTargetPath,
@@ -118,6 +119,29 @@ test('isUsablePreviewHostProjectInfo accepts executable hosts without previewer 
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('isResolvablePreviewHostProjectInfo allows executable hosts as provisional auto candidates before the first build', () => {
+  assert.equal(
+    isResolvablePreviewHostProjectInfo({
+      outputType: 'Exe',
+      targetPath: '/tmp/App.dll',
+      previewerToolPath: ''
+    }, {
+      outputType: 'Exe',
+      targetPath: '/tmp/App.dll'
+    }, PREVIEW_COMPILER_MODE_AUTO, true),
+    true);
+  assert.equal(
+    isResolvablePreviewHostProjectInfo({
+      outputType: 'Exe',
+      targetPath: '/tmp/App.dll',
+      previewerToolPath: ''
+    }, {
+      outputType: 'Exe',
+      targetPath: '/tmp/App.dll'
+    }, PREVIEW_COMPILER_MODE_AUTO, false),
+    false);
 });
 
 test('tryParseMsbuildJson reads the property payload from stdout', () => {
