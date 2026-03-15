@@ -12,6 +12,7 @@ const {
   extractPreviewSecurityCookie,
   hasPendingPreviewText,
   getPreviewViewportMetricsKey,
+  resolveAvaloniaPreviewerToolPaths,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
@@ -404,6 +405,29 @@ test('createPreviewStartPlan uses the bundled designer host for Avalonia mode wh
     requiresBundledDesignerHost: false,
     requiresAvaloniaPreviewer: false
   });
+});
+
+test('resolveAvaloniaPreviewerToolPaths keeps bundled host first and preserves project fallback', () => {
+  assert.deepEqual(
+    resolveAvaloniaPreviewerToolPaths(
+      true,
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/project/Avalonia.Designer.HostApp.dll'),
+    [
+      path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll'),
+      path.normalize('/tmp/project/Avalonia.Designer.HostApp.dll')
+    ]);
+});
+
+test('resolveAvaloniaPreviewerToolPaths de-duplicates identical host paths', () => {
+  assert.deepEqual(
+    resolveAvaloniaPreviewerToolPaths(
+      true,
+      '/tmp/shared/Avalonia.Designer.HostApp.dll',
+      '/tmp/shared/Avalonia.Designer.HostApp.dll'),
+    [
+      path.normalize('/tmp/shared/Avalonia.Designer.HostApp.dll')
+    ]);
 });
 
 test('createPreviewStartPlan requires the bundled designer host when source-generated mode is forced', () => {

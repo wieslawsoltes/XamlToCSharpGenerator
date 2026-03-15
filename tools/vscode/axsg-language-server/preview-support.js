@@ -29,6 +29,7 @@ const {
   pickPreviewTargetFramework,
   projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolveAvaloniaPreviewerToolPaths,
   resolveLoopbackPreviewWebviewTarget,
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
@@ -2086,13 +2087,20 @@ function buildStartAttempts(extensionPath, launchInfo) {
     }
 
     if (mode === PREVIEW_COMPILER_MODE_AVALONIA) {
-      attempts.push({
-        label: 'Avalonia XamlX',
-        mode,
-        previewerToolPath: hasBundledDesignerHost
-          ? designerHostPath
-          : launchInfo.hostProject.previewerToolPath
-      });
+      const previewerToolPaths = resolveAvaloniaPreviewerToolPaths(
+        hasBundledDesignerHost,
+        designerHostPath,
+        launchInfo.hostProject.previewerToolPath);
+
+      for (let index = 0; index < previewerToolPaths.length; index += 1) {
+        attempts.push({
+          label: index === 0
+            ? 'Avalonia XamlX'
+            : 'Avalonia XamlX (project host fallback)',
+          mode,
+          previewerToolPath: previewerToolPaths[index]
+        });
+      }
     }
   }
 

@@ -283,6 +283,28 @@ function normalizePreviewScale(scale) {
   return Math.round(normalizedScale * 1000) / 1000;
 }
 
+function resolveAvaloniaPreviewerToolPaths(hasBundledDesignerHost, bundledDesignerHostPath, projectPreviewerToolPath) {
+  const orderedPaths = [];
+  const seenPaths = new Set();
+
+  function tryAdd(candidatePath) {
+    const normalizedPath = normalizeMaybeEmptyPath(candidatePath);
+    if (!normalizedPath || seenPaths.has(normalizedPath)) {
+      return;
+    }
+
+    seenPaths.add(normalizedPath);
+    orderedPaths.push(normalizedPath);
+  }
+
+  if (hasBundledDesignerHost) {
+    tryAdd(bundledDesignerHostPath);
+  }
+
+  tryAdd(projectPreviewerToolPath);
+  return orderedPaths;
+}
+
 function createPreviewStartPlan(options) {
   const requestedMode = options && options.requestedMode
     ? options.requestedMode
@@ -550,6 +572,7 @@ module.exports = {
   createCommandFailureMessage,
   buildArguments,
   createPreviewBuildPlan,
+  resolveAvaloniaPreviewerToolPaths,
   getPreviewViewportMetricsKey,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
