@@ -6,14 +6,22 @@ const { EventEmitter } = require('events');
 const vscode = require('vscode');
 const {
   buildArguments,
+  createPreviewBuildPlan,
+  PREVIEW_COMPILER_MODE_AUTO,
+  PREVIEW_COMPILER_MODE_AVALONIA,
+  PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   isPreviewableProjectInfo,
   isUnderBuildOutput,
   normalizeFilePath,
+  normalizePreviewCompilerMode,
   normalizeMaybeEmptyPath,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
+  projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolvePreviewCompilerMode,
   samePath,
+  shouldUseNoRestoreBuild,
   tryParseMsbuildJson
 } = require('./preview-utils');
 
@@ -30,6 +38,7 @@ const DEFAULT_UPDATE_DELAY_MS = 300;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const HOST_PROJECT_STATE_PREFIX = 'axsg.preview.hostProject::';
 const PREVIEW_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.PreviewerHost.dll';
+const SOURCE_GENERATED_DESIGNER_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Previewer.DesignerHost.dll';
 
 class JsonLineHelperClient extends EventEmitter {
   constructor(command, args, options) {
@@ -188,6 +197,7 @@ class AvaloniaPreviewSession {
     this.updateChain = Promise.resolve();
     this.disposed = false;
     this.startPromise = null;
+    this.activeCompilerMode = null;
   }
 
   reveal() {
@@ -202,11 +212,67 @@ class AvaloniaPreviewSession {
     }
 
     this.createPanel();
-    this.startPromise = this.startCore();
+    this.startPromise = this.startCore()
+      .catch(error => {
+        this.startPromise = null;
+        throw error;
+      });
     return this.startPromise;
   }
 
-  scheduleUpdate(document) {
+  isSourceGeneratedPreviewActive() {
+    return this.activeCompilerMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED;
+  }
+
+  usesSourceGeneratedRefreshFlow() {
+    return this.isSourceGeneratedPreviewActive() ||
+      (!this.activeCompilerMode &&
+        this.launchInfo.previewPlan &&
+        this.launchInfo.previewPlan.preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
+  }
+
+  handleDocumentChanged(document) {
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.usesSourceGeneratedRefreshFlow()) {
+      this.pendingUpdateText = null;
+      this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
+      return;
+    }
+
+    this.scheduleLiveUpdate(document);
+  }
+
+  async handleDocumentSaved(document) {
+    if (!this.usesSourceGeneratedRefreshFlow()) {
+      return;
+    }
+
+    if (!this.controller.getConfiguration().get('preview.buildBeforeLaunch', true)) {
+      this.setStatus('Source-generated preview shows the last successful build. Build the project manually or enable axsg.preview.buildBeforeLaunch, then reopen the preview to refresh.');
+      return;
+    }
+
+    await this.refreshSourceGeneratedPreview(document, 'Refreshing source-generated preview...');
+  }
+
+  async handleOpenRequest(document) {
+    if (this.usesSourceGeneratedRefreshFlow()) {
+      if (document.isDirty) {
+        this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
+        return;
+      }
+
+      await this.refreshSourceGeneratedPreview(document, 'Refreshing source-generated preview...');
+      return;
+    }
+
+    this.scheduleLiveUpdate(document);
+  }
+
+  scheduleLiveUpdate(document) {
     if (this.disposed) {
       return;
     }
@@ -223,6 +289,37 @@ class AvaloniaPreviewSession {
       this.updateTimer = null;
       void this.flushPendingUpdate();
     }, Math.max(0, delayMs));
+  }
+
+  async refreshSourceGeneratedPreview(document, statusText) {
+    if (this.disposed) {
+      return;
+    }
+
+    this.updateChain = this.updateChain
+      .then(async () => {
+        this.setStatus(statusText);
+        const refreshedLaunchInfo = await this.controller.refreshLaunchInfoForSession(this.launchInfo, document);
+        this.launchInfo = refreshedLaunchInfo;
+
+        const helper = this.helper;
+        if (helper) {
+          await this.resetHelperAsync(helper);
+        } else {
+          this.startPromise = null;
+          this.currentPreviewUrl = '';
+          this.activeCompilerMode = null;
+        }
+
+        await this.start();
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setStatus(`Source-generated preview refresh failed: ${message}`);
+        void vscode.window.showWarningMessage(`AXSG source-generated preview refresh failed for ${this.fileName}: ${message}`);
+      });
+
+    await this.updateChain;
   }
 
   async dispose() {
@@ -248,6 +345,8 @@ class AvaloniaPreviewSession {
       this.helper.removeAllListeners();
       this.helper = null;
     }
+
+    this.activeCompilerMode = null;
   }
 
   createPanel() {
@@ -285,14 +384,51 @@ class AvaloniaPreviewSession {
     const outputChannel = this.controller.getOutputChannel();
     outputChannel.appendLine(`[preview] starting ${this.fileName}`);
 
+    const attempts = buildStartAttempts(this.controller.extensionPath, this.launchInfo);
+    if (attempts.length === 0) {
+      throw new Error('No preview start strategy is available for the selected project.');
+    }
+
+    let lastError = null;
+
+    for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+      const attempt = attempts[attemptIndex];
+      try {
+        this.setStatus(`Starting ${attempt.label} preview...`);
+        await this.startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt);
+        this.activeCompilerMode = attempt.mode;
+        this.setStatus(getPreviewReadyStatus(this.fileName, attempt.mode));
+        this.updatePanel();
+        return;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        outputChannel.appendLine(`[preview] ${attempt.label} preview start failed: ${message}`);
+
+        const helper = this.helper;
+        if (helper) {
+          await this.resetHelperAsync(helper);
+        }
+
+        if (attemptIndex < attempts.length - 1) {
+          this.setStatus(`Falling back to ${attempts[attemptIndex + 1].label} preview...`);
+        }
+      }
+    }
+
+    throw lastError || new Error('Failed to start the preview session.');
+  }
+
+  async startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt) {
     this.helper = new JsonLineHelperClient(dotNetCommand, [helperPath], {
       cwd: this.launchInfo.workspaceRoot,
       outputChannel
     });
+
     const helper = this.helper;
     helper.on('event', message => this.handleHelperEvent(message));
     helper.on('exit', ({ exitCode, error }) => {
-      if (this.disposed) {
+      if (this.disposed || this.helper !== helper) {
         return;
       }
 
@@ -303,7 +439,7 @@ class AvaloniaPreviewSession {
     const payload = {
       dotNetCommand,
       hostAssemblyPath: this.launchInfo.hostProject.targetPath,
-      previewerToolPath: this.launchInfo.hostProject.previewerToolPath,
+      previewerToolPath: attempt.previewerToolPath,
       sourceAssemblyPath: this.launchInfo.sourceProject.targetPath,
       xamlFileProjectPath: normalizePreviewTargetPath(this.launchInfo.projectContext.targetPath),
       xamlText: this.launchInfo.documentText
@@ -316,8 +452,6 @@ class AvaloniaPreviewSession {
     }
 
     this.currentPreviewUrl = previewUrl;
-    this.setStatus(`Preview ready for ${this.fileName}.`);
-    this.updatePanel();
   }
 
   async flushPendingUpdate() {
@@ -332,6 +466,11 @@ class AvaloniaPreviewSession {
     this.updateChain = this.updateChain
       .then(async () => {
         await this.start();
+        if (this.usesSourceGeneratedRefreshFlow()) {
+          this.setStatus('Source-generated preview shows the last successful build. Save to rebuild and refresh.');
+          return;
+        }
+
         if (!this.helper) {
           throw new Error('Preview host is not available.');
         }
@@ -352,7 +491,7 @@ class AvaloniaPreviewSession {
     const payload = message.payload || {};
     if (eventName === 'previewStarted' && payload.previewUrl) {
       this.currentPreviewUrl = payload.previewUrl;
-      this.setStatus(`Preview ready for ${this.fileName}.`);
+      this.setStatus(getPreviewReadyStatus(this.fileName, this.activeCompilerMode));
       this.updatePanel();
       return;
     }
@@ -409,6 +548,7 @@ class AvaloniaPreviewSession {
       this.helper = null;
       this.startPromise = null;
       this.currentPreviewUrl = '';
+      this.activeCompilerMode = null;
     }
 
     helper.removeAllListeners();
@@ -443,6 +583,7 @@ class AvaloniaPreviewController {
     this.workspaceRoot = options.workspaceRoot;
     this.sessions = new Map();
     this.projectInfoCache = new Map();
+    this.projectReferenceCache = new Map();
   }
 
   register(context) {
@@ -457,7 +598,13 @@ class AvaloniaPreviewController {
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
       const session = this.sessions.get(event.document.uri.toString());
       if (session) {
-        session.scheduleUpdate(event.document);
+        session.handleDocumentChanged(event.document);
+      }
+    }));
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      const session = this.sessions.get(document.uri.toString());
+      if (session) {
+        void session.handleDocumentSaved(document);
       }
     }));
     context.subscriptions.push({
@@ -488,7 +635,7 @@ class AvaloniaPreviewController {
     const existing = this.sessions.get(document.uri.toString());
     if (existing) {
       existing.reveal();
-      existing.scheduleUpdate(document);
+      await existing.handleOpenRequest(document);
       return;
     }
 
@@ -542,8 +689,94 @@ class AvaloniaPreviewController {
     const configuration = this.getConfiguration();
     const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
     const preferredTargetFramework = configuration.get('preview.targetFramework', '');
+    const requestedCompilerMode = normalizePreviewCompilerMode(
+      configuration.get('preview.compilerMode', PREVIEW_COMPILER_MODE_AUTO));
+    const projectState = await this.resolveProjectLaunchState({
+      projectContext,
+      workspaceRoot,
+      dotNetCommand,
+      preferredTargetFramework,
+      progress,
+      requestedCompilerMode,
+      buildReason: 'launch',
+      documentFilePath: document.fileName
+    });
 
-    progress.report({ message: 'Evaluating source project...' });
+    return this.createLaunchInfo(
+      projectContext,
+      workspaceRoot,
+      document.getText(),
+      projectState.sourceProject,
+      projectState.hostProject,
+      requestedCompilerMode);
+  }
+
+  async refreshLaunchInfoForSession(launchInfo, document) {
+    const configuration = this.getConfiguration();
+    const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
+    const preferredTargetFramework = configuration.get('preview.targetFramework', '');
+    const requestedCompilerMode = normalizePreviewCompilerMode(
+      configuration.get('preview.compilerMode', launchInfo.previewPlan.requestedMode || PREVIEW_COMPILER_MODE_AUTO));
+    const projectState = await this.resolveProjectLaunchState({
+      projectContext: launchInfo.projectContext,
+      workspaceRoot: launchInfo.workspaceRoot,
+      dotNetCommand,
+      preferredTargetFramework,
+      progress: null,
+      hostProjectPath: launchInfo.hostProject.projectPath,
+      requestedCompilerMode,
+      buildReason: 'save',
+      documentFilePath: document.fileName,
+      activePreviewMode: launchInfo.previewPlan.preferredMode
+    });
+
+    return this.createLaunchInfo(
+      launchInfo.projectContext,
+      launchInfo.workspaceRoot,
+      document.getText(),
+      projectState.sourceProject,
+      projectState.hostProject,
+      requestedCompilerMode);
+  }
+
+  createLaunchInfo(projectContext, workspaceRoot, documentText, sourceProject, hostProject, requestedCompilerMode) {
+    return {
+      projectContext,
+      workspaceRoot,
+      documentText,
+      sourceProject,
+      hostProject,
+      previewPlan: this.createPreviewPlan(requestedCompilerMode, sourceProject)
+    };
+  }
+
+  createPreviewPlan(requestedCompilerMode, sourceProject) {
+    const previewPlan = resolvePreviewCompilerMode(requestedCompilerMode, sourceProject);
+    if (previewPlan.requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED &&
+        !previewPlan.sourceGeneratedSupported) {
+      throw new Error(
+        'AXSG source-generated preview was requested, but the project output does not contain XamlToCSharpGenerator.Runtime.Avalonia. Build the project or switch axsg.preview.compilerMode to avalonia.');
+    }
+
+    return previewPlan;
+  }
+
+  async resolveProjectLaunchState(options) {
+    const projectContext = options.projectContext;
+    const workspaceRoot = options.workspaceRoot;
+    const dotNetCommand = options.dotNetCommand;
+    const preferredTargetFramework = options.preferredTargetFramework;
+    const progress = options.progress;
+    const hostProjectPath = options.hostProjectPath || '';
+    const requestedCompilerMode = options.requestedCompilerMode || PREVIEW_COMPILER_MODE_AUTO;
+    const buildReason = options.buildReason || 'launch';
+    const documentFilePath = options.documentFilePath || '';
+    const activePreviewMode = options.activePreviewMode || '';
+
+    if (progress) {
+      progress.report({ message: 'Evaluating source project...' });
+    }
+
     const sourceProject = await this.getProjectInfo(
       projectContext.projectPath,
       preferredTargetFramework,
@@ -551,62 +784,141 @@ class AvaloniaPreviewController {
       false,
       workspaceRoot);
 
-    progress.report({ message: 'Selecting preview host project...' });
-    const hostProject = await this.resolveHostProject(
-      projectContext.projectPath,
-      sourceProject,
-      dotNetCommand,
-      workspaceRoot);
-
-    if (configuration.get('preview.buildBeforeLaunch', true)) {
-      progress.report({ message: `Building ${path.basename(hostProject.projectPath)}...` });
-      await runDotNetCommand(
+    let hostProject;
+    if (hostProjectPath) {
+      hostProject = await this.getProjectInfo(
+        hostProjectPath,
+        preferredTargetFramework,
         dotNetCommand,
-        buildArguments(hostProject.projectPath, hostProject.targetFramework),
-        workspaceRoot,
-        this.getOutputChannel());
-
-      if (!samePath(hostProject.projectPath, sourceProject.projectPath)) {
-        progress.report({ message: `Building ${path.basename(sourceProject.projectPath)}...` });
-        await runDotNetCommand(
-          dotNetCommand,
-          buildArguments(sourceProject.projectPath, sourceProject.targetFramework),
-          workspaceRoot,
-          this.getOutputChannel());
+        false,
+        workspaceRoot);
+    } else {
+      if (progress) {
+        progress.report({ message: 'Selecting preview host project...' });
       }
 
-      progress.report({ message: 'Refreshing build outputs...' });
-      const refreshedHostProject = await this.getProjectInfo(
-        hostProject.projectPath,
-        hostProject.targetFramework || preferredTargetFramework,
+      hostProject = await this.resolveHostProject(
+        projectContext.projectPath,
+        sourceProject,
         dotNetCommand,
-        true,
         workspaceRoot);
-      const refreshedSourceProject = samePath(hostProject.projectPath, sourceProject.projectPath)
-        ? refreshedHostProject
-        : await this.getProjectInfo(
-          projectContext.projectPath,
-          sourceProject.targetFramework || preferredTargetFramework,
-          dotNetCommand,
-          true,
-          workspaceRoot);
+    }
 
+    return this.buildAndRefreshProjectState({
+      projectContext,
+      workspaceRoot,
+      dotNetCommand,
+      preferredTargetFramework,
+      sourceProject,
+      hostProject,
+      progress,
+      requestedCompilerMode,
+      buildReason,
+      documentFilePath,
+      activePreviewMode
+    });
+  }
+
+  async buildAndRefreshProjectState(options) {
+    const configuration = this.getConfiguration();
+    if (!configuration.get('preview.buildBeforeLaunch', true)) {
       return {
-        projectContext,
-        workspaceRoot,
-        documentText: document.getText(),
-        sourceProject: refreshedSourceProject,
-        hostProject: refreshedHostProject
+        sourceProject: options.sourceProject,
+        hostProject: options.hostProject
       };
     }
 
+    const buildPreviewMode = options.activePreviewMode ||
+      resolvePreviewCompilerMode(options.requestedCompilerMode, options.sourceProject).preferredMode;
+    const hostBuildIncludesSource = await this.hostProjectReferencesSourceProject(
+      options.hostProject.projectPath,
+      options.sourceProject.projectPath);
+    const buildPlan = createPreviewBuildPlan({
+      buildReason: options.buildReason,
+      previewMode: buildPreviewMode,
+      documentFilePath: options.documentFilePath,
+      sourceProjectPath: options.sourceProject.projectPath,
+      sourceTargetPath: options.sourceProject.targetPath,
+      hostProjectPath: options.hostProject.projectPath,
+      hostTargetPath: options.hostProject.targetPath,
+      hostBuildIncludesSource
+    });
+
+    if (!buildPlan.buildHost && !buildPlan.buildSource) {
+      return {
+        sourceProject: options.sourceProject,
+        hostProject: options.hostProject
+      };
+    }
+
+    if (buildPlan.buildSource) {
+      if (options.progress) {
+        options.progress.report({ message: `Building ${path.basename(options.sourceProject.projectPath)}...` });
+      }
+
+      await runDotNetBuildCommand(
+        options.dotNetCommand,
+        options.sourceProject.projectPath,
+        options.sourceProject.targetFramework,
+        options.workspaceRoot,
+        this.getOutputChannel());
+    }
+
+    if (buildPlan.buildHost) {
+      if (options.progress) {
+        options.progress.report({ message: `Building ${path.basename(options.hostProject.projectPath)}...` });
+      }
+
+      await runDotNetBuildCommand(
+        options.dotNetCommand,
+        options.hostProject.projectPath,
+        options.hostProject.targetFramework,
+        options.workspaceRoot,
+        this.getOutputChannel());
+    }
+
+    if (options.progress) {
+      options.progress.report({ message: 'Refreshing build outputs...' });
+    }
+
+    const refreshedHostProject = buildPlan.buildHost
+      ? await this.getProjectInfo(
+        options.hostProject.projectPath,
+        options.hostProject.targetFramework || options.preferredTargetFramework,
+        options.dotNetCommand,
+        true,
+        options.workspaceRoot)
+      : options.hostProject;
+    const refreshedSourceProject = samePath(options.hostProject.projectPath, options.sourceProject.projectPath)
+      ? refreshedHostProject
+      : buildPlan.buildSource
+        ? await this.getProjectInfo(
+          options.projectContext.projectPath,
+          options.sourceProject.targetFramework || options.preferredTargetFramework,
+          options.dotNetCommand,
+          true,
+          options.workspaceRoot)
+        : options.sourceProject;
+
     return {
-      projectContext,
-      workspaceRoot,
-      documentText: document.getText(),
-      sourceProject,
-      hostProject
+      sourceProject: refreshedSourceProject,
+      hostProject: refreshedHostProject
     };
+  }
+
+  async hostProjectReferencesSourceProject(hostProjectPath, sourceProjectPath) {
+    if (!hostProjectPath || !sourceProjectPath || samePath(hostProjectPath, sourceProjectPath)) {
+      return true;
+    }
+
+    const cacheKey = `${hostProjectPath}::${sourceProjectPath}`;
+    if (this.projectReferenceCache.has(cacheKey)) {
+      return this.projectReferenceCache.get(cacheKey);
+    }
+
+    const result = projectReferencesProject(hostProjectPath, sourceProjectPath);
+    this.projectReferenceCache.set(cacheKey, result);
+    return result;
   }
 
   async resolveHostProject(sourceProjectPath, sourceProjectInfo, dotNetCommand, workspaceRoot) {
@@ -929,8 +1241,94 @@ async function runDotNetCommand(command, args, cwd, outputChannel) {
   });
 }
 
+async function runDotNetBuildCommand(command, projectPath, targetFramework, cwd, outputChannel) {
+  const useNoRestore = shouldUseNoRestoreBuild(projectPath);
+  const args = buildArguments(projectPath, targetFramework, { skipRestore: useNoRestore });
+
+  try {
+    await runDotNetCommand(command, args, cwd, outputChannel);
+  } catch (error) {
+    if (!useNoRestore || !isRestoreRequiredBuildError(error)) {
+      throw error;
+    }
+
+    outputChannel.appendLine(`[preview] retrying ${path.basename(projectPath)} build with restore enabled`);
+    await runDotNetCommand(command, buildArguments(projectPath, targetFramework), cwd, outputChannel);
+  }
+}
+
+function isRestoreRequiredBuildError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('project.assets.json') ||
+    message.includes('assets file') ||
+    message.includes('Run a NuGet package restore') ||
+    message.includes('NETSDK1004');
+}
+
 function resolveBundledPreviewHostPath(extensionPath) {
   return path.join(extensionPath, 'preview-host', PREVIEW_HOST_ASSEMBLY_NAME);
+}
+
+function resolveBundledSourceGeneratedDesignerHostPath(extensionPath) {
+  return path.join(extensionPath, 'designer-host', SOURCE_GENERATED_DESIGNER_HOST_ASSEMBLY_NAME);
+}
+
+function buildStartAttempts(extensionPath, launchInfo) {
+  const attempts = [];
+  const requestedMode = launchInfo.previewPlan && launchInfo.previewPlan.requestedMode
+    ? launchInfo.previewPlan.requestedMode
+    : PREVIEW_COMPILER_MODE_AUTO;
+  const preferredMode = launchInfo.previewPlan && launchInfo.previewPlan.preferredMode
+    ? launchInfo.previewPlan.preferredMode
+    : PREVIEW_COMPILER_MODE_AVALONIA;
+
+  if (preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    const designerHostPath = resolveBundledSourceGeneratedDesignerHostPath(extensionPath);
+    if (!fs.existsSync(designerHostPath)) {
+      if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+        throw new Error(`Bundled source-generated designer host not found at ${designerHostPath}. Run the extension packaging step first.`);
+      }
+    } else {
+      attempts.push({
+        label: 'AXSG source-generated',
+        mode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+        previewerToolPath: designerHostPath
+      });
+    }
+
+    if (requestedMode === PREVIEW_COMPILER_MODE_AUTO) {
+      if (!launchInfo.hostProject.previewerToolPath) {
+        return attempts;
+      }
+
+      attempts.push({
+        label: 'Avalonia XamlX',
+        mode: PREVIEW_COMPILER_MODE_AVALONIA,
+        previewerToolPath: launchInfo.hostProject.previewerToolPath
+      });
+      return attempts;
+    }
+  }
+
+  if (!launchInfo.hostProject.previewerToolPath) {
+    throw new Error('Avalonia previewer host path is unavailable for the selected project.');
+  }
+
+  attempts.push({
+    label: 'Avalonia XamlX',
+    mode: PREVIEW_COMPILER_MODE_AVALONIA,
+    previewerToolPath: launchInfo.hostProject.previewerToolPath
+  });
+
+  return attempts;
+}
+
+function getPreviewReadyStatus(fileName, compilerMode) {
+  if (compilerMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    return `Source-generated preview ready for ${fileName}. Showing the last successful build; save to rebuild and refresh.`;
+  }
+
+  return `Preview ready for ${fileName}.`;
 }
 
 function escapeHtml(text) {

@@ -323,6 +323,16 @@
           "default": "dotnet",
           "description": "Path to the dotnet executable used for AXSG Avalonia preview build and launch steps."
         },
+        "axsg.preview.compilerMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "avalonia",
+            "sourceGenerated"
+          ],
+          "default": "auto",
+          "description": "Selects the preview compiler. 'auto' prefers the AXSG source-generated loader when available, 'avalonia' uses Avalonia's XamlX previewer with live unsaved updates, and 'sourceGenerated' forces the AXSG source-generated loader."
+        },
         "axsg.preview.targetFramework": {
           "type": "string",
           "default": "",
@@ -336,13 +346,13 @@
         "axsg.preview.buildBeforeLaunch": {
           "type": "boolean",
           "default": true,
-          "description": "Build the selected Avalonia preview host project before starting the AXSG preview session."
+          "description": "Build preview projects when the preview needs fresh outputs. Existing usable outputs are reused, and source-generated save refresh rebuilds only the source project when possible."
         },
         "axsg.preview.autoUpdateDelayMs": {
           "type": "number",
           "minimum": 0,
           "default": 300,
-          "description": "Debounce interval, in milliseconds, before unsaved XAML edits are pushed to the Avalonia previewer."
+          "description": "Debounce interval, in milliseconds, before unsaved XAML edits are pushed to the Avalonia/XamlX previewer."
         }
       }
     },

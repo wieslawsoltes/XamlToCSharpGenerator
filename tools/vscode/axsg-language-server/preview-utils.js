@@ -2,6 +2,16 @@ const path = require('path');
 const fs = require('fs');
 
 const PREVIEWABLE_OUTPUT_TYPES = new Set(['Exe', 'WinExe']);
+const PREVIEW_COMPILER_MODE_AUTO = 'auto';
+const PREVIEW_COMPILER_MODE_AVALONIA = 'avalonia';
+const PREVIEW_COMPILER_MODE_SOURCE_GENERATED = 'sourceGenerated';
+const VALID_PREVIEW_COMPILER_MODES = new Set([
+  PREVIEW_COMPILER_MODE_AUTO,
+  PREVIEW_COMPILER_MODE_AVALONIA,
+  PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+]);
+const SOURCE_GENERATED_RUNTIME_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia.dll';
+const SOURCE_GENERATED_RUNTIME_LIBRARY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia';
 const MOBILE_TARGET_FRAMEWORK_MARKERS = [
   '-android',
   '-ios',
@@ -11,8 +21,12 @@ const MOBILE_TARGET_FRAMEWORK_MARKERS = [
   '-maccatalyst'
 ];
 
-function buildArguments(projectPath, targetFramework) {
+function buildArguments(projectPath, targetFramework, options = {}) {
   const args = ['build', projectPath, '-nologo', '-v:minimal'];
+  if (options.skipRestore) {
+    args.push('--no-restore');
+  }
+
   if (targetFramework) {
     args.push(`-p:TargetFramework=${targetFramework}`);
   }
@@ -54,11 +68,85 @@ function normalizePreviewTargetPath(targetPath) {
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
-function isPreviewableProjectInfo(projectInfo) {
+function normalizePreviewCompilerMode(mode) {
+  const normalized = String(mode || '').trim();
+  if (VALID_PREVIEW_COMPILER_MODES.has(normalized)) {
+    return normalized;
+  }
+
+  return PREVIEW_COMPILER_MODE_AUTO;
+}
+
+function isExecutableProjectInfo(projectInfo) {
   return Boolean(projectInfo &&
     PREVIEWABLE_OUTPUT_TYPES.has(projectInfo.outputType) &&
-    projectInfo.targetPath &&
+    projectInfo.targetPath);
+}
+
+function isPreviewableProjectInfo(projectInfo) {
+  return Boolean(projectInfo &&
+    isExecutableProjectInfo(projectInfo) &&
     projectInfo.previewerToolPath);
+}
+
+function supportsSourceGeneratedPreview(projectInfo) {
+  const targetPath = normalizeMaybeEmptyPath(projectInfo && projectInfo.targetPath);
+  if (!targetPath) {
+    return false;
+  }
+
+  const outputDirectory = path.dirname(targetPath);
+  if (fs.existsSync(path.join(outputDirectory, SOURCE_GENERATED_RUNTIME_ASSEMBLY_NAME))) {
+    return true;
+  }
+
+  const depsPath = path.join(
+    outputDirectory,
+    `${path.basename(targetPath, path.extname(targetPath))}.deps.json`);
+  if (!fs.existsSync(depsPath)) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(depsPath, 'utf8'));
+    const libraries = parsed && parsed.libraries && typeof parsed.libraries === 'object'
+      ? Object.keys(parsed.libraries)
+      : [];
+    return libraries.some(library =>
+      library === SOURCE_GENERATED_RUNTIME_LIBRARY_NAME ||
+      library.startsWith(`${SOURCE_GENERATED_RUNTIME_LIBRARY_NAME}/`));
+  } catch {
+    return false;
+  }
+}
+
+function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
+  const requestedMode = normalizePreviewCompilerMode(configuredMode);
+  const sourceGeneratedSupported = supportsSourceGeneratedPreview(sourceProjectInfo);
+
+  if (requestedMode === PREVIEW_COMPILER_MODE_AVALONIA) {
+    return {
+      requestedMode,
+      preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      sourceGeneratedSupported
+    };
+  }
+
+  if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    return {
+      requestedMode,
+      preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+      sourceGeneratedSupported
+    };
+  }
+
+  return {
+    requestedMode,
+    preferredMode: sourceGeneratedSupported
+      ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+      : PREVIEW_COMPILER_MODE_AVALONIA,
+    sourceGeneratedSupported
+  };
 }
 
 function resolveConfiguredProjectPath(configuredProjectPath, workspaceRoot) {
@@ -120,6 +208,137 @@ function samePath(left, right) {
   return normalizeFilePath(left) === normalizeFilePath(right);
 }
 
+function getFileModifiedTimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function isInputNewerThanOutput(inputPath, outputPath) {
+  if (!inputPath || !outputPath) {
+    return false;
+  }
+
+  const outputTime = getFileModifiedTimeMs(outputPath);
+  if (outputTime <= 0) {
+    return true;
+  }
+
+  return getFileModifiedTimeMs(inputPath) > outputTime;
+}
+
+function getProjectAssetsPath(projectPath) {
+  return path.join(path.dirname(projectPath), 'obj', 'project.assets.json');
+}
+
+function shouldUseNoRestoreBuild(projectPath) {
+  return fs.existsSync(getProjectAssetsPath(projectPath));
+}
+
+function projectReferencesProject(projectPath, referencedProjectPath, visited = new Set()) {
+  const normalizedProjectPath = normalizeMaybeEmptyPath(projectPath);
+  const normalizedReferencedPath = normalizeMaybeEmptyPath(referencedProjectPath);
+  if (!normalizedProjectPath || !normalizedReferencedPath || visited.has(normalizedProjectPath)) {
+    return false;
+  }
+
+  visited.add(normalizedProjectPath);
+
+  let contents;
+  try {
+    contents = fs.readFileSync(normalizedProjectPath, 'utf8');
+  } catch {
+    return false;
+  }
+
+  const projectReferencePattern = /<ProjectReference\b[^>]*Include\s*=\s*"([^"]+)"/gi;
+  let match;
+  while ((match = projectReferencePattern.exec(contents)) !== null) {
+    const includePath = String(match[1] || '').trim();
+    if (!includePath) {
+      continue;
+    }
+
+    const resolvedReference = normalizeFilePath(path.resolve(path.dirname(normalizedProjectPath), includePath));
+    if (samePath(resolvedReference, normalizedReferencedPath)) {
+      return true;
+    }
+
+    if (projectReferencesProject(resolvedReference, normalizedReferencedPath, visited)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function createPreviewBuildPlan(options) {
+  const previewMode = options.previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+    ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+    : PREVIEW_COMPILER_MODE_AVALONIA;
+  const buildReason = String(options.buildReason || 'launch');
+  const sourceProjectPath = normalizeMaybeEmptyPath(options.sourceProjectPath);
+  const hostProjectPath = normalizeMaybeEmptyPath(options.hostProjectPath);
+  const sourceTargetPath = normalizeMaybeEmptyPath(options.sourceTargetPath);
+  const hostTargetPath = normalizeMaybeEmptyPath(options.hostTargetPath);
+  const sameProject = sourceProjectPath && hostProjectPath && samePath(sourceProjectPath, hostProjectPath);
+  const hostBuildIncludesSource = Boolean(options.hostBuildIncludesSource || sameProject);
+  const sourceOutputMissing = !sourceTargetPath || !fs.existsSync(sourceTargetPath);
+  const hostOutputMissing = !hostTargetPath || !fs.existsSync(hostTargetPath);
+  const documentChangedSinceBuild = isInputNewerThanOutput(options.documentFilePath, sourceTargetPath);
+
+  if (previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    if (buildReason === 'save') {
+      if (sameProject) {
+        return {
+          buildHost: true,
+          buildSource: false,
+          hostBuildIncludesSource: true
+        };
+      }
+
+      if (hostOutputMissing) {
+        return {
+          buildHost: true,
+          buildSource: !hostBuildIncludesSource,
+          hostBuildIncludesSource
+        };
+      }
+
+      return {
+        buildHost: false,
+        buildSource: true,
+        hostBuildIncludesSource
+      };
+    }
+
+    const buildSource = sourceOutputMissing || documentChangedSinceBuild;
+    const buildHost = hostOutputMissing || (sameProject && buildSource);
+    return {
+      buildHost,
+      buildSource: buildSource && !(buildHost && hostBuildIncludesSource),
+      hostBuildIncludesSource
+    };
+  }
+
+  if (sameProject) {
+    return {
+      buildHost: hostOutputMissing,
+      buildSource: false,
+      hostBuildIncludesSource: true
+    };
+  }
+
+  const buildHost = hostOutputMissing;
+  return {
+    buildHost,
+    buildSource: sourceOutputMissing && !(buildHost && hostBuildIncludesSource),
+    hostBuildIncludesSource
+  };
+}
+
 function isUnderBuildOutput(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
   return normalized.includes('/bin/') || normalized.includes('/obj/');
@@ -127,13 +346,25 @@ function isUnderBuildOutput(filePath) {
 
 module.exports = {
   buildArguments,
+  createPreviewBuildPlan,
+  getFileModifiedTimeMs,
+  isExecutableProjectInfo,
+  isInputNewerThanOutput,
   isPreviewableProjectInfo,
   isUnderBuildOutput,
   normalizeFilePath,
+  normalizePreviewCompilerMode,
   normalizeMaybeEmptyPath,
   normalizePreviewTargetPath,
   pickPreviewTargetFramework,
+  PREVIEW_COMPILER_MODE_AUTO,
+  PREVIEW_COMPILER_MODE_AVALONIA,
+  PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+  projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolvePreviewCompilerMode,
   samePath,
+  shouldUseNoRestoreBuild,
+  supportsSourceGeneratedPreview,
   tryParseMsbuildJson
 };

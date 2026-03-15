@@ -33,6 +33,8 @@
     <Project Path="src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" />
     <Project Path="src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
     <Project Path="src/XamlToCSharpGenerator.NoUi/XamlToCSharpGenerator.NoUi.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Previewer.DesignerHost/XamlToCSharpGenerator.Previewer.DesignerHost.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.PreviewerHost/XamlToCSharpGenerator.PreviewerHost.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Runtime/XamlToCSharpGenerator.Runtime.csproj" />

@@ -61,6 +61,7 @@ code --install-extension ./axsg-language-server-x.y.z.vsix
 
 The extension runs the bundled managed language server by default. You only need the CLI tool separately when you want to host the server yourself.
 It also includes Avalonia preview support for `.xaml` and `.axaml` files through `AXSG: Open Avalonia Preview`.
+Preview sessions can run either Avalonia's XamlX previewer or the AXSG source-generated loader. The default `auto` mode prefers source-generated preview when the build output contains `XamlToCSharpGenerator.Runtime.Avalonia`, and falls back to Avalonia's previewer otherwise.
 
 ### CLI language server tool
 
@@ -343,10 +344,11 @@ When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses 
 | `axsg.inlayHints.bindingTypeHints.enabled` | `true` | Enables semantic binding type hints. |
 | `axsg.inlayHints.typeDisplayStyle` | `short` | Shows short or fully qualified type names in hints. |
 | `axsg.preview.dotNetCommand` | `dotnet` | Dotnet executable used for preview build and launch steps. |
+| `axsg.preview.compilerMode` | `auto` | Chooses `auto`, `sourceGenerated`, or `avalonia` preview compilation. |
 | `axsg.preview.targetFramework` | `""` | Optional target framework override for preview host/source evaluation. |
 | `axsg.preview.hostProject` | `""` | Optional Avalonia executable project used when the current XAML file lives in a library. |
-| `axsg.preview.buildBeforeLaunch` | `true` | Builds the preview host project before starting the preview session. |
-| `axsg.preview.autoUpdateDelayMs` | `300` | Debounce interval before unsaved XAML edits are pushed to preview. |
+| `axsg.preview.buildBeforeLaunch` | `true` | Builds preview projects only when fresh outputs are needed. Source-generated save refresh rebuilds just the source project when the host output can be reused. |
+| `axsg.preview.autoUpdateDelayMs` | `300` | Debounce interval before unsaved XAML edits are pushed to the Avalonia/XamlX previewer. |
 
 ## Repository Layout
 
