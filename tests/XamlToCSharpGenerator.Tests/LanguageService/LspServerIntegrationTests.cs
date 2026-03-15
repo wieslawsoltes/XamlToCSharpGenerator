@@ -2494,6 +2494,67 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task PreviewProjectContext_Request_Returns_Project_And_TargetPath_Metadata()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-lsp-preview-context-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var viewsDir = Path.Combine(tempRoot, "Views");
+            Directory.CreateDirectory(viewsDir);
+
+            var projectPath = Path.Combine(tempRoot, "PreviewApp.csproj");
+            var xamlPath = Path.Combine(viewsDir, "MainView.axaml");
+            var xamlUri = new Uri(xamlPath).AbsoluteUri;
+            const string xamlText = "<UserControl xmlns=\"https://github.com/avaloniaui\" />";
+
+            await File.WriteAllTextAsync(projectPath,
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <AvaloniaXaml Include="Views/MainView.axaml" Link="Linked/MainView.axaml" />
+                  </ItemGroup>
+                </Project>
+                """);
+            await File.WriteAllTextAsync(xamlPath, xamlText);
+
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: tempRoot);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = xamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = xamlText
+                }
+            });
+
+            await harness.SendRequestAsync("preview-context-1", "axsg/preview/projectContext", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = xamlUri
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync("preview-context-1");
+            var result = response.RootElement.GetProperty("result");
+            Assert.Equal(projectPath, result.GetProperty("projectPath").GetString());
+            Assert.Equal(tempRoot, result.GetProperty("projectDirectory").GetString());
+            Assert.Equal(xamlPath, result.GetProperty("filePath").GetString());
+            Assert.Equal("Linked/MainView.axaml", result.GetProperty("targetPath").GetString());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task References_Request_ForXDataTypeAttributeValue_ReturnsDeclarationAndUsage()
     {
         await using var harness = await LspServerHarness.StartAsync();
