@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -152,8 +153,8 @@ public sealed partial class AvaloniaSemanticBinder
                 }
 
                 expression = targetType.SpecialType == SpecialType.System_Single
-                    ? parsed.ToString("R", CultureInfo.InvariantCulture) + "f"
-                    : parsed.ToString("R", CultureInfo.InvariantCulture) + "d";
+                    ? FormatSingleLiteral((float)parsed)
+                    : FormatDoubleLiteral(parsed);
                 return true;
             }
             case XamlMarkupExtensionKind.Decimal:
@@ -496,6 +497,379 @@ public sealed partial class AvaloniaSemanticBinder
         expression = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
                      ".Parse(\"" + Escape(value) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
         return true;
+    }
+
+    private static bool TryConvertByTypeConverter(
+        ITypeSymbol type,
+        string value,
+        Compilation compilation,
+        out string expression,
+        out ResolvedValueRequirements valueRequirements,
+        ImmutableArray<AttributeData> converterAttributes = default)
+    {
+        expression = string.Empty;
+        valueRequirements = ResolvedValueRequirements.None;
+        var converterType = ResolveTypeConverterType(type, compilation, converterAttributes);
+        if (converterType is null ||
+            converterType.DeclaredAccessibility != Accessibility.Public ||
+            converterType.IsAbstract ||
+            !IsTypeConverterType(converterType, compilation))
+        {
+            return false;
+        }
+
+        if (!TryBuildTypeConverterConstructionExpression(type, converterType, out var converterConstructionExpression))
+        {
+            return false;
+        }
+
+        if (TryBuildContextAwareTypeConverterExpression(
+                type,
+                value,
+                compilation,
+                converterType,
+                converterConstructionExpression,
+                out expression))
+        {
+            valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+            return true;
+        }
+
+        return TryBuildInvariantStringTypeConverterExpression(
+            type,
+            value,
+            converterConstructionExpression,
+            out expression);
+    }
+
+    private static bool TryBuildContextAwareTypeConverterExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        INamedTypeSymbol converterType,
+        string converterConstructionExpression,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!HasContextAwareTypeConverterContract(converterType, compilation))
+        {
+            return false;
+        }
+
+        expression = "(" +
+                     targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     ")" +
+                     converterConstructionExpression +
+                     ".ConvertFrom(" +
+                     BuildTypeConverterContextExpression() +
+                     ", global::System.Globalization.CultureInfo.InvariantCulture, \"" +
+                     Escape(value) +
+                     "\")";
+        return true;
+    }
+
+    private static bool TryBuildInvariantStringTypeConverterExpression(
+        ITypeSymbol targetType,
+        string value,
+        string converterConstructionExpression,
+        out string expression)
+    {
+        expression = "(" +
+                     targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     ")" +
+                     converterConstructionExpression +
+                     ".ConvertFromInvariantString(\"" +
+                     Escape(value) +
+                     "\")";
+        return true;
+    }
+
+    private static bool TryBuildTypeConverterConstructionExpression(
+        ITypeSymbol targetType,
+        INamedTypeSymbol converterType,
+        out string expression)
+    {
+        var converterTypeExpression = converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (HasPublicParameterlessConstructor(converterType))
+        {
+            expression = "new " + converterTypeExpression + "()";
+            return true;
+        }
+
+        if (HasPublicConstructorWithParameterTypes(converterType, "global::System.Type"))
+        {
+            expression = "new " +
+                         converterTypeExpression +
+                         "(typeof(" +
+                         targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                         "))";
+            return true;
+        }
+
+        expression = string.Empty;
+        return false;
+    }
+
+    private static bool HasContextAwareTypeConverterContract(INamedTypeSymbol converterType, Compilation compilation)
+    {
+        var typeDescriptorContextType = compilation.GetTypeByMetadataName("System.ComponentModel.ITypeDescriptorContext");
+        var frameworkTypeConverterType = compilation.GetTypeByMetadataName(TypeConverterMetadataName);
+        if (typeDescriptorContextType is null || frameworkTypeConverterType is null)
+        {
+            return false;
+        }
+
+        for (var current = converterType;
+             current is not null && !SymbolEqualityComparer.Default.Equals(current, frameworkTypeConverterType);
+             current = current.BaseType)
+        {
+            foreach (var method in current.GetMembers("ConvertFrom").OfType<IMethodSymbol>())
+            {
+                if (method.IsStatic || method.Parameters.Length != 3)
+                {
+                    continue;
+                }
+
+                if (!IsTypeAssignableTo(method.Parameters[0].Type, typeDescriptorContextType) ||
+                    !IsCultureAwareParseParameter(method.Parameters[1].Type) ||
+                    method.Parameters[2].Type.SpecialType != SpecialType.System_Object)
+                {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string BuildTypeConverterContextExpression()
+    {
+        return "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CreateTypeConverterContext(" +
+               MarkupContextServiceProviderToken +
+               ", " +
+               MarkupContextRootObjectToken +
+               ", " +
+               MarkupContextIntermediateRootObjectToken +
+               ", " +
+               MarkupContextTargetObjectToken +
+               ", " +
+               MarkupContextTargetPropertyToken +
+               ", " +
+               MarkupContextBaseUriToken +
+               ", " +
+               MarkupContextParentStackToken +
+               ")";
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterType(
+        ITypeSymbol targetType,
+        Compilation compilation,
+        ImmutableArray<AttributeData> converterAttributes = default)
+    {
+        var propertyLevelConverterType = ResolveTypeConverterTypeFromAttributes(converterAttributes, compilation);
+        if (propertyLevelConverterType is not null)
+        {
+            return propertyLevelConverterType;
+        }
+
+        var typeSymbol = UnwrapNullableNamedType(targetType);
+        for (var current = typeSymbol; current is not null; current = current.BaseType)
+        {
+            var converterType = ResolveTypeConverterTypeFromAttributes(current.GetAttributes(), compilation);
+            if (converterType is not null)
+            {
+                return converterType;
+            }
+        }
+
+        return null;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterTypeFromAttributes(
+        ImmutableArray<AttributeData> attributes,
+        Compilation compilation)
+    {
+        if (attributes.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < attributes.Length; index++)
+        {
+            var attribute = attributes[index];
+            if (!string.Equals(
+                    attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    "global::" + TypeConverterAttributeMetadataName,
+                    StringComparison.Ordinal) ||
+                attribute.ConstructorArguments.Length != 1)
+            {
+                continue;
+            }
+
+            var resolvedType = ResolveTypeConverterTypeFromArgument(attribute.ConstructorArguments[0], compilation);
+            if (resolvedType is not null)
+            {
+                return resolvedType;
+            }
+        }
+
+        return null;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterTypeFromArgument(
+        TypedConstant argument,
+        Compilation compilation)
+    {
+        if (argument.Kind == TypedConstantKind.Type &&
+            argument.Value is INamedTypeSymbol converterType)
+        {
+            return converterType;
+        }
+
+        if (argument.Value is string typeName &&
+            !string.IsNullOrWhiteSpace(typeName))
+        {
+            return ResolveTypeConverterTypeByName(compilation, typeName);
+        }
+
+        return null;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterTypeByName(Compilation compilation, string typeName)
+    {
+        if (!TryParseTypeConverterTypeName(typeName, out var metadataTypeName, out var assemblySimpleName))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(assemblySimpleName))
+        {
+            if (string.Equals(compilation.AssemblyName, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+            {
+                return compilation.Assembly.GetTypeByMetadataName(metadataTypeName);
+            }
+
+            foreach (var reference in compilation.References)
+            {
+                if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assemblySymbol ||
+                    !string.Equals(assemblySymbol.Name, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return assemblySymbol.GetTypeByMetadataName(metadataTypeName);
+            }
+
+            return null;
+        }
+
+        return compilation.GetTypeByMetadataName(metadataTypeName);
+    }
+
+    private static bool TryParseTypeConverterTypeName(
+        string typeName,
+        out string metadataTypeName,
+        out string? assemblySimpleName)
+    {
+        metadataTypeName = string.Empty;
+        assemblySimpleName = null;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return false;
+        }
+
+        var trimmedTypeName = typeName.Trim();
+        var splitIndex = FindAssemblyQualifiedTypeSeparator(trimmedTypeName);
+        if (splitIndex < 0)
+        {
+            metadataTypeName = NormalizeTypeConverterMetadataName(trimmedTypeName);
+            return metadataTypeName.Length > 0;
+        }
+
+        metadataTypeName = NormalizeTypeConverterMetadataName(trimmedTypeName.Substring(0, splitIndex));
+        if (metadataTypeName.Length == 0)
+        {
+            return false;
+        }
+
+        var assemblyQualifier = trimmedTypeName.Substring(splitIndex + 1).Trim();
+        if (assemblyQualifier.Length == 0)
+        {
+            return true;
+        }
+
+        var assemblyDelimiterIndex = assemblyQualifier.IndexOf(',');
+        assemblySimpleName = (assemblyDelimiterIndex >= 0
+                ? assemblyQualifier.Substring(0, assemblyDelimiterIndex)
+                : assemblyQualifier)
+            .Trim();
+        return assemblySimpleName.Length > 0;
+    }
+
+    private static int FindAssemblyQualifiedTypeSeparator(string typeName)
+    {
+        var bracketDepth = 0;
+        for (var index = 0; index < typeName.Length; index++)
+        {
+            switch (typeName[index])
+            {
+                case '[':
+                    bracketDepth++;
+                    break;
+                case ']':
+                    if (bracketDepth > 0)
+                    {
+                        bracketDepth--;
+                    }
+
+                    break;
+                case ',' when bracketDepth == 0:
+                    return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string NormalizeTypeConverterMetadataName(string typeName)
+    {
+        var trimmedTypeName = typeName.Trim();
+        return trimmedTypeName.StartsWith("global::", StringComparison.Ordinal)
+            ? trimmedTypeName.Substring("global::".Length)
+            : trimmedTypeName;
+    }
+
+    private static bool HasPublicParameterlessConstructor(INamedTypeSymbol type)
+    {
+        return type.InstanceConstructors.Any(static constructor =>
+            constructor.DeclaredAccessibility == Accessibility.Public &&
+            constructor.Parameters.Length == 0);
+    }
+
+    private static bool IsTypeConverterType(INamedTypeSymbol candidateType, Compilation compilation)
+    {
+        var typeConverterType = compilation.GetTypeByMetadataName(TypeConverterMetadataName);
+        return typeConverterType is not null && IsTypeAssignableTo(candidateType, typeConverterType);
+    }
+
+    private static INamedTypeSymbol? UnwrapNullableNamedType(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType &&
+            namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            namedType.TypeArguments.Length == 1)
+        {
+            return namedType.TypeArguments[0] as INamedTypeSymbol;
+        }
+
+        return type as INamedTypeSymbol;
+    }
+
+    private static bool RequiresObjectInitializer(IPropertySymbol property, ResolvedValueRequirements valueRequirements)
+    {
+        return property.SetMethod?.IsInitOnly == true &&
+               !valueRequirements.RequiresMarkupContext;
     }
 
     private static bool IsCultureAwareParseParameter(ITypeSymbol type)

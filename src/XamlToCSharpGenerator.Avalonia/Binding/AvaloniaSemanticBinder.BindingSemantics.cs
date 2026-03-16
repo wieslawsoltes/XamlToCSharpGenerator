@@ -2064,8 +2064,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (parameterType.SpecialType == SpecialType.System_Double &&
             XamlScalarLiteralSemantics.TryParseDouble(unquotedToken, out var doubleValue))
         {
-            expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
-            normalizedToken = expression;
+            expression = FormatDoubleLiteral(doubleValue);
+            normalizedToken = unquotedToken;
             conversionCost = 0;
             return true;
         }
@@ -2073,8 +2073,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (parameterType.SpecialType == SpecialType.System_Single &&
             XamlScalarLiteralSemantics.TryParseSingle(unquotedToken, out var floatValue))
         {
-            expression = floatValue.ToString("R", CultureInfo.InvariantCulture) + "f";
-            normalizedToken = floatValue.ToString("R", CultureInfo.InvariantCulture);
+            expression = FormatSingleLiteral(floatValue);
+            normalizedToken = unquotedToken;
             conversionCost = 0;
             return true;
         }
@@ -2099,8 +2099,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (XamlScalarLiteralSemantics.TryParseDouble(unquotedToken, out doubleValue))
             {
-                expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
-                normalizedToken = expression;
+                expression = FormatDoubleLiteral(doubleValue);
+                normalizedToken = unquotedToken;
                 conversionCost = 50;
                 return true;
             }
@@ -2285,6 +2285,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             ValueKind: ResolvedValueKind.Literal);
     }
 
+    private static ResolvedValueConversionResult CreateLiteralConversion(
+        string expression,
+        ResolvedValueRequirements valueRequirements)
+    {
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.Literal,
+            ValueRequirements: valueRequirements);
+    }
+
     private static ResolvedValueConversionResult CreateMarkupExtensionConversion(
         string expression,
         bool requiresRuntimeServiceProvider = false,
@@ -2375,7 +2385,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         out SetterValueResolutionResult resolution,
         INamedTypeSymbol? selectorNestingTypeHint = null,
-        bool setterContext = true)
+        bool setterContext = true,
+        ImmutableArray<AttributeData> converterAttributes = default)
     {
         resolution = default;
 
@@ -2403,7 +2414,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 out var convertedSetterValue,
                 preferTypedStaticResourceCoercion: preferTypedStaticResourceCoercion,
                 allowObjectStringLiteralFallback: allowObjectStringLiteralFallbackDuringConversion,
-                selectorNestingTypeHint: selectorNestingTypeHint))
+                selectorNestingTypeHint: selectorNestingTypeHint,
+                converterAttributes: converterAttributes))
         {
             resolution = new SetterValueResolutionResult(
                 Expression: convertedSetterValue.Expression,
@@ -2541,13 +2553,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var contentProperty = !string.IsNullOrWhiteSpace(contentPropertyName)
             ? FindProperty(symbol, contentPropertyName!)
             : null;
-        if (contentProperty?.SetMethod is not null)
+        if (contentProperty is not null &&
+            CanUseContentPropertyForAttachment(contentProperty))
         {
+            if (TryGetReadOnlyCollectionContentAttachmentMode(symbol, contentProperty, out var collectionAttachmentMode))
+            {
+                return (collectionAttachmentMode, null);
+            }
+
             return (ResolvedChildAttachmentMode.Content, contentProperty.Name);
         }
 
         var implicitContentProperty = FindProperty(symbol, "Content");
-        if (implicitContentProperty?.SetMethod is not null)
+        if (implicitContentProperty is not null &&
+            CanUseContentPropertyForAttachment(implicitContentProperty))
         {
             return (ResolvedChildAttachmentMode.Content, implicitContentProperty.Name);
         }
@@ -2605,14 +2624,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
             {
-                if (property.SetMethod is null)
-                {
-                    continue;
-                }
-
                 if (property.GetAttributes().Any(attribute =>
                         attribute.AttributeClass?.ToDisplayString() == "Avalonia.Metadata.ContentAttribute" ||
-                        attribute.AttributeClass?.Name == "ContentAttribute"))
+                        attribute.AttributeClass?.Name == "ContentAttribute") &&
+                    CanUseContentPropertyForAttachment(property))
                 {
                     return property.Name;
                 }
@@ -2620,6 +2635,50 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static bool CanUseContentPropertyForAttachment(IPropertySymbol property)
+    {
+        if (property.SetMethod is not null)
+        {
+            return true;
+        }
+
+        if (property.GetMethod is null ||
+            property.Type is not INamedTypeSymbol namedPropertyType)
+        {
+            return false;
+        }
+
+        return HasDictionaryAddMethod(namedPropertyType) || HasDirectAddMethod(namedPropertyType);
+    }
+
+    private static bool TryGetReadOnlyCollectionContentAttachmentMode(
+        INamedTypeSymbol ownerType,
+        IPropertySymbol property,
+        out ResolvedChildAttachmentMode attachmentMode)
+    {
+        attachmentMode = ResolvedChildAttachmentMode.None;
+        if (property.SetMethod is not null)
+        {
+            return false;
+        }
+
+        if (property.Name.Equals("Children", StringComparison.Ordinal) &&
+            CanAddToCollectionProperty(ownerType, property.Name))
+        {
+            attachmentMode = ResolvedChildAttachmentMode.ChildrenCollection;
+            return true;
+        }
+
+        if (property.Name.Equals("Items", StringComparison.Ordinal) &&
+            CanAddToCollectionProperty(ownerType, property.Name))
+        {
+            attachmentMode = ResolvedChildAttachmentMode.ItemsCollection;
+            return true;
+        }
+
+        return false;
     }
 
     private static BindingPriorityScope ResolveCurrentBindingPriorityScope(
@@ -6342,7 +6401,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         if (XamlScalarLiteralSemantics.TryParseDouble(trimmed, out var doubleValue))
         {
-            expression = doubleValue.ToString("R", CultureInfo.InvariantCulture);
+            expression = FormatDoubleLiteral(doubleValue);
             return true;
         }
 
@@ -6978,7 +7037,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         bool preferTypedStaticResourceCoercion = true,
         bool allowObjectStringLiteralFallback = true,
         bool allowStaticParseMethodFallback = true,
-        INamedTypeSymbol? selectorNestingTypeHint = null)
+        INamedTypeSymbol? selectorNestingTypeHint = null,
+        ImmutableArray<AttributeData> converterAttributes = default)
     {
         conversion = default;
 
@@ -7016,7 +7076,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 preferTypedStaticResourceCoercion,
                 allowObjectStringLiteralFallback,
                 allowStaticParseMethodFallback,
-                selectorNestingTypeHint);
+                selectorNestingTypeHint,
+                converterAttributes);
         }
 
         if (IsAvaloniaPropertyType(type) &&
@@ -7140,14 +7201,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (type.SpecialType == SpecialType.System_Double &&
             XamlScalarLiteralSemantics.TryParseDouble(value, out var doubleValue))
         {
-            conversion = CreateLiteralConversion(doubleValue.ToString("R", CultureInfo.InvariantCulture) + "d");
+            conversion = CreateLiteralConversion(FormatDoubleLiteral(doubleValue));
             return true;
         }
 
         if (type.SpecialType == SpecialType.System_Single &&
             XamlScalarLiteralSemantics.TryParseSingle(value, out var floatValue))
         {
-            conversion = CreateLiteralConversion(floatValue.ToString("R", CultureInfo.InvariantCulture) + "f");
+            conversion = CreateLiteralConversion(FormatSingleLiteral(floatValue));
             return true;
         }
 
@@ -7220,6 +7281,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (TryConvertAvaloniaKeyGestureExpression(type, value, compilation, out var keyGestureExpression))
         {
             conversion = CreateLiteralConversion(keyGestureExpression);
+            return true;
+        }
+
+        if (TryConvertByTypeConverter(
+                type,
+                value,
+                compilation,
+                out var convertedByTypeConverterExpression,
+                out var typeConverterValueRequirements,
+                converterAttributes))
+        {
+            conversion = CreateLiteralConversion(
+                convertedByTypeConverterExpression,
+                typeConverterValueRequirements);
             return true;
         }
 
@@ -8163,7 +8238,42 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static string FormatDoubleLiteral(double value)
     {
+        if (double.IsNaN(value))
+        {
+            return "global::System.Double.NaN";
+        }
+
+        if (double.IsPositiveInfinity(value))
+        {
+            return "global::System.Double.PositiveInfinity";
+        }
+
+        if (double.IsNegativeInfinity(value))
+        {
+            return "global::System.Double.NegativeInfinity";
+        }
+
         return value.ToString("R", CultureInfo.InvariantCulture) + "d";
+    }
+
+    private static string FormatSingleLiteral(float value)
+    {
+        if (float.IsNaN(value))
+        {
+            return "global::System.Single.NaN";
+        }
+
+        if (float.IsPositiveInfinity(value))
+        {
+            return "global::System.Single.PositiveInfinity";
+        }
+
+        if (float.IsNegativeInfinity(value))
+        {
+            return "global::System.Single.NegativeInfinity";
+        }
+
+        return value.ToString("R", CultureInfo.InvariantCulture) + "f";
     }
 
     private static string FormatHexUInt32Literal(uint value)
@@ -8660,8 +8770,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string expression)
     {
         expression = string.Empty;
+        var trimmedValue = value.Trim();
         if (targetType.SpecialType == SpecialType.System_Object ||
-            string.IsNullOrWhiteSpace(value))
+            trimmedValue.Length == 0)
         {
             return false;
         }
@@ -8684,11 +8795,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             colorType is not null &&
             IsTypeAssignableTo(solidColorBrushType, targetType) &&
             TryConvertDeterministicSolidColorBrushExpression(
-                value,
+                trimmedValue,
                 compilation,
                 solidColorBrushType,
                 colorType,
                 out expression))
+        {
+            return true;
+        }
+
+        if (solidColorBrushType is not null &&
+            targetType is INamedTypeSymbol namedTargetType &&
+            SymbolEqualityComparer.Default.Equals(namedTargetType, solidColorBrushType) &&
+            TryConvertByStaticParseMethod(solidColorBrushType, trimmedValue, out expression))
         {
             return true;
         }
@@ -8698,7 +8817,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        expression = "global::Avalonia.Media.Brush.Parse(\"" + Escape(value.Trim()) + "\")";
+        expression = "global::Avalonia.Media.Brush.Parse(\"" + Escape(trimmedValue) + "\")";
         return true;
     }
 

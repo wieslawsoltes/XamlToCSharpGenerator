@@ -771,7 +771,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             diagnostics: diagnostics,
                             resolution: out var setterResolution,
                             selectorNestingTypeHint: selectorNestingTypeHint,
-                            setterContext: false))
+                            setterContext: false,
+                            converterAttributes: property.GetAttributes()))
                     {
                         continue;
                     }
@@ -793,7 +794,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             out var convertedValue,
                             allowObjectStringLiteralFallback: !options.StrictMode &&
                                                               conversionTargetType.SpecialType == SpecialType.System_Object,
-                            selectorNestingTypeHint: selectorNestingTypeHint))
+                            selectorNestingTypeHint: selectorNestingTypeHint,
+                            converterAttributes: property.GetAttributes()))
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             "AXSG0102",
@@ -824,7 +826,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     Condition: assignment.Condition,
                     ValueKind: valueKind,
                     RequiresStaticResourceResolver: requiresStaticResourceResolver,
-                    ValueRequirements: valueRequirements));
+                    ValueRequirements: valueRequirements,
+                    RequiresObjectInitializer: RequiresObjectInitializer(property, valueRequirements),
+                    ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                        property,
+                        compilation,
+                        unsafeAccessors)));
                 continue;
             }
 
@@ -890,7 +897,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             document,
             options,
             diagnostics,
-            assignments);
+            assignments,
+            unsafeAccessors);
 
         var children = ImmutableArray.CreateBuilder<ResolvedObjectNode>();
         foreach (var child in node.ChildObjects)
@@ -1573,7 +1581,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         currentSetterTargetType,
                         currentBindingPriorityScope,
                         out var inlineContentConversion,
-                        allowObjectStringLiteralFallback: !options.StrictMode))
+                        allowObjectStringLiteralFallback: !options.StrictMode,
+                        converterAttributes: contentProperty.GetAttributes()))
                 {
                     assignments.Add(new ResolvedPropertyAssignment(
                         PropertyName: contentProperty.Name,
@@ -1587,7 +1596,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Column: node.Column,
                         Condition: null,
                         ValueKind: inlineContentConversion.ValueKind,
-                        ValueRequirements: inlineContentConversion.EffectiveRequirements));
+                        ValueRequirements: inlineContentConversion.EffectiveRequirements,
+                        RequiresObjectInitializer: RequiresObjectInitializer(
+                            contentProperty,
+                            inlineContentConversion.EffectiveRequirements),
+                        ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                            contentProperty,
+                            compilation,
+                            unsafeAccessors)));
                     handledAsContentProperty = true;
                 }
                 else if (contentProperty is not null &&
@@ -1802,7 +1818,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         XamlDocumentModel document,
         GeneratorOptions options,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        ImmutableArray<ResolvedPropertyAssignment>.Builder assignments)
+        ImmutableArray<ResolvedPropertyAssignment>.Builder assignments,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder unsafeAccessors)
     {
         if (symbol is null ||
             !IsDataTemplateNode(node) ||
@@ -1851,7 +1868,28 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             BindingPriorityExpression: null,
             Line: node.Line,
             Column: node.Column,
-            Condition: node.Condition));
+            Condition: node.Condition,
+            RequiresObjectInitializer: RequiresObjectInitializer(
+                dataTypeProperty,
+                default),
+            ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                dataTypeProperty,
+                compilation,
+                unsafeAccessors)));
+    }
+
+    private static string? ResolveInitOnlySetterUnsafeAccessorMethodName(
+        IPropertySymbol property,
+        Compilation compilation,
+        ImmutableArray<ResolvedUnsafeAccessorDefinition>.Builder? unsafeAccessors)
+    {
+        var setter = property.SetMethod;
+        if (setter?.IsInitOnly != true || !SupportsUnsafeAccessor(compilation))
+        {
+            return null;
+        }
+
+        return RegisterUnsafeAccessorDefinition(unsafeAccessors, setter);
     }
 
     private static INamedTypeSymbol? ResolveNodeDataType(

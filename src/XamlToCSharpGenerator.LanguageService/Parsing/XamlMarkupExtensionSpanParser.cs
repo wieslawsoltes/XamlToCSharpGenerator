@@ -114,7 +114,7 @@ internal static class XamlMarkupExtensionSpanParser
         if (argumentsStartInInner < innerText.Length)
         {
             var argumentsText = innerText.Substring(argumentsStartInInner);
-            var segments = TopLevelTextParser.SplitTopLevelSegments(
+            var segments = MarkupExtensionTextParser.SplitTopLevelSegments(
                 argumentsText,
                 ',',
                 trimTokens: true,
@@ -143,7 +143,7 @@ internal static class XamlMarkupExtensionSpanParser
                         name = parsedName;
                         valueText = parsedValue;
 
-                        var equalsIndex = TopLevelTextParser.IndexOfTopLevel(segment.Text, '=');
+                        var equalsIndex = MarkupExtensionTextParser.IndexOfTopLevel(segment.Text, '=');
                         if (equalsIndex > 0)
                         {
                             nameStart = 0;

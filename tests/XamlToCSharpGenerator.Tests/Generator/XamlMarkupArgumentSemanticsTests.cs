@@ -29,6 +29,17 @@ public class XamlMarkupArgumentSemanticsTests
         Assert.Equal("Mode=OneWay", arguments[2]);
     }
 
+    [Fact]
+    public void SplitArguments_Honors_Escaped_Commas_In_Unquoted_Values()
+    {
+        var arguments = XamlMarkupArgumentSemantics.SplitArguments(
+            @"StringFormat=\{0:#\,##0\}, Mode=OneWay");
+
+        Assert.Equal(2, arguments.Length);
+        Assert.Equal(@"StringFormat=\{0:#\,##0\}", arguments[0]);
+        Assert.Equal("Mode=OneWay", arguments[1]);
+    }
+
     [Theory]
     [InlineData("Path=Name", XamlMarkupNamedArgumentParseStatus.Parsed, "Path", "Name")]
     [InlineData("=Name", XamlMarkupNamedArgumentParseStatus.LeadingEquals, "", "=Name")]
@@ -45,5 +56,13 @@ public class XamlMarkupArgumentSemanticsTests
         Assert.Equal(expectedStatus, status);
         Assert.Equal(expectedKey, key);
         Assert.Equal(expectedValue, value);
+    }
+
+    [Fact]
+    public void NormalizeValueToken_Unescapes_Unquoted_Markup_Text()
+    {
+        var normalized = XamlMarkupArgumentSemantics.NormalizeValueToken(@"\{0:0.#\}");
+
+        Assert.Equal("{0:0.#}", normalized);
     }
 }

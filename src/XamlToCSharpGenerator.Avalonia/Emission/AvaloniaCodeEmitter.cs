@@ -96,7 +96,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         {
             foreach (var namedElement in viewModel.NamedElements)
             {
-                sourceBuilder.AppendLine($"        {namedElement.FieldModifier} {namedElement.TypeName}? {SanitizeIdentifier(namedElement.Name)};");
+                sourceBuilder.AppendLine(
+                    $"        {namedElement.FieldModifier} {namedElement.TypeName} {SanitizeIdentifier(namedElement.Name)} = null!;");
             }
         }
 
@@ -127,7 +128,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine($"            global::XamlToCSharpGenerator.Runtime.XamlSourceGenRegistry.Register(\"{escapedUri}\", static __serviceProvider =>");
         sourceBuilder.AppendLine("            {");
         sourceBuilder.AppendLine("                var __instance = __CreateRootInstance(__serviceProvider);");
-        sourceBuilder.AppendLine("                __PopulateGeneratedObjectGraph(__instance, __serviceProvider);");
+        sourceBuilder.AppendLine("                __PopulateGeneratedObjectGraph(__instance, __serviceProvider, __rootConstructedWithInitializer: true);");
         if (!viewModel.Document.IsClassBacked && viewModel.EnableHotReload)
         {
             sourceBuilder.AppendLine("                __RegisterSourceGenHotReload(__instance);");
@@ -188,7 +189,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine("        }");
         sourceBuilder.AppendLine();
         sourceBuilder.AppendLine(
-            $"        internal static void __PopulateGeneratedObjectGraph({viewModel.RootObject.TypeName} __root, global::System.IServiceProvider? __serviceProvider = null, bool __replaceExistingCollections = false)");
+            $"        internal static void __PopulateGeneratedObjectGraph({viewModel.RootObject.TypeName} __root, global::System.IServiceProvider? __serviceProvider = null, bool __replaceExistingCollections = false, bool __rootConstructedWithInitializer = false)");
         sourceBuilder.AppendLine("        {");
         if (viewModel.EmitNameScopeRegistration)
         {
@@ -232,7 +233,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         sourceBuilder.AppendLine($"        internal static {viewModel.RootObject.TypeName} __BuildGeneratedObjectGraph()");
         sourceBuilder.AppendLine("        {");
         sourceBuilder.AppendLine("            var __root = __CreateRootInstance(null);");
-        sourceBuilder.AppendLine("            __PopulateGeneratedObjectGraph(__root, null);");
+        sourceBuilder.AppendLine("            __PopulateGeneratedObjectGraph(__root, null, __rootConstructedWithInitializer: true);");
         sourceBuilder.AppendLine("            return __root;");
 
         sourceBuilder.AppendLine("        }");
@@ -439,7 +440,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             foreach (var namedElement in viewModel.NamedElements)
             {
                 sourceBuilder.AppendLine(
-                    $"                    {SanitizeIdentifier(namedElement.Name)} = this.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\");");
+                    $"                    {SanitizeIdentifier(namedElement.Name)} = this.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\")!;");
             }
             sourceBuilder.AppendLine("                }");
             sourceBuilder.AppendLine();
@@ -724,6 +725,16 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         foreach (var assignment in node.PropertyAssignments)
         {
+            var canEmitInClrObjectInitializer = CanEmitInClrObjectInitializer(node, assignment);
+            var guardInitOnlySetterForExistingRoot =
+                canEmitInClrObjectInitializer &&
+                string.Equals(variableName, rootReference, StringComparison.Ordinal);
+            if (canEmitInClrObjectInitializer &&
+                !guardInitOnlySetterForExistingRoot)
+            {
+                continue;
+            }
+
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
@@ -743,7 +754,21 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (TryBuildSpecialClrSetterInvocation(
+                if (TryBuildInitOnlyClrSetterAccessorInvocation(
+                        assignment,
+                        variableName,
+                        clrAssignmentValueExpression,
+                        out var initOnlySetterInvocation))
+                {
+                    var initOnlySetterStatement = guardInitOnlySetterForExistingRoot
+                        ? BuildRootInitializerGuardedStatement(initOnlySetterInvocation)
+                        : initOnlySetterInvocation;
+                    EmitStatementAt(
+                        initOnlySetterStatement,
+                        assignment.Line,
+                        assignment.Column);
+                }
+                else if (TryBuildSpecialClrSetterInvocation(
                         variableName,
                         assignment.PropertyName,
                         assignment.ClrPropertyOwnerTypeName,
@@ -1593,6 +1618,16 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
+            var canEmitInClrObjectInitializer = CanEmitInClrObjectInitializer(node, assignment);
+            var guardInitOnlySetterForExistingRoot =
+                canEmitInClrObjectInitializer &&
+                string.Equals(variableName, rootReference, StringComparison.Ordinal);
+            if (canEmitInClrObjectInitializer &&
+                !guardInitOnlySetterForExistingRoot)
+            {
+                continue;
+            }
+
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
@@ -1612,7 +1647,21 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (TryBuildSpecialClrSetterInvocation(
+                if (TryBuildInitOnlyClrSetterAccessorInvocation(
+                        assignment,
+                        variableName,
+                        clrAssignmentValueExpression,
+                        out var initOnlySetterInvocation))
+                {
+                    var initOnlySetterStatement = guardInitOnlySetterForExistingRoot
+                        ? BuildRootInitializerGuardedStatement(initOnlySetterInvocation)
+                        : initOnlySetterInvocation;
+                    EmitStatementAt(
+                        initOnlySetterStatement,
+                        assignment.Line,
+                        assignment.Column);
+                }
+                else if (TryBuildSpecialClrSetterInvocation(
                         variableName,
                         assignment.PropertyName,
                         assignment.ClrPropertyOwnerTypeName,
@@ -2934,24 +2983,60 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     {
         if (!string.IsNullOrWhiteSpace(node.FactoryExpression))
         {
-            return node.FactoryExpression!;
+            if (!node.FactoryValueRequirements.RequiresMarkupContext)
+            {
+                return node.FactoryExpression!;
+            }
+
+            return ExpandMarkupContextExpression(
+                node.FactoryExpression!,
+                serviceProviderReference,
+                rootReference ?? "null",
+                intermediateRootReference ?? rootReference ?? "null",
+                "null",
+                "null",
+                baseUriExpression,
+                parentStackExpression ?? "global::System.Array.Empty<object>()");
         }
 
+        string creationExpression;
         if (node.UseServiceProviderConstructor &&
             ShouldUseBaseUriConstructor(node))
         {
-            return "new " + node.TypeName + "(__AXSGObjectGraph.TryCreateUri(" + baseUriExpression + "))";
+            creationExpression = "new " + node.TypeName + "(__AXSGObjectGraph.TryCreateUri(" + baseUriExpression + "))";
         }
-
-        return node.UseServiceProviderConstructor
-            ? BuildServiceProviderConstructorExpression(
+        else if (node.UseServiceProviderConstructor)
+        {
+            creationExpression = BuildServiceProviderConstructorExpression(
                 node,
                 serviceProviderReference,
                 baseUriExpression,
                 rootReference,
                 intermediateRootReference,
-                parentStackExpression)
-            : "new " + node.TypeName + "()";
+                parentStackExpression);
+        }
+        else
+        {
+            creationExpression = "new " + node.TypeName + "()";
+        }
+
+        if (!CanUseClrObjectInitializer(node))
+        {
+            return creationExpression;
+        }
+
+        var initializerParts = BuildClrObjectInitializerParts(node);
+        if (initializerParts.Count == 0)
+        {
+            return creationExpression;
+        }
+
+        return creationExpression + " { " + string.Join(", ", initializerParts) + " }";
+    }
+
+    private static string BuildRootInitializerGuardedStatement(string statement)
+    {
+        return "if (!__rootConstructedWithInitializer) " + statement;
     }
 
     private static string BuildServiceProviderConstructorExpression(
@@ -2981,6 +3066,65 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     private static bool ShouldUseBaseUriConstructor(ResolvedObjectNode node)
     {
         return node.HasSemantic(ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor);
+    }
+
+    private static bool CanUseClrObjectInitializer(ResolvedObjectNode node)
+    {
+        return string.IsNullOrWhiteSpace(node.FactoryExpression);
+    }
+
+    private static List<string> BuildClrObjectInitializerParts(ResolvedObjectNode node)
+    {
+        var initializerParts = new List<string>();
+        for (var index = 0; index < node.PropertyAssignments.Length; index++)
+        {
+            var assignment = node.PropertyAssignments[index];
+            if (!CanEmitInClrObjectInitializer(node, assignment))
+            {
+                continue;
+            }
+
+            initializerParts.Add(
+                assignment.PropertyName +
+                " = " +
+                BuildClrTypedValueExpression(assignment.ClrPropertyTypeName, assignment.ValueExpression));
+        }
+
+        return initializerParts;
+    }
+
+    private static bool CanEmitInClrObjectInitializer(
+        ResolvedObjectNode node,
+        ResolvedPropertyAssignment assignment)
+    {
+        return assignment.RequiresObjectInitializer &&
+               CanUseClrObjectInitializer(node) &&
+               assignment.Condition is null &&
+               !assignment.ValueRequirements.RequiresMarkupContext &&
+               string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyOwnerTypeName) &&
+               string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyFieldName) &&
+               !string.IsNullOrWhiteSpace(assignment.PropertyName);
+    }
+
+    private static bool TryBuildInitOnlyClrSetterAccessorInvocation(
+        ResolvedPropertyAssignment assignment,
+        string variableName,
+        string valueExpression,
+        out string statement)
+    {
+        statement = string.Empty;
+        if (string.IsNullOrWhiteSpace(assignment.ClrSetterUnsafeAccessorMethodName))
+        {
+            return false;
+        }
+
+        statement = assignment.ClrSetterUnsafeAccessorMethodName +
+                    "(" +
+                    variableName +
+                    ", " +
+                    BuildClrTypedValueExpression(assignment.ClrPropertyTypeName, valueExpression) +
+                    ");";
+        return true;
     }
 
     private static string BuildDictionaryKeyExpression(string propertyName, string keyExpression)

@@ -53,7 +53,7 @@ public static class XamlMarkupArgumentSemantics
             return ImmutableArray<string>.Empty;
         }
 
-        return TopLevelTextParser.SplitTopLevel(
+        return MarkupExtensionTextParser.SplitTopLevel(
             argumentsText,
             ',',
             trimTokens: true,
@@ -78,7 +78,7 @@ public static class XamlMarkupArgumentSemantics
             return XamlMarkupNamedArgumentParseStatus.None;
         }
 
-        var equalsIndex = TopLevelTextParser.IndexOfTopLevel(trimmedArgument, '=');
+        var equalsIndex = MarkupExtensionTextParser.IndexOfTopLevel(trimmedArgument, '=');
         if (equalsIndex < 0)
         {
             return XamlMarkupNamedArgumentParseStatus.None;
@@ -95,5 +95,29 @@ public static class XamlMarkupArgumentSemantics
         return key.Length == 0
             ? XamlMarkupNamedArgumentParseStatus.EmptyName
             : XamlMarkupNamedArgumentParseStatus.Parsed;
+    }
+
+    public static string NormalizeValueToken(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            return trimmed;
+        }
+
+        if (!XamlQuotedValueSemantics.IsWrapped(trimmed))
+        {
+            return MarkupExtensionTextParser.Unescape(trimmed);
+        }
+
+        var quote = trimmed[0];
+        var unescapedInner = MarkupExtensionTextParser.Unescape(
+            trimmed.Substring(1, trimmed.Length - 2));
+        return quote + unescapedInner + quote;
     }
 }

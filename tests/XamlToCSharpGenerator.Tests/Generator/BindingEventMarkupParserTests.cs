@@ -50,6 +50,20 @@ public class BindingEventMarkupParserTests
     }
 
     [Fact]
+    public void TryParseBindingMarkup_Unescapes_Escaped_StringFormat_Braces()
+    {
+        var success = BindingEventMarkupParser.TryParseBindingMarkup(
+            @"{Binding #TintOpacitySlider.Value, StringFormat=\{0:0.#\}}",
+            TryParseMarkupExtension,
+            out var bindingMarkup);
+
+        Assert.True(success);
+        Assert.Equal("TintOpacitySlider", bindingMarkup.ElementName);
+        Assert.Equal("Value", bindingMarkup.Path);
+        Assert.Equal("{0:0.#}", bindingMarkup.StringFormat);
+    }
+
+    [Fact]
     public void TryParseEventBindingMarkup_Parses_Command_And_Binding_Parameter()
     {
         Assert.True(

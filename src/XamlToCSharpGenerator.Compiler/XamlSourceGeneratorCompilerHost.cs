@@ -9,6 +9,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.Core.Abstractions;
@@ -401,9 +403,9 @@ public static class XamlSourceGeneratorCompilerHost
                         compilation,
                         options);
 
-                    ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                     if (parseResult is null)
                     {
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                         usedFallbackSource = TryUseCachedSource(
                             sourceContext,
                             cacheKey,
@@ -417,9 +419,27 @@ public static class XamlSourceGeneratorCompilerHost
 
                     if (parseResult.Precompile == false)
                     {
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                         status = "skipped-precompile";
                         return;
                     }
+
+                    if (TryCreateNonPartialClassDiagnostic(parseResult, compilation, out var nonPartialClassDiagnostic))
+                    {
+                        parseDiagnostics = parseDiagnostics.Add(nonPartialClassDiagnostic);
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
+                        usedFallbackSource = TryUseCachedSource(
+                            sourceContext,
+                            cacheKey,
+                            parseResult.FilePath,
+                            resilienceEnabled,
+                            options,
+                            frameworkProfile.Id);
+                        status = usedFallbackSource ? "fallback-nonpartial-class" : "skipped-nonpartial-class";
+                        return;
+                    }
+
+                    ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
 
                     status = "bind";
                     var bindStart = Stopwatch.GetTimestamp();
@@ -541,6 +561,7 @@ public static class XamlSourceGeneratorCompilerHost
                 "AXSG0106" => DiagnosticCatalog.ConstructionDirectiveInvalid,
                 "AXSG0107" => DiagnosticCatalog.ConstructionFactoryNotFound,
                 "AXSG0108" => DiagnosticCatalog.ArrayConstructionInvalid,
+                "AXSG0109" => DiagnosticCatalog.ClassMustBePartial,
                 "AXSG0110" => DiagnosticCatalog.CompiledBindingRequiresDataType,
                 "AXSG0111" => DiagnosticCatalog.CompiledBindingPathInvalid,
                 "AXSG0112" => DiagnosticCatalog.TypeResolutionAmbiguous,
@@ -1600,6 +1621,54 @@ public static class XamlSourceGeneratorCompilerHost
                 diagnostics.RemoveAt(index);
             }
         }
+    }
+
+    private static bool TryCreateNonPartialClassDiagnostic(
+        XamlDocumentModel document,
+        Compilation compilation,
+        out DiagnosticInfo diagnostic)
+    {
+        diagnostic = null!;
+        if (!document.IsClassBacked ||
+            string.IsNullOrWhiteSpace(document.ClassFullName))
+        {
+            return false;
+        }
+
+        if (compilation.GetTypeByMetadataName(document.ClassFullName!) is not INamedTypeSymbol classSymbol ||
+            HasOnlyPartialSourceDeclarations(classSymbol))
+        {
+            return false;
+        }
+
+        diagnostic = new DiagnosticInfo(
+            "AXSG0109",
+            $"Type '{document.ClassFullName}' must be declared partial to use the SourceGen XAML backend.",
+            document.FilePath,
+            document.RootObject.Line,
+            document.RootObject.Column,
+            IsError: false);
+        return true;
+    }
+
+    private static bool HasOnlyPartialSourceDeclarations(INamedTypeSymbol typeSymbol)
+    {
+        var sawSourceDeclaration = false;
+        foreach (var syntaxReference in typeSymbol.DeclaringSyntaxReferences)
+        {
+            if (syntaxReference.GetSyntax() is not TypeDeclarationSyntax typeDeclaration)
+            {
+                continue;
+            }
+
+            sawSourceDeclaration = true;
+            if (!typeDeclaration.Modifiers.Any(static modifier => modifier.IsKind(SyntaxKind.PartialKeyword)))
+            {
+                return false;
+            }
+        }
+
+        return sawSourceDeclaration;
     }
 
     internal static string? TryInferClassNameFromTargetPath(string targetPath, GeneratorOptions options)

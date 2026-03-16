@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Windows.Input;
@@ -1008,6 +1009,86 @@ public class SourceGenMarkupExtensionRuntimeTests
         var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
             provider.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
         Assert.Equal([root, upstreamParent], parentStackProvider.Parents.ToArray());
+    }
+
+    [Fact]
+    public void CreateTypeConverterContext_Exposes_TypeDescriptorContext_And_Markup_Services()
+    {
+        var upstreamParent = new Border();
+        var parentProvider = new DictionaryServiceProvider(new Dictionary<Type, object>
+        {
+            [typeof(IAvaloniaXamlIlParentStackProvider)] = new TestParentStackProvider([upstreamParent])
+        });
+        var root = new UserControl();
+        var intermediateRoot = new Border();
+        var target = new BorderTarget();
+        var propertyInfo = SourceGenProvideValueTargetPropertyFactory.CreateWritable<BorderTarget, object?>(
+            nameof(BorderTarget.Value),
+            static (holder, value) => holder.Value = value);
+
+        var context = SourceGenMarkupExtensionRuntime.CreateTypeConverterContext(
+            parentProvider,
+            root,
+            intermediateRoot,
+            target,
+            propertyInfo,
+            "avares://Demo/App.axaml",
+            [target]);
+
+        Assert.Same(context, context.GetService(typeof(ITypeDescriptorContext)));
+        Assert.Same(target, context.Instance);
+        Assert.Null(context.Container);
+        Assert.NotNull(context.PropertyDescriptor);
+        var propertyDescriptor = context.PropertyDescriptor!;
+        Assert.Equal(nameof(BorderTarget.Value), propertyDescriptor.Name);
+        Assert.Equal(typeof(BorderTarget), propertyDescriptor.ComponentType);
+        Assert.Equal(typeof(object), propertyDescriptor.PropertyType);
+        Assert.False(propertyDescriptor.IsReadOnly);
+        Assert.Throws<NotSupportedException>(context.OnComponentChanged);
+        Assert.Throws<NotSupportedException>(() => context.OnComponentChanging());
+
+        var rootProvider = Assert.IsAssignableFrom<IRootObjectProvider>(context.GetService(typeof(IRootObjectProvider)));
+        Assert.Same(root, rootProvider.RootObject);
+        Assert.Same(intermediateRoot, rootProvider.IntermediateRootObject);
+
+        var provideValueTarget = Assert.IsAssignableFrom<IProvideValueTarget>(context.GetService(typeof(IProvideValueTarget)));
+        Assert.Same(target, provideValueTarget.TargetObject);
+        Assert.Same(propertyInfo, provideValueTarget.TargetProperty);
+
+        var uriContext = Assert.IsAssignableFrom<IUriContext>(context.GetService(typeof(IUriContext)));
+        Assert.Equal(new Uri("avares://Demo/App.axaml"), uriContext.BaseUri);
+
+        var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
+            context.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
+        Assert.Equal([target, upstreamParent], parentStackProvider.Parents.ToArray());
+    }
+
+    [Fact]
+    public void CreateTypeConverterContext_Allows_Missing_Root_Anchors_For_Root_Factory_Conversion()
+    {
+        var context = SourceGenMarkupExtensionRuntime.CreateTypeConverterContext(
+            parentServiceProvider: null,
+            rootObject: null,
+            intermediateRootObject: null,
+            targetObject: null,
+            targetProperty: null,
+            baseUri: "avares://Demo/App.axaml",
+            parentStack: null);
+
+        var rootProvider = Assert.IsAssignableFrom<IRootObjectProvider>(context.GetService(typeof(IRootObjectProvider)));
+        Assert.Null(rootProvider.RootObject);
+        Assert.Null(rootProvider.IntermediateRootObject);
+
+        var provideValueTarget = Assert.IsAssignableFrom<IProvideValueTarget>(context.GetService(typeof(IProvideValueTarget)));
+        Assert.Null(provideValueTarget.TargetObject);
+        Assert.Same(AvaloniaProperty.UnsetValue, provideValueTarget.TargetProperty);
+
+        var uriContext = Assert.IsAssignableFrom<IUriContext>(context.GetService(typeof(IUriContext)));
+        Assert.Equal(new Uri("avares://Demo/App.axaml"), uriContext.BaseUri);
+
+        var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
+            context.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
+        Assert.Empty(parentStackProvider.Parents);
     }
 
     private sealed class DictionaryServiceProvider : IServiceProvider

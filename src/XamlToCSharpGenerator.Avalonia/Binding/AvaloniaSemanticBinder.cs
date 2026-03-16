@@ -32,6 +32,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private const string SourceGenXamlTypeAliasAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXamlTypeAliasAttribute";
     private const string SourceGenXamlPropertyAliasAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXamlPropertyAliasAttribute";
     private const string SourceGenXamlAvaloniaPropertyAliasAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXamlAvaloniaPropertyAliasAttribute";
+    private const string TypeConverterAttributeMetadataName = "System.ComponentModel.TypeConverterAttribute";
+    private const string TypeConverterMetadataName = "System.ComponentModel.TypeConverter";
     private const string MarkupContextServiceProviderToken = "__AXSG_CTX_SERVICE_PROVIDER__";
     private const string MarkupContextRootObjectToken = "__AXSG_CTX_ROOT_OBJECT__";
     private const string MarkupContextIntermediateRootObjectToken = "__AXSG_CTX_INTERMEDIATE_ROOT_OBJECT__";
