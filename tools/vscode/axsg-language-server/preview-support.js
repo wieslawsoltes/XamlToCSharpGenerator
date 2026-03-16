@@ -825,7 +825,13 @@ class AvaloniaPreviewController {
         await this.openPreviewForActiveEditor();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await vscode.window.showErrorMessage(`AXSG preview failed: ${message}`);
+        const choice = await vscode.window.showErrorMessage(`AXSG preview failed: ${message}`, 'Show Log');
+        if (choice === 'Show Log') {
+          const channel = this.getOutputChannel && this.getOutputChannel();
+          if (channel && typeof channel.show === 'function') {
+            channel.show(true);
+          }
+        }
       }
     }));
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
