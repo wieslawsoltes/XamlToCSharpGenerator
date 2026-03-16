@@ -5,59 +5,7 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/compiler-host-and-project-model</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/binding-and-expression-model</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/tooling-surface</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/glossary</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/installation</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/overview</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/generated-artifacts-and-runtime</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/quickstart</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/custom-framework-profiles</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -65,11 +13,27 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/custom-framework-profiles</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/glossary</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/docs-and-release-infrastructure</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/generated-artifacts-and-runtime</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/quickstart</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -77,11 +41,27 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/language-service-and-compiler-performance</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/docs-and-release-infrastructure</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/performance-and-benchmarking</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/overview</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/compiler-host-and-project-model</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -93,23 +73,15 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture/compiler-pipeline</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/api-navigation-guide</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/tooling-surface</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -121,11 +93,11 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/assembly-catalog</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/avalonia</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/avalonia</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/concepts/binding-and-expression-model</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -133,11 +105,19 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/compiler</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/assembly-catalog</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/compiler-stack</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/compiler</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -145,15 +125,11 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/configuration-migration</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/configuration-model</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/editor-avalonia</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/configuration-migration</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -161,15 +137,15 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/framework-abstractions</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/installation</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/generator</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/feature-coverage-matrix</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -185,15 +161,15 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/mini-language-parsing</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/language-service</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/lunet-docs-pipeline</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/mini-language-parsing</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/architecture/compiler-pipeline</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -201,11 +177,7 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/namespace-expression-and-framework</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/namespace-language-service-and-tooling</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/noui</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -213,7 +185,7 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/noui</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/namespace-language-service-and-tooling</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -221,11 +193,11 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/package-catalog</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/api-navigation-guide</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/package-guides</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/package-catalog</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -245,11 +217,11 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/runtime</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/tooling-stack</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/tooling-stack</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/runtime</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -261,7 +233,7 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/compiled-bindings</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/lunet-docs-pipeline</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -269,15 +241,19 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/compiled-bindings</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/csharp-expressions</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/event-bindings</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/global-xmlns-and-project-configuration</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/global-xmlns-and-project-configuration</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -286,10 +262,6 @@
   </url>
   <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/property-elements-templatebinding-and-attached-properties</loc>
-    <lastmod>2026-03-16</lastmod>
-  </url>
-  <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -321,11 +293,15 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/package-selection-and-integration</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
     <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/packaging-and-release</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/package-selection-and-integration</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -333,7 +309,23 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/framework-abstractions</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/vscode-language-service</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/package-guides</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/configuration-model</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/namespace-expression-and-framework</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
@@ -341,7 +333,15 @@
     <lastmod>2026-03-16</lastmod>
   </url>
   <url>
-    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/vscode-language-service</loc>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/xaml/event-bindings</loc>
+    <lastmod>2026-03-16</lastmod>
+  </url>
+  <url>
+    <loc>https://wieslawsoltes.github.io/XamlToCSharpGenerator/XamlToCSharpGenerator/articles/reference/feature-coverage-matrix</loc>
     <lastmod>2026-03-16</lastmod>
   </url>
 </urlset>
