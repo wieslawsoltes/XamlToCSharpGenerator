@@ -18908,6 +18908,91 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Uses_TypeConverter_With_TargetType_Constructor_For_Custom_Target_Type_Literals()
+    {
+        const string code = """
+            namespace System.ComponentModel
+            {
+                [global::System.AttributeUsage(
+                    global::System.AttributeTargets.Class |
+                    global::System.AttributeTargets.Struct |
+                    global::System.AttributeTargets.Enum |
+                    global::System.AttributeTargets.Property)]
+                public sealed class TypeConverterAttribute : global::System.Attribute
+                {
+                    public TypeConverterAttribute(global::System.Type converterType)
+                    {
+                    }
+                }
+
+                public class TypeConverter
+                {
+                    public virtual object? ConvertFromInvariantString(string text) => text;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+
+                public sealed class ProbeControl
+                {
+                    public global::Demo.FancyLength WidthHint { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                [global::System.ComponentModel.TypeConverter(typeof(global::Demo.TargetAwareFancyLengthConverter))]
+                public readonly struct FancyLength
+                {
+                    public FancyLength(string text)
+                    {
+                        Text = text;
+                    }
+
+                    public string Text { get; }
+                }
+
+                public sealed class TargetAwareFancyLengthConverter : global::System.ComponentModel.TypeConverter
+                {
+                    public TargetAwareFancyLengthConverter(global::System.Type targetType)
+                    {
+                    }
+
+                    public override object? ConvertFromInvariantString(string text)
+                    {
+                        return new FancyLength(text);
+                    }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl WidthHint="42px" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "new global::Demo.TargetAwareFancyLengthConverter(typeof(global::Demo.FancyLength)).ConvertFromInvariantString(\"42px\")",
+            generated);
+    }
+
+    [Fact]
     public void Uses_Property_Level_TypeConverter_For_Object_Typed_Properties()
     {
         const string code = """
@@ -19244,6 +19329,54 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("new global::Demo.SvgSource()", generated);
         Assert.Contains("Css =", generated);
         Assert.DoesNotContain("new global::Demo.SvgSource();", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emits_InitOnly_Root_Clr_Property_Assignments_For_Existing_Root_Instances_Using_UnsafeAccessor()
+    {
+        const string code = """
+            namespace System.Runtime.CompilerServices
+            {
+                public sealed class IsExternalInit { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string? Title { get; init; }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <local:MainView xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:local="clr-namespace:Demo"
+                            x:Class="Demo.MainView"
+                            Title="Hello" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("return new global::Demo.MainView() { Title =", generated);
+        Assert.Contains("\"Hello\"", generated);
+        Assert.Contains("if (!__rootConstructedWithInitializer) __AXSG_UnsafeAccessor_", generated);
+        Assert.Contains("private static extern void __AXSG_UnsafeAccessor_", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(this, null);", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(__root, null, __rootConstructedWithInitializer: true);", generated);
     }
 
     [Fact]

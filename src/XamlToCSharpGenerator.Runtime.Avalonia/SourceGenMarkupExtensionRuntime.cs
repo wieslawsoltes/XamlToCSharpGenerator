@@ -1482,9 +1482,9 @@ public static class SourceGenMarkupExtensionRuntime
     /// </summary>
     public static ITypeDescriptorContext CreateTypeConverterContext(
         IServiceProvider? parentServiceProvider,
-        object rootObject,
-        object intermediateRootObject,
-        object targetObject,
+        object? rootObject,
+        object? intermediateRootObject,
+        object? targetObject,
         object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack)
@@ -1795,9 +1795,9 @@ public static class SourceGenMarkupExtensionRuntime
 
     private static MarkupExtensionServiceProvider CreateContextProvider(
         IServiceProvider? parentServiceProvider,
-        object rootObject,
-        object intermediateRootObject,
-        object targetObject,
+        object? rootObject,
+        object? intermediateRootObject,
+        object? targetObject,
         object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack)
@@ -1815,11 +1815,10 @@ public static class SourceGenMarkupExtensionRuntime
     private static Uri ResolveBaseUri(
         IServiceProvider? parentServiceProvider,
         string? baseUri,
-        object rootObject,
-        object intermediateRootObject,
-        object targetObject)
+        object? rootObject,
+        object? intermediateRootObject,
+        object? targetObject)
     {
-        var fallbackAssemblyName = ResolveFallbackAssemblyName(rootObject, intermediateRootObject, targetObject);
         if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext parentUriContext &&
             parentUriContext.BaseUri is { } parentBaseUri)
         {
@@ -1827,11 +1826,26 @@ public static class SourceGenMarkupExtensionRuntime
             {
                 return parentBaseUri;
             }
+        }
 
-            if (TryResolveAbsoluteBaseUri(parentBaseUri.OriginalString, fallbackAssemblyName, out var normalizedParentBaseUri))
-            {
-                return normalizedParentBaseUri;
-            }
+        if (TryResolveExplicitAbsoluteBaseUri(baseUri, out var explicitBaseUri))
+        {
+            return explicitBaseUri;
+        }
+
+        var fallbackAssemblyName = ResolveFallbackAssemblyName(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject);
+        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext relativeParentUriContext &&
+            relativeParentUriContext.BaseUri is { } relativeParentBaseUri &&
+            TryResolveAbsoluteBaseUri(
+                relativeParentBaseUri.OriginalString,
+                fallbackAssemblyName,
+                out var normalizedParentBaseUri))
+        {
+            return normalizedParentBaseUri;
         }
 
         if (TryResolveAbsoluteBaseUri(baseUri, fallbackAssemblyName, out var resolvedBaseUri))
@@ -1840,6 +1854,25 @@ public static class SourceGenMarkupExtensionRuntime
         }
 
         return new Uri("avares://" + fallbackAssemblyName + "/");
+    }
+
+    private static bool TryResolveExplicitAbsoluteBaseUri(string? baseUri, out Uri resolvedBaseUri)
+    {
+        resolvedBaseUri = default!;
+        if (string.IsNullOrWhiteSpace(baseUri))
+        {
+            return false;
+        }
+
+        var trimmedBaseUri = baseUri.Trim();
+        if (!HasExplicitUriScheme(trimmedBaseUri) ||
+            !Uri.TryCreate(trimmedBaseUri, UriKind.Absolute, out var absoluteBaseUri))
+        {
+            return false;
+        }
+
+        resolvedBaseUri = absoluteBaseUri;
+        return true;
     }
 
     private static bool TryResolveAbsoluteBaseUri(
@@ -1934,36 +1967,79 @@ public static class SourceGenMarkupExtensionRuntime
     }
 
     private static string ResolveFallbackAssemblyName(
-        object rootObject,
-        object intermediateRootObject,
-        object targetObject)
+        IServiceProvider? parentServiceProvider,
+        object? rootObject,
+        object? intermediateRootObject,
+        object? targetObject)
     {
-        var rootAssemblyName = rootObject.GetType().Assembly.GetName().Name;
-        if (!string.IsNullOrWhiteSpace(rootAssemblyName))
+        if (TryGetAssemblyName(rootObject, out var rootAssemblyName))
         {
             return rootAssemblyName;
         }
 
-        var intermediateAssemblyName = intermediateRootObject.GetType().Assembly.GetName().Name;
-        if (!string.IsNullOrWhiteSpace(intermediateAssemblyName))
+        if (TryGetAssemblyName(intermediateRootObject, out var intermediateAssemblyName))
         {
             return intermediateAssemblyName;
         }
 
-        var targetAssemblyName = targetObject.GetType().Assembly.GetName().Name;
-        if (!string.IsNullOrWhiteSpace(targetAssemblyName))
+        if (TryGetAssemblyName(targetObject, out var targetAssemblyName))
         {
             return targetAssemblyName;
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IRootObjectProvider)) is IRootObjectProvider rootObjectProvider)
+        {
+            if (TryGetAssemblyName(rootObjectProvider.RootObject, out var providerRootAssemblyName))
+            {
+                return providerRootAssemblyName;
+            }
+
+            if (TryGetAssemblyName(rootObjectProvider.IntermediateRootObject, out var providerIntermediateAssemblyName))
+            {
+                return providerIntermediateAssemblyName;
+            }
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IProvideValueTarget)) is IProvideValueTarget provideValueTarget &&
+            TryGetAssemblyName(provideValueTarget.TargetObject, out var providerTargetAssemblyName))
+        {
+            return providerTargetAssemblyName;
+        }
+
+        if (parentServiceProvider?.GetService(typeof(IUriContext)) is IUriContext uriContext &&
+            uriContext.BaseUri is { IsAbsoluteUri: true } providerBaseUri &&
+            !string.IsNullOrWhiteSpace(providerBaseUri.Host))
+        {
+            return providerBaseUri.Host;
         }
 
         return "sourcegen";
     }
 
-    private static object[] BuildParentStack(object targetObject, IReadOnlyList<object>? parentStack)
+    private static bool TryGetAssemblyName(object? candidate, out string assemblyName)
+    {
+        assemblyName = string.Empty;
+        if (candidate is null || ReferenceEquals(candidate, AvaloniaProperty.UnsetValue))
+        {
+            return false;
+        }
+
+        var candidateType = candidate as Type ?? candidate.GetType();
+        var resolvedAssemblyName = candidateType.Assembly.GetName().Name;
+        if (string.IsNullOrWhiteSpace(resolvedAssemblyName))
+        {
+            return false;
+        }
+
+        assemblyName = resolvedAssemblyName;
+        return true;
+    }
+
+    private static object[] BuildParentStack(object? targetObject, IReadOnlyList<object>? parentStack)
     {
         if (parentStack is null || parentStack.Count == 0)
         {
-            return [targetObject];
+            return targetObject is null ? [] : [targetObject];
         }
 
         var stack = new object[parentStack.Count];
@@ -2394,7 +2470,7 @@ public static class SourceGenMarkupExtensionRuntime
         }
     }
 
-    private sealed class MarkupExtensionServiceProvider :
+        private sealed class MarkupExtensionServiceProvider :
         IServiceProvider,
         ITypeDescriptorContext,
         IProvideValueTarget,
@@ -2403,18 +2479,18 @@ public static class SourceGenMarkupExtensionRuntime
         IAvaloniaXamlIlParentStackProvider
     {
         private readonly IServiceProvider? _parentServiceProvider;
-        private readonly object _rootObject;
-        private readonly object _intermediateRootObject;
-        private readonly object _targetObject;
+        private readonly object? _rootObject;
+        private readonly object? _intermediateRootObject;
+        private readonly object? _targetObject;
         private readonly object? _targetProperty;
         private readonly object[] _parentStack;
         private readonly Uri _baseUri;
 
         public MarkupExtensionServiceProvider(
             IServiceProvider? parentServiceProvider,
-            object rootObject,
-            object intermediateRootObject,
-            object targetObject,
+            object? rootObject,
+            object? intermediateRootObject,
+            object? targetObject,
             object? targetProperty,
             Uri baseUri,
             object[] parentStack)
@@ -2428,13 +2504,13 @@ public static class SourceGenMarkupExtensionRuntime
             _parentStack = parentStack;
         }
 
-        public object TargetObject => _targetObject;
+        public object TargetObject => _targetObject!;
 
         public object TargetProperty => _targetProperty ?? AvaloniaProperty.UnsetValue;
 
-        public object RootObject => _rootObject;
+        public object RootObject => _rootObject!;
 
-        public object IntermediateRootObject => _intermediateRootObject;
+        public object IntermediateRootObject => _intermediateRootObject!;
 
         public IContainer? Container => null;
 
@@ -2510,6 +2586,11 @@ public static class SourceGenMarkupExtensionRuntime
             for (var index = 0; index < _parentStack.Length; index++)
             {
                 var parent = _parentStack[index];
+                if (parent is null)
+                {
+                    continue;
+                }
+
                 if (seen.Add(parent))
                 {
                     yield return parent;

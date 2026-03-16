@@ -513,19 +513,33 @@ public sealed partial class AvaloniaSemanticBinder
         if (converterType is null ||
             converterType.DeclaredAccessibility != Accessibility.Public ||
             converterType.IsAbstract ||
-            !HasPublicParameterlessConstructor(converterType) ||
             !IsTypeConverterType(converterType, compilation))
         {
             return false;
         }
 
-        if (TryBuildContextAwareTypeConverterExpression(type, value, compilation, converterType, out expression))
+        if (!TryBuildTypeConverterConstructionExpression(type, converterType, out var converterConstructionExpression))
+        {
+            return false;
+        }
+
+        if (TryBuildContextAwareTypeConverterExpression(
+                type,
+                value,
+                compilation,
+                converterType,
+                converterConstructionExpression,
+                out expression))
         {
             valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
             return true;
         }
 
-        return TryBuildInvariantStringTypeConverterExpression(type, value, converterType, out expression);
+        return TryBuildInvariantStringTypeConverterExpression(
+            type,
+            value,
+            converterConstructionExpression,
+            out expression);
     }
 
     private static bool TryBuildContextAwareTypeConverterExpression(
@@ -533,6 +547,7 @@ public sealed partial class AvaloniaSemanticBinder
         string value,
         Compilation compilation,
         INamedTypeSymbol converterType,
+        string converterConstructionExpression,
         out string expression)
     {
         expression = string.Empty;
@@ -543,9 +558,9 @@ public sealed partial class AvaloniaSemanticBinder
 
         expression = "(" +
                      targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
-                     ")new " +
-                     converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
-                     "().ConvertFrom(" +
+                     ")" +
+                     converterConstructionExpression +
+                     ".ConvertFrom(" +
                      BuildTypeConverterContextExpression() +
                      ", global::System.Globalization.CultureInfo.InvariantCulture, \"" +
                      Escape(value) +
@@ -556,17 +571,43 @@ public sealed partial class AvaloniaSemanticBinder
     private static bool TryBuildInvariantStringTypeConverterExpression(
         ITypeSymbol targetType,
         string value,
-        INamedTypeSymbol converterType,
+        string converterConstructionExpression,
         out string expression)
     {
         expression = "(" +
                      targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
-                     ")new " +
-                     converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
-                     "().ConvertFromInvariantString(\"" +
+                     ")" +
+                     converterConstructionExpression +
+                     ".ConvertFromInvariantString(\"" +
                      Escape(value) +
                      "\")";
         return true;
+    }
+
+    private static bool TryBuildTypeConverterConstructionExpression(
+        ITypeSymbol targetType,
+        INamedTypeSymbol converterType,
+        out string expression)
+    {
+        var converterTypeExpression = converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (HasPublicParameterlessConstructor(converterType))
+        {
+            expression = "new " + converterTypeExpression + "()";
+            return true;
+        }
+
+        if (HasPublicConstructorWithParameterTypes(converterType, "global::System.Type"))
+        {
+            expression = "new " +
+                         converterTypeExpression +
+                         "(typeof(" +
+                         targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                         "))";
+            return true;
+        }
+
+        expression = string.Empty;
+        return false;
     }
 
     private static bool HasContextAwareTypeConverterContract(INamedTypeSymbol converterType, Compilation compilation)

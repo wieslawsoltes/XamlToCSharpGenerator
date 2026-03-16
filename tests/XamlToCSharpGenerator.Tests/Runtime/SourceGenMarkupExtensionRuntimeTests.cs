@@ -1058,6 +1058,34 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal([target, upstreamParent], parentStackProvider.Parents.ToArray());
     }
 
+    [Fact]
+    public void CreateTypeConverterContext_Allows_Missing_Root_Anchors_For_Root_Factory_Conversion()
+    {
+        var context = SourceGenMarkupExtensionRuntime.CreateTypeConverterContext(
+            parentServiceProvider: null,
+            rootObject: null,
+            intermediateRootObject: null,
+            targetObject: null,
+            targetProperty: null,
+            baseUri: "avares://Demo/App.axaml",
+            parentStack: null);
+
+        var rootProvider = Assert.IsAssignableFrom<IRootObjectProvider>(context.GetService(typeof(IRootObjectProvider)));
+        Assert.Null(rootProvider.RootObject);
+        Assert.Null(rootProvider.IntermediateRootObject);
+
+        var provideValueTarget = Assert.IsAssignableFrom<IProvideValueTarget>(context.GetService(typeof(IProvideValueTarget)));
+        Assert.Null(provideValueTarget.TargetObject);
+        Assert.Same(AvaloniaProperty.UnsetValue, provideValueTarget.TargetProperty);
+
+        var uriContext = Assert.IsAssignableFrom<IUriContext>(context.GetService(typeof(IUriContext)));
+        Assert.Equal(new Uri("avares://Demo/App.axaml"), uriContext.BaseUri);
+
+        var parentStackProvider = Assert.IsAssignableFrom<IAvaloniaXamlIlParentStackProvider>(
+            context.GetService(typeof(IAvaloniaXamlIlParentStackProvider)));
+        Assert.Empty(parentStackProvider.Parents);
+    }
+
     private sealed class DictionaryServiceProvider : IServiceProvider
     {
         private readonly IReadOnlyDictionary<Type, object> _services;
