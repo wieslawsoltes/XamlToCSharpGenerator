@@ -96,7 +96,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         {
             foreach (var namedElement in viewModel.NamedElements)
             {
-                sourceBuilder.AppendLine($"        {namedElement.FieldModifier} {namedElement.TypeName}? {SanitizeIdentifier(namedElement.Name)};");
+                sourceBuilder.AppendLine(
+                    $"        {namedElement.FieldModifier} {namedElement.TypeName} {SanitizeIdentifier(namedElement.Name)} = null!;");
             }
         }
 
@@ -439,7 +440,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             foreach (var namedElement in viewModel.NamedElements)
             {
                 sourceBuilder.AppendLine(
-                    $"                    {SanitizeIdentifier(namedElement.Name)} = this.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\");");
+                    $"                    {SanitizeIdentifier(namedElement.Name)} = this.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\")!;");
             }
             sourceBuilder.AppendLine("                }");
             sourceBuilder.AppendLine();
@@ -724,12 +725,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         foreach (var assignment in node.PropertyAssignments)
         {
-            var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             if (CanEmitInClrObjectInitializer(node, assignment))
             {
                 continue;
             }
 
+            var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
             var bindingAnchorExpression =
@@ -1598,12 +1599,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             if (CanEmitInClrObjectInitializer(node, assignment))
             {
                 continue;
             }
 
+            var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
             var bindingAnchorExpression =
@@ -2947,8 +2948,8 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             return node.FactoryExpression!;
         }
 
-        if (node.UseServiceProviderConstructor &&
         string creationExpression;
+        if (node.UseServiceProviderConstructor &&
             ShouldUseBaseUriConstructor(node))
         {
             creationExpression = "new " + node.TypeName + "(__AXSGObjectGraph.TryCreateUri(" + baseUriExpression + "))";
@@ -3011,7 +3012,6 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         return node.HasSemantic(ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor);
     }
 
-    private static string BuildDictionaryKeyExpression(string propertyName, string keyExpression)
     private static bool CanUseClrObjectInitializer(ResolvedObjectNode node)
     {
         return string.IsNullOrWhiteSpace(node.FactoryExpression);
@@ -3050,6 +3050,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                !string.IsNullOrWhiteSpace(assignment.PropertyName);
     }
 
+    private static string BuildDictionaryKeyExpression(string propertyName, string keyExpression)
     {
         if (!string.Equals(propertyName, "ThemeDictionaries", StringComparison.Ordinal))
         {

@@ -2543,13 +2543,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var contentProperty = !string.IsNullOrWhiteSpace(contentPropertyName)
             ? FindProperty(symbol, contentPropertyName!)
             : null;
-        if (contentProperty?.SetMethod is not null)
+        if (contentProperty is not null &&
+            CanUseContentPropertyForAttachment(contentProperty))
         {
+            if (TryGetReadOnlyCollectionContentAttachmentMode(symbol, contentProperty, out var collectionAttachmentMode))
+            {
+                return (collectionAttachmentMode, null);
+            }
+
             return (ResolvedChildAttachmentMode.Content, contentProperty.Name);
         }
 
         var implicitContentProperty = FindProperty(symbol, "Content");
-        if (implicitContentProperty?.SetMethod is not null)
+        if (implicitContentProperty is not null &&
+            CanUseContentPropertyForAttachment(implicitContentProperty))
         {
             return (ResolvedChildAttachmentMode.Content, implicitContentProperty.Name);
         }
@@ -2607,14 +2614,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
             {
-                if (property.SetMethod is null)
-                {
-                    continue;
-                }
-
                 if (property.GetAttributes().Any(attribute =>
                         attribute.AttributeClass?.ToDisplayString() == "Avalonia.Metadata.ContentAttribute" ||
-                        attribute.AttributeClass?.Name == "ContentAttribute"))
+                        attribute.AttributeClass?.Name == "ContentAttribute") &&
+                    CanUseContentPropertyForAttachment(property))
                 {
                     return property.Name;
                 }
@@ -2622,6 +2625,50 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return null;
+    }
+
+    private static bool CanUseContentPropertyForAttachment(IPropertySymbol property)
+    {
+        if (property.SetMethod is not null)
+        {
+            return true;
+        }
+
+        if (property.GetMethod is null ||
+            property.Type is not INamedTypeSymbol namedPropertyType)
+        {
+            return false;
+        }
+
+        return HasDictionaryAddMethod(namedPropertyType) || HasDirectAddMethod(namedPropertyType);
+    }
+
+    private static bool TryGetReadOnlyCollectionContentAttachmentMode(
+        INamedTypeSymbol ownerType,
+        IPropertySymbol property,
+        out ResolvedChildAttachmentMode attachmentMode)
+    {
+        attachmentMode = ResolvedChildAttachmentMode.None;
+        if (property.SetMethod is not null)
+        {
+            return false;
+        }
+
+        if (property.Name.Equals("Children", StringComparison.Ordinal) &&
+            CanAddToCollectionProperty(ownerType, property.Name))
+        {
+            attachmentMode = ResolvedChildAttachmentMode.ChildrenCollection;
+            return true;
+        }
+
+        if (property.Name.Equals("Items", StringComparison.Ordinal) &&
+            CanAddToCollectionProperty(ownerType, property.Name))
+        {
+            attachmentMode = ResolvedChildAttachmentMode.ItemsCollection;
+            return true;
+        }
+
+        return false;
     }
 
     private static BindingPriorityScope ResolveCurrentBindingPriorityScope(
@@ -7227,6 +7274,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
+        if (TryConvertByTypeConverter(
+                type,
+                value,
+                compilation,
+                out var convertedByTypeConverterExpression,
+                converterAttributes))
+        {
+            conversion = CreateLiteralConversion(convertedByTypeConverterExpression);
+            return true;
+        }
+
         if (allowStaticParseMethodFallback &&
             TryConvertByStaticParseMethod(type, value, out var parsedExpression))
         {
@@ -7274,17 +7332,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string value,
         out string expression)
     {
-        if (TryConvertByTypeConverter(
-                type,
-                value,
-                compilation,
-                out var convertedByTypeConverterExpression,
-                converterAttributes))
-        {
-            conversion = CreateLiteralConversion(convertedByTypeConverterExpression);
-            return true;
-        }
-
         expression = string.Empty;
 
         var trimmed = value.Trim();
@@ -8178,7 +8225,42 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static string FormatDoubleLiteral(double value)
     {
+        if (double.IsNaN(value))
+        {
+            return "global::System.Double.NaN";
+        }
+
+        if (double.IsPositiveInfinity(value))
+        {
+            return "global::System.Double.PositiveInfinity";
+        }
+
+        if (double.IsNegativeInfinity(value))
+        {
+            return "global::System.Double.NegativeInfinity";
+        }
+
         return value.ToString("R", CultureInfo.InvariantCulture) + "d";
+    }
+
+    private static string FormatSingleLiteral(float value)
+    {
+        if (float.IsNaN(value))
+        {
+            return "global::System.Single.NaN";
+        }
+
+        if (float.IsPositiveInfinity(value))
+        {
+            return "global::System.Single.PositiveInfinity";
+        }
+
+        if (float.IsNegativeInfinity(value))
+        {
+            return "global::System.Single.NegativeInfinity";
+        }
+
+        return value.ToString("R", CultureInfo.InvariantCulture) + "f";
     }
 
     private static string FormatHexUInt32Literal(uint value)
@@ -8225,44 +8307,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol type,
         string methodName,
         string returnTypeName,
-        if (double.IsNaN(value))
-        {
-            return "global::System.Double.NaN";
-        }
-
-        if (double.IsPositiveInfinity(value))
-        {
-            return "global::System.Double.PositiveInfinity";
-        }
-
-        if (double.IsNegativeInfinity(value))
-        {
-            return "global::System.Double.NegativeInfinity";
-        }
-
         IReadOnlyList<string> parameterTypeNames)
     {
         foreach (var member in type.GetMembers(methodName))
-    private static string FormatSingleLiteral(float value)
-    {
-        if (float.IsNaN(value))
-        {
-            return "global::System.Single.NaN";
-        }
-
-        if (float.IsPositiveInfinity(value))
-        {
-            return "global::System.Single.PositiveInfinity";
-        }
-
-        if (float.IsNegativeInfinity(value))
-        {
-            return "global::System.Single.NegativeInfinity";
-        }
-
-        return value.ToString("R", CultureInfo.InvariantCulture) + "f";
-    }
-
         {
             if (member is not IMethodSymbol method ||
                 !method.IsStatic ||

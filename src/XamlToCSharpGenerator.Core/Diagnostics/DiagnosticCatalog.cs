@@ -108,6 +108,14 @@ public static class DiagnosticCatalog
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor ClassMustBePartial = new(
+        id: "AXSG0109",
+        title: "x:Class type must be partial for source-generated backend",
+        messageFormat: "{0}",
+        category: "AXSG.Semantic",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor CompiledBindingRequiresDataType = new(
         id: "AXSG0110",
         title: "Compiled binding requires x:DataType",
