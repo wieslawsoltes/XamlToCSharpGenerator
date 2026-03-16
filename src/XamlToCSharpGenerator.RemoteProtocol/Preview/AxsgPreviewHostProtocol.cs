@@ -89,7 +89,7 @@ public static class AxsgPreviewHostProtocol
         JsonElement payload = root.TryGetProperty("payload", out JsonElement payloadElement)
             ? payloadElement.Clone()
             : default;
-        return new AxsgPreviewHostCommandEnvelope(commandName.Trim().ToLowerInvariant(), requestId, payload);
+        return new AxsgPreviewHostCommandEnvelope(NormalizeCommandName(commandName), requestId, payload);
     }
 
     /// <summary>
@@ -219,6 +219,38 @@ public static class AxsgPreviewHostProtocol
         {
             throw new InvalidOperationException(payloadName + " must be a JSON object.");
         }
+    }
+
+    private static string NormalizeCommandName(string commandName)
+    {
+        string normalized = commandName.Trim();
+
+        if (string.Equals(normalized, PingCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return PingCommand;
+        }
+
+        if (string.Equals(normalized, StartCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return StartCommand;
+        }
+
+        if (string.Equals(normalized, UpdateCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return UpdateCommand;
+        }
+
+        if (string.Equals(normalized, HotReloadCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return HotReloadCommand;
+        }
+
+        if (string.Equals(normalized, StopCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return StopCommand;
+        }
+
+        return normalized;
     }
 
     private static string GetRequiredString(string? value, string propertyName)

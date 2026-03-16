@@ -20,6 +20,18 @@ public sealed class AxsgPreviewHostProtocolTests
     }
 
     [Fact]
+    public void ParseCommandLine_Preserves_Canonical_HotReload_Command_Name()
+    {
+        var command = AxsgPreviewHostProtocol.ParseCommandLine(
+            """
+            {"command":"hotReload","requestId":"43","payload":{"xamlText":"<View />"}}
+            """);
+
+        Assert.Equal(AxsgPreviewHostProtocol.HotReloadCommand, command.Command);
+        Assert.Equal("43", command.RequestId);
+    }
+
+    [Fact]
     public void ParseStartRequest_Applies_Defaults_And_Normalizes_Paths()
     {
         var payload = JsonDocument.Parse(
