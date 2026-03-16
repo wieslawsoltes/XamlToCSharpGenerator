@@ -81,6 +81,9 @@ Use `axsg.preview.hotReload` when a custom client needs the in-process live prev
 For the operational host matrix and `dotnet watch` guidance, see:
 
 - [site/articles/guides/mcp-servers-and-live-tooling.md](../../../site/articles/guides/mcp-servers-and-live-tooling.md)
+- [site/articles/guides/workspace-mcp-language-tools.md](../../../site/articles/guides/workspace-mcp-language-tools.md)
+- [site/articles/guides/runtime-mcp-hot-design-control.md](../../../site/articles/guides/runtime-mcp-hot-design-control.md)
+- [site/articles/guides/runtime-mcp-studio-control.md](../../../site/articles/guides/runtime-mcp-studio-control.md)
 - [site/articles/guides/preview-mcp-host-and-live-preview.md](../../../site/articles/guides/preview-mcp-host-and-live-preview.md)
 - [site/articles/architecture/unified-remote-api-and-mcp.md](../../../site/articles/architecture/unified-remote-api-and-mcp.md)
 

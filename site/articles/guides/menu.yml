@@ -5,6 +5,9 @@ guides:
   - {path: package-selection-and-integration.md, title: "Package Selection and Integration"}
   - {path: vscode-language-service.md, title: "VS Code and Language Service"}
   - {path: mcp-servers-and-live-tooling.md, title: "MCP Servers and Live Tooling"}
+  - {path: workspace-mcp-language-tools.md, title: "Workspace MCP Language Tools"}
+  - {path: runtime-mcp-hot-design-control.md, title: "Runtime MCP Hot Design Control"}
+  - {path: runtime-mcp-studio-control.md, title: "Runtime MCP Studio Control"}
   - {path: preview-mcp-host-and-live-preview.md, title: "Preview MCP Host and Live Preview"}
   - {path: navigation-and-refactorings.md, title: "Navigation and Refactorings"}
   - {path: runtime-loader-and-fallback.md, title: "Runtime Loader and Fallback"}

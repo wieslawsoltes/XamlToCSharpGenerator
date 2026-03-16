@@ -24,6 +24,7 @@ AXSG therefore shares:
 - serialization options
 - request and response helpers
 - transport-neutral command routers
+- transport-neutral query and mutation services
 
 AXSG does not share:
 
@@ -63,8 +64,15 @@ The transport-neutral query layer now lives in services such as:
 
 - `AxsgPreviewQueryService`
 - `AxsgRuntimeQueryService`
+- `AxsgWorkspaceLanguageQueryService`
 
-Those are consumed by both LSP and MCP hosts so the same operation shape does not get reimplemented per adapter.
+The transport-neutral runtime mutation layer now lives in services such as:
+
+- `AxsgRuntimeHotReloadService`
+- `AxsgRuntimeHotDesignService`
+- `AxsgRuntimeStudioService`
+
+Those are consumed by LSP, MCP, preview, and studio adapters so the same operation shape does not get reimplemented per adapter.
 
 ## MCP host split
 
@@ -76,7 +84,7 @@ This host:
 
 - runs independently as `axsg-mcp`
 - sees files, projects, and workspace options
-- is best for preview project-context resolution and general tooling queries
+- is best for preview project-context resolution, metadata/projection queries, cross-language navigation, and rename planning
 
 It does not automatically attach to a live Avalonia app.
 
@@ -86,7 +94,7 @@ This host:
 
 - runs inside the Avalonia process
 - sees hot reload, hot design, and studio state directly
-- supports `resources/subscribe` and event-style resource updates
+- supports `resources/subscribe`, focused snapshot resources, per-build hot design workspace resources, and event-style resource updates
 
 This is the host you want for `dotnet watch`, hot reload, hot design, and live-app inspection.
 
@@ -116,7 +124,7 @@ The extension can reuse the shared remote-operation layer, but it still needs ed
 AXSG now uses a capability-based model:
 
 - workspace MCP host: query-oriented, poll after changes
-- runtime MCP host: subscribe to status and event resources
+- runtime MCP host: subscribe to status, focused snapshot, and event resources
 - preview MCP host: subscribe to lifecycle resources and react to list-changed notifications
 
 This split matches the real ownership model of the processes instead of pretending one host can answer every question equally well.
@@ -138,6 +146,24 @@ This keeps the preview host aligned with the rest of AXSG’s shared remote-oper
 - transport-neutral preview session/router underneath
 - MCP adapter on top
 - status and event resources as the subscription surface
+
+## Resource specialization
+
+The runtime MCP host now distinguishes between:
+
+- coarse snapshots such as `axsg://runtime/hotdesign/status`
+- focused snapshots such as `axsg://runtime/hotdesign/workspace/current`, `.../document/selected`, and `.../element/selected`
+- dynamic per-build workspace resources under `axsg://runtime/hotdesign/workspace/by-build-uri/<escaped-build-uri>`
+
+That split exists so clients can keep local state synchronized without rereading the entire coarse workspace after every small mutation.
+
+## Current high-value MCP guides
+
+- [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)
+- [Workspace MCP Language Tools](../guides/workspace-mcp-language-tools/)
+- [Runtime MCP Hot Design Control](../guides/runtime-mcp-hot-design-control/)
+- [Runtime MCP Studio Control](../guides/runtime-mcp-studio-control/)
+- [Preview MCP Host and Live Preview](../guides/preview-mcp-host-and-live-preview/)
 
 ## Related docs
 
