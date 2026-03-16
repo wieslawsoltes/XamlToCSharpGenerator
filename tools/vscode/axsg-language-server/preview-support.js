@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const vscode = require('vscode');
 const {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  delayAsync,
   fetchPreviewPageHtmlAsync
 } = require('./preview-fetch');
 const {

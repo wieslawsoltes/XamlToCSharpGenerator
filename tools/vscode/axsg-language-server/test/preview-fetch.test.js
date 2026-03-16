@@ -3,8 +3,15 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 
 const {
+  delayAsync,
   fetchTextFromUrlAsync
 } = require('../preview-fetch');
+
+test('preview-fetch exports delayAsync for preview controller timing helpers', async () => {
+  const before = Date.now();
+  await delayAsync(0);
+  assert.ok(Date.now() >= before);
+});
 
 test('fetchTextFromUrlAsync rejects when the response times out', async () => {
   const sockets = new Set();

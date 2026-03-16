@@ -80,6 +80,7 @@ function delayAsync(delayMs) {
 
 module.exports = {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  delayAsync,
   fetchPreviewPageHtmlAsync,
   fetchTextFromUrlAsync
 };
