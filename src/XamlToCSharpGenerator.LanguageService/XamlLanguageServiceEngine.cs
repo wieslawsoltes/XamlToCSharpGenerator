@@ -15,6 +15,7 @@ using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Refactorings;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageService.Symbols;
+using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.LanguageService.Workspace;
 
 namespace XamlToCSharpGenerator.LanguageService;
@@ -344,13 +345,12 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         if (string.IsNullOrWhiteSpace(uri) ||
-            !Uri.TryCreate(uri, UriKind.Absolute, out var documentUri) ||
-            !documentUri.IsFile)
+            (Uri.TryCreate(uri, UriKind.Absolute, out var documentUri) && !documentUri.IsFile))
         {
             return Task.FromResult<XamlPreviewProjectContext?>(null);
         }
 
-        var filePath = documentUri.LocalPath;
+        var filePath = UriPathHelper.ToFilePath(uri);
         if (string.IsNullOrWhiteSpace(filePath))
         {
             return Task.FromResult<XamlPreviewProjectContext?>(null);
@@ -367,7 +367,26 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
         if (string.IsNullOrWhiteSpace(projectPath))
         {
-            return Task.FromResult<XamlPreviewProjectContext?>(null);
+            if (!XamlProjectFileDiscoveryService.TryResolveOwningProjectXamlEntry(
+                    filePath,
+                    options.WorkspaceRoot,
+                    out projectPath,
+                    out var resolvedOwningEntry))
+            {
+                return Task.FromResult<XamlPreviewProjectContext?>(null);
+            }
+
+            var owningProjectDirectory = Path.GetDirectoryName(projectPath);
+            if (string.IsNullOrWhiteSpace(owningProjectDirectory))
+            {
+                return Task.FromResult<XamlPreviewProjectContext?>(null);
+            }
+
+            return Task.FromResult<XamlPreviewProjectContext?>(new XamlPreviewProjectContext(
+                projectPath,
+                owningProjectDirectory,
+                resolvedOwningEntry.FilePath,
+                resolvedOwningEntry.TargetPath));
         }
 
         if (!XamlProjectFileDiscoveryService.TryResolveProjectXamlEntryByFilePath(
@@ -376,6 +395,25 @@ public sealed class XamlLanguageServiceEngine : IDisposable
                 filePath,
                 out var entry))
         {
+            if (XamlProjectFileDiscoveryService.TryResolveOwningProjectXamlEntry(
+                    filePath,
+                    options.WorkspaceRoot,
+                    out var owningProjectPath,
+                    out var resolvedOwningEntry))
+            {
+                var owningProjectDirectory = Path.GetDirectoryName(owningProjectPath);
+                if (string.IsNullOrWhiteSpace(owningProjectDirectory))
+                {
+                    return Task.FromResult<XamlPreviewProjectContext?>(null);
+                }
+
+                return Task.FromResult<XamlPreviewProjectContext?>(new XamlPreviewProjectContext(
+                    owningProjectPath,
+                    owningProjectDirectory,
+                    resolvedOwningEntry.FilePath,
+                    resolvedOwningEntry.TargetPath));
+            }
+
             var projectDirectory = Path.GetDirectoryName(projectPath);
             if (string.IsNullOrWhiteSpace(projectDirectory))
             {

@@ -2620,6 +2620,83 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task PreviewProjectContext_Request_Uses_Request_Workspace_Root_For_Linked_Shared_Xaml()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-lsp-preview-context-shared-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var wrongWorkspaceRoot = Path.Combine(tempRoot, "workspace-a");
+            Directory.CreateDirectory(wrongWorkspaceRoot);
+            await File.WriteAllTextAsync(
+                Path.Combine(wrongWorkspaceRoot, "WorkspaceA.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+            var unrelatedProjectRoot = Path.Combine(tempRoot, "src", "Aardvark");
+            var libraryRoot = Path.Combine(tempRoot, "src", "PreviewLibrary");
+            var sharedRoot = Path.Combine(tempRoot, "shared");
+            Directory.CreateDirectory(unrelatedProjectRoot);
+            Directory.CreateDirectory(libraryRoot);
+            Directory.CreateDirectory(sharedRoot);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(unrelatedProjectRoot, "Aardvark.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+            var libraryProjectPath = Path.Combine(libraryRoot, "PreviewLibrary.csproj");
+            var xamlPath = Path.Combine(sharedRoot, "SharedView.axaml");
+            var xamlUri = new Uri(xamlPath).AbsoluteUri;
+            const string xamlText = "<UserControl xmlns=\"https://github.com/avaloniaui\" />";
+
+            await File.WriteAllTextAsync(
+                libraryProjectPath,
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <AvaloniaXaml Include="../../shared/SharedView.axaml" Link="Views/SharedView.axaml" />
+                  </ItemGroup>
+                </Project>
+                """);
+            await File.WriteAllTextAsync(xamlPath, xamlText);
+
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: wrongWorkspaceRoot);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = xamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = xamlText
+                }
+            });
+
+            await harness.SendRequestAsync("preview-context-shared-1", "axsg/preview/projectContext", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = xamlUri
+                },
+                ["workspaceRoot"] = tempRoot
+            });
+
+            using var response = await harness.ReadResponseAsync("preview-context-shared-1");
+            var result = response.RootElement.GetProperty("result");
+            Assert.Equal(libraryProjectPath, result.GetProperty("projectPath").GetString());
+            Assert.Equal(libraryRoot, result.GetProperty("projectDirectory").GetString());
+            Assert.Equal(xamlPath, result.GetProperty("filePath").GetString());
+            Assert.Equal("Views/SharedView.axaml", result.GetProperty("targetPath").GetString());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task References_Request_ForXDataTypeAttributeValue_ReturnsDeclarationAndUsage()
     {
         await using var harness = await LspServerHarness.StartAsync();

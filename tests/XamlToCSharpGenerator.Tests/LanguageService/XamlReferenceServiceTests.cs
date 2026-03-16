@@ -163,6 +163,46 @@ public class XamlReferenceServiceTests
     }
 
     [Fact]
+    public void TryResolveOwningProjectXamlEntry_Finds_Linked_File_Outside_Project_Directory()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var unrelatedProjectDirectory = Path.Combine(workspace.RootPath, "src", "Aardvark");
+        var libraryDirectory = Path.Combine(workspace.RootPath, "src", "PreviewLibrary");
+        var sharedDirectory = Path.Combine(workspace.RootPath, "shared");
+        Directory.CreateDirectory(unrelatedProjectDirectory);
+        Directory.CreateDirectory(libraryDirectory);
+        Directory.CreateDirectory(sharedDirectory);
+
+        File.WriteAllText(
+            Path.Combine(unrelatedProjectDirectory, "Aardvark.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        var libraryProjectPath = Path.Combine(libraryDirectory, "PreviewLibrary.csproj");
+        var sharedFilePath = Path.Combine(sharedDirectory, "SharedView.axaml");
+        File.WriteAllText(sharedFilePath, "<UserControl />");
+        File.WriteAllText(
+            libraryProjectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="../../shared/SharedView.axaml" Link="Views/SharedView.axaml" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var resolved = XamlProjectFileDiscoveryService.TryResolveOwningProjectXamlEntry(
+            sharedFilePath,
+            workspace.RootPath,
+            out var projectPath,
+            out var entry);
+
+        Assert.True(resolved);
+        Assert.Equal(Path.GetFullPath(libraryProjectPath), projectPath);
+        Assert.Equal(Path.GetFullPath(sharedFilePath), entry.FilePath);
+        Assert.Equal("Views/SharedView.axaml", entry.TargetPath);
+    }
+
+    [Fact]
     public void ReusesParsedXmlForStaleSourceSnapshot()
     {
         XamlReferenceService.ClearCachesForTesting();

@@ -10,7 +10,9 @@ using System.Xml.Linq;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
+using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Text;
 
 namespace XamlToCSharpGenerator.LanguageService.Workspace;
 
@@ -370,6 +372,17 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
             currentDirectory = parent?.FullName;
         }
 
+        if (boundedWorkspaceRoot is not null &&
+            XamlProjectFileDiscoveryService.TryResolveOwningProjectPath(filePath, boundedWorkspaceRoot, out var owningProjectPath))
+        {
+            return owningProjectPath;
+        }
+
+        if (boundedWorkspaceRoot is not null && File.Exists(boundedWorkspaceRoot))
+        {
+            return boundedWorkspaceRoot;
+        }
+
         if (boundedWorkspaceRoot is not null && Directory.Exists(boundedWorkspaceRoot))
         {
             var projectFiles = Directory.GetFiles(boundedWorkspaceRoot, "*.csproj", SearchOption.AllDirectories);
@@ -428,7 +441,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
     private static string NormalizePath(string path)
     {
-        return Path.GetFullPath(path);
+        return UriPathHelper.NormalizeFilePath(path);
     }
 
     private string? ResolveProjectPath(string filePath, string? workspaceRoot)

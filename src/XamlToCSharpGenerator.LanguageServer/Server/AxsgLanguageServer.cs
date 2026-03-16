@@ -997,9 +997,16 @@ internal sealed class AxsgLanguageServer : IDisposable
     private async Task HandlePreviewProjectContextAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
     {
         var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var workspaceRoot = parameters.TryGetProperty("workspaceRoot", out var workspaceRootElement) &&
+                            workspaceRootElement.ValueKind == JsonValueKind.String
+            ? workspaceRootElement.GetString()
+            : null;
+        var options = string.IsNullOrWhiteSpace(workspaceRoot)
+            ? _navigationOptions
+            : _navigationOptions with { WorkspaceRoot = workspaceRoot };
         var context = await _engine.GetPreviewProjectContextAsync(
             uri,
-            _navigationOptions,
+            options,
             cancellationToken).ConfigureAwait(false);
         if (context is null)
         {

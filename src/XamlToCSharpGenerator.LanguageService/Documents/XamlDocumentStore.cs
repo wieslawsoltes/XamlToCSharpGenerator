@@ -64,6 +64,6 @@ public sealed class XamlDocumentStore
 
     private static string NormalizePath(string path)
     {
-        return Path.GetFullPath(path);
+        return UriPathHelper.NormalizeFilePath(path);
     }
 }

@@ -913,7 +913,8 @@ class AvaloniaPreviewController {
     const projectContext = await client.sendRequest('axsg/preview/projectContext', {
       textDocument: {
         uri: document.uri.toString()
-      }
+      },
+      workspaceRoot
     });
     if (!projectContext || !projectContext.projectPath || !projectContext.targetPath) {
       throw new Error('Could not resolve the containing project for this XAML file.');

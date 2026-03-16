@@ -165,4 +165,67 @@ public sealed class MsBuildCompilationProviderTests
             }
         }
     }
+
+    [Fact]
+    public async Task Linked_Xaml_Outside_Project_Directory_Resolves_To_Owning_Project()
+    {
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "axsg-msbuild-provider-linked-xaml-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var unrelatedProjectDirectory = Path.Combine(tempRoot, "src", "Aardvark");
+            Directory.CreateDirectory(unrelatedProjectDirectory);
+            File.WriteAllText(
+                Path.Combine(unrelatedProjectDirectory, "Aardvark.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                  </PropertyGroup>
+                </Project>
+                """);
+
+            var libraryDirectory = Path.Combine(tempRoot, "src", "PreviewLibrary");
+            var sharedDirectory = Path.Combine(tempRoot, "shared");
+            Directory.CreateDirectory(libraryDirectory);
+            Directory.CreateDirectory(sharedDirectory);
+
+            var libraryProjectPath = Path.Combine(libraryDirectory, "PreviewLibrary.csproj");
+            File.WriteAllText(libraryProjectPath, """
+                                                 <Project Sdk="Microsoft.NET.Sdk">
+                                                   <PropertyGroup>
+                                                     <TargetFramework>net10.0</TargetFramework>
+                                                     <ImplicitUsings>enable</ImplicitUsings>
+                                                     <Nullable>enable</Nullable>
+                                                   </PropertyGroup>
+                                                   <ItemGroup>
+                                                     <AvaloniaXaml Include="../../shared/SharedView.axaml" Link="Views/SharedView.axaml" />
+                                                   </ItemGroup>
+                                                 </Project>
+                                                 """);
+            File.WriteAllText(Path.Combine(libraryDirectory, "LibraryClass.cs"), "public sealed class LibraryClass { }");
+
+            var sharedXamlPath = Path.Combine(sharedDirectory, "SharedView.axaml");
+            File.WriteAllText(sharedXamlPath, "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+
+            using var provider = new MsBuildCompilationProvider();
+            var snapshot = await provider.GetCompilationAsync(sharedXamlPath, tempRoot, CancellationToken.None);
+
+            Assert.Equal(Path.GetFullPath(libraryProjectPath), snapshot.ProjectPath);
+            Assert.NotNull(snapshot.Compilation);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
 }

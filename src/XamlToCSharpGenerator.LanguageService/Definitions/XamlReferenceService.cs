@@ -3090,7 +3090,7 @@ public sealed class XamlReferenceService
 
     private static string NormalizePath(string path)
     {
-        return Path.GetFullPath(path);
+        return UriPathHelper.NormalizeFilePath(path);
     }
 
     private static bool IsXamlFile(string path)

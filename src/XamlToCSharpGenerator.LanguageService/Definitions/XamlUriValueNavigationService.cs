@@ -118,7 +118,7 @@ internal static class XamlUriValueNavigationService
             return false;
         }
 
-        filePath = absoluteUri.LocalPath;
+        filePath = UriPathHelper.ToFilePath(includeSource);
         return File.Exists(filePath) && IsXamlFile(filePath);
     }
 
@@ -158,7 +158,7 @@ internal static class XamlUriValueNavigationService
 
         if (Uri.TryCreate(value, UriKind.Absolute, out var absoluteUri))
         {
-            return absoluteUri.IsFile && IsXamlFile(absoluteUri.LocalPath);
+            return absoluteUri.IsFile && IsXamlFile(UriPathHelper.ToFilePath(value));
         }
 
         return HasXamlExtension(value);
