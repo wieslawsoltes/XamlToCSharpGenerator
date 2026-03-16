@@ -2485,6 +2485,7 @@ public static class SourceGenMarkupExtensionRuntime
         private readonly object? _targetProperty;
         private readonly object[] _parentStack;
         private readonly Uri _baseUri;
+        private readonly PropertyDescriptor? _propertyDescriptor;
 
         public MarkupExtensionServiceProvider(
             IServiceProvider? parentServiceProvider,
@@ -2502,6 +2503,7 @@ public static class SourceGenMarkupExtensionRuntime
             _targetProperty = targetProperty;
             _baseUri = baseUri;
             _parentStack = parentStack;
+            _propertyDescriptor = BuildPropertyDescriptor(targetProperty, targetObject);
         }
 
         public object TargetObject => _targetObject!;
@@ -2514,9 +2516,9 @@ public static class SourceGenMarkupExtensionRuntime
 
         public IContainer? Container => null;
 
-        public object? Instance => null;
+        public object? Instance => _targetObject;
 
-        public PropertyDescriptor? PropertyDescriptor => null;
+        public PropertyDescriptor? PropertyDescriptor => _propertyDescriptor;
 
         public Uri BaseUri
         {
@@ -2607,6 +2609,87 @@ public static class SourceGenMarkupExtensionRuntime
                     }
                 }
             }
+        }
+
+        private static PropertyDescriptor? BuildPropertyDescriptor(object? targetProperty, object? targetObject)
+        {
+            return targetProperty switch
+            {
+                null => null,
+                PropertyDescriptor propertyDescriptor => propertyDescriptor,
+                IPropertyInfo propertyInfo => new SourceGenPropertyDescriptor(
+                    propertyInfo,
+                    ResolveComponentType(propertyInfo, targetObject)),
+                _ => null
+            };
+        }
+
+        private static Type ResolveComponentType(IPropertyInfo propertyInfo, object? targetObject)
+        {
+            if (targetObject is not null)
+            {
+                return targetObject.GetType();
+            }
+
+            if (propertyInfo is AvaloniaProperty avaloniaProperty)
+            {
+                return avaloniaProperty.OwnerType;
+            }
+
+            return typeof(object);
+        }
+    }
+
+    private sealed class SourceGenPropertyDescriptor : PropertyDescriptor
+    {
+        private readonly IPropertyInfo _propertyInfo;
+        private readonly Type _componentType;
+
+        public SourceGenPropertyDescriptor(IPropertyInfo propertyInfo, Type componentType)
+            : base(propertyInfo.Name, null)
+        {
+            _propertyInfo = propertyInfo;
+            _componentType = componentType;
+        }
+
+        public override Type ComponentType => _componentType;
+
+        public override bool IsReadOnly => !_propertyInfo.CanSet;
+
+        public override Type PropertyType => _propertyInfo.PropertyType;
+
+        public override bool CanResetValue(object component)
+        {
+            return false;
+        }
+
+        public override object? GetValue(object? component)
+        {
+            if (component is null)
+            {
+                return null;
+            }
+
+            return _propertyInfo.Get(component);
+        }
+
+        public override void ResetValue(object component)
+        {
+        }
+
+        public override void SetValue(object? component, object? value)
+        {
+            if (component is null || !_propertyInfo.CanSet)
+            {
+                return;
+            }
+
+            _propertyInfo.Set(component, value);
+        }
+
+        public override bool ShouldSerializeValue(object component)
+        {
+            return false;
         }
     }
 

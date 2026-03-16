@@ -1036,9 +1036,14 @@ public class SourceGenMarkupExtensionRuntimeTests
             [target]);
 
         Assert.Same(context, context.GetService(typeof(ITypeDescriptorContext)));
-        Assert.Null(context.Instance);
+        Assert.Same(target, context.Instance);
         Assert.Null(context.Container);
-        Assert.Null(context.PropertyDescriptor);
+        Assert.NotNull(context.PropertyDescriptor);
+        var propertyDescriptor = context.PropertyDescriptor!;
+        Assert.Equal(nameof(BorderTarget.Value), propertyDescriptor.Name);
+        Assert.Equal(typeof(BorderTarget), propertyDescriptor.ComponentType);
+        Assert.Equal(typeof(object), propertyDescriptor.PropertyType);
+        Assert.False(propertyDescriptor.IsReadOnly);
         Assert.Throws<NotSupportedException>(context.OnComponentChanged);
         Assert.Throws<NotSupportedException>(() => context.OnComponentChanging());
 

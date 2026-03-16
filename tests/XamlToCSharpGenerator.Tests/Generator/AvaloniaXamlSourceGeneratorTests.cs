@@ -18824,6 +18824,95 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Uses_Assembly_Qualified_String_TypeConverter_For_Custom_Target_Type_Literals()
+    {
+        const string code = """
+            namespace System.ComponentModel
+            {
+                [global::System.AttributeUsage(
+                    global::System.AttributeTargets.Class |
+                    global::System.AttributeTargets.Struct |
+                    global::System.AttributeTargets.Enum |
+                    global::System.AttributeTargets.Property)]
+                public sealed class TypeConverterAttribute : global::System.Attribute
+                {
+                    public TypeConverterAttribute(global::System.Type converterType)
+                    {
+                        ConverterTypeName = converterType.AssemblyQualifiedName ?? string.Empty;
+                    }
+
+                    public TypeConverterAttribute(string converterTypeName)
+                    {
+                        ConverterTypeName = converterTypeName;
+                    }
+
+                    public string ConverterTypeName { get; }
+                }
+
+                public interface ITypeDescriptorContext { }
+
+                public class TypeConverter
+                {
+                    public virtual object? ConvertFromInvariantString(string text) => text;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+
+                public sealed class ProbeControl
+                {
+                    public global::Demo.FancyLength WidthHint { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                [global::System.ComponentModel.TypeConverter("Demo.FancyLengthConverter, Demo.Assembly")]
+                public readonly struct FancyLength
+                {
+                    public FancyLength(string text)
+                    {
+                        Text = text;
+                    }
+
+                    public string Text { get; }
+                }
+
+                public sealed class FancyLengthConverter : global::System.ComponentModel.TypeConverter
+                {
+                    public override object? ConvertFromInvariantString(string text)
+                    {
+                        return new FancyLength(text);
+                    }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <ProbeControl WidthHint="42px" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("new global::Demo.FancyLengthConverter().ConvertFromInvariantString(\"42px\")", generated);
+    }
+
+    [Fact]
     public void Uses_Nested_TypeConverter_Symbols_For_Custom_Target_Type_Literals()
     {
         const string code = """

@@ -739,17 +739,106 @@ public sealed partial class AvaloniaSemanticBinder
 
     private static INamedTypeSymbol? ResolveTypeConverterTypeByName(Compilation compilation, string typeName)
     {
-        var trimmedTypeName = typeName.Trim();
-        if (trimmedTypeName.Length == 0)
+        if (!TryParseTypeConverterTypeName(typeName, out var metadataTypeName, out var assemblySimpleName))
         {
             return null;
         }
 
-        var normalizedTypeName = trimmedTypeName.StartsWith("global::", StringComparison.Ordinal)
+        if (!string.IsNullOrWhiteSpace(assemblySimpleName))
+        {
+            if (string.Equals(compilation.AssemblyName, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+            {
+                return compilation.Assembly.GetTypeByMetadataName(metadataTypeName);
+            }
+
+            foreach (var reference in compilation.References)
+            {
+                if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assemblySymbol ||
+                    !string.Equals(assemblySymbol.Name, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return assemblySymbol.GetTypeByMetadataName(metadataTypeName);
+            }
+
+            return null;
+        }
+
+        return compilation.GetTypeByMetadataName(metadataTypeName);
+    }
+
+    private static bool TryParseTypeConverterTypeName(
+        string typeName,
+        out string metadataTypeName,
+        out string? assemblySimpleName)
+    {
+        metadataTypeName = string.Empty;
+        assemblySimpleName = null;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return false;
+        }
+
+        var trimmedTypeName = typeName.Trim();
+        var splitIndex = FindAssemblyQualifiedTypeSeparator(trimmedTypeName);
+        if (splitIndex < 0)
+        {
+            metadataTypeName = NormalizeTypeConverterMetadataName(trimmedTypeName);
+            return metadataTypeName.Length > 0;
+        }
+
+        metadataTypeName = NormalizeTypeConverterMetadataName(trimmedTypeName.Substring(0, splitIndex));
+        if (metadataTypeName.Length == 0)
+        {
+            return false;
+        }
+
+        var assemblyQualifier = trimmedTypeName.Substring(splitIndex + 1).Trim();
+        if (assemblyQualifier.Length == 0)
+        {
+            return true;
+        }
+
+        var assemblyDelimiterIndex = assemblyQualifier.IndexOf(',');
+        assemblySimpleName = (assemblyDelimiterIndex >= 0
+                ? assemblyQualifier.Substring(0, assemblyDelimiterIndex)
+                : assemblyQualifier)
+            .Trim();
+        return assemblySimpleName.Length > 0;
+    }
+
+    private static int FindAssemblyQualifiedTypeSeparator(string typeName)
+    {
+        var bracketDepth = 0;
+        for (var index = 0; index < typeName.Length; index++)
+        {
+            switch (typeName[index])
+            {
+                case '[':
+                    bracketDepth++;
+                    break;
+                case ']':
+                    if (bracketDepth > 0)
+                    {
+                        bracketDepth--;
+                    }
+
+                    break;
+                case ',' when bracketDepth == 0:
+                    return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string NormalizeTypeConverterMetadataName(string typeName)
+    {
+        var trimmedTypeName = typeName.Trim();
+        return trimmedTypeName.StartsWith("global::", StringComparison.Ordinal)
             ? trimmedTypeName.Substring("global::".Length)
             : trimmedTypeName;
-
-        return compilation.GetTypeByMetadataName(normalizedTypeName);
     }
 
     private static bool HasPublicParameterlessConstructor(INamedTypeSymbol type)
