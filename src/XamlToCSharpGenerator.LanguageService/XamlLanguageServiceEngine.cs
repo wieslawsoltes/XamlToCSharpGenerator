@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using XamlToCSharpGenerator.LanguageService.Analysis;
@@ -333,6 +334,70 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return analysis is null
             ? ImmutableArray<XamlInlineCSharpProjection>.Empty
             : _inlineCSharpProjectionService.GetProjections(analysis);
+    }
+
+    public Task<XamlPreviewProjectContext?> GetPreviewProjectContextAsync(
+        string uri,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(uri) ||
+            !Uri.TryCreate(uri, UriKind.Absolute, out var documentUri) ||
+            !documentUri.IsFile)
+        {
+            return Task.FromResult<XamlPreviewProjectContext?>(null);
+        }
+
+        var filePath = documentUri.LocalPath;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return Task.FromResult<XamlPreviewProjectContext?>(null);
+        }
+
+        var projectPath = XamlProjectFileDiscoveryService.ResolveProjectPath(
+            projectPath: null,
+            currentFilePath: filePath);
+        if (string.IsNullOrWhiteSpace(projectPath) &&
+            !string.IsNullOrWhiteSpace(options.WorkspaceRoot))
+        {
+            projectPath = XamlProjectFileDiscoveryService.ResolveProjectPath(options.WorkspaceRoot, filePath);
+        }
+
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            return Task.FromResult<XamlPreviewProjectContext?>(null);
+        }
+
+        if (!XamlProjectFileDiscoveryService.TryResolveProjectXamlEntryByFilePath(
+                projectPath,
+                filePath,
+                filePath,
+                out var entry))
+        {
+            var projectDirectory = Path.GetDirectoryName(projectPath);
+            if (string.IsNullOrWhiteSpace(projectDirectory))
+            {
+                return Task.FromResult<XamlPreviewProjectContext?>(null);
+            }
+
+            entry = new XamlProjectFileDiscoveryService.ProjectXamlFileEntry(
+                filePath,
+                Path.GetRelativePath(projectDirectory, filePath).Replace('\\', '/'));
+        }
+
+        var resolvedProjectDirectory = Path.GetDirectoryName(projectPath);
+        if (string.IsNullOrWhiteSpace(resolvedProjectDirectory))
+        {
+            return Task.FromResult<XamlPreviewProjectContext?>(null);
+        }
+
+        return Task.FromResult<XamlPreviewProjectContext?>(new XamlPreviewProjectContext(
+            projectPath,
+            resolvedProjectDirectory,
+            entry.FilePath,
+            entry.TargetPath));
     }
 
     public Task<XamlPrepareRenameResult?> PrepareRenameAsync(

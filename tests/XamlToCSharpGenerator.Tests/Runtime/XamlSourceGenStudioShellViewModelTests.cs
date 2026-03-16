@@ -242,6 +242,85 @@ public class XamlSourceGenStudioShellViewModelTests
     }
 
     [Fact]
+    public void CanvasLayoutMode_Uses_Options_Default_And_Updates_Visibility_Flags()
+    {
+        ResetRuntimeState();
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions
+        {
+            CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.PreviewOnly
+        });
+
+        Assert.Equal(SourceGenStudioCanvasLayoutMode.PreviewOnly, viewModel.CanvasLayoutMode);
+        Assert.True(viewModel.IsCanvasPreviewVisible);
+        Assert.False(viewModel.IsCanvasEditorVisible);
+        Assert.False(viewModel.IsCanvasSplitVisible);
+
+        viewModel.CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.Stacked;
+
+        Assert.True(viewModel.IsCanvasPreviewVisible);
+        Assert.True(viewModel.IsCanvasEditorVisible);
+        Assert.True(viewModel.IsCanvasSplitVisible);
+    }
+
+    [Fact]
+    public void EditorContexts_Resolve_From_Selected_Source_And_Template_Documents()
+    {
+        ResetRuntimeState();
+        var projectRoot = CreateTempProjectRoot();
+        var viewSourcePath = CreateTempXamlSource(projectRoot, "Views/MainView.axaml");
+        var templateSourcePath = CreateTempTemplateXamlSource(projectRoot, "Themes/Button.axaml");
+        const string viewBuildUri = "avares://tests/StudioShell.EditorContext.View.axaml";
+        const string templateBuildUri = "avares://tests/StudioShell.EditorContext.Template.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                WaitForHotReload = false,
+                PersistChangesToSource = true
+            });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = viewBuildUri,
+                    SourcePath = viewSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Root,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.View
+                });
+
+            XamlSourceGenHotDesignManager.Register(
+                new StudioTemplateTarget(),
+                _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = templateBuildUri,
+                    SourcePath = templateSourcePath,
+                    DocumentRole = SourceGenHotDesignDocumentRole.Template,
+                    ArtifactKind = SourceGenHotDesignArtifactKind.Template
+                });
+
+            XamlSourceGenHotDesignCoreTools.SelectDocument(viewBuildUri);
+            XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
+
+            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+
+            Assert.Equal(new Uri(Path.GetFullPath(viewSourcePath)).AbsoluteUri, viewModel.CanvasEditorDocumentUri);
+            Assert.Equal(projectRoot, viewModel.CanvasEditorWorkspaceRoot);
+            Assert.Equal(new Uri(Path.GetFullPath(templateSourcePath)).AbsoluteUri, viewModel.TemplateEditorDocumentUri);
+            Assert.Equal(projectRoot, viewModel.TemplateEditorWorkspaceRoot);
+        }
+        finally
+        {
+            ResetRuntimeState();
+            DeleteDirectoryIfExists(projectRoot);
+        }
+    }
+
+    [Fact]
     public void Logical_Mode_Selection_Populates_Source_Properties()
     {
         ResetRuntimeState();
@@ -1061,9 +1140,25 @@ public class XamlSourceGenStudioShellViewModelTests
                 operationCount: 1));
     }
 
-    private static string CreateTempXamlSource()
+    private static string CreateTempProjectRoot()
     {
-        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-" + Guid.NewGuid().ToString("N") + ".axaml");
+        var root = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, "TestProject.csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+        return root;
+    }
+
+    private static string CreateTempXamlSource(string? projectRoot = null, string? relativePath = null)
+    {
+        var path = CreateTempSourcePath(projectRoot, relativePath, "AXSG-StudioShell-", ".axaml");
         const string xaml =
             """
             <UserControl xmlns="https://github.com/avaloniaui"
@@ -1078,9 +1173,9 @@ public class XamlSourceGenStudioShellViewModelTests
         return path;
     }
 
-    private static string CreateTempAppXamlSource()
+    private static string CreateTempAppXamlSource(string? projectRoot = null, string? relativePath = null)
     {
-        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-App-" + Guid.NewGuid().ToString("N") + ".axaml");
+        var path = CreateTempSourcePath(projectRoot, relativePath, "AXSG-StudioShell-App-", ".axaml");
         const string xaml =
             """
             <Application xmlns="https://github.com/avaloniaui"
@@ -1094,9 +1189,9 @@ public class XamlSourceGenStudioShellViewModelTests
         return path;
     }
 
-    private static string CreateTempTemplateXamlSource()
+    private static string CreateTempTemplateXamlSource(string? projectRoot = null, string? relativePath = null)
     {
-        var path = Path.Combine(Path.GetTempPath(), "AXSG-StudioShell-Template-" + Guid.NewGuid().ToString("N") + ".axaml");
+        var path = CreateTempSourcePath(projectRoot, relativePath, "AXSG-StudioShell-Template-", ".axaml");
         const string xaml =
             """
             <ControlTheme xmlns="https://github.com/avaloniaui"
@@ -1110,6 +1205,21 @@ public class XamlSourceGenStudioShellViewModelTests
         return path;
     }
 
+    private static string CreateTempSourcePath(string? projectRoot, string? relativePath, string prefix, string extension)
+    {
+        if (!string.IsNullOrWhiteSpace(projectRoot))
+        {
+            var relativeFilePath = string.IsNullOrWhiteSpace(relativePath)
+                ? Guid.NewGuid().ToString("N") + extension
+                : relativePath;
+            var path = Path.Combine(projectRoot, relativeFilePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            return path;
+        }
+
+        return Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N") + extension);
+    }
+
     private static void DeleteFileIfExists(string path)
     {
         try
@@ -1117,6 +1227,21 @@ public class XamlSourceGenStudioShellViewModelTests
             if (File.Exists(path))
             {
                 File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort temp cleanup only.
+        }
+    }
+
+    private static void DeleteDirectoryIfExists(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
             }
         }
         catch

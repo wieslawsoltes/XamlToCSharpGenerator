@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -100,6 +101,45 @@ public class XamlSourceGenHotDesignCoreToolsTests
             Assert.Single(snapshot.Documents);
             Assert.NotEmpty(snapshot.Elements);
             Assert.Contains(snapshot.Properties, property => property.Name == "Content");
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
+    public void WorkspaceSnapshot_Does_Not_Add_Framework_Controls_To_Project_Toolbox()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<Button xmlns=""https://github.com/avaloniaui""
+        xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+        Content=""Click"" />");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new Button(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+            var projectCategory = snapshot.Toolbox.FirstOrDefault(
+                category => string.Equals(category.Name, "Project", StringComparison.OrdinalIgnoreCase));
+
+            Assert.True(projectCategory is null || projectCategory.Items.All(item => item.Name != nameof(Button)));
         }
         finally
         {

@@ -1,5 +1,5 @@
 using System;
-using Avalonia.Markup.Xaml;
+using global::Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Runtime;
 

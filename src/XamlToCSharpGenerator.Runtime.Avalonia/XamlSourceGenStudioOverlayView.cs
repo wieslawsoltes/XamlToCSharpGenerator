@@ -1,15 +1,15 @@
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Templates;
-using Avalonia.Data;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Styling;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Primitives;
+using global::Avalonia.Controls.Templates;
+using global::Avalonia.Data;
+using global::Avalonia.Input;
+using global::Avalonia.Interactivity;
+using global::Avalonia.Layout;
+using global::Avalonia.Media;
+using global::Avalonia.Styling;
+using global::Avalonia.Threading;
+using global::Avalonia.VisualTree;
 using System;
 using System.ComponentModel;
 
@@ -93,7 +93,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var toolbar = new Border
         {
             Padding = new Thickness(8),
-            BorderBrush = Avalonia.Media.Brushes.SteelBlue,
+            BorderBrush = global::Avalonia.Media.Brushes.SteelBlue,
             BorderThickness = new Thickness(0, 0, 0, 1)
         };
 
@@ -107,7 +107,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         grid.Children.Add(new TextBlock
         {
             Text = "SourceGen Studio Overlay",
-            FontWeight = Avalonia.Media.FontWeight.Bold,
+            FontWeight = global::Avalonia.Media.FontWeight.Bold,
             VerticalAlignment = VerticalAlignment.Center
         });
 
@@ -140,7 +140,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
         var state = new TextBlock
         {
-            TextAlignment = Avalonia.Media.TextAlignment.Right,
+            TextAlignment = global::Avalonia.Media.TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center
         };
         state.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioStateText)));
@@ -181,9 +181,9 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var remoteState = new TextBlock
         {
             VerticalAlignment = VerticalAlignment.Center,
-            TextAlignment = Avalonia.Media.TextAlignment.Right,
+            TextAlignment = global::Avalonia.Media.TextAlignment.Right,
             FontSize = 11,
-            Foreground = Avalonia.Media.Brushes.Gray
+            Foreground = global::Avalonia.Media.Brushes.Gray
         };
         remoteState.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteStatusText)));
         remoteState.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteVncEndpoint)));
@@ -197,7 +197,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     {
         var panel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -212,7 +212,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         grid.Children.Add(new TextBlock
         {
             Text = "Elements",
-            FontWeight = Avalonia.Media.FontWeight.Bold
+            FontWeight = global::Avalonia.Media.FontWeight.Bold
         });
 
         var search = new TextBox
@@ -241,13 +241,13 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                         {
                             Text = item.Id,
                             FontSize = 11,
-                            Foreground = Avalonia.Media.Brushes.Gray
+                            Foreground = global::Avalonia.Media.Brushes.Gray
                         },
                         new TextBlock
                         {
                             Text = item.DescendantCount > 0 ? "(" + item.DescendantCount + ")" : string.Empty,
                             FontSize = 11,
-                            Foreground = Avalonia.Media.Brushes.DarkGray
+                            Foreground = global::Avalonia.Media.Brushes.DarkGray
                         }
                     }
                 },
@@ -279,7 +279,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                         {
                             Text = item.Category,
                             FontSize = 11,
-                            Foreground = Avalonia.Media.Brushes.Gray
+                            Foreground = global::Avalonia.Media.Brushes.Gray
                         }
                     }
                 },
@@ -321,7 +321,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     {
         _liveSurfacePanel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -336,7 +336,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         grid.Children.Add(new TextBlock
         {
             Text = "Live App Surface",
-            FontWeight = Avalonia.Media.FontWeight.Bold
+            FontWeight = global::Avalonia.Media.FontWeight.Bold
         });
 
         _livePresenter = new ContentControl
@@ -432,8 +432,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         var status = new TextBlock
         {
             FontSize = 11,
-            Foreground = Avalonia.Media.Brushes.Gray,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            Foreground = global::Avalonia.Media.Brushes.Gray,
+            TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
         };
         status.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StatusMessage)));
         Grid.SetRow(status, 2);
@@ -448,7 +448,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
     {
         var panel = new Border
         {
-            BorderBrush = Avalonia.Media.Brushes.DimGray,
+            BorderBrush = global::Avalonia.Media.Brushes.DimGray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8)
@@ -679,8 +679,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             AcceptsReturn = true,
             AcceptsTab = true,
-            FontFamily = Avalonia.Media.FontFamily.Parse("Consolas"),
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap
+            FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas"),
+            TextWrapping = global::Avalonia.Media.TextWrapping.NoWrap
         };
         editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.XamlText), BindingMode.TwoWay));
         Grid.SetRow(editor, 1);
@@ -725,8 +725,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             AcceptsReturn = true,
             AcceptsTab = true,
-            FontFamily = Avalonia.Media.FontFamily.Parse("Consolas"),
-            TextWrapping = Avalonia.Media.TextWrapping.NoWrap
+            FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas"),
+            TextWrapping = global::Avalonia.Media.TextWrapping.NoWrap
         };
         editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateXamlText), BindingMode.TwoWay));
         Grid.SetRow(editor, 1);

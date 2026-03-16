@@ -6,8 +6,8 @@ using System.Threading;
 using System.Xml.Linq;
 using System.Xml;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media;
+using global::Avalonia.Controls;
+using global::Avalonia.Media;
 
 namespace XamlToCSharpGenerator.Runtime;
 

@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Avalonia.Controls;
+using global::Avalonia.Controls;
 
 namespace XamlToCSharpGenerator.Runtime;
 

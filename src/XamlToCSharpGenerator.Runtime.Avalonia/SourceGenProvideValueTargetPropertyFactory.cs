@@ -1,5 +1,5 @@
 using System;
-using Avalonia.Data.Core;
+using global::Avalonia.Data.Core;
 
 namespace XamlToCSharpGenerator.Runtime;
 

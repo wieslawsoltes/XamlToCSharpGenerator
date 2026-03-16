@@ -1,11 +1,11 @@
 using System;
 using System.Diagnostics;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.Threading;
+using global::Avalonia.Controls;
+using global::Avalonia.Layout;
+using global::Avalonia.Media;
+using global::Avalonia.Platform;
+using global::Avalonia.Threading;
 using System.Collections.Generic;
 using System.Windows.Input;
 
@@ -358,7 +358,7 @@ public static class XamlSourceGenStudioHost
 
     private static IEnumerable<Window> EnumerateStudioEligibleWindows()
     {
-        if (Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktopLifetime)
+        if (Application.Current?.ApplicationLifetime is not global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktopLifetime)
         {
             yield break;
         }
@@ -382,7 +382,7 @@ public static class XamlSourceGenStudioHost
 
     private static bool IsDesktopWindowingAvailable()
     {
-        return Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+        return Application.Current?.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
     }
 
     private static void TryOpenVncViewer(string endpoint)

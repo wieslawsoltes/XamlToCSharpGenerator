@@ -20,6 +20,8 @@ public sealed class SourceGenStudioOptions
 
     public bool EnableTracing { get; set; }
 
+    public SourceGenStudioCanvasLayoutMode CanvasLayoutMode { get; set; } = SourceGenStudioCanvasLayoutMode.SideBySide;
+
     public int MaxOperationHistoryEntries { get; set; } = 200;
 
     public bool EnableRemoteDesign { get; set; }
@@ -44,6 +46,7 @@ public sealed class SourceGenStudioOptions
             EnableExternalWindow = EnableExternalWindow,
             AutoOpenStudioWindowOnStartup = AutoOpenStudioWindowOnStartup,
             EnableTracing = EnableTracing,
+            CanvasLayoutMode = CanvasLayoutMode,
             MaxOperationHistoryEntries = MaxOperationHistoryEntries,
             EnableRemoteDesign = EnableRemoteDesign,
             RemoteHost = RemoteHost,

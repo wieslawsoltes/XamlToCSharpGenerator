@@ -22,6 +22,8 @@
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Previewer.DesignerHost\XamlToCSharpGenerator.Previewer.DesignerHost.csproj" />
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.PreviewerHost\XamlToCSharpGenerator.PreviewerHost.csproj" />
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
     <ProjectReference Include="..\..\samples\ControlCatalog\ControlCatalog.csproj" />
   </ItemGroup>

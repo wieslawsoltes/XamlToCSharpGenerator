@@ -10,6 +10,7 @@ using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using XamlToCSharpGenerator.Editor.Avalonia;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -40,6 +41,63 @@ public class XamlSourceGenStudioViewTests
             Dispatcher.UIThread.RunJobs();
 
             Assert.NotEmpty(window.GetVisualDescendants().OfType<ComboBox>());
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            ResetRuntimeState();
+        }
+    }
+
+    [AvaloniaFact]
+    public void StudioShellView_CanvasSplitWorkspace_Uses_GridSplitter_And_AxamlEditors()
+    {
+        ResetRuntimeState();
+        EnsureFluentTheme();
+
+        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions
+        {
+            CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.SideBySide
+        });
+        var window = new Window
+        {
+            Width = 1280,
+            Height = 900,
+            Content = new XamlSourceGenStudioShellView
+            {
+                DataContext = viewModel
+            }
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(window.GetVisualDescendants().OfType<GridSplitter>().Any());
+            Assert.True(window.GetVisualDescendants().OfType<AxamlTextEditor>().Any());
+
+            viewModel.CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.PreviewOnly;
+            Dispatcher.UIThread.RunJobs();
+
+            var splitter = Assert.Single(window.GetVisualDescendants().OfType<GridSplitter>());
+            Assert.False(splitter.IsVisible);
+
+            viewModel.CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.Stacked;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(splitter.IsVisible);
+
+            var tabs = Assert.Single(window.GetVisualDescendants().OfType<TabControl>());
+            tabs.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(window.GetVisualDescendants().OfType<AxamlTextEditor>().Any());
         }
         finally
         {

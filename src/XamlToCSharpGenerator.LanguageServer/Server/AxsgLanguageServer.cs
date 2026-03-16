@@ -267,6 +267,15 @@ internal sealed class AxsgLanguageServer : IDisposable
                 }
                 break;
 
+            case "axsg/preview/projectContext":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandlePreviewProjectContextAsync(requestId, requestParameters, token));
+                }
+                break;
+
             case "axsg/csharp/references":
                 if (hasId)
                 {
@@ -982,6 +991,29 @@ internal sealed class AxsgLanguageServer : IDisposable
             });
         }
 
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandlePreviewProjectContextAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var context = await _engine.GetPreviewProjectContextAsync(
+            uri,
+            _navigationOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (context is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var payload = new JsonObject
+        {
+            ["projectPath"] = context.ProjectPath,
+            ["projectDirectory"] = context.ProjectDirectory,
+            ["filePath"] = context.FilePath,
+            ["targetPath"] = context.TargetPath
+        };
         await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
     }
 

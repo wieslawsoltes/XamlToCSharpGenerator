@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Presenters;
-using Avalonia.Controls.Shapes;
-using Avalonia.Layout;
-using Avalonia.Styling;
+using global::Avalonia.Controls;
+using global::Avalonia.Controls.Primitives;
+using global::Avalonia.Controls.Presenters;
+using global::Avalonia.Controls.Shapes;
+using global::Avalonia.Layout;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -372,7 +372,7 @@ public static class SourceGenKnownTypeRegistry
             typeof(Slider),
             typeof(Rectangle),
             typeof(Ellipse),
-            typeof(Avalonia.Controls.Shapes.Path),
+            typeof(global::Avalonia.Controls.Shapes.Path),
             typeof(Style),
             typeof(Setter),
             typeof(ControlTheme)

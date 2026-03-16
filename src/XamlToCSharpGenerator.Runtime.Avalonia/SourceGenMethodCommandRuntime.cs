@@ -4,8 +4,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Threading;
 using System.Windows.Input;
-using Avalonia.Threading;
-using Avalonia.Utilities;
+using global::Avalonia.Threading;
+using global::Avalonia.Utilities;
 
 namespace XamlToCSharpGenerator.Runtime;
 
