@@ -16178,15 +16178,47 @@ public class AvaloniaXamlSourceGeneratorTests
     public void Emits_Deterministic_SolidColorBrush_For_Color_Literals_With_Parse_Fallback_Preserved()
     {
         const string code = """
+            namespace System.ComponentModel
+            {
+                [global::System.AttributeUsage(
+                    global::System.AttributeTargets.Class |
+                    global::System.AttributeTargets.Struct |
+                    global::System.AttributeTargets.Enum |
+                    global::System.AttributeTargets.Property)]
+                public sealed class TypeConverterAttribute : global::System.Attribute
+                {
+                    public TypeConverterAttribute(global::System.Type converterType)
+                    {
+                    }
+                }
+
+                public interface ITypeDescriptorContext { }
+
+                public class TypeConverter
+                {
+                    public virtual object? ConvertFromInvariantString(string text) => text;
+
+                    public virtual object? ConvertFrom(
+                        ITypeDescriptorContext? context,
+                        global::System.Globalization.CultureInfo? culture,
+                        object value) => value;
+                }
+            }
+
             namespace Avalonia.Media
             {
                 public interface IBrush
                 {
                 }
 
+                [global::System.ComponentModel.TypeConverter(typeof(global::Avalonia.Media.BrushConverter))]
                 public class Brush : IBrush
                 {
                     public static Brush Parse(string value) => new Brush();
+                }
+
+                public sealed class ImmutableSolidColorBrush : Brush
+                {
                 }
 
                 public struct Color
@@ -16206,6 +16238,17 @@ public class AvaloniaXamlSourceGeneratorTests
                     }
 
                     public static SolidColorBrush Parse(string value) => new SolidColorBrush(default);
+                }
+
+                public sealed class BrushConverter : global::System.ComponentModel.TypeConverter
+                {
+                    public override object? ConvertFrom(
+                        global::System.ComponentModel.ITypeDescriptorContext? context,
+                        global::System.Globalization.CultureInfo? culture,
+                        object value)
+                    {
+                        return new ImmutableSolidColorBrush();
+                    }
                 }
             }
 
@@ -16268,6 +16311,7 @@ public class AvaloniaXamlSourceGeneratorTests
             "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromUInt32(0xFF506070u))",
             generated);
         Assert.Contains("global::Avalonia.Media.SolidColorBrush.Parse(\"rgba(2,3,4,1)\")", generated);
+        Assert.DoesNotContain("new global::Avalonia.Media.BrushConverter().ConvertFrom(", generated, StringComparison.Ordinal);
     }
 
     [Fact]

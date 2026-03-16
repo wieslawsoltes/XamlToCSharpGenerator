@@ -8770,8 +8770,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         out string expression)
     {
         expression = string.Empty;
+        var trimmedValue = value.Trim();
         if (targetType.SpecialType == SpecialType.System_Object ||
-            string.IsNullOrWhiteSpace(value))
+            trimmedValue.Length == 0)
         {
             return false;
         }
@@ -8794,11 +8795,19 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             colorType is not null &&
             IsTypeAssignableTo(solidColorBrushType, targetType) &&
             TryConvertDeterministicSolidColorBrushExpression(
-                value,
+                trimmedValue,
                 compilation,
                 solidColorBrushType,
                 colorType,
                 out expression))
+        {
+            return true;
+        }
+
+        if (solidColorBrushType is not null &&
+            targetType is INamedTypeSymbol namedTargetType &&
+            SymbolEqualityComparer.Default.Equals(namedTargetType, solidColorBrushType) &&
+            TryConvertByStaticParseMethod(solidColorBrushType, trimmedValue, out expression))
         {
             return true;
         }
@@ -8808,7 +8817,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        expression = "global::Avalonia.Media.Brush.Parse(\"" + Escape(value.Trim()) + "\")";
+        expression = "global::Avalonia.Media.Brush.Parse(\"" + Escape(trimmedValue) + "\")";
         return true;
     }
 
