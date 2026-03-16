@@ -534,7 +534,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         column: setter.Column,
                         diagnostics: diagnostics,
                         resolution: out var styleSetterResolution,
-                        setterContext: true))
+                        setterContext: true,
+                        converterAttributes: targetProperty?.GetAttributes() ?? default))
                 {
                     valueExpression = styleSetterResolution.Expression;
                     valueResolvedFromMarkup = true;
@@ -1065,7 +1066,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         column: setter.Column,
                         diagnostics: diagnostics,
                         resolution: out var controlThemeSetterResolution,
-                        setterContext: true))
+                        setterContext: true,
+                        converterAttributes: targetProperty?.GetAttributes() ?? default))
                 {
                     valueExpression = controlThemeSetterResolution.Expression;
                     valueResolvedFromMarkup = true;

@@ -725,6 +725,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         foreach (var assignment in node.PropertyAssignments)
         {
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
+            if (CanEmitInClrObjectInitializer(node, assignment))
+            {
+                continue;
+            }
+
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
             var bindingAnchorExpression =
@@ -1594,6 +1599,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             }
 
             var avaloniaPropertyExpression = BuildAvaloniaPropertyExpression(assignment);
+            if (CanEmitInClrObjectInitializer(node, assignment))
+            {
+                continue;
+            }
+
             var avaloniaPriorityExpression = BuildAvaloniaPriorityExpression(assignment);
             var targetPropertyExpression = BuildTargetPropertyExpression(assignment);
             var bindingAnchorExpression =
@@ -2938,20 +2948,38 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         }
 
         if (node.UseServiceProviderConstructor &&
+        string creationExpression;
             ShouldUseBaseUriConstructor(node))
         {
-            return "new " + node.TypeName + "(__AXSGObjectGraph.TryCreateUri(" + baseUriExpression + "))";
+            creationExpression = "new " + node.TypeName + "(__AXSGObjectGraph.TryCreateUri(" + baseUriExpression + "))";
         }
-
-        return node.UseServiceProviderConstructor
-            ? BuildServiceProviderConstructorExpression(
+        else if (node.UseServiceProviderConstructor)
+        {
+            creationExpression = BuildServiceProviderConstructorExpression(
                 node,
                 serviceProviderReference,
                 baseUriExpression,
                 rootReference,
                 intermediateRootReference,
-                parentStackExpression)
-            : "new " + node.TypeName + "()";
+                parentStackExpression);
+        }
+        else
+        {
+            creationExpression = "new " + node.TypeName + "()";
+        }
+
+        if (!CanUseClrObjectInitializer(node))
+        {
+            return creationExpression;
+        }
+
+        var initializerParts = BuildClrObjectInitializerParts(node);
+        if (initializerParts.Count == 0)
+        {
+            return creationExpression;
+        }
+
+        return creationExpression + " { " + string.Join(", ", initializerParts) + " }";
     }
 
     private static string BuildServiceProviderConstructorExpression(
@@ -2984,6 +3012,44 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     }
 
     private static string BuildDictionaryKeyExpression(string propertyName, string keyExpression)
+    private static bool CanUseClrObjectInitializer(ResolvedObjectNode node)
+    {
+        return string.IsNullOrWhiteSpace(node.FactoryExpression);
+    }
+
+    private static List<string> BuildClrObjectInitializerParts(ResolvedObjectNode node)
+    {
+        var initializerParts = new List<string>();
+        for (var index = 0; index < node.PropertyAssignments.Length; index++)
+        {
+            var assignment = node.PropertyAssignments[index];
+            if (!CanEmitInClrObjectInitializer(node, assignment))
+            {
+                continue;
+            }
+
+            initializerParts.Add(
+                assignment.PropertyName +
+                " = " +
+                BuildClrTypedValueExpression(assignment.ClrPropertyTypeName, assignment.ValueExpression));
+        }
+
+        return initializerParts;
+    }
+
+    private static bool CanEmitInClrObjectInitializer(
+        ResolvedObjectNode node,
+        ResolvedPropertyAssignment assignment)
+    {
+        return assignment.RequiresObjectInitializer &&
+               CanUseClrObjectInitializer(node) &&
+               assignment.Condition is null &&
+               !assignment.ValueRequirements.RequiresMarkupContext &&
+               string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyOwnerTypeName) &&
+               string.IsNullOrWhiteSpace(assignment.AvaloniaPropertyFieldName) &&
+               !string.IsNullOrWhiteSpace(assignment.PropertyName);
+    }
+
     {
         if (!string.Equals(propertyName, "ThemeDictionaries", StringComparison.Ordinal))
         {

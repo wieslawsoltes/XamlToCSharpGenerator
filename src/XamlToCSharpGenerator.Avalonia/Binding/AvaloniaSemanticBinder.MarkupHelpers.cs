@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -152,8 +153,8 @@ public sealed partial class AvaloniaSemanticBinder
                 }
 
                 expression = targetType.SpecialType == SpecialType.System_Single
-                    ? parsed.ToString("R", CultureInfo.InvariantCulture) + "f"
-                    : parsed.ToString("R", CultureInfo.InvariantCulture) + "d";
+                    ? FormatSingleLiteral((float)parsed)
+                    : FormatDoubleLiteral(parsed);
                 return true;
             }
             case XamlMarkupExtensionKind.Decimal:
@@ -496,6 +497,161 @@ public sealed partial class AvaloniaSemanticBinder
         expression = namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
                      ".Parse(\"" + Escape(value) + "\", global::System.Globalization.CultureInfo.InvariantCulture)";
         return true;
+    }
+
+    private static bool TryConvertByTypeConverter(
+        ITypeSymbol type,
+        string value,
+        Compilation compilation,
+        out string expression,
+        ImmutableArray<AttributeData> converterAttributes = default)
+    {
+        expression = string.Empty;
+        var converterType = ResolveTypeConverterType(type, compilation, converterAttributes);
+        if (converterType is null ||
+            converterType.DeclaredAccessibility != Accessibility.Public ||
+            converterType.IsAbstract ||
+            !HasPublicParameterlessConstructor(converterType) ||
+            !IsTypeConverterType(converterType, compilation))
+        {
+            return false;
+        }
+
+        expression = "(" +
+                     type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     ")new " +
+                     converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     "().ConvertFromInvariantString(\"" +
+                     Escape(value) +
+                     "\")";
+        return true;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterType(
+        ITypeSymbol targetType,
+        Compilation compilation,
+        ImmutableArray<AttributeData> converterAttributes = default)
+    {
+        var propertyLevelConverterType = ResolveTypeConverterTypeFromAttributes(converterAttributes, compilation);
+        if (propertyLevelConverterType is not null)
+        {
+            return propertyLevelConverterType;
+        }
+
+        var typeSymbol = UnwrapNullableNamedType(targetType);
+        for (var current = typeSymbol; current is not null; current = current.BaseType)
+        {
+            var converterType = ResolveTypeConverterTypeFromAttributes(current.GetAttributes(), compilation);
+            if (converterType is not null)
+            {
+                return converterType;
+            }
+        }
+
+        return null;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterTypeFromAttributes(
+        ImmutableArray<AttributeData> attributes,
+        Compilation compilation)
+    {
+        if (attributes.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < attributes.Length; index++)
+        {
+            var attribute = attributes[index];
+            if (!string.Equals(
+                    attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    "global::" + TypeConverterAttributeMetadataName,
+                    StringComparison.Ordinal) ||
+                attribute.ConstructorArguments.Length != 1)
+            {
+                continue;
+            }
+
+            var typeName = TryGetTypeConverterTypeName(attribute.ConstructorArguments[0]);
+            if (string.IsNullOrWhiteSpace(typeName))
+            {
+                continue;
+            }
+
+            var resolvedType = ResolveTypeConverterTypeByName(compilation, typeName!);
+            if (resolvedType is not null)
+            {
+                return resolvedType;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetTypeConverterTypeName(TypedConstant argument)
+    {
+        if (argument.Kind == TypedConstantKind.Type &&
+            argument.Value is ITypeSymbol typeSymbol)
+        {
+            return typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        }
+
+        if (argument.Value is string typeName &&
+            !string.IsNullOrWhiteSpace(typeName))
+        {
+            var commaIndex = typeName.IndexOf(',');
+            return commaIndex >= 0
+                ? typeName.Substring(0, commaIndex).Trim()
+                : typeName.Trim();
+        }
+
+        return null;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeConverterTypeByName(Compilation compilation, string typeName)
+    {
+        var trimmedTypeName = typeName.Trim();
+        if (trimmedTypeName.Length == 0)
+        {
+            return null;
+        }
+
+        var normalizedTypeName = trimmedTypeName.StartsWith("global::", StringComparison.Ordinal)
+            ? trimmedTypeName.Substring("global::".Length)
+            : trimmedTypeName;
+
+        return compilation.GetTypeByMetadataName(normalizedTypeName);
+    }
+
+    private static bool HasPublicParameterlessConstructor(INamedTypeSymbol type)
+    {
+        return type.InstanceConstructors.Any(static constructor =>
+            constructor.DeclaredAccessibility == Accessibility.Public &&
+            constructor.Parameters.Length == 0);
+    }
+
+    private static bool IsTypeConverterType(INamedTypeSymbol candidateType, Compilation compilation)
+    {
+        var typeConverterType = compilation.GetTypeByMetadataName(TypeConverterMetadataName);
+        return typeConverterType is not null && IsTypeAssignableTo(candidateType, typeConverterType);
+    }
+
+    private static INamedTypeSymbol? UnwrapNullableNamedType(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType &&
+            namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            namedType.TypeArguments.Length == 1)
+        {
+            return namedType.TypeArguments[0] as INamedTypeSymbol;
+        }
+
+        return type as INamedTypeSymbol;
+    }
+
+    private static bool RequiresObjectInitializer(IPropertySymbol property, ResolvedValueRequirements valueRequirements)
+    {
+        return property.SetMethod?.IsInitOnly == true &&
+               !valueRequirements.RequiresMarkupContext;
     }
 
     private static bool IsCultureAwareParseParameter(ITypeSymbol type)
