@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +34,52 @@ public class XamlSourceGenHotDesignManagerTests
         Assert.Equal(SourceGenHotDesignDocumentRole.Root, document.DocumentRole);
         Assert.Equal(SourceGenHotDesignArtifactKind.View, document.ArtifactKind);
         Assert.Null(document.ScopeHints);
+    }
+
+    [Fact]
+    public void Register_Publishes_Status_And_Document_Events()
+    {
+        ResetManager();
+
+        SourceGenHotDesignStatus? latestStatus = null;
+        IReadOnlyList<SourceGenHotDesignDocumentDescriptor>? latestDocuments = null;
+        XamlSourceGenHotDesignManager.HotDesignStatusChanged += OnStatusChanged;
+        XamlSourceGenHotDesignManager.HotDesignDocumentsChanged += OnDocumentsChanged;
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignTarget(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = "avares://tests/EventedHotDesign.axaml",
+                    SourcePath = "/tmp/EventedHotDesign.axaml"
+                });
+
+            Assert.NotNull(latestStatus);
+            Assert.NotNull(latestDocuments);
+            Assert.Equal(1, latestStatus!.RegisteredDocumentCount);
+            Assert.Single(latestDocuments!);
+            Assert.Equal("avares://tests/EventedHotDesign.axaml", latestDocuments[0].BuildUri);
+        }
+        finally
+        {
+            XamlSourceGenHotDesignManager.HotDesignStatusChanged -= OnStatusChanged;
+            XamlSourceGenHotDesignManager.HotDesignDocumentsChanged -= OnDocumentsChanged;
+        }
+
+        return;
+
+        void OnStatusChanged(SourceGenHotDesignStatus status)
+        {
+            latestStatus = status;
+        }
+
+        void OnDocumentsChanged(IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents)
+        {
+            latestDocuments = documents;
+        }
     }
 
     [Fact]

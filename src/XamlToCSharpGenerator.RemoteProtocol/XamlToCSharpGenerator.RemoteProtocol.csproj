@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.RemoteProtocol</PackageId>
+    <Description>Shared JSON-RPC framing and remote protocol helpers for AXSG language, preview, hot reload, hot design, and MCP hosts.</Description>
+    <PackageTags>$(PackageTags);json-rpc;mcp;lsp;remote</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+  </ItemGroup>
+</Project>

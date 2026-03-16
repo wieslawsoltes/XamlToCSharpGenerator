@@ -9,9 +9,11 @@ using System.Text.Json.Nodes;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Remote;
 using XamlToCSharpGenerator.LanguageService.Refactorings;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
 using XamlToCSharpGenerator.LanguageServer.Protocol;
+using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 
 namespace XamlToCSharpGenerator.LanguageServer.Server;
 
@@ -22,6 +24,7 @@ internal sealed class AxsgLanguageServer : IDisposable
     private readonly XamlLanguageServiceEngine _engine;
     private readonly XamlLanguageServiceOptions _options;
     private readonly XamlLanguageServiceOptions _navigationOptions;
+    private readonly AxsgPreviewQueryService _previewQueryService;
     private XamlInlayHintOptions _inlayHintOptions = XamlInlayHintOptions.Default;
     private readonly ConcurrentDictionary<string, DocumentState> _openDocuments = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _diagnosticUpdateTokens = new(StringComparer.Ordinal);
@@ -47,6 +50,7 @@ internal sealed class AxsgLanguageServer : IDisposable
             IncludeCompilationDiagnostics = false,
             IncludeSemanticDiagnostics = false
         };
+        _previewQueryService = new AxsgPreviewQueryService(_engine, _navigationOptions);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -1188,8 +1192,8 @@ internal sealed class AxsgLanguageServer : IDisposable
         var response = new JsonObject
         {
             ["jsonrpc"] = "2.0",
-            ["id"] = CloneJsonElement(id),
-            ["result"] = SerializeResultValue(value)
+            ["id"] = JsonRpcNodeHelpers.CloneJsonElement(id),
+            ["result"] = JsonRpcNodeHelpers.SerializeResultValue(value)
         };
 
         return _writer.WriteAsync(response, cancellationToken);
@@ -1200,7 +1204,7 @@ internal sealed class AxsgLanguageServer : IDisposable
         var response = new JsonObject
         {
             ["jsonrpc"] = "2.0",
-            ["id"] = CloneJsonElement(id),
+            ["id"] = JsonRpcNodeHelpers.CloneJsonElement(id),
             ["error"] = new JsonObject
             {
                 ["code"] = code,
@@ -1209,100 +1213,6 @@ internal sealed class AxsgLanguageServer : IDisposable
         };
 
         return _writer.WriteAsync(response, cancellationToken);
-    }
-
-    private static JsonNode? CloneJsonElement(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => JsonValue.Create(element.GetString()),
-            JsonValueKind.Number => CloneNumberElement(element),
-            JsonValueKind.True => JsonValue.Create(true),
-            JsonValueKind.False => JsonValue.Create(false),
-            JsonValueKind.Null => null,
-            JsonValueKind.Undefined => null,
-            JsonValueKind.Object => CloneObjectElement(element),
-            JsonValueKind.Array => CloneArrayElement(element),
-            _ => JsonValue.Create(element.GetRawText())
-        };
-    }
-
-    private static JsonNode CloneNumberElement(JsonElement element)
-    {
-        if (element.TryGetInt64(out var int64Value))
-        {
-            return JsonValue.Create(int64Value)!;
-        }
-
-        if (element.TryGetUInt64(out var uint64Value))
-        {
-            return JsonValue.Create(uint64Value)!;
-        }
-
-        if (element.TryGetDecimal(out var decimalValue))
-        {
-            return JsonValue.Create(decimalValue)!;
-        }
-
-        if (element.TryGetDouble(out var doubleValue))
-        {
-            return JsonValue.Create(doubleValue)!;
-        }
-
-        var rawNumber = element.GetRawText();
-        if (decimal.TryParse(rawNumber, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDecimal))
-        {
-            return JsonValue.Create(parsedDecimal)!;
-        }
-
-        if (double.TryParse(rawNumber, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDouble))
-        {
-            return JsonValue.Create(parsedDouble)!;
-        }
-
-        return JsonValue.Create(rawNumber)!;
-    }
-
-    private static JsonObject CloneObjectElement(JsonElement element)
-    {
-        var objectNode = new JsonObject();
-        foreach (var property in element.EnumerateObject())
-        {
-            objectNode[property.Name] = CloneJsonElement(property.Value);
-        }
-
-        return objectNode;
-    }
-
-    private static JsonArray CloneArrayElement(JsonElement element)
-    {
-        var arrayNode = new JsonArray();
-        foreach (var item in element.EnumerateArray())
-        {
-            arrayNode.Add(CloneJsonElement(item));
-        }
-
-        return arrayNode;
-    }
-
-    private static JsonNode? SerializeResultValue(object? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (value is JsonNode node)
-        {
-            return node.DeepClone();
-        }
-
-        if (value is JsonElement element)
-        {
-            return CloneJsonElement(element);
-        }
-
-        return JsonSerializer.SerializeToNode(value);
     }
 
     private static TextDocumentPositionRequest ParseTextDocumentPosition(JsonElement parameters)
