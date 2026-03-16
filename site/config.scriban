@@ -84,6 +84,7 @@ with api.dotnet
         { name: "Generator", path: "../src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" },
         { name: "Runtime.Avalonia", path: "../src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" },
         { name: "Runtime.Core", path: "../src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" },
+        { name: "RemoteProtocol", path: "../src/XamlToCSharpGenerator.RemoteProtocol/XamlToCSharpGenerator.RemoteProtocol.csproj" },
         { name: "LanguageService", path: "../src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" },
         { name: "LanguageServer", path: "../src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" },
         { name: "Editor.Avalonia", path: "../src/XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj" }

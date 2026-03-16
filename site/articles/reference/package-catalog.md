@@ -23,8 +23,10 @@ Use [Package and Assembly](package-and-assembly/) when you need the concrete map
 | `XamlToCSharpGenerator.Runtime` | runtime umbrella | you want runtime packages without picking sublayers | [Guide](runtime/) |
 | `XamlToCSharpGenerator.Runtime.Core` | framework-neutral runtime contracts | you need registry/source-info/hot-reload contracts | [Guide](runtime-core/) |
 | `XamlToCSharpGenerator.Runtime.Avalonia` | Avalonia runtime integration | you need Avalonia loader/bootstrap/hot reload behavior | [Guide](runtime-avalonia/) |
+| `XamlToCSharpGenerator.RemoteProtocol` | shared remote protocol contracts | you are composing MCP, preview, or remote AXSG hosts | [Guide](remote-protocol/) |
 | `XamlToCSharpGenerator.LanguageService` | shared LS core | you are embedding or hosting AXSG language features | [Guide](language-service/) |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | `dotnet tool` LSP host | you want the standalone language server | [Guide](language-server-tool/) |
+| `XamlToCSharpGenerator.McpServer.Tool` | `dotnet tool` MCP host | you want the standalone workspace MCP server | [Guide](mcp-server-tool/) |
 | `XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based editor | you need an in-app AXAML editor control | [Guide](editor-avalonia/) |
 | `xamltocsharpgenerator.axsg-language-server` | VS Code extension | you want the bundled VS Code client/server experience | [Guide](vscode-extension/) |
 

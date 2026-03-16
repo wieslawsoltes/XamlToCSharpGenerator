@@ -21,6 +21,8 @@ These guides are task-oriented. Start here when you know what you want to do but
 - [Inline C# Code](inline-csharp-code/)
 - [Navigation and Refactorings](navigation-and-refactorings/)
 - [VS Code and Language Service](vscode-language-service/)
+- [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
+- [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
 
 ### Runtime and hot reload workflows
 
@@ -46,8 +48,9 @@ These guides are task-oriented. Start here when you know what you want to do but
 ### Editor or tooling integration
 
 1. [VS Code and Language Service](vscode-language-service/)
-2. [Navigation and Refactorings](navigation-and-refactorings/)
-3. [Runtime Loader and Fallback](runtime-loader-and-fallback/)
+2. [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
+3. [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
+4. [Navigation and Refactorings](navigation-and-refactorings/)
 
 ### CI, release, and maintenance work
 

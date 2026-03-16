@@ -1,6 +1,6 @@
 # XamlToCSharpGenerator
 
-`XamlToCSharpGenerator` is a source-generated XAML compiler stack for Avalonia, with optional runtime services, hot reload/hot design support, a reusable language-service core, an Avalonia editor control, a CLI language-server tool, and a VS Code extension.
+`XamlToCSharpGenerator` is a source-generated XAML compiler stack for Avalonia, with optional runtime services, hot reload/hot design support, a reusable language-service core, an Avalonia editor control, a CLI language-server tool, a workspace MCP tool, and a VS Code extension.
 
 The repository ships both a recommended end-user install surface and the lower-level packages used to compose custom tooling, editors, and framework adapters.
 
@@ -13,9 +13,11 @@ The repository ships both a recommended end-user install surface and the lower-l
 | `XamlToCSharpGenerator.Runtime` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Runtime?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Runtime?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime/) | Runtime/hot-reload consumers | `dotnet add package XamlToCSharpGenerator.Runtime` | Compatibility runtime package that composes the framework-neutral and Avalonia runtime layers. |
 | `XamlToCSharpGenerator.Runtime.Core` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Runtime.Core?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime.Core/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Runtime.Core?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime.Core/) | Tooling/runtime authors | `dotnet add package XamlToCSharpGenerator.Runtime.Core` | Framework-neutral runtime registries, URI mapping, and hot-reload contracts. |
 | `XamlToCSharpGenerator.Runtime.Avalonia` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Runtime.Avalonia?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime.Avalonia/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Runtime.Avalonia?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Runtime.Avalonia/) | Avalonia runtime authors | `dotnet add package XamlToCSharpGenerator.Runtime.Avalonia` | Avalonia-specific runtime loader, markup helpers, bootstrap extensions, and hot-reload integration. |
+| `XamlToCSharpGenerator.RemoteProtocol` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.RemoteProtocol?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.RemoteProtocol/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.RemoteProtocol?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.RemoteProtocol/) | Tooling and host authors | `dotnet add package XamlToCSharpGenerator.RemoteProtocol` | Shared JSON-RPC framing plus MCP, preview, and studio remote contracts used by AXSG hosts. |
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Editor.Avalonia?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Editor.Avalonia?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Editor.Avalonia/) | Editor/tool authors | `dotnet add package XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based AXAML editor control backed by the AXSG language-service core. |
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageService?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageService?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageService/) | Tooling authors | `dotnet add package XamlToCSharpGenerator.LanguageService` | Shared semantic language-service layer used by LSP and in-app editors. |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.LanguageServer.Tool?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.LanguageServer.Tool?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.LanguageServer.Tool/) | CLI and editor integration | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` | Packs the `axsg-lsp` command for LSP hosting outside VS Code. |
+| `XamlToCSharpGenerator.McpServer.Tool` | .NET tool package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.McpServer.Tool?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.McpServer.Tool/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.McpServer.Tool?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.McpServer.Tool/) | AI, automation, and remote-tool integration | `dotnet tool install --global XamlToCSharpGenerator.McpServer.Tool` | Packs the `axsg-mcp` command for workspace MCP hosting and shared AXSG query tooling. |
 | `AXSG XAML Language Service` | VS Code extension (`.vsix`) | [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/xamltocsharpgenerator.axsg-language-server?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | [![Downloads](https://img.shields.io/visual-studio-marketplace/d/xamltocsharpgenerator.axsg-language-server?label=Downloads)](https://marketplace.visualstudio.com/items?itemName=xamltocsharpgenerator.axsg-language-server) | VS Code users | `code --install-extension ./axsg-language-server-x.y.z.vsix` | XAML/AXAML completion, diagnostics, navigation, rename propagation, inlay hints, hover, semantic highlighting, and inline C# editor support. |
 | `XamlToCSharpGenerator.Generator` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Generator?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Generator?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Generator/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Generator` | Standalone Roslyn generator backend. Use when you need the generator without the umbrella package. |
 | `XamlToCSharpGenerator.Core` | NuGet package | [![NuGet](https://img.shields.io/nuget/v/XamlToCSharpGenerator.Core?label=NuGet)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | [![Downloads](https://img.shields.io/nuget/dt/XamlToCSharpGenerator.Core?label=Downloads)](https://www.nuget.org/packages/XamlToCSharpGenerator.Core/) | Advanced compiler integrators | `dotnet add package XamlToCSharpGenerator.Core` | Immutable parser model, diagnostics, configuration contracts, and shared semantic core. |
@@ -129,6 +131,7 @@ The remaining NuGet packages exist for advanced composition:
 - Shared XAML language-service core with references/definitions/hover/inlay hints/rename
 - Inline C# language-service support with semantic highlighting, completion, references, and declarations in both attribute and element-content forms
 - VS Code extension and Avalonia editor control built on the same semantic engine
+- Unified MCP surfaces for workspace queries, runtime hot reload and hot design state, and preview lifecycle orchestration
 
 For feature-specific details:
 
@@ -137,6 +140,25 @@ For feature-specific details:
 - C# expressions: [`site/articles/xaml/csharp-expressions.md`](site/articles/xaml/csharp-expressions.md)
 - inline C# code blocks: [`site/articles/guides/inline-csharp-code.md`](site/articles/guides/inline-csharp-code.md)
 - iOS hot reload: [`site/articles/guides/hot-reload-ios.md`](site/articles/guides/hot-reload-ios.md)
+- MCP hosts and live tooling: [`site/articles/guides/mcp-servers-and-live-tooling.md`](site/articles/guides/mcp-servers-and-live-tooling.md)
+
+## MCP Hosts
+
+AXSG now ships three MCP-oriented host modes:
+
+- workspace host: `axsg-mcp --workspace /path/to/repo`
+- runtime host: embed `XamlSourceGenRuntimeMcpServer` into the running Avalonia app
+- preview host: `dotnet run --project src/XamlToCSharpGenerator.PreviewerHost -- --mcp`
+
+Use the workspace host for project and query tooling.
+Use the runtime host for live `dotnet watch`, hot reload, hot design, and studio state.
+Use the preview host when a custom client needs explicit preview start, in-process preview hot reload, update, stop, and lifecycle resources.
+
+The full operational guide is here:
+
+- [`site/articles/guides/mcp-servers-and-live-tooling.md`](site/articles/guides/mcp-servers-and-live-tooling.md)
+- [`site/articles/guides/preview-mcp-host-and-live-preview.md`](site/articles/guides/preview-mcp-host-and-live-preview.md)
+- [`site/articles/architecture/unified-remote-api-and-mcp.md`](site/articles/architecture/unified-remote-api-and-mcp.md)
 
 ## AXSG vs XamlX
 

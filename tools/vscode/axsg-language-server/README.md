@@ -53,6 +53,37 @@ Relevant settings:
 
 `axsg.preview.compilerMode = sourceGenerated` is now the default. `auto` also prefers source-generated preview when AXSG runtime output is available, and falls back to Avalonia/XamlX only when it is not.
 
+## MCP and Preview Hosts
+
+The extension does not require you to start an MCP server for normal editing or preview usage.
+
+Current behavior:
+
+- the extension owns the bundled language-server startup path
+- the preview UI uses the bundled preview helper transport for the product workflow
+- the same preview helper also supports `--mcp` for custom clients, tests, and future remote integrations
+
+Separate AXSG MCP surfaces are available when you need them outside the extension:
+
+- workspace MCP host: `axsg-mcp --workspace /path/to/workspace`
+- runtime MCP host: embed `XamlSourceGenRuntimeMcpServer` into the running app
+- preview MCP host: `dotnet <preview-host>/XamlToCSharpGenerator.PreviewerHost.dll --mcp`
+
+The preview MCP host now exposes:
+
+- `axsg.preview.start`
+- `axsg.preview.hotReload`
+- `axsg.preview.update`
+- `axsg.preview.stop`
+
+Use `axsg.preview.hotReload` when a custom client needs the in-process live preview result instead of dispatch-only update acceptance.
+
+For the operational host matrix and `dotnet watch` guidance, see:
+
+- [site/articles/guides/mcp-servers-and-live-tooling.md](../../../site/articles/guides/mcp-servers-and-live-tooling.md)
+- [site/articles/guides/preview-mcp-host-and-live-preview.md](../../../site/articles/guides/preview-mcp-host-and-live-preview.md)
+- [site/articles/architecture/unified-remote-api-and-mcp.md](../../../site/articles/architecture/unified-remote-api-and-mcp.md)
+
 ## Development
 
 ```bash

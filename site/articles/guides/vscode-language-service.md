@@ -101,6 +101,7 @@ Prefer the bundled VS Code extension when you want:
 - the full client/server pairing
 - AXSG-first handling for XAML-native semantics
 - inline-C# projection and editor middleware already wired
+- built-in preview orchestration and preview-webview management
 
 Prefer the standalone language-server tool when you want:
 
@@ -108,9 +109,19 @@ Prefer the standalone language-server tool when you want:
 - direct process control over the server
 - transport/protocol debugging independent of VS Code
 
+Prefer the MCP host when you want:
+
+- workspace queries from an AI client or external tool
+- preview project-context resolution without talking to VS Code
+- runtime or preview state through the dedicated runtime or preview MCP hosts
+
+The extension still uses its own bundled preview orchestration for the product preview experience. MCP support exists alongside that flow, not instead of it.
+
 ## Related docs
 
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
+- [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
+- [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
 - [Navigation and Refactorings](navigation-and-refactorings/)
 - [Inline C# Code](inline-csharp-code/)
 - [Troubleshooting](troubleshooting/)

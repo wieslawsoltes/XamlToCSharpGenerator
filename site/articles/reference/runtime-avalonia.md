@@ -6,7 +6,7 @@ title: "Package: XamlToCSharpGenerator.Runtime.Avalonia"
 
 ## Role
 
-Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, and hot design integration.
+Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, hot design integration, and the in-process runtime MCP host.
 
 ## Related namespaces
 
@@ -17,6 +17,7 @@ Avalonia runtime loader, static resource resolution, inline-code helpers, hot re
 
 - you need the Avalonia runtime layer directly
 - you are integrating AXSG hot reload or runtime fallback paths
+- you want to expose live hot reload, hot design, or studio state over MCP from a running app
 
 ## Major responsibilities
 
@@ -26,6 +27,7 @@ This package owns the Avalonia-specific runtime surface:
 - resource and include registries
 - inline C# support types
 - hot reload and hot design runtime integration
+- runtime MCP hosting and event/resource publication for live-process tooling
 - known-type and source-info resolution used during runtime fallback
 
 If generated code is correct but the running application still behaves incorrectly during runtime fallback, resource lookup, or hot reload, this package is one of the first places to inspect.
@@ -49,3 +51,4 @@ If generated code is correct but the running application still behaves incorrect
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
 - [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
 - [Hot Reload and Hot Design](../guides/hot-reload-and-hot-design/)
+- [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)

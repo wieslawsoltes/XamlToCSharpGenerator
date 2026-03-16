@@ -24,8 +24,11 @@ reference:
   - {path: runtime.md, title: "Package: XamlToCSharpGenerator.Runtime"}
   - {path: runtime-core.md, title: "Package: XamlToCSharpGenerator.Runtime.Core"}
   - {path: runtime-avalonia.md, title: "Package: XamlToCSharpGenerator.Runtime.Avalonia"}
+  - {path: remote-protocol.md, title: "Package: XamlToCSharpGenerator.RemoteProtocol"}
+  - {path: preview-host.md, title: "Artifact: XamlToCSharpGenerator.PreviewerHost"}
   - {path: language-service.md, title: "Package: XamlToCSharpGenerator.LanguageService"}
   - {path: language-server-tool.md, title: "Package: XamlToCSharpGenerator.LanguageServer.Tool"}
+  - {path: mcp-server-tool.md, title: "Package: XamlToCSharpGenerator.McpServer.Tool"}
   - {path: editor-avalonia.md, title: "Package: XamlToCSharpGenerator.Editor.Avalonia"}
   - {path: vscode-extension.md, title: "Package: VS Code Extension"}
   - {path: namespace-compiler-and-core.md, title: "Compiler and Core Namespaces"}

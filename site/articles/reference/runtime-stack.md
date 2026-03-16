@@ -12,7 +12,7 @@ This guide explains the runtime-side package split, what lives in the neutral ru
 | --- | --- | --- |
 | App-facing runtime surface | `XamlToCSharpGenerator.Runtime` | composition package for normal installs |
 | Neutral runtime contracts | `XamlToCSharpGenerator.Runtime.Core` | registries, source info, hot reload/runtime contracts |
-| Avalonia runtime integration | `XamlToCSharpGenerator.Runtime.Avalonia` | loader, resource resolution, inline-code runtime, hot reload integration |
+| Avalonia runtime integration | `XamlToCSharpGenerator.Runtime.Avalonia` | loader, resource resolution, inline-code runtime, hot reload, hot design, and runtime MCP hosting |
 
 ## Recommended entry points
 
@@ -66,6 +66,7 @@ Owns:
 - include/resource lookup in Avalonia hosts
 - inline `CSharp` runtime helpers
 - hot reload and hot design integration
+- runtime MCP server for live hot reload, hot design, and studio inspection
 
 Primary API entry points:
 
@@ -82,3 +83,4 @@ Is intentionally narrative-first. It is the package-level install surface, not t
 - [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/)
 - [Runtime Loader and Fallback](../guides/runtime-loader-and-fallback/)
 - [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
+- [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)

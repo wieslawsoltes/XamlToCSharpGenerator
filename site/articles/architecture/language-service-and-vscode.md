@@ -4,7 +4,7 @@ title: "Language Service and VS Code"
 
 # Language Service and VS Code
 
-AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, and in-process editors.
+AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, MCP workspace tooling, and in-process editors.
 
 ## Stack overview
 
@@ -25,6 +25,12 @@ AXSG’s editor stack is layered so the same semantic engine can serve the stand
 - protocol payload shaping
 - projection/document endpoints
 - metadata/source-link virtual documents
+
+### Shared remote protocol and MCP hosts
+
+`XamlToCSharpGenerator.RemoteProtocol` provides the shared JSON-RPC framing and MCP core now used by the workspace MCP host, preview host, and runtime-attached MCP server.
+
+That means AXSG reuses transport infrastructure across LSP and MCP while keeping their semantics separate.
 
 ### VS Code extension
 
@@ -57,6 +63,7 @@ The editor stack has explicit performance work in:
 
 - [Tooling Surface](../concepts/tooling-surface/)
 - [VS Code Language Service](../guides/vscode-language-service/)
+- [Unified Remote API and MCP](unified-remote-api-and-mcp/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)
 - [Package: XamlToCSharpGenerator.LanguageService](../reference/language-service/)
 - [Package: VS Code Extension](../reference/vscode-extension/)

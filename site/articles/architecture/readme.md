@@ -43,6 +43,7 @@ The language service and VS Code extension project compiler semantics back into 
 - Start with [Compiler Pipeline](compiler-pipeline/) if you want the end-to-end flow from XAML file to generated output.
 - Use [Runtime and Hot Reload](runtime-and-hot-reload/) if you are debugging live update behavior or generated runtime helpers.
 - Use [Language Service and VS Code](language-service-and-vscode/) if the issue shows up in the editor before build output changes.
+- Use [Unified Remote API and MCP](unified-remote-api-and-mcp/) if the question is about workspace MCP, runtime MCP, preview orchestration, or transport reuse across remote hosts.
 
 ## Cross-reference map
 
@@ -53,3 +54,4 @@ The language service and VS Code extension project compiler semantics back into 
 - [Compiler Pipeline](compiler-pipeline/)
 - [Runtime and Hot Reload](runtime-and-hot-reload/)
 - [Language Service and VS Code](language-service-and-vscode/)
+- [Unified Remote API and MCP](unified-remote-api-and-mcp/)
