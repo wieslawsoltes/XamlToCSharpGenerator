@@ -572,12 +572,15 @@ public sealed partial class AvaloniaSemanticBinder
     private static bool HasContextAwareTypeConverterContract(INamedTypeSymbol converterType, Compilation compilation)
     {
         var typeDescriptorContextType = compilation.GetTypeByMetadataName("System.ComponentModel.ITypeDescriptorContext");
-        if (typeDescriptorContextType is null)
+        var frameworkTypeConverterType = compilation.GetTypeByMetadataName(TypeConverterMetadataName);
+        if (typeDescriptorContextType is null || frameworkTypeConverterType is null)
         {
             return false;
         }
 
-        for (var current = converterType; current is not null; current = current.BaseType)
+        for (var current = converterType;
+             current is not null && !SymbolEqualityComparer.Default.Equals(current, frameworkTypeConverterType);
+             current = current.BaseType)
         {
             foreach (var method in current.GetMembers("ConvertFrom").OfType<IMethodSymbol>())
             {
@@ -664,13 +667,7 @@ public sealed partial class AvaloniaSemanticBinder
                 continue;
             }
 
-            var typeName = TryGetTypeConverterTypeName(attribute.ConstructorArguments[0]);
-            if (string.IsNullOrWhiteSpace(typeName))
-            {
-                continue;
-            }
-
-            var resolvedType = ResolveTypeConverterTypeByName(compilation, typeName!);
+            var resolvedType = ResolveTypeConverterTypeFromArgument(attribute.ConstructorArguments[0], compilation);
             if (resolvedType is not null)
             {
                 return resolvedType;
@@ -680,21 +677,20 @@ public sealed partial class AvaloniaSemanticBinder
         return null;
     }
 
-    private static string? TryGetTypeConverterTypeName(TypedConstant argument)
+    private static INamedTypeSymbol? ResolveTypeConverterTypeFromArgument(
+        TypedConstant argument,
+        Compilation compilation)
     {
         if (argument.Kind == TypedConstantKind.Type &&
-            argument.Value is ITypeSymbol typeSymbol)
+            argument.Value is INamedTypeSymbol converterType)
         {
-            return typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return converterType;
         }
 
         if (argument.Value is string typeName &&
             !string.IsNullOrWhiteSpace(typeName))
         {
-            var commaIndex = typeName.IndexOf(',');
-            return commaIndex >= 0
-                ? typeName.Substring(0, commaIndex).Trim()
-                : typeName.Trim();
+            return ResolveTypeConverterTypeByName(compilation, typeName);
         }
 
         return null;
