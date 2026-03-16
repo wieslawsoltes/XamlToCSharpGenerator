@@ -23,8 +23,10 @@ This section documents every shipped AXSG package, tool, and editor artifact. Us
 | `XamlToCSharpGenerator.Runtime` | runtime umbrella composition | app/runtime consumers | narrative only |
 | `XamlToCSharpGenerator.Runtime.Core` | `XamlToCSharpGenerator.Runtime.Core.dll` | framework-neutral runtime consumers | yes |
 | `XamlToCSharpGenerator.Runtime.Avalonia` | `XamlToCSharpGenerator.Runtime.Avalonia.dll` | Avalonia runtime consumers | yes |
+| `XamlToCSharpGenerator.RemoteProtocol` | `XamlToCSharpGenerator.RemoteProtocol.dll` | remote-host and protocol authors | yes |
 | `XamlToCSharpGenerator.LanguageService` | `XamlToCSharpGenerator.LanguageService.dll` | editor/tool authors | yes |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | `axsg-lsp` global/local tool command | LSP hosts | yes |
+| `XamlToCSharpGenerator.McpServer.Tool` | `axsg-mcp` global/local tool command | MCP hosts and AI tooling | narrative only |
 | `XamlToCSharpGenerator.Editor.Avalonia` | `XamlToCSharpGenerator.Editor.Avalonia.dll` | in-app editor hosts | yes |
 | `xamltocsharpgenerator.axsg-language-server` | `.vsix` extension bundle | VS Code users | narrative only |
 
@@ -33,6 +35,7 @@ This section documents every shipped AXSG package, tool, and editor artifact. Us
 - [XamlToCSharpGenerator](xamltocsharpgenerator/)
 - [XamlToCSharpGenerator.Runtime](runtime/)
 - [VS Code Extension](vscode-extension/)
+- [XamlToCSharpGenerator.McpServer.Tool](mcp-server-tool/)
 
 ## Build and compiler packages
 
@@ -53,8 +56,10 @@ This section documents every shipped AXSG package, tool, and editor artifact. Us
 
 - [XamlToCSharpGenerator.Runtime.Core](runtime-core/)
 - [XamlToCSharpGenerator.Runtime.Avalonia](runtime-avalonia/)
+- [XamlToCSharpGenerator.RemoteProtocol](remote-protocol/)
 - [XamlToCSharpGenerator.LanguageService](language-service/)
 - [XamlToCSharpGenerator.LanguageServer.Tool](language-server-tool/)
+- [XamlToCSharpGenerator.McpServer.Tool](mcp-server-tool/)
 - [XamlToCSharpGenerator.Editor.Avalonia](editor-avalonia/)
 
 Related:

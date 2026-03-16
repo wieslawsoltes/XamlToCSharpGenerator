@@ -36,6 +36,10 @@ public static class XamlSourceGenHotDesignManager
 
     public static event Action<SourceGenHotDesignUpdateRequest, Exception>? HotDesignUpdateFailed;
 
+    public static event Action<SourceGenHotDesignStatus>? HotDesignStatusChanged;
+
+    public static event Action<IReadOnlyList<SourceGenHotDesignDocumentDescriptor>>? HotDesignDocumentsChanged;
+
     public static void Enable(SourceGenHotDesignOptions? options = null)
     {
         lock (Sync)
@@ -48,6 +52,7 @@ public static class XamlSourceGenHotDesignManager
         }
 
         HotDesignModeChanged?.Invoke(true);
+        PublishStatusChanged();
     }
 
     public static void Disable()
@@ -58,6 +63,7 @@ public static class XamlSourceGenHotDesignManager
         }
 
         HotDesignModeChanged?.Invoke(false);
+        PublishStatusChanged();
     }
 
     public static bool Toggle()
@@ -70,6 +76,7 @@ public static class XamlSourceGenHotDesignManager
         }
 
         HotDesignModeChanged?.Invoke(enabled);
+        PublishStatusChanged();
         return enabled;
     }
 
@@ -83,6 +90,8 @@ public static class XamlSourceGenHotDesignManager
             configure(clone);
             ActiveOptions = clone;
         }
+
+        PublishStatusChanged();
     }
 
     public static SourceGenHotDesignStatus GetStatus()
@@ -149,6 +158,8 @@ public static class XamlSourceGenHotDesignManager
         if (removedAny)
         {
             XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+            PublishStatusChanged();
+            PublishDocumentsChanged();
         }
     }
 
@@ -212,6 +223,9 @@ public static class XamlSourceGenHotDesignManager
                 registration.Instances.Add(new WeakReference<object>(instance));
             }
         }
+
+        PublishStatusChanged();
+        PublishDocumentsChanged();
     }
 
     public static void ClearRegistrations()
@@ -223,6 +237,8 @@ public static class XamlSourceGenHotDesignManager
         }
 
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+        PublishStatusChanged();
+        PublishDocumentsChanged();
     }
 
     private static void RemoveRegistrationLocked(Type trackedType)
@@ -248,6 +264,8 @@ public static class XamlSourceGenHotDesignManager
         {
             AddApplierLocked(applier);
         }
+
+        PublishStatusChanged();
     }
 
     public static void ResetAppliersToDefaults()
@@ -258,6 +276,8 @@ public static class XamlSourceGenHotDesignManager
             ApplierKeys.Clear();
             AddApplierLocked(new FileSystemHotDesignUpdateApplier());
         }
+
+        PublishStatusChanged();
     }
 
     public static IReadOnlyList<SourceGenHotDesignDocumentDescriptor> GetRegisteredDocuments()
@@ -866,6 +886,16 @@ public static class XamlSourceGenHotDesignManager
                 HotReloadObserved: false,
                 RuntimeFallbackApplied: false);
         }
+    }
+
+    private static void PublishStatusChanged()
+    {
+        HotDesignStatusChanged?.Invoke(GetStatus());
+    }
+
+    private static void PublishDocumentsChanged()
+    {
+        HotDesignDocumentsChanged?.Invoke(GetRegisteredDocuments());
     }
 
     private sealed class Registration(

@@ -24,6 +24,14 @@ AXSG ships multiple tooling layers because editor integrations, in-process edito
 
 `XamlToCSharpGenerator.LanguageServer.Tool` hosts the language service over LSP and is the server surface used by the VS Code extension and other editor integrations.
 
+### Shared remote protocol
+
+`XamlToCSharpGenerator.RemoteProtocol` provides the JSON-RPC framing, MCP server core, and shared preview and studio remote contracts reused by the LSP host, MCP host, preview host, and runtime remote surfaces.
+
+### Workspace MCP host
+
+`XamlToCSharpGenerator.McpServer.Tool` hosts the shared AXSG query surface over MCP for AI clients and external tooling.
+
 ### VS Code extension
 
 The VSIX bundles:
@@ -41,6 +49,7 @@ The VSIX bundles:
 
 - build-time semantics need Roslyn/MSBuild access
 - LSP hosting needs process boundaries and transport concerns
+- MCP hosting needs tool and resource semantics that do not belong in LSP
 - embedded editors need in-process APIs rather than LSP
 - VS Code needs client-side middleware and activation rules that do not belong in the server
 
@@ -48,13 +57,16 @@ The VSIX bundles:
 
 - use the VSIX if you are a VS Code user
 - use the .NET tool if you are integrating another editor
+- use the MCP tool if you are integrating AI agents or external MCP clients
 - use `LanguageService` directly if you are embedding editor features in-process
 - use `Editor.Avalonia` if you need a product-quality AXAML editor inside an Avalonia app
 
 ## Related docs
 
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
+- [Unified Remote API and MCP](../architecture/unified-remote-api-and-mcp/)
 - [VS Code Language Service](../guides/vscode-language-service/)
 - [Package: XamlToCSharpGenerator.LanguageService](../reference/language-service/)
 - [Package: XamlToCSharpGenerator.LanguageServer.Tool](../reference/language-server-tool/)
+- [Package: XamlToCSharpGenerator.McpServer.Tool](../reference/mcp-server-tool/)
 - [Package: XamlToCSharpGenerator.Editor.Avalonia](../reference/editor-avalonia/)

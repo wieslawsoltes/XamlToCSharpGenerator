@@ -57,6 +57,8 @@ public static class XamlSourceGenHotReloadManager
     private static Timer? MetadataHandshakeTimer;
     private static bool MetadataHandshakePending;
     private static bool MetadataHandshakeCompleted;
+    private static SourceGenHotReloadTransportStatus? LastTransportStatus;
+    private static SourceGenHotReloadRemoteOperationStatus? LastRemoteOperationStatus;
     private static bool SuppressStatefulControlTreeStateTransfer;
     internal static Action? TestBeforeHotDesignMirrorRegistration;
     internal static Action? TestBeforeMirroredHotDesignClear;
@@ -85,23 +87,47 @@ public static class XamlSourceGenHotReloadManager
 
     public static event Action<SourceGenHotReloadRemoteOperationStatus>? HotReloadRemoteOperationStatusChanged;
 
+    public static event Action<SourceGenHotReloadStatus>? HotReloadStatusChanged;
+
     public static bool IsEnabled { get; private set; } = true;
 
     public static bool IsIdePollingFallbackEnabled { get; private set; }
 
+    public static SourceGenHotReloadStatus GetStatus()
+    {
+        lock (Sync)
+        {
+            return new SourceGenHotReloadStatus(
+                IsEnabled,
+                IsIdePollingFallbackEnabled,
+                Registrations.Count,
+                BuildUrisByType.Count,
+                TransportMode,
+                LastTransportStatus,
+                LastRemoteOperationStatus);
+        }
+    }
+
     public static void Enable()
     {
-        IsEnabled = true;
+        lock (Sync)
+        {
+            IsEnabled = true;
+        }
+
         EnsureTransportInitialized();
+        PublishStatusChanged();
     }
 
     public static void Disable()
     {
-        IsEnabled = false;
         lock (Sync)
         {
+            IsEnabled = false;
             ResetTransportStateLocked();
         }
+
+        PublishStatusChanged();
     }
 
     public static void Register(object instance, Action<object> reloadAction, string? sourcePath = null)
@@ -175,6 +201,8 @@ public static class XamlSourceGenHotReloadManager
                 normalizedBuildUri,
                 normalizedSourcePath);
         }
+
+        PublishStatusChanged();
     }
 
     public static void RegisterReplacementTypeMapping(Type replacementType, Type originalType)
@@ -231,6 +259,8 @@ public static class XamlSourceGenHotReloadManager
             TestBeforeMirroredHotDesignClear?.Invoke();
             XamlSourceGenHotDesignManager.ClearMirroredRegistrations();
         }
+
+        PublishStatusChanged();
     }
 
     internal static void ResetTestHooks()
@@ -253,6 +283,8 @@ public static class XamlSourceGenHotReloadManager
             Trace("IDE polling fallback enabled (interval " + intervalMs + "ms).");
             StartIdePollingTimerLocked();
         }
+
+        PublishStatusChanged();
     }
 
     public static void DisableIdePollingFallback()
@@ -262,6 +294,8 @@ public static class XamlSourceGenHotReloadManager
             DisableIdePollingFallbackLocked();
             Trace("IDE polling fallback disabled.");
         }
+
+        PublishStatusChanged();
     }
 
     public static bool TryEnableIdePollingFallbackFromEnvironment(int intervalMs = 1000)
@@ -1028,7 +1062,13 @@ public static class XamlSourceGenHotReloadManager
             isFallback,
             exception);
 
+        lock (Sync)
+        {
+            LastTransportStatus = status;
+        }
+
         HotReloadTransportStatusChanged?.Invoke(status);
+        PublishStatusChanged();
         XamlSourceGenHotReloadEventBus.Instance.PublishTransportStatusChanged(status);
         Trace(
             "Transport status: " + kind + ", transport=" + transportName +
@@ -1037,7 +1077,13 @@ public static class XamlSourceGenHotReloadManager
 
     private static void PublishRemoteOperationStatus(SourceGenHotReloadRemoteOperationStatus status)
     {
+        lock (Sync)
+        {
+            LastRemoteOperationStatus = status;
+        }
+
         HotReloadRemoteOperationStatusChanged?.Invoke(status);
+        PublishStatusChanged();
         XamlSourceGenHotReloadEventBus.Instance.PublishRemoteOperationStatusChanged(status);
 
         var summary = "#" + status.OperationId +
@@ -1063,6 +1109,8 @@ public static class XamlSourceGenHotReloadManager
         StopMetadataHandshakeTimerLocked();
         MetadataHandshakePending = false;
         MetadataHandshakeCompleted = false;
+        LastTransportStatus = null;
+        LastRemoteOperationStatus = null;
         TransportInitialized = false;
         TransportMode = SourceGenHotReloadTransportMode.Auto;
         HandshakeTimeout = TimeSpan.FromMilliseconds(DefaultHandshakeTimeoutMs);
@@ -1099,6 +1147,11 @@ public static class XamlSourceGenHotReloadManager
         ActiveTransport = null;
         MetadataTransport = null;
         RemoteTransport = null;
+    }
+
+    private static void PublishStatusChanged()
+    {
+        HotReloadStatusChanged?.Invoke(GetStatus());
     }
 
     public static void ClearCache(Type[]? types)

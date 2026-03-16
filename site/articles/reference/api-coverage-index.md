@@ -13,7 +13,7 @@ This index maps the shipped AXSG package surface to the narrative docs and gener
 | Compiler host and contracts | `XamlToCSharpGenerator.Compiler`, `XamlToCSharpGenerator.Core`, `XamlToCSharpGenerator.Framework.Abstractions` | [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/), [Compiler and Core Namespaces](namespace-compiler-and-core/) |
 | Framework profiles and parsers | `XamlToCSharpGenerator.Avalonia`, `XamlToCSharpGenerator.NoUi`, `XamlToCSharpGenerator.ExpressionSemantics`, `XamlToCSharpGenerator.MiniLanguageParsing`, `XamlToCSharpGenerator.Generator` | [Binding and Expression Model](../concepts/binding-and-expression-model/), [Expression, Parsing, and Framework Namespaces](namespace-expression-and-framework/) |
 | Runtime and editor | `XamlToCSharpGenerator.Runtime`, `XamlToCSharpGenerator.Runtime.Core`, `XamlToCSharpGenerator.Runtime.Avalonia`, `XamlToCSharpGenerator.Editor.Avalonia` | [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/), [Runtime and Editor Namespaces](namespace-runtime-and-editor/) |
-| Tooling and integration | `XamlToCSharpGenerator.LanguageService`, `XamlToCSharpGenerator.LanguageServer.Tool`, `XamlToCSharpGenerator.Build`, `XamlToCSharpGenerator` | [Tooling Surface](../concepts/tooling-surface/), [Language Service and Tooling Namespaces](namespace-language-service-and-tooling/) |
+| Tooling and integration | `XamlToCSharpGenerator.RemoteProtocol`, `XamlToCSharpGenerator.LanguageService`, `XamlToCSharpGenerator.LanguageServer.Tool`, `XamlToCSharpGenerator.McpServer.Tool`, `XamlToCSharpGenerator.Build`, `XamlToCSharpGenerator` | [Tooling Surface](../concepts/tooling-surface/), [Language Service and Tooling Namespaces](namespace-language-service-and-tooling/) |
 
 ## Package and assembly mapping
 
@@ -39,8 +39,10 @@ Every shipped package and editor/tool surface now has a dedicated narrative page
 - [XamlToCSharpGenerator.Runtime](runtime/)
 - [XamlToCSharpGenerator.Runtime.Core](runtime-core/)
 - [XamlToCSharpGenerator.Runtime.Avalonia](runtime-avalonia/)
+- [XamlToCSharpGenerator.RemoteProtocol](remote-protocol/)
 - [XamlToCSharpGenerator.LanguageService](language-service/)
 - [XamlToCSharpGenerator.LanguageServer.Tool](language-server-tool/)
+- [XamlToCSharpGenerator.McpServer.Tool](mcp-server-tool/)
 - [XamlToCSharpGenerator.Editor.Avalonia](editor-avalonia/)
 - [VS Code Extension](vscode-extension/)
 
@@ -58,6 +60,7 @@ The Lunet `api.dotnet` build on this branch covers these projects:
 - `XamlToCSharpGenerator.Generator`
 - `XamlToCSharpGenerator.Runtime.Core`
 - `XamlToCSharpGenerator.Runtime.Avalonia`
+- `XamlToCSharpGenerator.RemoteProtocol`
 - `XamlToCSharpGenerator.LanguageService`
 - `XamlToCSharpGenerator.LanguageServer.Tool`
 - `XamlToCSharpGenerator.Editor.Avalonia`

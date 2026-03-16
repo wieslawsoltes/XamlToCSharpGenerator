@@ -25,8 +25,10 @@ When you already know the assembly or tool package name and need the direct gene
 | `XamlToCSharpGenerator.Runtime` | NuGet package | runtime umbrella composition | NuGet package | narrative only |
 | `XamlToCSharpGenerator.Runtime.Core` | NuGet package | `XamlToCSharpGenerator.Runtime.Core.dll` | `net10.0` | yes |
 | `XamlToCSharpGenerator.Runtime.Avalonia` | NuGet package | `XamlToCSharpGenerator.Runtime.Avalonia.dll` | `net10.0` | yes |
+| `XamlToCSharpGenerator.RemoteProtocol` | NuGet package | `XamlToCSharpGenerator.RemoteProtocol.dll` | `net6.0`, `net8.0`, `net10.0` | yes |
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | `XamlToCSharpGenerator.LanguageService.dll` | `net10.0` | yes |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | `axsg-lsp` command over `XamlToCSharpGenerator.LanguageServer.dll` | `net10.0` tool host | yes |
+| `XamlToCSharpGenerator.McpServer.Tool` | .NET tool package | `axsg-mcp` command over `XamlToCSharpGenerator.McpServer.dll` | `net10.0` tool host | narrative only |
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | `XamlToCSharpGenerator.Editor.Avalonia.dll` | `net10.0` | yes |
 | `xamltocsharpgenerator.axsg-language-server` | VS Code extension | VSIX bundle with JS client and managed AXSG server | VS Code | narrative only |
 
@@ -57,6 +59,7 @@ One repo component is important operationally but is not a shipped package:
 | Component | Role | Docs |
 | --- | --- | --- |
 | `XamlToCSharpGenerator.DotNetWatch.Proxy` | `dotnet watch` / hot-reload proxy process | [Internal Support Components](internal-support-components/) |
+| `XamlToCSharpGenerator.PreviewerHost` | preview helper host and preview MCP host | [Artifact: XamlToCSharpGenerator.PreviewerHost](preview-host/), [Preview MCP Host and Live Preview](../guides/preview-mcp-host-and-live-preview/) |
 
 ## Guidance
 

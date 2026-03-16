@@ -3,37 +3,12 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using XamlToCSharpGenerator.RemoteProtocol.Preview;
 using XamlToCSharpGenerator.PreviewerHost.Protocol;
 
 namespace XamlToCSharpGenerator.PreviewerHost;
 
-internal sealed record PreviewSessionStartRequest(
-    string DotNetCommand,
-    string HostAssemblyPath,
-    string PreviewerToolPath,
-    string RuntimeConfigPath,
-    string DepsFilePath,
-    string SourceAssemblyPath,
-    string? SourceFilePath,
-    string XamlFileProjectPath,
-    string XamlText,
-    string CompilerMode,
-    double? PreviewWidth,
-    double? PreviewHeight,
-    double? PreviewScale);
-
-internal sealed record PreviewSessionStartResult(
-    string PreviewUrl,
-    int TransportPort,
-    int PreviewPort,
-    Guid SessionId);
-
-internal sealed record PreviewUpdateResult(
-    bool Succeeded,
-    string? Error,
-    PreviewExceptionDetails? Exception);
-
-internal sealed class PreviewSession : IAsyncDisposable
+internal sealed class PreviewSession : IPreviewHostSession
 {
     private const int MaxStartupAttempts = 3;
     private static readonly string[] PreviewPortBindFailureMarkers =
@@ -44,8 +19,10 @@ internal sealed class PreviewSession : IAsyncDisposable
     ];
 
     private readonly object _sync = new();
+    private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly TimeSpan _startupTimeout = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _disposeSource = new();
+    private readonly PreviewUpdateResultTracker _pendingUpdateResults = new();
 
     private TcpListener? _listener;
     private Process? _hostProcess;
@@ -63,12 +40,12 @@ internal sealed class PreviewSession : IAsyncDisposable
 
     public event Action<string>? PreviewUrlPublished;
 
-    public event Action<PreviewUpdateResult>? UpdateCompleted;
+    public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
     public event Action<int?>? HostExited;
 
-    public async Task<PreviewSessionStartResult> StartAsync(
-        PreviewSessionStartRequest request,
+    public async Task<AxsgPreviewHostStartResponse> StartAsync(
+        AxsgPreviewHostStartRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -137,6 +114,7 @@ internal sealed class PreviewSession : IAsyncDisposable
                         _previewScale,
                         linkedCancellationToken.Token).ConfigureAwait(false);
 
+                    _pendingUpdateResults.EnqueueFireAndForget();
                     await _transport.SendUpdateXamlAsync(
                         request.XamlText,
                         _sourceAssemblyPath,
@@ -151,7 +129,7 @@ internal sealed class PreviewSession : IAsyncDisposable
 
                     _sessionStarted = true;
 
-                    return new PreviewSessionStartResult(
+                    return new AxsgPreviewHostStartResponse(
                         previewUrl,
                         transportPort,
                         previewPort,
@@ -189,15 +167,48 @@ internal sealed class PreviewSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(xamlText);
 
         ThrowIfDisposed();
-        var transport = _transport ?? throw new InvalidOperationException("Preview session is not connected.");
-        var sourceAssemblyPath = _sourceAssemblyPath ?? throw new InvalidOperationException("Source assembly path is unavailable.");
-        var xamlFileProjectPath = _xamlFileProjectPath ?? throw new InvalidOperationException("XAML project path is unavailable.");
+        await _updateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _pendingUpdateResults.EnqueueFireAndForget();
+            await SendUpdateXamlAsync(xamlText, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _updateGate.Release();
+        }
+    }
 
-        await transport.SendUpdateXamlAsync(
-            xamlText,
-            sourceAssemblyPath,
-            xamlFileProjectPath,
-            cancellationToken).ConfigureAwait(false);
+    public async Task<AxsgPreviewHostHotReloadResponse> HotReloadAsync(
+        string xamlText,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(xamlText);
+
+        ThrowIfDisposed();
+        await _updateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            TaskCompletionSource<AxsgPreviewHostHotReloadResponse> completionSource = _pendingUpdateResults.EnqueueHotReload();
+            await SendUpdateXamlAsync(xamlText, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                return timeout.HasValue
+                    ? await completionSource.Task.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false)
+                    : await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                _pendingUpdateResults.RemoveHotReload(completionSource);
+                return PublishPendingHotReloadFailure("Timed out waiting for preview hot reload to complete.");
+            }
+        }
+        finally
+        {
+            _updateGate.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -212,10 +223,11 @@ internal sealed class PreviewSession : IAsyncDisposable
 
         await CleanupStartupAttemptAsync().ConfigureAwait(false);
 
+        _updateGate.Dispose();
         _disposeSource.Dispose();
     }
 
-    private static void ValidateRequest(PreviewSessionStartRequest request)
+    private static void ValidateRequest(AxsgPreviewHostStartRequest request)
     {
         ArgumentException.ThrowIfNullOrEmpty(request.DotNetCommand);
         ArgumentException.ThrowIfNullOrEmpty(request.HostAssemblyPath);
@@ -224,7 +236,7 @@ internal sealed class PreviewSession : IAsyncDisposable
         ArgumentException.ThrowIfNullOrEmpty(request.DepsFilePath);
         ArgumentException.ThrowIfNullOrEmpty(request.SourceAssemblyPath);
         ArgumentException.ThrowIfNullOrEmpty(request.XamlFileProjectPath);
-        ArgumentException.ThrowIfNullOrEmpty(request.CompilerMode);
+        ArgumentException.ThrowIfNullOrEmpty(request.PreviewCompilerMode);
 
         if (!File.Exists(request.HostAssemblyPath))
         {
@@ -283,7 +295,7 @@ internal sealed class PreviewSession : IAsyncDisposable
     }
 
     private void StartHostProcess(
-        PreviewSessionStartRequest request,
+        AxsgPreviewHostStartRequest request,
         int transportPort,
         int previewPort,
         TcpListener previewPortReservation,
@@ -324,7 +336,7 @@ internal sealed class PreviewSession : IAsyncDisposable
         process.StartInfo.ArgumentList.Add("--html-url");
         process.StartInfo.ArgumentList.Add(previewUrl);
         process.StartInfo.ArgumentList.Add("--axsg-compiler-mode");
-        process.StartInfo.ArgumentList.Add(request.CompilerMode);
+        process.StartInfo.ArgumentList.Add(request.PreviewCompilerMode);
         if (request.PreviewWidth is > 0)
         {
             process.StartInfo.ArgumentList.Add("--axsg-preview-width");
@@ -377,6 +389,7 @@ internal sealed class PreviewSession : IAsyncDisposable
                 clientAccepted.TrySetException(exception);
                 previewUrlAvailable.TrySetException(exception);
                 designerSessionStarted.TrySetException(exception);
+                PublishPendingHotReloadFailure(exception.Message);
                 if (_sessionStarted)
                 {
                     HostExited?.Invoke(exitCode);
@@ -427,10 +440,16 @@ internal sealed class PreviewSession : IAsyncDisposable
                         break;
 
                     case UpdateXamlResultPayload updateResult:
-                        UpdateCompleted?.Invoke(new PreviewUpdateResult(
+                        var mappedResult = new AxsgPreviewHostUpdateResultEventPayload(
                             string.IsNullOrWhiteSpace(updateResult.Error),
                             updateResult.Error,
-                            updateResult.Exception));
+                            MapExceptionDetails(updateResult.Exception));
+                        _ = CompletePendingHotReload(
+                            CreateHotReloadResponse(
+                                mappedResult.Succeeded,
+                                mappedResult.Error,
+                                mappedResult.Exception));
+                        UpdateCompleted?.Invoke(mappedResult);
                         break;
 
                     case StartDesignerSessionPayload sessionStarted:
@@ -453,6 +472,7 @@ internal sealed class PreviewSession : IAsyncDisposable
             Log?.Invoke("[previewer] transport failed: " + ex.Message);
             previewUrlAvailable.TrySetException(ex);
             designerSessionStarted.TrySetException(ex);
+            PublishPendingHotReloadFailure(ex.Message);
         }
     }
 
@@ -486,6 +506,7 @@ internal sealed class PreviewSession : IAsyncDisposable
     private async Task CleanupStartupAttemptAsync()
     {
         _sessionStarted = false;
+        PublishPendingHotReloadFailure("Preview session stopped before hot reload completed.");
 
         if (_transport is not null)
         {
@@ -619,6 +640,67 @@ internal sealed class PreviewSession : IAsyncDisposable
     private static TaskCompletionSource<T> CreateCompletionSource<T>()
     {
         return new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private async Task SendUpdateXamlAsync(string xamlText, CancellationToken cancellationToken)
+    {
+        var transport = _transport ?? throw new InvalidOperationException("Preview session is not connected.");
+        var sourceAssemblyPath = _sourceAssemblyPath ?? throw new InvalidOperationException("Source assembly path is unavailable.");
+        var xamlFileProjectPath = _xamlFileProjectPath ?? throw new InvalidOperationException("XAML project path is unavailable.");
+
+        await transport.SendUpdateXamlAsync(
+            xamlText,
+            sourceAssemblyPath,
+            xamlFileProjectPath,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private AxsgPreviewHostHotReloadResponse CompletePendingHotReload(AxsgPreviewHostHotReloadResponse response)
+    {
+        _pendingUpdateResults.CompleteNext(response);
+        return response;
+    }
+
+    private AxsgPreviewHostHotReloadResponse PublishPendingHotReloadFailure(
+        string error,
+        AxsgPreviewHostExceptionDetails? exception = null)
+    {
+        var response = CreateHotReloadResponse(
+            succeeded: false,
+            error: error,
+            exception: exception);
+        if (_pendingUpdateResults.FailAll(response) is not null)
+        {
+            UpdateCompleted?.Invoke(new AxsgPreviewHostUpdateResultEventPayload(false, error, exception));
+        }
+
+        return response;
+    }
+
+    private static AxsgPreviewHostHotReloadResponse CreateHotReloadResponse(
+        bool succeeded,
+        string? error,
+        AxsgPreviewHostExceptionDetails? exception)
+    {
+        return new AxsgPreviewHostHotReloadResponse(
+            succeeded,
+            error,
+            exception,
+            DateTimeOffset.UtcNow);
+    }
+
+    private static AxsgPreviewHostExceptionDetails? MapExceptionDetails(PreviewExceptionDetails? exception)
+    {
+        if (exception is null)
+        {
+            return null;
+        }
+
+        return new AxsgPreviewHostExceptionDetails(
+            exception.ExceptionType,
+            exception.Message,
+            exception.LineNumber,
+            exception.LinePosition);
     }
 
     private Guid _sessionId;

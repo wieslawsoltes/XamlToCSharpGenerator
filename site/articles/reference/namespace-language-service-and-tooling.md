@@ -10,6 +10,8 @@ This namespace family covers editor semantics, LSP request handling, projected i
 
 - `XamlToCSharpGenerator.LanguageService`
 - `XamlToCSharpGenerator.LanguageServer.Tool`
+- `XamlToCSharpGenerator.RemoteProtocol`
+- `XamlToCSharpGenerator.McpServer.Tool`
 - VS Code extension
 - `XamlToCSharpGenerator.Editor.Avalonia`
 
@@ -27,8 +29,13 @@ This namespace family covers editor semantics, LSP request handling, projected i
 - <xref:XamlToCSharpGenerator.LanguageService.SemanticTokens>
 - <xref:XamlToCSharpGenerator.LanguageService.Symbols>
 - <xref:XamlToCSharpGenerator.LanguageService.Workspace>
+- <xref:XamlToCSharpGenerator.RemoteProtocol.JsonRpc>
+- <xref:XamlToCSharpGenerator.RemoteProtocol.Mcp>
+- <xref:XamlToCSharpGenerator.RemoteProtocol.Preview>
+- <xref:XamlToCSharpGenerator.RemoteProtocol.Studio>
 - <xref:XamlToCSharpGenerator.Editor.Avalonia>
 - [LanguageServer.Tool package guide](language-server-tool/)
+- [McpServer.Tool package guide](mcp-server-tool/)
 
 ## What lives here
 
@@ -42,7 +49,11 @@ The `LanguageService` namespaces own completion, hover, navigation, references, 
 
 ### Server transport and protocol
 
-`LanguageServer` contains the standalone LSP host, request routing, metadata virtual-document support, and the transport/framing layer.
+`LanguageServer` contains the standalone LSP host, request routing, and metadata virtual-document support. Shared framing and remote contracts now live in `RemoteProtocol`.
+
+### MCP and shared remote contracts
+
+`RemoteProtocol`, `McpServer.Tool`, and `PreviewerHost` cover the MCP-facing surface for workspace queries, preview orchestration, preview hot reload, and runtime-hosted resource subscriptions.
 
 ### In-process editor hosting
 
@@ -69,5 +80,7 @@ The concrete server host `AxsgLanguageServer` is intentionally internal. Treat t
 
 - [Tooling Surface](../concepts/tooling-surface/)
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
+- [Unified Remote API and MCP](../architecture/unified-remote-api-and-mcp/)
+- [Artifact: XamlToCSharpGenerator.PreviewerHost](preview-host/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)

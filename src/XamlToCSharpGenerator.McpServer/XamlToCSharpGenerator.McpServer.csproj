@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>axsg-mcp</ToolCommandName>
+    <PackageId>XamlToCSharpGenerator.McpServer.Tool</PackageId>
+    <Description>AXSG MCP server exposing workspace, preview, hot reload, hot design, and studio operations.</Description>
+    <PackageTags>$(PackageTags);cli;mcp;tool</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService\XamlToCSharpGenerator.LanguageService.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Runtime.Avalonia\XamlToCSharpGenerator.Runtime.Avalonia.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+  </ItemGroup>
+</Project>

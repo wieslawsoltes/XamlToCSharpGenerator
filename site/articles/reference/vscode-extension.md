@@ -20,6 +20,7 @@ The packaged VS Code extension bundles the AXSG language client, launches the se
 - inline C# editor support
 - cross-language navigation between XAML and C#
 - projected C# interop where existing editor-side C# providers add value
+- Avalonia preview with AXSG source-generated and Avalonia/XamlX modes
 
 ## How it fits with the rest of the stack
 
@@ -28,11 +29,17 @@ The extension is a thin client plus editor middleware over:
 - `XamlToCSharpGenerator.LanguageServer.Tool`
 - `XamlToCSharpGenerator.LanguageService`
 
-It also owns editor-specific concerns such as activation strategy, virtual-document projections, and client-side provider fallbacks.
+It also owns editor-specific concerns such as activation strategy, virtual-document projections, client-side provider fallbacks, and the bundled preview webview workflow.
+
+The extension bundles and launches the preview helper automatically for the normal product workflow. The same helper also has an MCP mode for custom clients and test harnesses, but the extension preview UI does not require you to start an MCP server manually.
+
+The preview MCP host behind that helper now supports explicit in-process preview hot reload through `axsg.preview.hotReload`, but that remains a custom-client surface rather than the packaged extension UX.
 
 ## Related docs
 
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
+- [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)
+- [Preview MCP Host and Live Preview](../guides/preview-mcp-host-and-live-preview/)
 - [Navigation and Refactorings](../guides/navigation-and-refactorings/)
 - [Artifact Matrix](artifact-matrix/)

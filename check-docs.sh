@@ -86,6 +86,7 @@ test -f "${DOC_ROOT}/articles/reference/index.html"
 test -f "${DOC_ROOT}/articles/reference/package-guides/index.html"
 test -f "${DOC_ROOT}/articles/reference/package-and-assembly/index.html"
 test -f "${DOC_ROOT}/articles/reference/assembly-catalog/index.html"
+test -f "${DOC_ROOT}/articles/reference/preview-host/index.html"
 test -f "${DOC_ROOT}/articles/reference/api-navigation-guide/index.html"
 test -f "${DOC_ROOT}/articles/reference/feature-coverage-matrix/index.html"
 test -f "${DOC_ROOT}/articles/reference/license/index.html"
@@ -93,6 +94,7 @@ test -f "${DOC_ROOT}/articles/concepts/glossary/index.html"
 test -f "${DOC_ROOT}/articles/getting-started/samples-and-feature-tour/index.html"
 test -f "${DOC_ROOT}/articles/guides/package-selection-and-integration/index.html"
 test -f "${DOC_ROOT}/articles/guides/vscode-language-service/index.html"
+test -f "${DOC_ROOT}/articles/guides/preview-mcp-host-and-live-preview/index.html"
 test -f "${DOC_ROOT}/articles/guides/navigation-and-refactorings/index.html"
 test -f "${DOC_ROOT}/articles/guides/runtime-loader-and-fallback/index.html"
 test -f "${DOC_ROOT}/articles/guides/hot-reload-and-hot-design/index.html"
@@ -122,8 +124,10 @@ PACKAGE_GUIDE_PAGES=(
     runtime
     runtime-core
     runtime-avalonia
+    remote-protocol
     language-service
     language-server-tool
+    mcp-server-tool
     editor-avalonia
     vscode-extension
 )

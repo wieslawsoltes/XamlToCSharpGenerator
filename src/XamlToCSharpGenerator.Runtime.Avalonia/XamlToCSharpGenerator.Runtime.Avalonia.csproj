@@ -9,6 +9,7 @@
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.RemoteProtocol/XamlToCSharpGenerator.RemoteProtocol.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true' and '$(TargetFramework)' == 'net10.0'">
@@ -20,6 +21,9 @@
   <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
     <Reference Include="XamlToCSharpGenerator.Runtime.Core">
       <HintPath>..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\$(TargetFramework)\XamlToCSharpGenerator.Runtime.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.RemoteProtocol">
+      <HintPath>..\XamlToCSharpGenerator.RemoteProtocol\bin\$(Configuration)\$(TargetFramework)\XamlToCSharpGenerator.RemoteProtocol.dll</HintPath>
     </Reference>
   </ItemGroup>
 
@@ -42,5 +46,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.McpServer" />
   </ItemGroup>
 </Project>

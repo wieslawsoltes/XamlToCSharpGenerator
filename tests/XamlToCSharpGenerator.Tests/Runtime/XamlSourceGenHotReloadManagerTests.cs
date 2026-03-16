@@ -82,6 +82,77 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
     }
 
     [Fact]
+    public void GetStatus_Returns_Registered_Type_And_BuildUri_Counts()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+
+        var first = new ReloadTargetA();
+        var second = new ReloadTargetB();
+
+        XamlSourceGenHotReloadManager.Register(
+            first,
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/First.axaml",
+                SourcePath = "/tmp/First.axaml"
+            });
+        XamlSourceGenHotReloadManager.Register(
+            second,
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/Second.axaml",
+                SourcePath = "/tmp/Second.axaml"
+            });
+
+        var status = XamlSourceGenHotReloadManager.GetStatus();
+
+        Assert.True(status.IsEnabled);
+        Assert.Equal(2, status.RegisteredTypeCount);
+        Assert.Equal(2, status.RegisteredBuildUriCount);
+        Assert.NotNull(status.LastTransportStatus);
+    }
+
+    [Fact]
+    public void Register_Publishes_HotReloadStatusChanged()
+    {
+        ResetManager();
+
+        SourceGenHotReloadStatus? latestStatus = null;
+        XamlSourceGenHotReloadManager.HotReloadStatusChanged += OnStatusChanged;
+
+        try
+        {
+            XamlSourceGenHotReloadManager.Register(
+                new ReloadTargetA(),
+                static _ => { },
+                new SourceGenHotReloadRegistrationOptions
+                {
+                    BuildUri = "avares://tests/Evented.axaml",
+                    SourcePath = "/tmp/Evented.axaml"
+                });
+
+            Assert.NotNull(latestStatus);
+            Assert.Equal(XamlSourceGenHotReloadManager.GetStatus().IsEnabled, latestStatus!.IsEnabled);
+            Assert.Equal(1, latestStatus.RegisteredTypeCount);
+            Assert.Equal(1, latestStatus.RegisteredBuildUriCount);
+        }
+        finally
+        {
+            XamlSourceGenHotReloadManager.HotReloadStatusChanged -= OnStatusChanged;
+        }
+
+        return;
+
+        void OnStatusChanged(SourceGenHotReloadStatus status)
+        {
+            latestStatus = status;
+        }
+    }
+
+    [Fact]
     public async Task Register_MirrorRegistration_Remains_Blocked_During_Clear_Synchronization()
     {
         ResetManager();

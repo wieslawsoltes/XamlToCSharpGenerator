@@ -32,6 +32,14 @@
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.LanguageServer\XamlToCSharpGenerator.LanguageServer.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('..\..\src\XamlToCSharpGenerator.McpServer\XamlToCSharpGenerator.McpServer.csproj')">
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.McpServer\XamlToCSharpGenerator.McpServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\src\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj')">
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('..\..\src\XamlToCSharpGenerator.Editor.Avalonia\XamlToCSharpGenerator.Editor.Avalonia.csproj')">
     <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Editor.Avalonia\XamlToCSharpGenerator.Editor.Avalonia.csproj" />
   </ItemGroup>
