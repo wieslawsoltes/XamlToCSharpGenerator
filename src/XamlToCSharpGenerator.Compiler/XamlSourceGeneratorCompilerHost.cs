@@ -403,18 +403,9 @@ public static class XamlSourceGeneratorCompilerHost
                         compilation,
                         options);
 
-                    if (parseResult is not null &&
-                        TryCreateNonPartialClassDiagnostic(parseResult, compilation, out var nonPartialClassDiagnostic))
-                    {
-                        parseDiagnostics = parseDiagnostics.Add(nonPartialClassDiagnostic);
-                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
-                        status = "skipped-nonpartial-class";
-                        return;
-                    }
-
-                    ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                     if (parseResult is null)
                     {
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                         usedFallbackSource = TryUseCachedSource(
                             sourceContext,
                             cacheKey,
@@ -428,9 +419,27 @@ public static class XamlSourceGeneratorCompilerHost
 
                     if (parseResult.Precompile == false)
                     {
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
                         status = "skipped-precompile";
                         return;
                     }
+
+                    if (TryCreateNonPartialClassDiagnostic(parseResult, compilation, out var nonPartialClassDiagnostic))
+                    {
+                        parseDiagnostics = parseDiagnostics.Add(nonPartialClassDiagnostic);
+                        ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
+                        usedFallbackSource = TryUseCachedSource(
+                            sourceContext,
+                            cacheKey,
+                            parseResult.FilePath,
+                            resilienceEnabled,
+                            options,
+                            frameworkProfile.Id);
+                        status = usedFallbackSource ? "fallback-nonpartial-class" : "skipped-nonpartial-class";
+                        return;
+                    }
+
+                    ReportDiagnostics(sourceContext, parseDiagnostics, resilienceEnabled);
 
                     status = "bind";
                     var bindStart = Stopwatch.GetTimestamp();

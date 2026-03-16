@@ -10258,6 +10258,46 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Skips_NonPartial_Diagnostic_When_Precompile_Is_False()
+    {
+        const string code = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public class MainView : global::Avalonia.Controls.UserControl
+                {
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView"
+                         x:Precompile="False" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics, runResult) = RunGeneratorWithResult(
+            compilation,
+            [("MainView.axaml", xaml)]);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0109");
+        Assert.Equal(compilation.SyntaxTrees.Count() + 1, updatedCompilation.SyntaxTrees.Count());
+        Assert.DoesNotContain(
+            runResult.Results.SelectMany(static result => result.GeneratedSources),
+            generatedSource => generatedSource.SourceText.ToString().Contains("partial class MainView", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Generates_Class_Modifier_From_Class_Symbol()
     {
         const string code = "namespace Demo; public partial class MainView {}";
@@ -19650,6 +19690,115 @@ public class AvaloniaXamlSourceGeneratorTests
             runResult.Results.SelectMany(static result => result.GeneratedSources),
             generatedSource => generatedSource.SourceText.ToString().Contains("partial class MainView", StringComparison.Ordinal));
         Assert.DoesNotContain(updatedCompilation.GetDiagnostics(), diagnostic => diagnostic.Id == "CS0260");
+    }
+
+    [Fact]
+    public void HotReload_WatchMode_Uses_Last_Good_Source_When_Class_Becomes_NonPartial()
+    {
+        const string validCode = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class WatchView : global::Avalonia.Controls.UserControl
+                {
+                }
+            }
+            """;
+
+        const string invalidCode = """
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public class WatchView : global::Avalonia.Controls.UserControl
+                {
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.WatchView">
+                <Button Content="Valid" />
+            </UserControl>
+            """;
+
+        var cacheDirectory = Path.Combine(Path.GetTempPath(), "AXSG-HotReloadCache-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(cacheDirectory);
+
+        try
+        {
+            XamlSourceGeneratorCompilerHost.ClearHotReloadFallbackCacheForTesting();
+
+            var options = new[]
+            {
+                new KeyValuePair<string, string>("build_property.DotNetWatchBuild", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.IntermediateOutputPath", cacheDirectory),
+                new KeyValuePair<string, string>("build_property.MSBuildProjectDirectory", cacheDirectory),
+            };
+
+            var first = RunGeneratorWithResult(
+                CreateCompilation(validCode),
+                [("WatchView.axaml", xaml)],
+                options);
+
+            Assert.Empty(first.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+            var second = RunGeneratorWithResult(
+                CreateCompilation(invalidCode),
+                [("WatchView.axaml", xaml)],
+                options);
+
+            Assert.Empty(second.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0109" && d.Severity == DiagnosticSeverity.Warning);
+            Assert.Contains(second.Diagnostics, d => d.Id == "AXSG0700" && d.Severity == DiagnosticSeverity.Warning);
+
+            var firstSources = first.RunResult.Results
+                .SelectMany(static result => result.GeneratedSources)
+                .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+            var secondSources = second.RunResult.Results
+                .SelectMany(static result => result.GeneratedSources)
+                .ToDictionary(static source => source.HintName, static source => source.SourceText.ToString(), StringComparer.Ordinal);
+
+            Assert.Equal(firstSources.Count, secondSources.Count);
+            foreach (var pair in firstSources)
+            {
+                Assert.True(secondSources.TryGetValue(pair.Key, out var secondSource));
+                Assert.Equal(pair.Value, secondSource);
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(cacheDirectory))
+                {
+                    Directory.Delete(cacheDirectory, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort test cleanup only.
+            }
+
+            XamlSourceGeneratorCompilerHost.ClearHotReloadFallbackCacheForTesting();
+        }
     }
 
     [Fact]
