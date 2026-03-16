@@ -13,15 +13,22 @@ namespace XamlToCSharpGenerator.Runtime;
 internal sealed class AxsgStudioRemoteCommandRouter
 {
     private readonly AxsgRuntimeQueryService _runtimeQueryService;
+    private readonly AxsgRuntimeHotDesignService _hotDesignService;
+    private readonly AxsgRuntimeStudioService _studioService;
 
     public AxsgStudioRemoteCommandRouter()
         : this(new AxsgRuntimeQueryService())
     {
     }
 
-    internal AxsgStudioRemoteCommandRouter(AxsgRuntimeQueryService runtimeQueryService)
+    internal AxsgStudioRemoteCommandRouter(
+        AxsgRuntimeQueryService runtimeQueryService,
+        AxsgRuntimeHotDesignService? hotDesignService = null,
+        AxsgRuntimeStudioService? studioService = null)
     {
         _runtimeQueryService = runtimeQueryService ?? throw new ArgumentNullException(nameof(runtimeQueryService));
+        _hotDesignService = hotDesignService ?? new AxsgRuntimeHotDesignService(_runtimeQueryService);
+        _studioService = studioService ?? new AxsgRuntimeStudioService(_runtimeQueryService);
     }
 
     public async ValueTask<AxsgStudioRemoteResponseEnvelope> HandleAsync(
@@ -71,88 +78,56 @@ internal sealed class AxsgStudioRemoteCommandRouter
         return AxsgStudioRemoteProtocol.CreateSuccessResponse(
             request.Command,
             request.RequestId,
-            AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(workspace, _runtimeQueryService.GetStudioStatus()));
+            AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(
+                workspace,
+                _runtimeQueryService.GetStudioStatus(),
+                _runtimeQueryService.GetHotDesignHitTestMode()));
     }
 
     private AxsgStudioRemoteResponseEnvelope HandleSelectDocument(AxsgStudioRemoteRequestEnvelope request)
     {
         AxsgStudioSelectDocumentRequest payload = AxsgStudioRemoteProtocol.ParseSelectDocumentRequest(request.Payload);
-        if (string.IsNullOrWhiteSpace(payload.BuildUri))
+        try
+        {
+            SourceGenHotDesignWorkspaceSnapshot workspace = _hotDesignService.SelectDocument(payload.BuildUri);
+            return AxsgStudioRemoteProtocol.CreateSuccessResponse(
+                request.Command,
+                request.RequestId,
+                AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(
+                    workspace,
+                    _runtimeQueryService.GetStudioStatus(),
+                    _runtimeQueryService.GetHotDesignHitTestMode()));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             return AxsgStudioRemoteProtocol.CreateFailureResponse(
                 request.Command,
                 request.RequestId,
-                "buildUri is required.");
+                ex.Message);
         }
-
-        bool documentExists = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
-            .Any(candidate => string.Equals(candidate.BuildUri, payload.BuildUri, StringComparison.OrdinalIgnoreCase));
-        if (!documentExists)
-        {
-            return AxsgStudioRemoteProtocol.CreateFailureResponse(
-                request.Command,
-                request.RequestId,
-                "No registered document matches buildUri '" + payload.BuildUri + "'.");
-        }
-
-        XamlSourceGenHotDesignTool.SelectDocument(payload.BuildUri);
-        SourceGenHotDesignWorkspaceSnapshot workspace = _runtimeQueryService.GetHotDesignWorkspace(payload.BuildUri, search: null);
-        return AxsgStudioRemoteProtocol.CreateSuccessResponse(
-            request.Command,
-            request.RequestId,
-            AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(workspace, _runtimeQueryService.GetStudioStatus()));
     }
 
     private AxsgStudioRemoteResponseEnvelope HandleSelectElement(AxsgStudioRemoteRequestEnvelope request)
     {
         AxsgStudioSelectElementRequest payload = AxsgStudioRemoteProtocol.ParseSelectElementRequest(request.Payload);
-        if (string.IsNullOrWhiteSpace(payload.ElementId))
+        try
+        {
+            SourceGenHotDesignWorkspaceSnapshot workspace = _hotDesignService.SelectElement(payload.BuildUri, payload.ElementId);
+            return AxsgStudioRemoteProtocol.CreateSuccessResponse(
+                request.Command,
+                request.RequestId,
+                AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(
+                    workspace,
+                    _runtimeQueryService.GetStudioStatus(),
+                    _runtimeQueryService.GetHotDesignHitTestMode()));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             return AxsgStudioRemoteProtocol.CreateFailureResponse(
                 request.Command,
                 request.RequestId,
-                "elementId is required.");
+                ex.Message);
         }
-
-        string? activeBuildUri = payload.BuildUri;
-        if (string.IsNullOrWhiteSpace(activeBuildUri))
-        {
-            activeBuildUri = _runtimeQueryService.GetHotDesignWorkspace().ActiveBuildUri;
-        }
-
-        if (string.IsNullOrWhiteSpace(activeBuildUri))
-        {
-            return AxsgStudioRemoteProtocol.CreateFailureResponse(
-                request.Command,
-                request.RequestId,
-                "No active document is available for element selection.");
-        }
-
-        bool documentExists = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
-            .Any(candidate => string.Equals(candidate.BuildUri, activeBuildUri, StringComparison.OrdinalIgnoreCase));
-        if (!documentExists)
-        {
-            return AxsgStudioRemoteProtocol.CreateFailureResponse(
-                request.Command,
-                request.RequestId,
-                "No registered document matches buildUri '" + activeBuildUri + "'.");
-        }
-
-        SourceGenHotDesignWorkspaceSnapshot workspaceBeforeSelection = _runtimeQueryService.GetHotDesignWorkspace(activeBuildUri, search: null);
-        if (!ContainsElementId(workspaceBeforeSelection.Elements, payload.ElementId))
-        {
-            return AxsgStudioRemoteProtocol.CreateFailureResponse(
-                request.Command,
-                request.RequestId,
-                "No element with id '" + payload.ElementId + "' exists in buildUri '" + activeBuildUri + "'.");
-        }
-
-        XamlSourceGenHotDesignTool.SelectElement(activeBuildUri, payload.ElementId);
-        SourceGenHotDesignWorkspaceSnapshot workspace = _runtimeQueryService.GetHotDesignWorkspace(activeBuildUri, search: null);
-        return AxsgStudioRemoteProtocol.CreateSuccessResponse(
-            request.Command,
-            request.RequestId,
-            AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(workspace, _runtimeQueryService.GetStudioStatus()));
     }
 
     private async ValueTask<AxsgStudioRemoteResponseEnvelope> HandleApplyDocumentTextAsync(
@@ -160,44 +135,26 @@ internal sealed class AxsgStudioRemoteCommandRouter
         CancellationToken cancellationToken)
     {
         AxsgStudioApplyDocumentTextRequest payload = AxsgStudioRemoteProtocol.ParseApplyDocumentTextRequest(request.Payload);
-        string? buildUri = payload.BuildUri;
-        if (string.IsNullOrWhiteSpace(buildUri))
+        SourceGenStudioUpdateResult applyResult;
+        try
         {
-            buildUri = _runtimeQueryService.GetHotDesignWorkspace().ActiveBuildUri;
+            applyResult = await _studioService
+                .ApplyDocumentTextAsync(
+                    payload.BuildUri,
+                    payload.XamlText,
+                    request.RequestId,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        if (string.IsNullOrWhiteSpace(buildUri))
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             return AxsgStudioRemoteProtocol.CreateFailureResponse(
                 request.Command,
                 request.RequestId,
-                "buildUri is required.");
+                ex.Message);
         }
 
-        if (payload.XamlText is null)
-        {
-            return AxsgStudioRemoteProtocol.CreateFailureResponse(
-                request.Command,
-                request.RequestId,
-                "xamlText is required.");
-        }
-
-        SourceGenHotDesignDocumentDescriptor? document = XamlSourceGenHotDesignManager.GetRegisteredDocuments()
-            .FirstOrDefault(candidate => string.Equals(candidate.BuildUri, buildUri, StringComparison.OrdinalIgnoreCase));
-
-        var applyRequest = new SourceGenStudioUpdateRequest
-        {
-            RequestId = request.RequestId,
-            BuildUri = buildUri,
-            TargetType = document?.RootType,
-            TargetTypeName = document?.RootType.FullName,
-            XamlText = payload.XamlText
-        };
-
-        SourceGenStudioUpdateResult applyResult = await XamlSourceGenStudioManager
-            .ApplyUpdateAsync(applyRequest, cancellationToken)
-            .ConfigureAwait(false);
-        SourceGenHotDesignWorkspaceSnapshot workspace = _runtimeQueryService.GetHotDesignWorkspace(buildUri, search: null);
+        SourceGenHotDesignWorkspaceSnapshot workspace = _runtimeQueryService.GetHotDesignWorkspace(applyResult.BuildUri, search: null);
 
         return new AxsgStudioRemoteResponseEnvelope(
             Ok: applyResult.Succeeded,
@@ -207,31 +164,10 @@ internal sealed class AxsgStudioRemoteCommandRouter
             Payload: new
             {
                 applyResult = AxsgRuntimePayloadBuilder.BuildStudioUpdateResultPayload(applyResult),
-                workspace = AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(workspace, _runtimeQueryService.GetStudioStatus())
+                workspace = AxsgRuntimePayloadBuilder.BuildHotDesignWorkspacePayload(
+                    workspace,
+                    _runtimeQueryService.GetStudioStatus(),
+                    _runtimeQueryService.GetHotDesignHitTestMode())
             });
-    }
-
-    private static bool ContainsElementId(IReadOnlyList<SourceGenHotDesignElementNode> elements, string elementId)
-    {
-        if (elements.Count == 0)
-        {
-            return false;
-        }
-
-        for (int index = 0; index < elements.Count; index++)
-        {
-            SourceGenHotDesignElementNode element = elements[index];
-            if (string.Equals(element.Id, elementId, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            if (ContainsElementId(element.Children, elementId))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

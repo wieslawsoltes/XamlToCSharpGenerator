@@ -60,6 +60,44 @@ public sealed class AxsgStudioRemoteCommandRouterTests
         Assert.Contains("Unsupported command", response.Error, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task HandleAsync_SelectElement_Without_Active_Document_Returns_Error()
+    {
+        var router = new AxsgStudioRemoteCommandRouter(new AxsgRuntimeQueryService());
+
+        var response = await router.HandleAsync(
+            new AxsgStudioRemoteRequestEnvelope(
+                AxsgStudioRemoteProtocol.SelectElementCommand,
+                "e1",
+                CreatePayload(new
+                {
+                    elementId = "root"
+                })),
+            CancellationToken.None);
+
+        Assert.False(response.Ok);
+        Assert.Equal("No active document is available for element selection.", response.Error);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ApplyDocumentText_Without_XamlText_Returns_Error()
+    {
+        var router = new AxsgStudioRemoteCommandRouter(new AxsgRuntimeQueryService());
+
+        var response = await router.HandleAsync(
+            new AxsgStudioRemoteRequestEnvelope(
+                AxsgStudioRemoteProtocol.ApplyDocumentTextCommand,
+                "a1",
+                CreatePayload(new
+                {
+                    buildUri = "avares://tests/Missing.xaml"
+                })),
+            CancellationToken.None);
+
+        Assert.False(response.Ok);
+        Assert.Equal("xamlText is required.", response.Error);
+    }
+
     private static JsonElement CreatePayload<T>(T value)
     {
         return JsonSerializer.SerializeToDocument(value, JsonRpcSerializer.DefaultOptions).RootElement.Clone();

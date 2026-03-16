@@ -116,6 +116,30 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
     }
 
     [Fact]
+    public void GetTrackedDocuments_Returns_Registered_Document_Snapshots()
+    {
+        ResetManager();
+
+        XamlSourceGenHotReloadManager.Register(
+            new ReloadTargetA(),
+            static _ => { },
+            new SourceGenHotReloadRegistrationOptions
+            {
+                BuildUri = "avares://tests/TrackedReloadTarget.axaml",
+                SourcePath = "/tmp/TrackedReloadTarget.axaml"
+            });
+
+        IReadOnlyList<SourceGenHotReloadTrackedDocumentDescriptor> trackedDocuments = XamlSourceGenHotReloadManager.GetTrackedDocuments();
+
+        SourceGenHotReloadTrackedDocumentDescriptor trackedDocument = Assert.Single(trackedDocuments);
+        Assert.Equal(typeof(ReloadTargetA), trackedDocument.TrackingType);
+        Assert.Equal("avares://tests/TrackedReloadTarget.axaml", trackedDocument.BuildUri);
+        Assert.Equal("/tmp/TrackedReloadTarget.axaml", trackedDocument.SourcePath);
+        Assert.Equal(1, trackedDocument.LiveInstanceCount);
+        Assert.True(trackedDocument.IsSourceWatched);
+    }
+
+    [Fact]
     public void Register_Publishes_HotReloadStatusChanged()
     {
         ResetManager();
