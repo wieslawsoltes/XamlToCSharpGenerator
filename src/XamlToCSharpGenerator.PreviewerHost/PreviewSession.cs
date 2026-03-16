@@ -22,6 +22,7 @@ internal sealed class PreviewSession : IPreviewHostSession
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly TimeSpan _startupTimeout = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _disposeSource = new();
+    private readonly PreviewUpdateResultTracker _pendingUpdateResults = new();
 
     private TcpListener? _listener;
     private Process? _hostProcess;
@@ -33,7 +34,6 @@ internal sealed class PreviewSession : IPreviewHostSession
     private double? _previewWidth;
     private double? _previewHeight;
     private double? _previewScale;
-    private TaskCompletionSource<AxsgPreviewHostHotReloadResponse>? _pendingHotReload;
     private bool _sessionStarted;
 
     public event Action<string>? Log;
@@ -114,6 +114,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                         _previewScale,
                         linkedCancellationToken.Token).ConfigureAwait(false);
 
+                    _pendingUpdateResults.EnqueueFireAndForget();
                     await _transport.SendUpdateXamlAsync(
                         request.XamlText,
                         _sourceAssemblyPath,
@@ -169,6 +170,7 @@ internal sealed class PreviewSession : IPreviewHostSession
         await _updateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            _pendingUpdateResults.EnqueueFireAndForget();
             await SendUpdateXamlAsync(xamlText, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -188,41 +190,19 @@ internal sealed class PreviewSession : IPreviewHostSession
         await _updateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var completionSource = CreateCompletionSource<AxsgPreviewHostHotReloadResponse>();
-            lock (_sync)
-            {
-                if (_pendingHotReload is not null)
-                {
-                    throw new InvalidOperationException("A preview hot reload is already in progress.");
-                }
-
-                _pendingHotReload = completionSource;
-            }
+            TaskCompletionSource<AxsgPreviewHostHotReloadResponse> completionSource = _pendingUpdateResults.EnqueueHotReload();
+            await SendUpdateXamlAsync(xamlText, cancellationToken).ConfigureAwait(false);
 
             try
             {
-                await SendUpdateXamlAsync(xamlText, cancellationToken).ConfigureAwait(false);
-
-                try
-                {
-                    return timeout.HasValue
-                        ? await completionSource.Task.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false)
-                        : await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (TimeoutException)
-                {
-                    return PublishPendingHotReloadFailure("Timed out waiting for preview hot reload to complete.");
-                }
+                return timeout.HasValue
+                    ? await completionSource.Task.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false)
+                    : await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
-            finally
+            catch (TimeoutException)
             {
-                lock (_sync)
-                {
-                    if (ReferenceEquals(_pendingHotReload, completionSource))
-                    {
-                        _pendingHotReload = null;
-                    }
-                }
+                _pendingUpdateResults.RemoveHotReload(completionSource);
+                return PublishPendingHotReloadFailure("Timed out waiting for preview hot reload to complete.");
             }
         }
         finally
@@ -464,7 +444,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                             string.IsNullOrWhiteSpace(updateResult.Error),
                             updateResult.Error,
                             MapExceptionDetails(updateResult.Exception));
-                        CompletePendingHotReload(
+                        _ = CompletePendingHotReload(
                             CreateHotReloadResponse(
                                 mappedResult.Succeeded,
                                 mappedResult.Error,
@@ -677,14 +657,7 @@ internal sealed class PreviewSession : IPreviewHostSession
 
     private AxsgPreviewHostHotReloadResponse CompletePendingHotReload(AxsgPreviewHostHotReloadResponse response)
     {
-        TaskCompletionSource<AxsgPreviewHostHotReloadResponse>? completionSource;
-        lock (_sync)
-        {
-            completionSource = _pendingHotReload;
-            _pendingHotReload = null;
-        }
-
-        completionSource?.TrySetResult(response);
+        _pendingUpdateResults.CompleteNext(response);
         return response;
     }
 
@@ -696,16 +669,8 @@ internal sealed class PreviewSession : IPreviewHostSession
             succeeded: false,
             error: error,
             exception: exception);
-        TaskCompletionSource<AxsgPreviewHostHotReloadResponse>? completionSource;
-        lock (_sync)
+        if (_pendingUpdateResults.FailAll(response) is not null)
         {
-            completionSource = _pendingHotReload;
-            _pendingHotReload = null;
-        }
-
-        if (completionSource is not null)
-        {
-            completionSource.TrySetResult(response);
             UpdateCompleted?.Invoke(new AxsgPreviewHostUpdateResultEventPayload(false, error, exception));
         }
 
