@@ -10,4 +10,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj" />
+  </ItemGroup>
 </Project>
