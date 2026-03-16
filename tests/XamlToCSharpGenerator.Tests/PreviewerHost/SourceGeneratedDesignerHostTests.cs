@@ -1,5 +1,7 @@
+using System.Runtime.Loader;
 using System.Reflection;
 using global::Avalonia.Markup.Xaml;
+using XamlToCSharpGenerator.Previewer.DesignerHost;
 
 namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 
@@ -107,5 +109,52 @@ public class SourceGeneratedDesignerHostTests
         Assert.Equal(
             result,
             (string?)createNameMethod.Invoke(null, ["source.Quantity + 1"]));
+    }
+
+    [Fact]
+    public void PreviewMarkupRuntime_Uses_Collectible_Load_Context_For_Evaluators()
+    {
+        SourceGeneratedPreviewMarkupRuntime.ClearEvaluatorCacheForTests();
+        try
+        {
+            var loadContext = SourceGeneratedPreviewMarkupRuntime.GetEvaluatorLoadContextForTests("source.Quantity + 1");
+
+            Assert.NotNull(loadContext);
+            Assert.True(loadContext!.IsCollectible);
+        }
+        finally
+        {
+            SourceGeneratedPreviewMarkupRuntime.ClearEvaluatorCacheForTests();
+        }
+    }
+
+    [Fact]
+    public void PreviewMarkupRuntime_Bounds_Evaluator_Cache_And_Evicts_Oldest_Entries()
+    {
+        SourceGeneratedPreviewMarkupRuntime.ClearEvaluatorCacheForTests();
+        try
+        {
+            var firstLoadContext = SourceGeneratedPreviewMarkupRuntime.GetEvaluatorLoadContextForTests("source.Quantity + 0");
+
+            for (var index = 1; index <= SourceGeneratedPreviewMarkupRuntime.MaxCachedEvaluatorCount; index++)
+            {
+                _ = SourceGeneratedPreviewMarkupRuntime.GetEvaluatorLoadContextForTests($"source.Quantity + {index}");
+            }
+
+            Assert.Equal(
+                SourceGeneratedPreviewMarkupRuntime.MaxCachedEvaluatorCount,
+                SourceGeneratedPreviewMarkupRuntime.GetCachedEvaluatorCountForTests());
+
+            var reloadedFirstContext = SourceGeneratedPreviewMarkupRuntime.GetEvaluatorLoadContextForTests("source.Quantity + 0");
+
+            Assert.NotNull(firstLoadContext);
+            Assert.NotNull(reloadedFirstContext);
+            Assert.NotSame(firstLoadContext, reloadedFirstContext);
+            Assert.IsAssignableFrom<AssemblyLoadContext>(reloadedFirstContext);
+        }
+        finally
+        {
+            SourceGeneratedPreviewMarkupRuntime.ClearEvaluatorCacheForTests();
+        }
     }
 }

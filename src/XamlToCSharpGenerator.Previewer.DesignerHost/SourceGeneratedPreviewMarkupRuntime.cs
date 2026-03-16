@@ -16,7 +16,11 @@ namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
 internal sealed class SourceGeneratedPreviewMarkupRuntime
 {
-    private static readonly ConcurrentDictionary<string, Func<object?, object?, object?, object?>> EvaluatorCache = new(StringComparer.Ordinal);
+    internal const int MaxCachedEvaluatorCount = 128;
+
+    private static readonly object EvaluatorCacheGate = new();
+    private static readonly Dictionary<string, EvaluatorCacheEntry> EvaluatorCache = new(StringComparer.Ordinal);
+    private static readonly LinkedList<string> EvaluatorCacheLru = new();
     private static readonly ConcurrentDictionary<Type, Delegate> NoOpDelegateCache = new();
     private static readonly Lazy<PortableExecutableReference[]> MetadataReferences = new(CreateMetadataReferences);
 
@@ -44,7 +48,7 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             return CreateNoOpDelegate(delegateType);
         }
 
-        var evaluator = EvaluatorCache.GetOrAdd(resolvedCode, CompileEvaluator);
+        var evaluator = GetOrCreateEvaluator(resolvedCode);
         var dependencyNames = ResolveDependencyNames(dependencyNamesBase64Url);
         if (ShouldReturnBinding(targetProperty))
         {
@@ -255,7 +259,103 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         });
     }
 
-    private static Func<object?, object?, object?, object?> CompileEvaluator(string code)
+    internal static void ClearEvaluatorCacheForTests()
+    {
+        List<EvaluatorCacheEntry> entries;
+        lock (EvaluatorCacheGate)
+        {
+            entries = [.. EvaluatorCache.Values];
+            EvaluatorCache.Clear();
+            EvaluatorCacheLru.Clear();
+        }
+
+        for (var index = 0; index < entries.Count; index++)
+        {
+            entries[index].Dispose();
+        }
+    }
+
+    internal static int GetCachedEvaluatorCountForTests()
+    {
+        lock (EvaluatorCacheGate)
+        {
+            return EvaluatorCache.Count;
+        }
+    }
+
+    internal static AssemblyLoadContext? GetEvaluatorLoadContextForTests(string code)
+    {
+        return AssemblyLoadContext.GetLoadContext(GetOrCreateEvaluator(code).Method.Module.Assembly);
+    }
+
+    private static Func<object?, object?, object?, object?> GetOrCreateEvaluator(string code)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(code);
+
+        lock (EvaluatorCacheGate)
+        {
+            if (EvaluatorCache.TryGetValue(code, out var cachedEntry))
+            {
+                TouchEvaluatorEntryNoLock(cachedEntry);
+                return cachedEntry.Evaluator;
+            }
+        }
+
+        var createdEntry = CompileEvaluatorEntry(code);
+        EvaluatorCacheEntry? entryToDispose = null;
+        Func<object?, object?, object?, object?> evaluator;
+        lock (EvaluatorCacheGate)
+        {
+            if (EvaluatorCache.TryGetValue(code, out var cachedEntry))
+            {
+                TouchEvaluatorEntryNoLock(cachedEntry);
+                evaluator = cachedEntry.Evaluator;
+                entryToDispose = createdEntry;
+            }
+            else
+            {
+                var node = EvaluatorCacheLru.AddLast(code);
+                createdEntry.LruNode = node;
+                EvaluatorCache.Add(code, createdEntry);
+                evaluator = createdEntry.Evaluator;
+                entryToDispose = TrimEvaluatorCacheNoLock();
+            }
+        }
+
+        entryToDispose?.Dispose();
+        return evaluator;
+    }
+
+    private static void TouchEvaluatorEntryNoLock(EvaluatorCacheEntry entry)
+    {
+        if (entry.LruNode is null || entry.LruNode.List is null || entry.LruNode == EvaluatorCacheLru.Last)
+        {
+            return;
+        }
+
+        EvaluatorCacheLru.Remove(entry.LruNode);
+        EvaluatorCacheLru.AddLast(entry.LruNode);
+    }
+
+    private static EvaluatorCacheEntry? TrimEvaluatorCacheNoLock()
+    {
+        if (EvaluatorCache.Count <= MaxCachedEvaluatorCount || EvaluatorCacheLru.First is null)
+        {
+            return null;
+        }
+
+        var leastRecentlyUsedNode = EvaluatorCacheLru.First;
+        EvaluatorCacheLru.RemoveFirst();
+        if (!EvaluatorCache.Remove(leastRecentlyUsedNode.Value, out var entry))
+        {
+            return null;
+        }
+
+        entry.LruNode = null;
+        return entry;
+    }
+
+    private static EvaluatorCacheEntry CompileEvaluatorEntry(string code)
     {
         var className = CreateEvaluatorClassName(code);
         var source = string.Join(
@@ -293,13 +393,23 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         }
 
         stream.Position = 0;
-        var assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
-        var method = assembly.GetType(className, throwOnError: true)
-            ?.GetMethod("Evaluate", BindingFlags.Static | BindingFlags.Public)
-            ?? throw new InvalidOperationException("Preview evaluator method was not emitted.");
-        return (Func<object?, object?, object?, object?>)Delegate.CreateDelegate(
-            typeof(Func<object?, object?, object?, object?>),
-            method);
+        var loadContext = new AssemblyLoadContext(className, isCollectible: true);
+        try
+        {
+            var assembly = loadContext.LoadFromStream(stream);
+            var method = assembly.GetType(className, throwOnError: true)
+                ?.GetMethod("Evaluate", BindingFlags.Static | BindingFlags.Public)
+                ?? throw new InvalidOperationException("Preview evaluator method was not emitted.");
+            var evaluator = (Func<object?, object?, object?, object?>)Delegate.CreateDelegate(
+                typeof(Func<object?, object?, object?, object?>),
+                method);
+            return new EvaluatorCacheEntry(evaluator, loadContext);
+        }
+        catch
+        {
+            loadContext.Unload();
+            throw;
+        }
     }
 
     internal static string CreateEvaluatorClassName(string code)
@@ -314,22 +424,30 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
     {
         var references = new List<PortableExecutableReference>();
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddMetadataReference(references, seenPaths, typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly);
         var assemblies = AppDomain.CurrentDomain.GetAssemblies();
         for (var index = 0; index < assemblies.Length; index++)
         {
-            var assembly = assemblies[index];
-            if (assembly.IsDynamic ||
-                string.IsNullOrWhiteSpace(assembly.Location) ||
-                !File.Exists(assembly.Location) ||
-                !seenPaths.Add(assembly.Location))
-            {
-                continue;
-            }
-
-            references.Add(MetadataReference.CreateFromFile(assembly.Location));
+            AddMetadataReference(references, seenPaths, assemblies[index]);
         }
 
         return references.ToArray();
+    }
+
+    private static void AddMetadataReference(
+        ICollection<PortableExecutableReference> references,
+        ISet<string> seenPaths,
+        Assembly assembly)
+    {
+        if (assembly.IsDynamic ||
+            string.IsNullOrWhiteSpace(assembly.Location) ||
+            !File.Exists(assembly.Location) ||
+            !seenPaths.Add(assembly.Location))
+        {
+            return;
+        }
+
+        references.Add(MetadataReference.CreateFromFile(assembly.Location));
     }
 
     private sealed class PreviewDynamicBindingConverter(
@@ -352,6 +470,22 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             {
                 return null;
             }
+        }
+    }
+
+    private sealed class EvaluatorCacheEntry(
+        Func<object?, object?, object?, object?> evaluator,
+        AssemblyLoadContext loadContext) : IDisposable
+    {
+        public Func<object?, object?, object?, object?> Evaluator { get; } = evaluator;
+
+        public AssemblyLoadContext LoadContext { get; } = loadContext;
+
+        public LinkedListNode<string>? LruNode { get; set; }
+
+        public void Dispose()
+        {
+            LoadContext.Unload();
         }
     }
 }
