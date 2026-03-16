@@ -19594,6 +19594,102 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Emits_InitOnly_Root_Clr_Property_Assignments_With_Context_Aware_TypeConverter_Using_UnsafeAccessor()
+    {
+        const string code = """
+            namespace System.Runtime.CompilerServices
+            {
+                public sealed class IsExternalInit { }
+            }
+
+            namespace System.ComponentModel
+            {
+                [global::System.AttributeUsage(
+                    global::System.AttributeTargets.Class |
+                    global::System.AttributeTargets.Struct |
+                    global::System.AttributeTargets.Enum |
+                    global::System.AttributeTargets.Property)]
+                public sealed class TypeConverterAttribute : global::System.Attribute
+                {
+                    public TypeConverterAttribute(global::System.Type converterType)
+                    {
+                    }
+                }
+
+                public interface ITypeDescriptorContext { }
+
+                public class TypeConverter
+                {
+                    public virtual object? ConvertFromInvariantString(string text) => text;
+
+                    public virtual object? ConvertFrom(
+                        ITypeDescriptorContext? context,
+                        global::System.Globalization.CultureInfo? culture,
+                        object value) => value;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                [global::System.ComponentModel.TypeConverter(typeof(global::Demo.MarkupAwareTokenConverter))]
+                public readonly struct MarkupAwareToken
+                {
+                    public MarkupAwareToken(string text)
+                    {
+                        Text = text;
+                    }
+
+                    public string Text { get; }
+                }
+
+                public sealed class MarkupAwareTokenConverter : global::System.ComponentModel.TypeConverter
+                {
+                    public override object? ConvertFrom(
+                        global::System.ComponentModel.ITypeDescriptorContext? context,
+                        global::System.Globalization.CultureInfo? culture,
+                        object value)
+                    {
+                        return new MarkupAwareToken(value?.ToString() ?? string.Empty);
+                    }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public MarkupAwareToken WidthHint { get; init; }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <local:MainView xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:local="clr-namespace:Demo"
+                            x:Class="Demo.MainView"
+                            WidthHint="42px" />
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("CreateTypeConverterContext(", generated);
+        Assert.Contains("new global::Demo.MarkupAwareTokenConverter().ConvertFrom(", generated);
+        Assert.Contains("__AXSG_UnsafeAccessor_", generated);
+        Assert.DoesNotContain("if (!__rootConstructedWithInitializer) __AXSG_UnsafeAccessor_", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("return new global::Demo.MainView() { WidthHint =", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Treats_ReadOnly_Content_Property_Collections_As_Content_Attachment_Targets()
     {
         const string code = """

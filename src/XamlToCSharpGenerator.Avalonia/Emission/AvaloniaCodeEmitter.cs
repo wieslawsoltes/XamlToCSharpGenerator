@@ -725,11 +725,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
         foreach (var assignment in node.PropertyAssignments)
         {
-            var emitViaExistingRootInitOnlySetter =
-                CanEmitInClrObjectInitializer(node, assignment) &&
+            var canEmitInClrObjectInitializer = CanEmitInClrObjectInitializer(node, assignment);
+            var guardInitOnlySetterForExistingRoot =
+                canEmitInClrObjectInitializer &&
                 string.Equals(variableName, rootReference, StringComparison.Ordinal);
-            if (CanEmitInClrObjectInitializer(node, assignment) &&
-                !emitViaExistingRootInitOnlySetter)
+            if (canEmitInClrObjectInitializer &&
+                !guardInitOnlySetterForExistingRoot)
             {
                 continue;
             }
@@ -753,15 +754,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (emitViaExistingRootInitOnlySetter &&
-                    TryBuildInitOnlyClrSetterAccessorInvocation(
+                if (TryBuildInitOnlyClrSetterAccessorInvocation(
                         assignment,
                         variableName,
                         clrAssignmentValueExpression,
                         out var initOnlySetterInvocation))
                 {
+                    var initOnlySetterStatement = guardInitOnlySetterForExistingRoot
+                        ? BuildRootInitializerGuardedStatement(initOnlySetterInvocation)
+                        : initOnlySetterInvocation;
                     EmitStatementAt(
-                        BuildRootInitializerGuardedStatement(initOnlySetterInvocation),
+                        initOnlySetterStatement,
                         assignment.Line,
                         assignment.Column);
                 }
@@ -1615,11 +1618,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 continue;
             }
 
-            var emitViaExistingRootInitOnlySetter =
-                CanEmitInClrObjectInitializer(node, assignment) &&
+            var canEmitInClrObjectInitializer = CanEmitInClrObjectInitializer(node, assignment);
+            var guardInitOnlySetterForExistingRoot =
+                canEmitInClrObjectInitializer &&
                 string.Equals(variableName, rootReference, StringComparison.Ordinal);
-            if (CanEmitInClrObjectInitializer(node, assignment) &&
-                !emitViaExistingRootInitOnlySetter)
+            if (canEmitInClrObjectInitializer &&
+                !guardInitOnlySetterForExistingRoot)
             {
                 continue;
             }
@@ -1643,15 +1647,17 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             {
                 var clrAssignmentValueExpression = AttachBindingNameScope(valueExpression, assignment.ValueKind);
 
-                if (emitViaExistingRootInitOnlySetter &&
-                    TryBuildInitOnlyClrSetterAccessorInvocation(
+                if (TryBuildInitOnlyClrSetterAccessorInvocation(
                         assignment,
                         variableName,
                         clrAssignmentValueExpression,
                         out var initOnlySetterInvocation))
                 {
+                    var initOnlySetterStatement = guardInitOnlySetterForExistingRoot
+                        ? BuildRootInitializerGuardedStatement(initOnlySetterInvocation)
+                        : initOnlySetterInvocation;
                     EmitStatementAt(
-                        BuildRootInitializerGuardedStatement(initOnlySetterInvocation),
+                        initOnlySetterStatement,
                         assignment.Line,
                         assignment.Column);
                 }
