@@ -2945,7 +2945,20 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
     {
         if (!string.IsNullOrWhiteSpace(node.FactoryExpression))
         {
-            return node.FactoryExpression!;
+            if (!node.FactoryValueRequirements.RequiresMarkupContext)
+            {
+                return node.FactoryExpression!;
+            }
+
+            return ExpandMarkupContextExpression(
+                node.FactoryExpression!,
+                serviceProviderReference,
+                rootReference ?? "null",
+                intermediateRootReference ?? rootReference ?? "null",
+                "null",
+                "null",
+                baseUriExpression,
+                parentStackExpression ?? "global::System.Array.Empty<object>()");
         }
 
         string creationExpression;

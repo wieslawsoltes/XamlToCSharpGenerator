@@ -504,9 +504,11 @@ public sealed partial class AvaloniaSemanticBinder
         string value,
         Compilation compilation,
         out string expression,
+        out ResolvedValueRequirements valueRequirements,
         ImmutableArray<AttributeData> converterAttributes = default)
     {
         expression = string.Empty;
+        valueRequirements = ResolvedValueRequirements.None;
         var converterType = ResolveTypeConverterType(type, compilation, converterAttributes);
         if (converterType is null ||
             converterType.DeclaredAccessibility != Accessibility.Public ||
@@ -517,14 +519,104 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
+        if (TryBuildContextAwareTypeConverterExpression(type, value, compilation, converterType, out expression))
+        {
+            valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
+            return true;
+        }
+
+        return TryBuildInvariantStringTypeConverterExpression(type, value, converterType, out expression);
+    }
+
+    private static bool TryBuildContextAwareTypeConverterExpression(
+        ITypeSymbol targetType,
+        string value,
+        Compilation compilation,
+        INamedTypeSymbol converterType,
+        out string expression)
+    {
+        expression = string.Empty;
+        if (!HasContextAwareTypeConverterContract(converterType, compilation))
+        {
+            return false;
+        }
+
         expression = "(" +
-                     type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     ")new " +
+                     converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                     "().ConvertFrom(" +
+                     BuildTypeConverterContextExpression() +
+                     ", global::System.Globalization.CultureInfo.InvariantCulture, \"" +
+                     Escape(value) +
+                     "\")";
+        return true;
+    }
+
+    private static bool TryBuildInvariantStringTypeConverterExpression(
+        ITypeSymbol targetType,
+        string value,
+        INamedTypeSymbol converterType,
+        out string expression)
+    {
+        expression = "(" +
+                     targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
                      ")new " +
                      converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
                      "().ConvertFromInvariantString(\"" +
                      Escape(value) +
                      "\")";
         return true;
+    }
+
+    private static bool HasContextAwareTypeConverterContract(INamedTypeSymbol converterType, Compilation compilation)
+    {
+        var typeDescriptorContextType = compilation.GetTypeByMetadataName("System.ComponentModel.ITypeDescriptorContext");
+        if (typeDescriptorContextType is null)
+        {
+            return false;
+        }
+
+        for (var current = converterType; current is not null; current = current.BaseType)
+        {
+            foreach (var method in current.GetMembers("ConvertFrom").OfType<IMethodSymbol>())
+            {
+                if (method.IsStatic || method.Parameters.Length != 3)
+                {
+                    continue;
+                }
+
+                if (!IsTypeAssignableTo(method.Parameters[0].Type, typeDescriptorContextType) ||
+                    !IsCultureAwareParseParameter(method.Parameters[1].Type) ||
+                    method.Parameters[2].Type.SpecialType != SpecialType.System_Object)
+                {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string BuildTypeConverterContextExpression()
+    {
+        return "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CreateTypeConverterContext(" +
+               MarkupContextServiceProviderToken +
+               ", " +
+               MarkupContextRootObjectToken +
+               ", " +
+               MarkupContextIntermediateRootObjectToken +
+               ", " +
+               MarkupContextTargetObjectToken +
+               ", " +
+               MarkupContextTargetPropertyToken +
+               ", " +
+               MarkupContextBaseUriToken +
+               ", " +
+               MarkupContextParentStackToken +
+               ")";
     }
 
     private static INamedTypeSymbol? ResolveTypeConverterType(

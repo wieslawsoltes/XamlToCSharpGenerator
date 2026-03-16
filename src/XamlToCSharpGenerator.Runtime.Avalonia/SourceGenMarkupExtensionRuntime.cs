@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1476,6 +1477,28 @@ public static class SourceGenMarkupExtensionRuntime
             BuildParentStack(intermediateRootObject, parentStack));
     }
 
+    /// <summary>
+    /// Creates the type-descriptor context used by source-generated type-converter invocations.
+    /// </summary>
+    public static ITypeDescriptorContext CreateTypeConverterContext(
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        return CreateContextProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject,
+            targetProperty,
+            baseUri,
+            parentStack);
+    }
+
     public static object? ProvideOnPlatform(
         object? defaultValue,
         object? windows,
@@ -2373,6 +2396,7 @@ public static class SourceGenMarkupExtensionRuntime
 
     private sealed class MarkupExtensionServiceProvider :
         IServiceProvider,
+        ITypeDescriptorContext,
         IProvideValueTarget,
         IRootObjectProvider,
         IUriContext,
@@ -2412,6 +2436,12 @@ public static class SourceGenMarkupExtensionRuntime
 
         public object IntermediateRootObject => _intermediateRootObject;
 
+        public IContainer? Container => null;
+
+        public object? Instance => null;
+
+        public PropertyDescriptor? PropertyDescriptor => null;
+
         public Uri BaseUri
         {
             get => _baseUri;
@@ -2422,6 +2452,11 @@ public static class SourceGenMarkupExtensionRuntime
 
         public object? GetService(Type serviceType)
         {
+            if (serviceType == typeof(ITypeDescriptorContext))
+            {
+                return this;
+            }
+
             if (serviceType == typeof(IProvideValueTarget))
             {
                 return this;
@@ -2457,6 +2492,16 @@ public static class SourceGenMarkupExtensionRuntime
             }
 
             return _parentServiceProvider?.GetService(serviceType);
+        }
+
+        public void OnComponentChanged()
+        {
+            throw new NotSupportedException();
+        }
+
+        public bool OnComponentChanging()
+        {
+            throw new NotSupportedException();
         }
 
         private IEnumerable<object> EnumerateParents()

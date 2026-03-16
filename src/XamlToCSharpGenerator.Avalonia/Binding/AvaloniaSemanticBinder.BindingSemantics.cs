@@ -2285,6 +2285,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             ValueKind: ResolvedValueKind.Literal);
     }
 
+    private static ResolvedValueConversionResult CreateLiteralConversion(
+        string expression,
+        ResolvedValueRequirements valueRequirements)
+    {
+        return new ResolvedValueConversionResult(
+            Expression: expression,
+            ValueKind: ResolvedValueKind.Literal,
+            ValueRequirements: valueRequirements);
+    }
+
     private static ResolvedValueConversionResult CreateMarkupExtensionConversion(
         string expression,
         bool requiresRuntimeServiceProvider = false,
@@ -7279,9 +7289,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 value,
                 compilation,
                 out var convertedByTypeConverterExpression,
+                out var typeConverterValueRequirements,
                 converterAttributes))
         {
-            conversion = CreateLiteralConversion(convertedByTypeConverterExpression);
+            conversion = CreateLiteralConversion(
+                convertedByTypeConverterExpression,
+                typeConverterValueRequirements);
             return true;
         }
 
