@@ -9,6 +9,99 @@ namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 public sealed class SourceGeneratedRuntimeXamlLoaderTests
 {
     [Fact]
+    public void LoadCore_Reuses_Initial_Baseline_For_Successful_Live_Overlay()
+    {
+        var loader = new SourceGeneratedRuntimeXamlLoader();
+        var document = new RuntimeXamlLoaderDocument("<UserControl />");
+        var configuration = new RuntimeXamlLoaderConfiguration();
+        var baseline = new Border();
+        var loadCount = 0;
+        object? overlayBaseline = null;
+        var overlaidRoot = new Border();
+
+        SourceGeneratedRuntimeXamlLoader.ClearLastGoodOverlayCacheForTests();
+        try
+        {
+            var result = loader.LoadCore(
+                document,
+                configuration,
+                "<UserControl />",
+                sourceFilePath: null,
+                assemblyPath: null,
+                (_, _, _) =>
+                {
+                    loadCount++;
+                    return baseline;
+                },
+                (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration _, object baselineRoot, string _, out object overlayResult) =>
+                {
+                    overlayBaseline = baselineRoot;
+                    overlayResult = overlaidRoot;
+                    return true;
+                });
+
+            Assert.Equal(1, loadCount);
+            Assert.Same(baseline, overlayBaseline);
+            Assert.Same(overlaidRoot, result);
+        }
+        finally
+        {
+            SourceGeneratedRuntimeXamlLoader.ClearLastGoodOverlayCacheForTests();
+        }
+    }
+
+    [Fact]
+    public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
+    {
+        var loader = new SourceGeneratedRuntimeXamlLoader();
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var sourceFilePath = Path.Combine(tempRoot, "View.axaml");
+            var assemblyPath = Path.Combine(tempRoot, "App.dll");
+            const string xamlText = "<UserControl />";
+            var document = new RuntimeXamlLoaderDocument(xamlText)
+            {
+                Document = "View.axaml"
+            };
+            var configuration = new RuntimeXamlLoaderConfiguration();
+
+            File.WriteAllText(sourceFilePath, xamlText);
+            File.WriteAllText(assemblyPath, string.Empty);
+
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(sourceFilePath, now.AddMinutes(-1));
+            File.SetLastWriteTimeUtc(assemblyPath, now);
+
+            SourceGeneratedRuntimeXamlLoader.ClearLastGoodOverlayCacheForTests();
+            SourceGeneratedRuntimeXamlLoader.SetLastGoodOverlayForTests(document, sourceFilePath, "<UserControl Width=\"120\" />");
+
+            var result = loader.LoadCore(
+                document,
+                configuration,
+                xamlText,
+                sourceFilePath,
+                assemblyPath,
+                (_, _, _) => new Border(),
+                (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration _, object _, string _, out object overlayResult) =>
+                {
+                    overlayResult = new Border();
+                    return false;
+                });
+
+            Assert.IsType<Border>(result);
+            Assert.False(SourceGeneratedRuntimeXamlLoader.TryGetLastGoodOverlayForTests(document, sourceFilePath, out _));
+        }
+        finally
+        {
+            SourceGeneratedRuntimeXamlLoader.ClearLastGoodOverlayCacheForTests();
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ReadXamlText_Preserves_Seekable_Stream_Position()
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("<UserControl />"));

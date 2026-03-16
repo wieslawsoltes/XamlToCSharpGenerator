@@ -24,29 +24,48 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         PreloadDepsAssemblies(localAssembly);
 
         var xamlText = ReadXamlText(document);
-        var baseline = LoadGeneratedBaseline(document, configuration, xamlText);
+        return LoadCore(
+            document,
+            configuration,
+            xamlText,
+            PreviewHostRuntimeState.Current.SourceFilePath,
+            localAssembly?.Location,
+            LoadGeneratedBaseline,
+            TryApplyLiveOverlay);
+    }
+
+    internal object LoadCore(
+        RuntimeXamlLoaderDocument document,
+        RuntimeXamlLoaderConfiguration configuration,
+        string xamlText,
+        string? sourceFilePath,
+        string? assemblyPath,
+        Func<RuntimeXamlLoaderDocument, RuntimeXamlLoaderConfiguration, string, object> baselineLoader,
+        TryApplyLiveOverlayDelegate overlayApplier)
+    {
+        var baseline = baselineLoader(document, configuration, xamlText);
+        var cacheKey = GetOverlayCacheKey(document, sourceFilePath);
         if (!ShouldApplyPreviewOverlay(
                 baseline,
                 xamlText,
-                PreviewHostRuntimeState.Current.SourceFilePath,
-                localAssembly?.Location))
+                sourceFilePath,
+                assemblyPath))
         {
+            LastGoodOverlayByDocument.TryRemove(cacheKey, out _);
             return baseline;
         }
 
-        var cacheKey = GetOverlayCacheKey(document, PreviewHostRuntimeState.Current.SourceFilePath);
-        var overlayBaseline = LoadGeneratedBaseline(document, configuration, xamlText);
-        if (TryApplyLiveOverlay(document, configuration, overlayBaseline, xamlText, out var overlaidRoot))
+        if (overlayApplier(document, configuration, baseline, xamlText, out var overlaidRoot))
         {
             LastGoodOverlayByDocument[cacheKey] = xamlText;
             return overlaidRoot;
         }
 
+        var fallbackBaseline = baselineLoader(document, configuration, xamlText);
         if (LastGoodOverlayByDocument.TryGetValue(cacheKey, out var lastGoodXaml) &&
             !string.Equals(lastGoodXaml, xamlText, StringComparison.Ordinal))
         {
-            var retryBaseline = LoadGeneratedBaseline(document, configuration, xamlText);
-            if (TryApplyLiveOverlay(document, configuration, retryBaseline, lastGoodXaml, out var lastGoodRoot))
+            if (overlayApplier(document, configuration, fallbackBaseline, lastGoodXaml, out var lastGoodRoot))
             {
                 Log("Live preview XAML was invalid. Reverted to the last known good unsaved preview.");
                 return lastGoodRoot;
@@ -54,7 +73,7 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         }
 
         Log("Live preview XAML was invalid. Falling back to the last successful build output.");
-        return baseline;
+        return fallbackBaseline;
     }
 
     internal static bool ShouldApplyPreviewOverlay(
@@ -180,6 +199,28 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         return document.Document ?? "<inline>";
     }
 
+    internal static void ClearLastGoodOverlayCacheForTests()
+    {
+        LastGoodOverlayByDocument.Clear();
+    }
+
+    internal static void SetLastGoodOverlayForTests(RuntimeXamlLoaderDocument document, string? sourceFilePath, string xamlText)
+    {
+        LastGoodOverlayByDocument[GetOverlayCacheKey(document, sourceFilePath)] = xamlText;
+    }
+
+    internal static bool TryGetLastGoodOverlayForTests(RuntimeXamlLoaderDocument document, string? sourceFilePath, out string? xamlText)
+    {
+        if (LastGoodOverlayByDocument.TryGetValue(GetOverlayCacheKey(document, sourceFilePath), out var value))
+        {
+            xamlText = value;
+            return true;
+        }
+
+        xamlText = null;
+        return false;
+    }
+
     private static object LoadGeneratedBaseline(
         RuntimeXamlLoaderDocument document,
         RuntimeXamlLoaderConfiguration configuration,
@@ -224,6 +265,13 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
             return false;
         }
     }
+
+    internal delegate bool TryApplyLiveOverlayDelegate(
+        RuntimeXamlLoaderDocument document,
+        RuntimeXamlLoaderConfiguration configuration,
+        object baselineRoot,
+        string xamlText,
+        out object result);
 
     private static RuntimeXamlLoaderDocument CloneDocument(
         RuntimeXamlLoaderDocument document,
