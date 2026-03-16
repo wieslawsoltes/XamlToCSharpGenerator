@@ -211,7 +211,7 @@ internal static class XamlBindingCompletionService
             return ImmutableArray<MarkupArgumentEditSpan>.Empty;
         }
 
-        var segments = TopLevelTextParser.SplitTopLevelSegments(
+        var segments = MarkupExtensionTextParser.SplitTopLevelSegments(
             argumentsText,
             ',',
             trimTokens: true,
@@ -240,7 +240,7 @@ internal static class XamlBindingCompletionService
                 name = parsedName;
                 valueText = parsedValue;
 
-                var equalsIndex = TopLevelTextParser.IndexOfTopLevel(segment.Text, '=');
+                var equalsIndex = MarkupExtensionTextParser.IndexOfTopLevel(segment.Text, '=');
                 var valueStartInSegment = equalsIndex + 1;
                 while (valueStartInSegment < segment.Text.Length && char.IsWhiteSpace(segment.Text[valueStartInSegment]))
                 {
@@ -282,13 +282,15 @@ internal static class XamlBindingCompletionService
         {
             if (!string.IsNullOrWhiteSpace(segment.Name))
             {
-                named[segment.Name!] = segment.ValueText;
-                arguments.Add(new MarkupExtensionArgument(segment.Name, segment.ValueText, IsNamed: true, segment.Ordinal));
+                var normalizedValueText = XamlMarkupArgumentSemantics.NormalizeValueToken(segment.ValueText);
+                named[segment.Name!] = normalizedValueText;
+                arguments.Add(new MarkupExtensionArgument(segment.Name, normalizedValueText, IsNamed: true, segment.Ordinal));
                 continue;
             }
 
-            positional.Add(segment.ValueText);
-            arguments.Add(new MarkupExtensionArgument(null, segment.ValueText, IsNamed: false, segment.Ordinal));
+            var normalizedPositionalValue = XamlMarkupArgumentSemantics.NormalizeValueToken(segment.ValueText);
+            positional.Add(normalizedPositionalValue);
+            arguments.Add(new MarkupExtensionArgument(null, normalizedPositionalValue, IsNamed: false, segment.Ordinal));
         }
 
         markupInfo = new MarkupExtensionInfo(

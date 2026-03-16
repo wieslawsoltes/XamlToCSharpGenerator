@@ -60,27 +60,30 @@ public sealed class MarkupExpressionParser
                             return false;
                         }
 
-                        positional.Add(argument);
+                        var normalizedArgument = XamlMarkupArgumentSemantics.NormalizeValueToken(argument);
+                        positional.Add(normalizedArgument);
                         arguments.Add(new MarkupExtensionArgument(
                             Name: null,
-                            Value: argument,
+                            Value: normalizedArgument,
                             IsNamed: false,
                             Position: position++));
                         continue;
                     case XamlMarkupNamedArgumentParseStatus.Parsed:
-                        named[key] = argumentValue;
+                        var normalizedArgumentValue = XamlMarkupArgumentSemantics.NormalizeValueToken(argumentValue);
+                        named[key] = normalizedArgumentValue;
                         arguments.Add(new MarkupExtensionArgument(
                             Name: key,
-                            Value: argumentValue,
+                            Value: normalizedArgumentValue,
                             IsNamed: true,
                             Position: position++));
                         continue;
                 }
 
-                positional.Add(argument);
+                var normalizedPositionalArgument = XamlMarkupArgumentSemantics.NormalizeValueToken(argument);
+                positional.Add(normalizedPositionalArgument);
                 arguments.Add(new MarkupExtensionArgument(
                     Name: null,
-                    Value: argument,
+                    Value: normalizedPositionalArgument,
                     IsNamed: false,
                     Position: position++));
             }

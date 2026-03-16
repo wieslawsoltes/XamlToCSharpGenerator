@@ -3383,6 +3383,91 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Emits_Unescaped_StringFormat_For_Query_Binding_Markup()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public global::Avalonia.Data.IBinding this[global::Avalonia.Data.IndexerDescriptor binding]
+                    {
+                        get => throw new global::System.NotImplementedException();
+                        set { }
+                    }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class IndexerDescriptor
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                }
+
+                public class Binding : IBinding
+                {
+                    public Binding(string path) { }
+                    public string? ElementName { get; set; }
+                    public object? StringFormat { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+                public class Slider : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ValueProperty = new();
+                    public double Value { get; set; }
+                }
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+                public class Grid : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <Grid>
+                    <Slider x:Name="TintOpacitySlider" />
+                    <TextBlock Text="{Binding #TintOpacitySlider.Value, StringFormat=\{0:0.#\}}" />
+                </Grid>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("new global::Avalonia.Data.Binding(\"Value\")", generated);
+        Assert.Contains("ElementName = \"TintOpacitySlider\"", generated);
+        Assert.Contains("StringFormat = \"{0:0.#}\"", generated);
+        Assert.DoesNotContain(@"StringFormat = ""\\{0:0.#\\}""", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Supports_ElementName_Query_Binding_Path_With_CompiledBindings_Enabled()
     {
         const string code = """

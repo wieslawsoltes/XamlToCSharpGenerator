@@ -61,4 +61,18 @@ public sealed class MarkupExpressionParserTests
         Assert.Single(markup.PositionalArguments);
         Assert.Equal("=Foo", markup.PositionalArguments[0]);
     }
+
+    [Fact]
+    public void Parses_Escaped_Unquoted_Argument_Values()
+    {
+        var parser = new MarkupExpressionParser();
+
+        var parsed = parser.TryParseMarkupExtension(
+            @"{Binding #TintOpacitySlider.Value, StringFormat=\{0:0.#\}}",
+            out var markup);
+
+        Assert.True(parsed);
+        Assert.Equal("#TintOpacitySlider.Value", markup.PositionalArguments[0]);
+        Assert.Equal("{0:0.#}", markup.NamedArguments["StringFormat"]);
+    }
 }
