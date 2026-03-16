@@ -173,6 +173,10 @@
 </ul>
 <h3 id="standalone-language-server">Standalone language server</h3>
 <p><code>XamlToCSharpGenerator.LanguageServer.Tool</code> hosts the language service over LSP and is the server surface used by the VS Code extension and other editor integrations.</p>
+<h3 id="shared-remote-protocol">Shared remote protocol</h3>
+<p><code>XamlToCSharpGenerator.RemoteProtocol</code> provides the JSON-RPC framing, MCP server core, and shared preview and studio remote contracts reused by the LSP host, MCP host, preview host, and runtime remote surfaces.</p>
+<h3 id="workspace-mcp-host">Workspace MCP host</h3>
+<p><code>XamlToCSharpGenerator.McpServer.Tool</code> hosts the shared AXSG query surface over MCP for AI clients and external tooling.</p>
 <h3 id="vs-code-extension">VS Code extension</h3>
 <p>The VSIX bundles:</p>
 <ul>
@@ -187,6 +191,7 @@
 <ul>
 <li>build-time semantics need Roslyn/MSBuild access</li>
 <li>LSP hosting needs process boundaries and transport concerns</li>
+<li>MCP hosting needs tool and resource semantics that do not belong in LSP</li>
 <li>embedded editors need in-process APIs rather than LSP</li>
 <li>VS Code needs client-side middleware and activation rules that do not belong in the server</li>
 </ul>
@@ -194,15 +199,18 @@
 <ul>
 <li>use the VSIX if you are a VS Code user</li>
 <li>use the .NET tool if you are integrating another editor</li>
+<li>use the MCP tool if you are integrating AI agents or external MCP clients</li>
 <li>use <code>LanguageService</code> directly if you are embedding editor features in-process</li>
 <li>use <code>Editor.Avalonia</code> if you need a product-quality AXAML editor inside an Avalonia app</li>
 </ul>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code Language Service</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-service">Package: XamlToCSharpGenerator.LanguageService</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-server-tool">Package: XamlToCSharpGenerator.LanguageServer.Tool</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/mcp-server-tool">Package: XamlToCSharpGenerator.McpServer.Tool</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/editor-avalonia">Package: XamlToCSharpGenerator.Editor.Avalonia</a></li>
 </ul>
 

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Unified Remote API and MCP | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Unified Remote API and MCP | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Unified Remote API and MCP AXSG now has one shared remote-operation layer that serves LSP, MCP, preview orchestration, and studio/runtime remote surfaces. The important design choice is: reuse JSON-RPC transport infrastructure across LSP and MCP do not reuse LSP semantics as if they were MCP Why MCP is not “just LSP” LSP and MCP both use JSON-RPC 2.0 and commonly run over framed stdio transports, but they solve different problems:...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Unified Remote API and MCP | XamlToCSharpGenerator">
+<meta property="og:title" content="Unified Remote API and MCP | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Unified Remote API and MCP AXSG now has one shared remote-operation layer that serves LSP, MCP, preview orchestration, and studio/runtime remote surfaces. The important design choice is: reuse JSON-RPC transport infrastructure across LSP and MCP do not reuse LSP semantics as if they were MCP Why MCP is not “just LSP” LSP and MCP both use JSON-RPC 2.0 and commonly run over framed stdio transports, but they solve different problems:...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Unified Remote API and MCP | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <ol id='menu-id-architecture-0' class='menu menu-level0 show '>
+            <li id='menu-item-architecture-1' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/' class='menu-link  '>Overview</a></span>  </li>
+            <li id='menu-item-architecture-2' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/compiler-pipeline/' class='menu-link  '>Compiler Pipeline</a></span>  </li>
+            <li id='menu-item-architecture-3' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload/' class='menu-link  '>Runtime and Hot Reload</a></span>  </li>
+            <li id='menu-item-architecture-4' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode/' class='menu-link  '>Language Service and VS Code</a></span>  </li>
+            <li id='menu-item-architecture-5' class='menu-item  active'>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp/' class='menu-link  '>Unified Remote API and MCP</a></span>  </li>
+          </ol>
+
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/architecture/' class='breadcrumb-link  '>Architecture</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Unified Remote API and MCP  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="unified-remote-api-and-mcp">Unified Remote API and MCP</h1>
+<p>AXSG now has one shared remote-operation layer that serves LSP, MCP, preview orchestration, and studio/runtime remote surfaces.</p>
+<p>The important design choice is:</p>
+<ul>
+<li>reuse JSON-RPC transport infrastructure across LSP and MCP</li>
+<li>do not reuse LSP semantics as if they were MCP</li>
+</ul>
+<h2 id="why-mcp-is-not-just-lsp">Why MCP is not “just LSP”</h2>
+<p>LSP and MCP both use JSON-RPC 2.0 and commonly run over framed stdio transports, but they solve different problems:</p>
+<ul>
+<li>LSP is document and editor oriented</li>
+<li>MCP is tool and resource oriented</li>
+</ul>
+<p>AXSG therefore shares:</p>
+<ul>
+<li>message framing</li>
+<li>serialization options</li>
+<li>request and response helpers</li>
+<li>transport-neutral command routers</li>
+</ul>
+<p>AXSG does not share:</p>
+<ul>
+<li>lifecycle assumptions</li>
+<li>method names</li>
+<li>editor-specific payloads</li>
+</ul>
+<p>That keeps the remote stack reusable without forcing editor concepts onto MCP clients.</p>
+<h2 id="current-adapter-layout">Current adapter layout</h2>
+<table class="table">
+<thead>
+<tr>
+<th>Surface</th>
+<th>Adapter</th>
+<th>Shared layer underneath</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standalone language server</td>
+<td><code>XamlToCSharpGenerator.LanguageServer.Tool</code></td>
+<td><code>RemoteProtocol.JsonRpc</code> plus shared query services</td>
+</tr>
+<tr>
+<td>Workspace MCP host</td>
+<td><code>XamlToCSharpGenerator.McpServer.Tool</code></td>
+<td><code>RemoteProtocol.JsonRpc</code> plus <code>McpServerCore</code> plus shared query services</td>
+</tr>
+<tr>
+<td>Preview helper command transport</td>
+<td><code>PreviewHostCommandRouter</code></td>
+<td>shared preview payload contracts</td>
+</tr>
+<tr>
+<td>Preview MCP host</td>
+<td><code>PreviewHostMcpServer</code></td>
+<td>shared preview payload contracts plus shared MCP core</td>
+</tr>
+<tr>
+<td>Studio remote design server</td>
+<td><code>AxsgStudioRemoteCommandRouter</code></td>
+<td>shared runtime query services plus shared studio contracts</td>
+</tr>
+<tr>
+<td>Runtime MCP host</td>
+<td><code>XamlSourceGenRuntimeMcpServer</code></td>
+<td>shared runtime query services plus shared MCP core</td>
+</tr>
+</tbody>
+</table>
+<h2 id="shared-packages">Shared packages</h2>
+<h3 id="xamltocsharpgeneratorremoteprotocol"><code>XamlToCSharpGenerator.RemoteProtocol</code></h3>
+<p>This package is the reusable transport and contract layer. It contains:</p>
+<ul>
+<li>JSON-RPC framing helpers</li>
+<li>MCP server core</li>
+<li>preview host contracts</li>
+<li>studio remote contracts</li>
+</ul>
+<p>It is the package to reuse when you need AXSG remote protocols without copying transport code.</p>
+<h3 id="shared-operation-services">Shared operation services</h3>
+<p>The transport-neutral query layer now lives in services such as:</p>
+<ul>
+<li><code>AxsgPreviewQueryService</code></li>
+<li><code>AxsgRuntimeQueryService</code></li>
+</ul>
+<p>Those are consumed by both LSP and MCP hosts so the same operation shape does not get reimplemented per adapter.</p>
+<h2 id="mcp-host-split">MCP host split</h2>
+<p>AXSG intentionally has more than one MCP host because workspace state and live runtime state are not the same thing.</p>
+<h3 id="workspace-mcp-host">Workspace MCP host</h3>
+<p>This host:</p>
+<ul>
+<li>runs independently as <code>axsg-mcp</code></li>
+<li>sees files, projects, and workspace options</li>
+<li>is best for preview project-context resolution and general tooling queries</li>
+</ul>
+<p>It does not automatically attach to a live Avalonia app.</p>
+<h3 id="runtime-mcp-host">Runtime MCP host</h3>
+<p>This host:</p>
+<ul>
+<li>runs inside the Avalonia process</li>
+<li>sees hot reload, hot design, and studio state directly</li>
+<li>supports <code>resources/subscribe</code> and event-style resource updates</li>
+</ul>
+<p>This is the host you want for <code>dotnet watch</code>, hot reload, hot design, and live-app inspection.</p>
+<h3 id="preview-mcp-host">Preview MCP host</h3>
+<p>This host:</p>
+<ul>
+<li>runs inside the preview helper process</li>
+<li>exposes explicit preview lifecycle and preview hot-reload tools/resources</li>
+<li>supports dynamic tool and resource catalogs as the active preview session starts or stops</li>
+</ul>
+<p>This is the host you want when preview is the system under test.</p>
+<h2 id="why-the-vs-code-extension-still-has-its-own-runtime-behavior">Why the VS Code extension still has its own runtime behavior</h2>
+<p>The VS Code extension is a product surface, not just a transport wrapper. It still owns:</p>
+<ul>
+<li>activation behavior</li>
+<li>lazy language-server startup</li>
+<li>VS Code preview webview integration</li>
+<li>editor middleware and inline-C# projection interop</li>
+</ul>
+<p>The extension can reuse the shared remote-operation layer, but it still needs editor-specific orchestration that does not belong in MCP or LSP core contracts.</p>
+<h2 id="subscription-model">Subscription model</h2>
+<p>AXSG now uses a capability-based model:</p>
+<ul>
+<li>workspace MCP host: query-oriented, poll after changes</li>
+<li>runtime MCP host: subscribe to status and event resources</li>
+<li>preview MCP host: subscribe to lifecycle resources and react to list-changed notifications</li>
+</ul>
+<p>This split matches the real ownership model of the processes instead of pretending one host can answer every question equally well.</p>
+<h2 id="preview-hot-reload-over-mcp">Preview hot reload over MCP</h2>
+<p>Preview MCP now supports in-process live preview application directly through:</p>
+<ul>
+<li><code>axsg.preview.hotReload</code></li>
+</ul>
+<p>That operation is intentionally different from the lower-level:</p>
+<ul>
+<li><code>axsg.preview.update</code></li>
+</ul>
+<p><code>hotReload</code> waits for the preview session to complete the in-process apply and returns the concrete result payload. <code>update</code> is still available for dispatch-only flows and compatibility with clients that already consume the lifecycle resources asynchronously.</p>
+<p>This keeps the preview host aligned with the rest of AXSG’s shared remote-operation model:</p>
+<ul>
+<li>transport-neutral preview session/router underneath</li>
+<li>MCP adapter on top</li>
+<li>status and event resources as the subscription surface</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/concepts/tooling-surface">Tooling Surface</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/remote-protocol">Package: XamlToCSharpGenerator.RemoteProtocol</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Package: XamlToCSharpGenerator.Runtime.Avalonia | XamlToCSharpGenerator">
-<meta name="twitter:description" content="XamlToCSharpGenerator.Runtime.Avalonia Role Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, and hot design integration. Related namespaces XamlToCSharpGenerator.Runtime XamlToCSharpGenerator.Runtime.Markup Use it when you need the Avalonia runtime layer directly you are integrating AXSG hot reload or runtime fallback paths Major responsibilities This package owns the Avalonia-specific runtime surface: source-generated loader/runtime helpers resource and include registries inline C# support types hot reload and hot design runtime integration...">
+<meta name="twitter:description" content="XamlToCSharpGenerator.Runtime.Avalonia Role Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, hot design integration, and the in-process runtime MCP host. Related namespaces XamlToCSharpGenerator.Runtime XamlToCSharpGenerator.Runtime.Markup Use it when you need the Avalonia runtime layer directly you are integrating AXSG hot reload or runtime fallback paths you want to expose live hot reload, hot design, or studio state over MCP from a running app...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Package: XamlToCSharpGenerator.Runtime.Avalonia | XamlToCSharpGenerator">
 <meta property="og:title" content="Package: XamlToCSharpGenerator.Runtime.Avalonia | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="XamlToCSharpGenerator.Runtime.Avalonia Role Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, and hot design integration. Related namespaces XamlToCSharpGenerator.Runtime XamlToCSharpGenerator.Runtime.Markup Use it when you need the Avalonia runtime layer directly you are integrating AXSG hot reload or runtime fallback paths Major responsibilities This package owns the Avalonia-specific runtime surface: source-generated loader/runtime helpers resource and include registries inline C# support types hot reload and hot design runtime integration...">
+<meta property="og:description" content="XamlToCSharpGenerator.Runtime.Avalonia Role Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, hot design integration, and the in-process runtime MCP host. Related namespaces XamlToCSharpGenerator.Runtime XamlToCSharpGenerator.Runtime.Markup Use it when you need the Avalonia runtime layer directly you are integrating AXSG hot reload or runtime fallback paths you want to expose live hot reload, hot design, or studio state over MCP from a running app...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Package: XamlToCSharpGenerator.Runtime.Avalonia | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-25,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.4a9fcd720c9ce3999b69a6cb69835cd6.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-25,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -145,7 +145,7 @@
 <!-- lunet:summarize -->
 <h1 id="xamltocsharpgeneratorruntimeavalonia">XamlToCSharpGenerator.Runtime.Avalonia</h1>
 <h2 id="role">Role</h2>
-<p>Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, and hot design integration.</p>
+<p>Avalonia runtime loader, static resource resolution, inline-code helpers, hot reload, hot design integration, and the in-process runtime MCP host.</p>
 <h2 id="related-namespaces">Related namespaces</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Runtime/" title="XamlToCSharpGenerator.Runtime">XamlToCSharpGenerator.Runtime</a></li>
@@ -155,6 +155,7 @@
 <ul>
 <li>you need the Avalonia runtime layer directly</li>
 <li>you are integrating AXSG hot reload or runtime fallback paths</li>
+<li>you want to expose live hot reload, hot design, or studio state over MCP from a running app</li>
 </ul>
 <h2 id="major-responsibilities">Major responsibilities</h2>
 <p>This package owns the Avalonia-specific runtime surface:</p>
@@ -163,6 +164,7 @@
 <li>resource and include registries</li>
 <li>inline C# support types</li>
 <li>hot reload and hot design runtime integration</li>
+<li>runtime MCP hosting and event/resource publication for live-process tooling</li>
 <li>known-type and source-info resolution used during runtime fallback</li>
 </ul>
 <p>If generated code is correct but the running application still behaves incorrectly during runtime fallback, resource lookup, or hot reload, this package is one of the first places to inspect.</p>
@@ -185,6 +187,7 @@
 <li><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
 </ul>
 
       </div>

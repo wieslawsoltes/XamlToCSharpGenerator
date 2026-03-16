@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Preview MCP Host and Live Preview | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Preview MCP Host and Live Preview | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Preview MCP Host and Live Preview Use this guide when you need to drive AXSG preview outside the packaged VS Code workflow. Typical cases: a custom MCP client that needs to start and control preview sessions automated preview smoke tests AI tooling that wants explicit preview start, hot reload, update, and stop operations debugging preview lifecycle state independently from the VS Code extension This guide is specifically about the preview...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Preview MCP Host and Live Preview | XamlToCSharpGenerator">
+<meta property="og:title" content="Preview MCP Host and Live Preview | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Preview MCP Host and Live Preview Use this guide when you need to drive AXSG preview outside the packaged VS Code workflow. Typical cases: a custom MCP client that needs to start and control preview sessions automated preview smoke tests AI tooling that wants explicit preview start, hot reload, update, and stop operations debugging preview lifecycle state independently from the VS Code extension This guide is specifically about the preview...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Preview MCP Host and Live Preview | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.6e0a345db57e68bcd4769da8bf273d17.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-7,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Preview MCP Host and Live Preview  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</h1>
+<p>Use this guide when you need to drive AXSG preview outside the packaged VS Code workflow.</p>
+<p>Typical cases:</p>
+<ul>
+<li>a custom MCP client that needs to start and control preview sessions</li>
+<li>automated preview smoke tests</li>
+<li>AI tooling that wants explicit preview start, hot reload, update, and stop operations</li>
+<li>debugging preview lifecycle state independently from the VS Code extension</li>
+</ul>
+<p>This guide is specifically about the preview host:</p>
+<ul>
+<li><code>dotnet run --project src/XamlToCSharpGenerator.PreviewerHost -- --mcp</code></li>
+</ul>
+<p>It is not the same thing as:</p>
+<ul>
+<li><code>axsg-mcp</code>, which is the standalone workspace MCP host</li>
+<li><code>XamlSourceGenRuntimeMcpServer</code>, which is the in-process runtime MCP host inside a running Avalonia app</li>
+</ul>
+<h2 id="what-the-preview-mcp-host-owns">What the preview MCP host owns</h2>
+<p>The preview host owns one preview session at a time.</p>
+<p>It exposes:</p>
+<ul>
+<li>preview session startup</li>
+<li>in-process live preview hot reload</li>
+<li>low-level live update dispatch</li>
+<li>preview stop</li>
+<li>preview session status and lifecycle events</li>
+</ul>
+<p>The host uses the same shared AXSG preview protocol contracts as the lightweight helper transport and the VS Code preview bridge. The MCP mode adds MCP tools/resources on top of that shared session layer; it does not introduce a separate preview engine.</p>
+<h2 id="start-the-host">Start the host</h2>
+<p>Run it from source:</p>
+<pre><code class="language-bash">dotnet run --project src/XamlToCSharpGenerator.PreviewerHost -- --mcp
+</code></pre>
+<p>The host runs over JSON-RPC stdio, so a client typically launches it as a child process and then sends the MCP handshake:</p>
+<ol>
+<li><code>initialize</code></li>
+<li><code>notifications/initialized</code></li>
+<li><code>tools/list</code> and <code>resources/list</code></li>
+</ol>
+<p>Once initialized, the preview host supports:</p>
+<ul>
+<li><code>notifications/tools/list_changed</code></li>
+<li><code>notifications/resources/list_changed</code></li>
+<li><code>resources/subscribe</code></li>
+<li><code>notifications/resources/updated</code></li>
+</ul>
+<p>That matters because the preview tool/resource catalog changes when a session becomes active or stops.</p>
+<h2 id="session-model">Session model</h2>
+<p>The preview MCP host starts in an idle state.</p>
+<p>Before a session exists, the useful tool is:</p>
+<ul>
+<li><code>axsg.preview.start</code></li>
+</ul>
+<p>After a session starts, the host dynamically adds:</p>
+<ul>
+<li><code>axsg.preview.hotReload</code></li>
+<li><code>axsg.preview.update</code></li>
+<li><code>axsg.preview.stop</code></li>
+</ul>
+<p>It also adds the dynamic resource:</p>
+<ul>
+<li><code>axsg://preview/session/current</code></li>
+</ul>
+<p>When the session stops or the preview host exits, those dynamic tools/resources disappear again, and the host publishes the appropriate list-changed notifications.</p>
+<h2 id="tools">Tools</h2>
+<h3 id="axsgpreviewstart"><code>axsg.preview.start</code></h3>
+<p>Starts the preview session and returns:</p>
+<ul>
+<li>preview URL</li>
+<li>transport port</li>
+<li>preview HTML port</li>
+<li>session ID</li>
+</ul>
+<p>Required arguments:</p>
+<ul>
+<li><code>hostAssemblyPath</code></li>
+<li><code>previewerToolPath</code></li>
+<li><code>sourceAssemblyPath</code></li>
+<li><code>xamlFileProjectPath</code></li>
+<li><code>xamlText</code></li>
+</ul>
+<p>Common optional arguments:</p>
+<ul>
+<li><code>dotNetCommand</code></li>
+<li><code>runtimeConfigPath</code></li>
+<li><code>depsFilePath</code></li>
+<li><code>sourceFilePath</code></li>
+<li><code>previewCompilerMode</code></li>
+<li><code>previewWidth</code></li>
+<li><code>previewHeight</code></li>
+<li><code>previewScale</code></li>
+</ul>
+<p><code>previewCompilerMode</code> accepts:</p>
+<ul>
+<li><code>sourceGenerated</code></li>
+<li><code>avalonia</code></li>
+<li><code>auto</code></li>
+</ul>
+<p>For most custom AXSG preview clients, <code>sourceGenerated</code> is the right default when you want AXSG live-preview semantics.</p>
+<h3 id="axsgpreviewhotreload"><code>axsg.preview.hotReload</code></h3>
+<p>This is the preferred mutation tool when you need a real in-process apply result.</p>
+<p>It:</p>
+<ul>
+<li>sends updated XAML into the active preview session</li>
+<li>waits for the designer host to complete the apply</li>
+<li>returns the success or failure result directly</li>
+</ul>
+<p>Arguments:</p>
+<ul>
+<li><code>xamlText</code></li>
+<li>optional <code>timeoutMs</code></li>
+</ul>
+<p>Use this tool when your client wants “apply and wait”.</p>
+<p>This is the MCP operation that closes the gap between preview lifecycle control and real source-generated in-process live preview updates.</p>
+<h3 id="axsgpreviewupdate"><code>axsg.preview.update</code></h3>
+<p>This is the lower-level dispatch tool.</p>
+<p>It:</p>
+<ul>
+<li>sends updated XAML into the active preview session</li>
+<li>returns immediately once the request is accepted for dispatch</li>
+<li>does not wait for the in-process apply result</li>
+</ul>
+<p>Use this when:</p>
+<ul>
+<li>you are already subscribed to preview lifecycle resources</li>
+<li>you want a fire-and-forget flow</li>
+<li>you are mirroring the old helper behavior and handling completion asynchronously</li>
+</ul>
+<h3 id="axsgpreviewstop"><code>axsg.preview.stop</code></h3>
+<p>Stops the active preview session and removes the session-specific tool/resource catalog entries.</p>
+<h2 id="resources">Resources</h2>
+<h3 id="axsgpreviewsessionstatus"><code>axsg://preview/session/status</code></h3>
+<p>The current session lifecycle snapshot.</p>
+<p>This resource includes fields such as:</p>
+<ul>
+<li><code>phase</code></li>
+<li><code>isSessionActive</code></li>
+<li><code>previewUrl</code></li>
+<li><code>sessionId</code></li>
+<li><code>transportPort</code></li>
+<li><code>previewPort</code></li>
+<li><code>previewCompilerMode</code></li>
+<li><code>sourceAssemblyPath</code></li>
+<li><code>xamlFileProjectPath</code></li>
+<li><code>lastUpdateSucceeded</code></li>
+<li><code>lastError</code></li>
+<li><code>lastException</code></li>
+<li><code>updatedAtUtc</code></li>
+</ul>
+<h3 id="axsgpreviewsessionevents"><code>axsg://preview/session/events</code></h3>
+<p>Recent bounded preview lifecycle and log events.</p>
+<p>This is the resource to subscribe to when you want:</p>
+<ul>
+<li>start and stop visibility</li>
+<li>hot reload success/failure visibility</li>
+<li>preview-host log messages</li>
+</ul>
+<h3 id="axsgpreviewsessioncurrent"><code>axsg://preview/session/current</code></h3>
+<p>The dynamic “current session” snapshot.</p>
+<p>This resource only exists while a session is active.</p>
+<h2 id="recommended-client-behavior">Recommended client behavior</h2>
+<p>Use this split:</p>
+<ul>
+<li>use <code>axsg.preview.start</code> once per session</li>
+<li>use <code>axsg.preview.hotReload</code> when you need a synchronous live-apply result</li>
+<li>use <code>axsg.preview.update</code> only when you intentionally want fire-and-forget dispatch</li>
+<li>subscribe to <code>axsg://preview/session/status</code></li>
+<li>subscribe to <code>axsg://preview/session/events</code></li>
+<li>relist tools/resources after <code>notifications/tools/list_changed</code> or <code>notifications/resources/list_changed</code></li>
+</ul>
+<p>For a custom editor or agent, <code>hotReload</code> is usually the correct update operation. <code>update</code> is mostly the compatibility/low-level transport operation.</p>
+<h2 id="example-flow">Example flow</h2>
+<p>High-level flow:</p>
+<ol>
+<li>start the preview host in MCP mode</li>
+<li>initialize the MCP session</li>
+<li>call <code>axsg.preview.start</code></li>
+<li>subscribe to status and event resources</li>
+<li>push edits through <code>axsg.preview.hotReload</code></li>
+<li>read the direct result and keep listening for lifecycle changes</li>
+<li>call <code>axsg.preview.stop</code> when done</li>
+</ol>
+<p>Example <code>tools/call</code> for <code>axsg.preview.hotReload</code>:</p>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 31,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.preview.hotReload&quot;,
+    &quot;arguments&quot;: {
+      &quot;xamlText&quot;: &quot;&lt;UserControl xmlns=\&quot;https://github.com/avaloniaui\&quot; /&gt;&quot;,
+      &quot;timeoutMs&quot;: 2500
+    }
+  }
+}
+</code></pre>
+<p>Typical successful response shape:</p>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 31,
+  &quot;result&quot;: {
+    &quot;structuredContent&quot;: {
+      &quot;succeeded&quot;: true,
+      &quot;error&quot;: null,
+      &quot;exception&quot;: null,
+      &quot;completedAtUtc&quot;: &quot;2026-03-16T12:34:56.789+00:00&quot;
+    }
+  }
+}
+</code></pre>
+<h2 id="relationship-to-the-vs-code-extension">Relationship to the VS Code extension</h2>
+<p>The normal VS Code extension preview path does not require you to launch the preview MCP host manually.</p>
+<p>The packaged extension still owns:</p>
+<ul>
+<li>preview webview creation</li>
+<li>bundled helper startup</li>
+<li>editor integration</li>
+<li>VS Code-specific preview UX</li>
+</ul>
+<p>The preview MCP host exists for:</p>
+<ul>
+<li>custom clients</li>
+<li>tests</li>
+<li>future remote integrations</li>
+<li>explicit preview orchestration outside the product UX</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="i-need-the-preview-apply-result-not-just-dispatch">I need the preview apply result, not just dispatch</h3>
+<p>Use <code>axsg.preview.hotReload</code>, not <code>axsg.preview.update</code>.</p>
+<h3 id="my-client-caches-the-tool-list-and-cannot-see-hotreload-or-stop">My client caches the tool list and cannot see <code>hotReload</code> or <code>stop</code></h3>
+<p>Relist tools after <code>notifications/tools/list_changed</code>. Those tools are only present while a preview session is active.</p>
+<h3 id="my-client-reads-axsgpreviewsessioncurrent-before-starting-preview">My client reads <code>axsg://preview/session/current</code> before starting preview</h3>
+<p>That resource is dynamic and only exists while a session is active.</p>
+<h3 id="i-need-workspace-project-resolution-before-starting-preview">I need workspace project resolution before starting preview</h3>
+<p>Use the workspace MCP host first:</p>
+<pre><code class="language-bash">axsg-mcp --workspace /path/to/workspace
+</code></pre>
+<p>and call <code>axsg.preview.projectContext</code>.</p>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/preview-host">Artifact: XamlToCSharpGenerator.PreviewerHost</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/remote-protocol">Package: XamlToCSharpGenerator.RemoteProtocol</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

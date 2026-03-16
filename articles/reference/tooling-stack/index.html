@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Tooling Stack Packages | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Tooling Stack Packages This guide explains how the editor/tooling artifacts relate to one another and which one to choose for standalone editor hosting, VS Code usage, or in-app editing. Stack layout Layer Packages / artifacts Purpose Semantic engine XamlToCSharpGenerator.LanguageService completion, hover, definitions, references, rename, semantic tokens, inlay hints Standalone LSP host XamlToCSharpGenerator.LanguageServer.Tool packaged dotnet tool for editor integrations VS Code integration xamltocsharpgenerator.axsg-language-server client middleware, server startup, inline C# projections, editor...">
+<meta name="twitter:description" content="Tooling Stack Packages This guide explains how the editor/tooling artifacts relate to one another and which one to choose for standalone editor hosting, VS Code usage, or in-app editing. Stack layout Layer Packages / artifacts Purpose Shared remote protocol XamlToCSharpGenerator.RemoteProtocol reusable JSON-RPC framing and shared preview, MCP, and studio contracts Semantic engine XamlToCSharpGenerator.LanguageService completion, hover, definitions, references, rename, semantic tokens, inlay hints Standalone LSP host XamlToCSharpGenerator.LanguageServer.Tool...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Tooling Stack Packages | XamlToCSharpGenerator">
 <meta property="og:title" content="Tooling Stack Packages | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Tooling Stack Packages This guide explains how the editor/tooling artifacts relate to one another and which one to choose for standalone editor hosting, VS Code usage, or in-app editing. Stack layout Layer Packages / artifacts Purpose Semantic engine XamlToCSharpGenerator.LanguageService completion, hover, definitions, references, rename, semantic tokens, inlay hints Standalone LSP host XamlToCSharpGenerator.LanguageServer.Tool packaged dotnet tool for editor integrations VS Code integration xamltocsharpgenerator.axsg-language-server client middleware, server startup, inline C# projections, editor...">
+<meta property="og:description" content="Tooling Stack Packages This guide explains how the editor/tooling artifacts relate to one another and which one to choose for standalone editor hosting, VS Code usage, or in-app editing. Stack layout Layer Packages / artifacts Purpose Shared remote protocol XamlToCSharpGenerator.RemoteProtocol reusable JSON-RPC framing and shared preview, MCP, and studio contracts Semantic engine XamlToCSharpGenerator.LanguageService completion, hover, definitions, references, rename, semantic tokens, inlay hints Standalone LSP host XamlToCSharpGenerator.LanguageServer.Tool...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Tooling Stack Packages | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-9,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.4a9fcd720c9ce3999b69a6cb69835cd6.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-9,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -156,6 +156,11 @@
 </thead>
 <tbody>
 <tr>
+<td>Shared remote protocol</td>
+<td><code>XamlToCSharpGenerator.RemoteProtocol</code></td>
+<td>reusable JSON-RPC framing and shared preview, MCP, and studio contracts</td>
+</tr>
+<tr>
 <td>Semantic engine</td>
 <td><code>XamlToCSharpGenerator.LanguageService</code></td>
 <td>completion, hover, definitions, references, rename, semantic tokens, inlay hints</td>
@@ -164,6 +169,16 @@
 <td>Standalone LSP host</td>
 <td><code>XamlToCSharpGenerator.LanguageServer.Tool</code></td>
 <td>packaged <code>dotnet tool</code> for editor integrations</td>
+</tr>
+<tr>
+<td>Standalone MCP host</td>
+<td><code>XamlToCSharpGenerator.McpServer.Tool</code></td>
+<td>packaged <code>dotnet tool</code> for workspace MCP queries</td>
+</tr>
+<tr>
+<td>Preview helper host</td>
+<td><code>XamlToCSharpGenerator.PreviewerHost</code></td>
+<td>preview helper transport plus preview MCP host for explicit preview lifecycle and hot reload control</td>
 </tr>
 <tr>
 <td>VS Code integration</td>
@@ -190,6 +205,16 @@
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-server-tool">Package: XamlToCSharpGenerator.LanguageServer.Tool</a></li>
 </ul>
 <p>This is the correct entry point when you want a process-based server rather than embedding the semantic engine.</p>
+<h3 id="mcp-based-tooling-or-ai-integration">MCP-based tooling or AI integration</h3>
+<p>Use:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/reference/mcp-server-tool">Package: XamlToCSharpGenerator.McpServer.Tool</a></li>
+</ul>
+<p>and, when you need to build your own host or adapter:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/reference/remote-protocol">Package: XamlToCSharpGenerator.RemoteProtocol</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/preview-host">Artifact: XamlToCSharpGenerator.PreviewerHost</a></li>
+</ul>
 <h3 id="in-process-integration">In-process integration</h3>
 <p>Use:</p>
 <ul>
@@ -229,6 +254,34 @@
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-server-tool">LanguageServer.Tool package guide</a></li>
 </ul>
 <p>The concrete host implementation is intentionally internal.</p>
+<h3 id="mcpservertool"><code>McpServer.Tool</code></h3>
+<p>Owns:</p>
+<ul>
+<li>workspace MCP hosting</li>
+<li>shared MCP capability advertisement</li>
+<li>workspace query tool and resource exposure over the AXSG remote-operation layer</li>
+</ul>
+<p>Use the package guide for the standalone host surface:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/reference/mcp-server-tool">McpServer.Tool package guide</a></li>
+</ul>
+<h3 id="remoteprotocol"><code>RemoteProtocol</code></h3>
+<p>Owns:</p>
+<ul>
+<li>JSON-RPC framing shared by LSP and MCP hosts</li>
+<li>preview request, response, event, and hot-reload contracts</li>
+<li>studio remote contracts</li>
+<li>the reusable MCP server core</li>
+</ul>
+<h3 id="previewerhost"><code>PreviewerHost</code></h3>
+<p>Owns:</p>
+<ul>
+<li>preview session startup and stop orchestration</li>
+<li>preview lifecycle resources in MCP mode</li>
+<li><code>axsg.preview.hotReload</code> and <code>axsg.preview.update</code></li>
+<li>the outer helper bridge to the inner designer host</li>
+</ul>
+<p>This is the correct artifact when preview itself is the remote-controlled system.</p>
 <h3 id="vs-code-extension">VS Code extension</h3>
 <p>Owns:</p>
 <ul>
@@ -255,6 +308,8 @@
 <li><a href="/XamlToCSharpGenerator/articles/reference/namespace-language-service-and-tooling">Language Service and Tooling Namespaces</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/concepts/tooling-surface">Tooling Surface</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/preview-host">Artifact: XamlToCSharpGenerator.PreviewerHost</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
 </ul>
 

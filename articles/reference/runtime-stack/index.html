@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Runtime Stack Packages | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Runtime Stack Packages This guide explains the runtime-side package split, what lives in the neutral runtime layer versus the Avalonia layer, and when to stay on the umbrella package. Stack layout Layer Packages Purpose App-facing runtime surface XamlToCSharpGenerator.Runtime composition package for normal installs Neutral runtime contracts XamlToCSharpGenerator.Runtime.Core registries, source info, hot reload/runtime contracts Avalonia runtime integration XamlToCSharpGenerator.Runtime.Avalonia loader, resource resolution, inline-code runtime, hot reload integration...">
+<meta name="twitter:description" content="Runtime Stack Packages This guide explains the runtime-side package split, what lives in the neutral runtime layer versus the Avalonia layer, and when to stay on the umbrella package. Stack layout Layer Packages Purpose App-facing runtime surface XamlToCSharpGenerator.Runtime composition package for normal installs Neutral runtime contracts XamlToCSharpGenerator.Runtime.Core registries, source info, hot reload/runtime contracts Avalonia runtime integration XamlToCSharpGenerator.Runtime.Avalonia loader, resource resolution, inline-code runtime, hot reload, hot design, and runtime MCP hosting...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Runtime Stack Packages | XamlToCSharpGenerator">
 <meta property="og:title" content="Runtime Stack Packages | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Runtime Stack Packages This guide explains the runtime-side package split, what lives in the neutral runtime layer versus the Avalonia layer, and when to stay on the umbrella package. Stack layout Layer Packages Purpose App-facing runtime surface XamlToCSharpGenerator.Runtime composition package for normal installs Neutral runtime contracts XamlToCSharpGenerator.Runtime.Core registries, source info, hot reload/runtime contracts Avalonia runtime integration XamlToCSharpGenerator.Runtime.Avalonia loader, resource resolution, inline-code runtime, hot reload integration...">
+<meta property="og:description" content="Runtime Stack Packages This guide explains the runtime-side package split, what lives in the neutral runtime layer versus the Avalonia layer, and when to stay on the umbrella package. Stack layout Layer Packages Purpose App-facing runtime surface XamlToCSharpGenerator.Runtime composition package for normal installs Neutral runtime contracts XamlToCSharpGenerator.Runtime.Core registries, source info, hot reload/runtime contracts Avalonia runtime integration XamlToCSharpGenerator.Runtime.Avalonia loader, resource resolution, inline-code runtime, hot reload, hot design, and runtime MCP hosting...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Runtime Stack Packages | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-8,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.4a9fcd720c9ce3999b69a6cb69835cd6.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-8,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -168,7 +168,7 @@
 <tr>
 <td>Avalonia runtime integration</td>
 <td><code>XamlToCSharpGenerator.Runtime.Avalonia</code></td>
-<td>loader, resource resolution, inline-code runtime, hot reload integration</td>
+<td>loader, resource resolution, inline-code runtime, hot reload, hot design, and runtime MCP hosting</td>
 </tr>
 </tbody>
 </table>
@@ -214,6 +214,7 @@
 <li>include/resource lookup in Avalonia hosts</li>
 <li>inline <code>CSharp</code> runtime helpers</li>
 <li>hot reload and hot design integration</li>
+<li>runtime MCP server for live hot reload, hot design, and studio inspection</li>
 </ul>
 <p>Primary API entry points:</p>
 <ul>
@@ -228,6 +229,7 @@
 <li><a href="/XamlToCSharpGenerator/articles/concepts/generated-artifacts-and-runtime">Generated Artifacts and Runtime</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/runtime-loader-and-fallback">Runtime Loader and Fallback</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload">Runtime and Hot Reload</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
 </ul>
 
       </div>

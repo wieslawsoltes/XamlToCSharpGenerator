@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>MCP Servers and Live Tooling | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="MCP Servers and Live Tooling | XamlToCSharpGenerator">
+<meta name="twitter:description" content="MCP Servers and Live Tooling AXSG now exposes a unified MCP-oriented remote API across workspace tooling, runtime hot reload and hot design services, and preview orchestration. This guide explains which host to run, how it relates to dotnet watch, and how it fits with the VS Code extension. Host matrix Host How you run it Best for Live runtime state Subscribe support Workspace MCP host axsg-mcp --workspace /path/to/repo...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="MCP Servers and Live Tooling | XamlToCSharpGenerator">
+<meta property="og:title" content="MCP Servers and Live Tooling | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="MCP Servers and Live Tooling AXSG now exposes a unified MCP-oriented remote API across workspace tooling, runtime hot reload and hot design services, and preview orchestration. This guide explains which host to run, how it relates to dotnet watch, and how it fits with the VS Code extension. Host matrix Host How you run it Best for Live runtime state Subscribe support Workspace MCP host axsg-mcp --workspace /path/to/repo...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="MCP Servers and Live Tooling | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.6e0a345db57e68bcd4769da8bf273d17.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-6,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            MCP Servers and Live Tooling  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="mcp-servers-and-live-tooling">MCP Servers and Live Tooling</h1>
+<p>AXSG now exposes a unified MCP-oriented remote API across workspace tooling, runtime hot reload and hot design services, and preview orchestration. This guide explains which host to run, how it relates to <code>dotnet watch</code>, and how it fits with the VS Code extension.</p>
+<h2 id="host-matrix">Host matrix</h2>
+<table class="table">
+<thead>
+<tr>
+<th>Host</th>
+<th>How you run it</th>
+<th>Best for</th>
+<th>Live runtime state</th>
+<th>Subscribe support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Workspace MCP host</td>
+<td><code>axsg-mcp --workspace /path/to/repo</code></td>
+<td>workspace queries, preview project resolution, agent/tool integration outside the app process</td>
+<td>no</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Runtime MCP host</td>
+<td>embed <code>XamlSourceGenRuntimeMcpServer</code> into the running Avalonia app</td>
+<td>hot reload, hot design, studio, watched app inspection</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Preview MCP host</td>
+<td><code>dotnet run --project src/XamlToCSharpGenerator.PreviewerHost -- --mcp</code></td>
+<td>preview lifecycle control for custom clients and test harnesses</td>
+<td>preview-session state only</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>VS Code extension</td>
+<td>install the VSIX and use normal AXSG commands</td>
+<td>packaged editing and preview experience</td>
+<td>extension-owned</td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<p>The key distinction is process ownership:</p>
+<ul>
+<li>the workspace host sees files and projects</li>
+<li>the runtime host sees the live application</li>
+<li>the preview host sees one preview session</li>
+</ul>
+<h2 id="1-run-the-workspace-mcp-host">1. Run the workspace MCP host</h2>
+<p>Install the tool:</p>
+<pre><code class="language-bash">dotnet tool install --global XamlToCSharpGenerator.McpServer.Tool --version x.y.z
+</code></pre>
+<p>Run it against a workspace:</p>
+<pre><code class="language-bash">axsg-mcp --workspace /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator
+</code></pre>
+<p>For repo development you can also run it directly from source:</p>
+<pre><code class="language-bash">dotnet run --project src/XamlToCSharpGenerator.McpServer -- --workspace /Users/wieslawsoltes/GitHub/XamlToCSharpGenerator
+</code></pre>
+<p>Use this host when you need:</p>
+<ul>
+<li><code>axsg.preview.projectContext</code></li>
+<li>workspace-shaped hot reload or hot design queries</li>
+<li>an MCP surface that can be launched independently from the app</li>
+</ul>
+<p>Do not use this host when you need live app state from a running <code>dotnet watch</code> session. It is query-oriented and does not attach to another process automatically.</p>
+<h2 id="2-run-the-runtime-mcp-host-inside-a-watched-app">2. Run the runtime MCP host inside a watched app</h2>
+<p>The runtime MCP host is not a separate executable. You embed it into the Avalonia application that is already running AXSG hot reload or hot design.</p>
+<h3 id="step-1-enable-axsg-runtime-services">Step 1. Enable AXSG runtime services</h3>
+<p>Typical app bootstrap:</p>
+<pre><code class="language-csharp">using Avalonia;
+using XamlToCSharpGenerator.Runtime;
+
+internal static class Program
+{
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        return AppBuilder.Configure&lt;App&gt;()
+            .UsePlatformDetect()
+            .LogToTrace()
+            .UseAvaloniaSourceGeneratedXaml()
+            .UseAvaloniaSourceGeneratedRuntimeXamlCompilation(enable: true)
+            .UseAvaloniaSourceGeneratedXamlHotDesign(enable: true, configure: options =&gt;
+            {
+                options.PersistChangesToSource = true;
+                options.WaitForHotReload = false;
+            })
+            .UseAvaloniaSourceGeneratedStudioFromEnvironment()
+            .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
+    }
+}
+</code></pre>
+<p>That setup gives the runtime host something meaningful to expose:</p>
+<ul>
+<li>hot reload status</li>
+<li>hot design status and registered documents</li>
+<li>hot design workspace snapshots</li>
+<li>studio state and event streams</li>
+</ul>
+<h3 id="step-2-provide-a-transport">Step 2. Provide a transport</h3>
+<p><code>XamlSourceGenRuntimeMcpServer</code> is stream-based:</p>
+<pre><code class="language-csharp">new XamlSourceGenRuntimeMcpServer(Stream input, Stream output)
+</code></pre>
+<p>AXSG intentionally does not hard-code a transport policy for the live app host. That choice belongs to the embedding application.</p>
+<p>Recommended transports:</p>
+<ul>
+<li>loopback TCP for desktop tooling and local AI agents</li>
+<li>named pipes or Unix domain sockets when you want tighter local-only attachment</li>
+<li>stdio only when the app is launched specifically as an MCP child process</li>
+</ul>
+<p>For a normal <code>dotnet watch</code> desktop app, loopback TCP or a named pipe is the practical choice.</p>
+<h3 id="step-3-embed-a-simple-loopback-host">Step 3. Embed a simple loopback host</h3>
+<p>The example below uses a host-defined environment variable, <code>AXSG_RUNTIME_MCP_PORT</code>. That variable is not built into AXSG; it is just one simple convention for your app.</p>
+<pre><code class="language-csharp">using System.Net;
+using System.Net.Sockets;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using XamlToCSharpGenerator.Runtime;
+
+internal sealed class AxsgRuntimeMcpTcpHost : IAsyncDisposable
+{
+    private readonly TcpListener _listener;
+    private readonly CancellationTokenSource _cts = new();
+    private Task? _acceptLoop;
+
+    public AxsgRuntimeMcpTcpHost(int port)
+    {
+        _listener = new TcpListener(IPAddress.Loopback, port);
+    }
+
+    public void Start()
+    {
+        _listener.Start();
+        _acceptLoop = Task.Run(() =&gt; AcceptLoopAsync(_cts.Token));
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                TcpClient client = await _listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+
+                _ = Task.Run(async () =&gt;
+                {
+                    await using var stream = client.GetStream();
+                    using var server = new XamlSourceGenRuntimeMcpServer(stream, stream);
+                    await server.RunAsync(cancellationToken).ConfigureAwait(false);
+                }, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        _listener.Stop();
+
+        if (_acceptLoop is not null)
+        {
+            await _acceptLoop.ConfigureAwait(false);
+        }
+
+        _cts.Dispose();
+    }
+}
+
+internal static class Program
+{
+    private static AxsgRuntimeMcpTcpHost? _runtimeMcpHost;
+
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure&lt;App&gt;()
+            .UsePlatformDetect()
+            .LogToTrace()
+            .UseAvaloniaSourceGeneratedXaml()
+            .UseAvaloniaSourceGeneratedXamlHotDesign(enable: true)
+            .UseAvaloniaSourceGeneratedStudioFromEnvironment()
+            .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
+
+        if (int.TryParse(Environment.GetEnvironmentVariable(&quot;AXSG_RUNTIME_MCP_PORT&quot;), out int port) &amp;&amp; port &gt; 0)
+        {
+            builder = builder.AfterSetup(_ =&gt;
+            {
+                _runtimeMcpHost = new AxsgRuntimeMcpTcpHost(port);
+                _runtimeMcpHost.Start();
+
+                if (Application.Current?.ApplicationLifetime is IControlledApplicationLifetime lifetime)
+                {
+                    lifetime.Exit += async (_, _) =&gt;
+                    {
+                        if (_runtimeMcpHost is not null)
+                        {
+                            await _runtimeMcpHost.DisposeAsync().ConfigureAwait(false);
+                        }
+                    };
+                }
+            });
+        }
+
+        return builder;
+    }
+}
+</code></pre>
+<h3 id="step-4-run-it-with-dotnet-watch">Step 4. Run it with <code>dotnet watch</code></h3>
+<pre><code class="language-bash">AXSG_RUNTIME_MCP_PORT=43110 \
+dotnet watch run --project samples/SourceGenCrudSample/SourceGenCrudSample.csproj
+</code></pre>
+<p>Once the app is running, connect your MCP client to the loopback server you exposed.</p>
+<p>The runtime MCP host is the one you use for:</p>
+<ul>
+<li>hot reload status subscriptions</li>
+<li>hot design document and workspace inspection</li>
+<li>studio status and event streams</li>
+</ul>
+<h2 id="3-hot-reload-hot-design-and-studio-resources">3. Hot reload, hot design, and studio resources</h2>
+<p>The runtime host exposes the live runtime-facing resources:</p>
+<ul>
+<li><code>axsg://runtime/hotreload/status</code></li>
+<li><code>axsg://runtime/hotreload/events</code></li>
+<li><code>axsg://runtime/hotdesign/status</code></li>
+<li><code>axsg://runtime/hotdesign/documents</code></li>
+<li><code>axsg://runtime/hotdesign/events</code></li>
+<li><code>axsg://runtime/studio/status</code></li>
+<li><code>axsg://runtime/studio/events</code></li>
+</ul>
+<p>The matching tools are:</p>
+<ul>
+<li><code>axsg.hotReload.status</code></li>
+<li><code>axsg.hotDesign.status</code></li>
+<li><code>axsg.hotDesign.documents</code></li>
+<li><code>axsg.hotDesign.workspace</code></li>
+<li><code>axsg.studio.status</code></li>
+</ul>
+<p>Recommended client behavior:</p>
+<ul>
+<li>use <code>tools/call</code> for one-shot snapshots</li>
+<li>use <code>resources/subscribe</code> for status and event resources in a live app</li>
+</ul>
+<h2 id="4-run-the-preview-host-in-mcp-mode">4. Run the preview host in MCP mode</h2>
+<p>The preview host also supports MCP directly:</p>
+<pre><code class="language-bash">dotnet run --project src/XamlToCSharpGenerator.PreviewerHost -- --mcp
+</code></pre>
+<p>This host exposes preview session tools:</p>
+<ul>
+<li><code>axsg.preview.start</code></li>
+<li><code>axsg.preview.hotReload</code></li>
+<li><code>axsg.preview.update</code></li>
+<li><code>axsg.preview.stop</code></li>
+</ul>
+<p>and preview lifecycle resources:</p>
+<ul>
+<li><code>axsg://preview/session/status</code></li>
+<li><code>axsg://preview/session/events</code></li>
+<li><code>axsg://preview/session/current</code></li>
+</ul>
+<p>The preview host is the right MCP surface when you are building:</p>
+<ul>
+<li>a custom preview client</li>
+<li>automated preview smoke tests</li>
+<li>AI tooling that needs explicit preview start, hot reload, update, stop, and lifecycle control</li>
+</ul>
+<p>It is not the same thing as the runtime MCP host. The runtime host mirrors the running application. The preview host owns a dedicated preview session.</p>
+<p>Use this rule for preview mutations:</p>
+<ul>
+<li><code>axsg.preview.hotReload</code>: apply and wait for the in-process live-preview result</li>
+<li><code>axsg.preview.update</code>: dispatch-only update when your client already handles completion asynchronously</li>
+</ul>
+<p>For the full preview-host workflow and tool semantics, see <a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a>.</p>
+<h2 id="5-how-this-fits-with-the-vs-code-extension">5. How this fits with the VS Code extension</h2>
+<p>For normal VS Code usage, you do not need to start any MCP host manually.</p>
+<p>The extension already manages:</p>
+<ul>
+<li>the bundled language server</li>
+<li>preview project resolution</li>
+<li>preview helper startup</li>
+<li>live preview update routing</li>
+</ul>
+<p>The current VS Code preview UI still uses the extension’s bundled helper transport for the product workflow. The preview host’s MCP mode exists for custom clients, testing, and future remote-integration work; it is not the primary extension transport today.</p>
+<p>The workspace MCP host is still useful alongside VS Code when you want:</p>
+<ul>
+<li>external AI or tool access to workspace queries</li>
+<li>an MCP client that resolves preview project context independently from the editor</li>
+</ul>
+<h2 id="6-poll-vs-subscribe-guidance">6. Poll vs subscribe guidance</h2>
+<p>Use this rule:</p>
+<ul>
+<li>workspace MCP host: poll</li>
+<li>runtime MCP host: subscribe</li>
+<li>preview MCP host: subscribe</li>
+</ul>
+<p>More concretely:</p>
+<ul>
+<li><code>axsg-mcp</code> is stateless enough that <code>tools/list</code>, <code>tools/call</code>, and <code>resources/read</code> are the expected workflow</li>
+<li><code>XamlSourceGenRuntimeMcpServer</code> should be treated as a live stream of status and event resources</li>
+<li><code>PreviewHostMcpServer</code> supports dynamic tools and resources, so relist after <code>notifications/tools/list_changed</code> or <code>notifications/resources/list_changed</code></li>
+</ul>
+<h2 id="7-troubleshooting">7. Troubleshooting</h2>
+<h3 id="i-started-axsg-mcp-but-hot-reload-state-is-empty">I started <code>axsg-mcp</code>, but hot reload state is empty</h3>
+<p>That is expected unless you embedded the runtime MCP host into the running app. The standalone tool does not attach to another process automatically.</p>
+<h3 id="i-want-dotnet-watch-plus-mcp-without-editing-the-app">I want <code>dotnet watch</code> plus MCP without editing the app</h3>
+<p>That is not the current architecture. Today, live runtime MCP is in-process by design. Add a small transport host to the app and let <code>dotnet watch</code> restart it normally.</p>
+<h3 id="i-only-need-preview-orchestration">I only need preview orchestration</h3>
+<p>Use the preview host MCP mode instead of the runtime host.</p>
+<h3 id="i-need-the-preview-apply-result-not-just-request-dispatch">I need the preview apply result, not just request dispatch</h3>
+<p>Use <code>axsg.preview.hotReload</code> instead of <code>axsg.preview.update</code>.</p>
+<h3 id="i-only-need-project-resolution-for-preview">I only need project resolution for preview</h3>
+<p>Use <code>axsg-mcp --workspace ...</code> and call <code>axsg.preview.projectContext</code>.</p>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/mcp-server-tool">Package: XamlToCSharpGenerator.McpServer.Tool</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/runtime-avalonia">Package: XamlToCSharpGenerator.Runtime.Avalonia</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

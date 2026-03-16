@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Language Service and Tooling Namespaces | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Language Service and Tooling Namespaces This namespace family covers editor semantics, LSP request handling, projected inline-code support, and the tooling surface shared by the VS Code extension and in-app editors. Packages behind this area XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageServer.Tool VS Code extension XamlToCSharpGenerator.Editor.Avalonia Primary namespaces XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageService.Analysis XamlToCSharpGenerator.LanguageService.Completion XamlToCSharpGenerator.LanguageService.Definitions XamlToCSharpGenerator.LanguageService.Documents XamlToCSharpGenerator.LanguageService.Hover XamlToCSharpGenerator.LanguageService.InlayHints XamlToCSharpGenerator.LanguageService.InlineCode...">
+<meta name="twitter:description" content="Language Service and Tooling Namespaces This namespace family covers editor semantics, LSP request handling, projected inline-code support, and the tooling surface shared by the VS Code extension and in-app editors. Packages behind this area XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageServer.Tool XamlToCSharpGenerator.RemoteProtocol XamlToCSharpGenerator.McpServer.Tool VS Code extension XamlToCSharpGenerator.Editor.Avalonia Primary namespaces XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageService.Analysis XamlToCSharpGenerator.LanguageService.Completion XamlToCSharpGenerator.LanguageService.Definitions XamlToCSharpGenerator.LanguageService.Documents XamlToCSharpGenerator.LanguageService.Hover...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Language Service and Tooling Namespaces | XamlToCSharpGenerator">
 <meta property="og:title" content="Language Service and Tooling Namespaces | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Language Service and Tooling Namespaces This namespace family covers editor semantics, LSP request handling, projected inline-code support, and the tooling surface shared by the VS Code extension and in-app editors. Packages behind this area XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageServer.Tool VS Code extension XamlToCSharpGenerator.Editor.Avalonia Primary namespaces XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageService.Analysis XamlToCSharpGenerator.LanguageService.Completion XamlToCSharpGenerator.LanguageService.Definitions XamlToCSharpGenerator.LanguageService.Documents XamlToCSharpGenerator.LanguageService.Hover XamlToCSharpGenerator.LanguageService.InlayHints XamlToCSharpGenerator.LanguageService.InlineCode...">
+<meta property="og:description" content="Language Service and Tooling Namespaces This namespace family covers editor semantics, LSP request handling, projected inline-code support, and the tooling surface shared by the VS Code extension and in-app editors. Packages behind this area XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageServer.Tool XamlToCSharpGenerator.RemoteProtocol XamlToCSharpGenerator.McpServer.Tool VS Code extension XamlToCSharpGenerator.Editor.Avalonia Primary namespaces XamlToCSharpGenerator.LanguageService XamlToCSharpGenerator.LanguageService.Analysis XamlToCSharpGenerator.LanguageService.Completion XamlToCSharpGenerator.LanguageService.Definitions XamlToCSharpGenerator.LanguageService.Documents XamlToCSharpGenerator.LanguageService.Hover...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Language Service and Tooling Namespaces | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-33,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.4a9fcd720c9ce3999b69a6cb69835cd6.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-36,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -149,6 +149,8 @@
 <ul>
 <li><code>XamlToCSharpGenerator.LanguageService</code></li>
 <li><code>XamlToCSharpGenerator.LanguageServer.Tool</code></li>
+<li><code>XamlToCSharpGenerator.RemoteProtocol</code></li>
+<li><code>XamlToCSharpGenerator.McpServer.Tool</code></li>
 <li>VS Code extension</li>
 <li><code>XamlToCSharpGenerator.Editor.Avalonia</code></li>
 </ul>
@@ -166,8 +168,13 @@
 <li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.SemanticTokens/" title="XamlToCSharpGenerator.LanguageService.SemanticTokens">XamlToCSharpGenerator.LanguageService.SemanticTokens</a></li>
 <li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Symbols/" title="XamlToCSharpGenerator.LanguageService.Symbols">XamlToCSharpGenerator.LanguageService.Symbols</a></li>
 <li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Workspace/" title="XamlToCSharpGenerator.LanguageService.Workspace">XamlToCSharpGenerator.LanguageService.Workspace</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.RemoteProtocol.JsonRpc/" title="XamlToCSharpGenerator.RemoteProtocol.JsonRpc">XamlToCSharpGenerator.RemoteProtocol.JsonRpc</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.RemoteProtocol.Mcp/" title="XamlToCSharpGenerator.RemoteProtocol.Mcp">XamlToCSharpGenerator.RemoteProtocol.Mcp</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.RemoteProtocol.Preview/" title="XamlToCSharpGenerator.RemoteProtocol.Preview">XamlToCSharpGenerator.RemoteProtocol.Preview</a></li>
+<li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.RemoteProtocol.Studio/" title="XamlToCSharpGenerator.RemoteProtocol.Studio">XamlToCSharpGenerator.RemoteProtocol.Studio</a></li>
 <li><a href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.Editor.Avalonia/" title="XamlToCSharpGenerator.Editor.Avalonia">XamlToCSharpGenerator.Editor.Avalonia</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-server-tool">LanguageServer.Tool package guide</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/mcp-server-tool">McpServer.Tool package guide</a></li>
 </ul>
 <h2 id="what-lives-here">What lives here</h2>
 <h3 id="shared-semantic-engine">Shared semantic engine</h3>
@@ -175,7 +182,9 @@
 <h3 id="inline-code-tooling">Inline-code tooling</h3>
 <p><code>LanguageService.InlineCode</code> and related navigation/completion services analyze inline C# snippets and can project them into temporary C# documents when editor-side interoperability is useful.</p>
 <h3 id="server-transport-and-protocol">Server transport and protocol</h3>
-<p><code>LanguageServer</code> contains the standalone LSP host, request routing, metadata virtual-document support, and the transport/framing layer.</p>
+<p><code>LanguageServer</code> contains the standalone LSP host, request routing, and metadata virtual-document support. Shared framing and remote contracts now live in <code>RemoteProtocol</code>.</p>
+<h3 id="mcp-and-shared-remote-contracts">MCP and shared remote contracts</h3>
+<p><code>RemoteProtocol</code>, <code>McpServer.Tool</code>, and <code>PreviewerHost</code> cover the MCP-facing surface for workspace queries, preview orchestration, preview hot reload, and runtime-hosted resource subscriptions.</p>
 <h3 id="in-process-editor-hosting">In-process editor hosting</h3>
 <p><code>Editor.Avalonia</code> wraps the semantic engine for AvaloniaEdit-based in-app editor scenarios.</p>
 <h2 id="use-this-area-when">Use this area when</h2>
@@ -198,6 +207,8 @@
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/concepts/tooling-surface">Tooling Surface</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/preview-host">Artifact: XamlToCSharpGenerator.PreviewerHost</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></li>
 </ul>

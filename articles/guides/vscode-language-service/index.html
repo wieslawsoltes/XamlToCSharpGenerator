@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.7b51d4e5b11666823ec1d8462cf2befb.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-5,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.6e0a345db57e68bcd4769da8bf273d17.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-5,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -239,6 +239,7 @@
 <li>the full client/server pairing</li>
 <li>AXSG-first handling for XAML-native semantics</li>
 <li>inline-C# projection and editor middleware already wired</li>
+<li>built-in preview orchestration and preview-webview management</li>
 </ul>
 <p>Prefer the standalone language-server tool when you want:</p>
 <ul>
@@ -246,9 +247,18 @@
 <li>direct process control over the server</li>
 <li>transport/protocol debugging independent of VS Code</li>
 </ul>
+<p>Prefer the MCP host when you want:</p>
+<ul>
+<li>workspace queries from an AI client or external tool</li>
+<li>preview project-context resolution without talking to VS Code</li>
+<li>runtime or preview state through the dedicated runtime or preview MCP hosts</li>
+</ul>
+<p>The extension still uses its own bundled preview orchestration for the product preview experience. MCP support exists alongside that flow, not instead of it.</p>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/inline-csharp-code">Inline C# Code</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/troubleshooting">Troubleshooting</a></li>

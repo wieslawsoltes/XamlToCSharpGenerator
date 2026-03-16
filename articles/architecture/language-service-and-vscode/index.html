@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Language Service and VS Code | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Language Service and VS Code AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, and in-process editors. Stack overview Language service core XamlToCSharpGenerator.LanguageService owns semantic understanding of: XAML documents and scopes bindings, selectors, resources, and property elements inline C# and CDATA projections navigation, references, rename, hover, completion, semantic tokens, and inlay hints Language server host XamlToCSharpGenerator.LanguageServer.Tool...">
+<meta name="twitter:description" content="Language Service and VS Code AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, MCP workspace tooling, and in-process editors. Stack overview Language service core XamlToCSharpGenerator.LanguageService owns semantic understanding of: XAML documents and scopes bindings, selectors, resources, and property elements inline C# and CDATA projections navigation, references, rename, hover, completion, semantic tokens, and inlay hints Language server host...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Language Service and VS Code | XamlToCSharpGenerator">
 <meta property="og:title" content="Language Service and VS Code | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Language Service and VS Code AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, and in-process editors. Stack overview Language service core XamlToCSharpGenerator.LanguageService owns semantic understanding of: XAML documents and scopes bindings, selectors, resources, and property elements inline C# and CDATA projections navigation, references, rename, hover, completion, semantic tokens, and inlay hints Language server host XamlToCSharpGenerator.LanguageServer.Tool...">
+<meta property="og:description" content="Language Service and VS Code AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, MCP workspace tooling, and in-process editors. Stack overview Language service core XamlToCSharpGenerator.LanguageService owns semantic understanding of: XAML documents and scopes bindings, selectors, resources, and property elements inline C# and CDATA projections navigation, references, rename, hover, completion, semantic tokens, and inlay hints Language server host...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Language Service and VS Code | XamlToCSharpGenerator">
   </head>
@@ -107,6 +107,8 @@
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/runtime-and-hot-reload/' class='menu-link  '>Runtime and Hot Reload</a></span>  </li>
             <li id='menu-item-architecture-4' class='menu-item  active'>
               <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode/' class='menu-link  '>Language Service and VS Code</a></span>  </li>
+            <li id='menu-item-architecture-5' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp/' class='menu-link  '>Unified Remote API and MCP</a></span>  </li>
           </ol>
 
         </div>
@@ -154,7 +156,7 @@
         </div>
 <!-- lunet:summarize -->
 <h1 id="language-service-and-vs-code">Language Service and VS Code</h1>
-<p>AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, and in-process editors.</p>
+<p>AXSG’s editor stack is layered so the same semantic engine can serve the standalone LSP host, the VS Code extension, MCP workspace tooling, and in-process editors.</p>
 <h2 id="stack-overview">Stack overview</h2>
 <h3 id="language-service-core">Language service core</h3>
 <p><code>XamlToCSharpGenerator.LanguageService</code> owns semantic understanding of:</p>
@@ -172,6 +174,9 @@
 <li>projection/document endpoints</li>
 <li>metadata/source-link virtual documents</li>
 </ul>
+<h3 id="shared-remote-protocol-and-mcp-hosts">Shared remote protocol and MCP hosts</h3>
+<p><code>XamlToCSharpGenerator.RemoteProtocol</code> provides the shared JSON-RPC framing and MCP core now used by the workspace MCP host, preview host, and runtime-attached MCP server.</p>
+<p>That means AXSG reuses transport infrastructure across LSP and MCP while keeping their semantics separate.</p>
 <h3 id="vs-code-extension">VS Code extension</h3>
 <p>The VS Code extension adds client-side concerns:</p>
 <ul>
@@ -200,6 +205,7 @@
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/concepts/tooling-surface">Tooling Surface</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code Language Service</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/language-service">Package: XamlToCSharpGenerator.LanguageService</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/vscode-extension">Package: VS Code Extension</a></li>

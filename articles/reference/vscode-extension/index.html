@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.430ab43a32d085edb89768e8b6906335.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-29,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-reference.4a9fcd720c9ce3999b69a6cb69835cd6.html' data-lunet-menu-open='menu-id-reference-0' data-lunet-menu-active='menu-item-reference-32,menu-item-reference-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -158,6 +158,7 @@
 <li>inline C# editor support</li>
 <li>cross-language navigation between XAML and C#</li>
 <li>projected C# interop where existing editor-side C# providers add value</li>
+<li>Avalonia preview with AXSG source-generated and Avalonia/XamlX modes</li>
 </ul>
 <h2 id="how-it-fits-with-the-rest-of-the-stack">How it fits with the rest of the stack</h2>
 <p>The extension is a thin client plus editor middleware over:</p>
@@ -165,11 +166,15 @@
 <li><code>XamlToCSharpGenerator.LanguageServer.Tool</code></li>
 <li><code>XamlToCSharpGenerator.LanguageService</code></li>
 </ul>
-<p>It also owns editor-specific concerns such as activation strategy, virtual-document projections, and client-side provider fallbacks.</p>
+<p>It also owns editor-specific concerns such as activation strategy, virtual-document projections, client-side provider fallbacks, and the bundled preview webview workflow.</p>
+<p>The extension bundles and launches the preview helper automatically for the normal product workflow. The same helper also has an MCP mode for custom clients and test harnesses, but the extension preview UI does not require you to start an MCP server manually.</p>
+<p>The preview MCP host behind that helper now supports explicit in-process preview hot reload through <code>axsg.preview.hotReload</code>, but that remains a custom-client surface rather than the packaged extension UX.</p>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/navigation-and-refactorings">Navigation and Refactorings</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/artifact-matrix">Artifact Matrix</a></li>
 </ul>
