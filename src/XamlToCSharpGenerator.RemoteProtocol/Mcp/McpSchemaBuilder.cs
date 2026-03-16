@@ -77,4 +77,16 @@ public static class McpSchemaBuilder
             ["description"] = description
         };
     }
+
+    /// <summary>
+    /// Builds a boolean schema with a description.
+    /// </summary>
+    public static JsonObject BuildBooleanSchema(string description)
+    {
+        return new JsonObject
+        {
+            ["type"] = "boolean",
+            ["description"] = description
+        };
+    }
 }

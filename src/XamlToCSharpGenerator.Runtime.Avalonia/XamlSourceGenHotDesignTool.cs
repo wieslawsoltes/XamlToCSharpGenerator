@@ -9,6 +9,8 @@ namespace XamlToCSharpGenerator.Runtime;
 
 public static class XamlSourceGenHotDesignTool
 {
+    public static event Action? WorkspaceChanged;
+
     public static void Enable(SourceGenHotDesignOptions? options = null)
     {
         XamlSourceGenHotDesignManager.Enable(options);
@@ -42,11 +44,13 @@ public static class XamlSourceGenHotDesignTool
     public static void SetWorkspaceMode(SourceGenHotDesignWorkspaceMode mode)
     {
         XamlSourceGenHotDesignCoreTools.SetWorkspaceMode(mode);
+        PublishWorkspaceChanged();
     }
 
     public static void SetPropertyFilterMode(SourceGenHotDesignPropertyFilterMode mode)
     {
         XamlSourceGenHotDesignCoreTools.SetPropertyFilterMode(mode);
+        PublishWorkspaceChanged();
     }
 
     public static SourceGenHotDesignHitTestMode GetHitTestMode()
@@ -57,41 +61,50 @@ public static class XamlSourceGenHotDesignTool
     public static void SetHitTestMode(SourceGenHotDesignHitTestMode mode)
     {
         XamlSourceGenHotDesignCoreTools.SetHitTestMode(mode);
+        PublishWorkspaceChanged();
     }
 
     public static bool TogglePanel(SourceGenHotDesignPanelKind panel)
     {
-        return XamlSourceGenHotDesignCoreTools.TogglePanel(panel);
+        bool visible = XamlSourceGenHotDesignCoreTools.TogglePanel(panel);
+        PublishWorkspaceChanged();
+        return visible;
     }
 
     public static void SetPanelVisibility(SourceGenHotDesignPanelKind panel, bool visible)
     {
         XamlSourceGenHotDesignCoreTools.SetPanelVisibility(panel, visible);
+        PublishWorkspaceChanged();
     }
 
     public static void SetCanvasZoom(double zoom)
     {
         XamlSourceGenHotDesignCoreTools.SetCanvasZoom(zoom);
+        PublishWorkspaceChanged();
     }
 
     public static void SetCanvasFormFactor(string formFactor, double? width = null, double? height = null)
     {
         XamlSourceGenHotDesignCoreTools.SetCanvasFormFactor(formFactor, width, height);
+        PublishWorkspaceChanged();
     }
 
     public static void SetCanvasTheme(bool darkTheme)
     {
         XamlSourceGenHotDesignCoreTools.SetCanvasTheme(darkTheme);
+        PublishWorkspaceChanged();
     }
 
     public static void SelectDocument(string? buildUri)
     {
         XamlSourceGenHotDesignCoreTools.SelectDocument(buildUri);
+        PublishWorkspaceChanged();
     }
 
     public static void SelectElement(string? buildUri, string? elementId)
     {
         XamlSourceGenHotDesignCoreTools.SelectElement(buildUri, elementId);
+        PublishWorkspaceChanged();
     }
 
     public static bool TryResolveElementForLiveSelection(
@@ -129,57 +142,87 @@ public static class XamlSourceGenHotDesignTool
         return XamlSourceGenHotDesignCoreTools.TryGetCurrentDocumentText(buildUri, out xamlText);
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> ApplyDocumentTextAsync(
+    public static async ValueTask<SourceGenHotDesignApplyResult> ApplyDocumentTextAsync(
         string buildUri,
         string xamlText,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.ApplyDocumentTextAsync(buildUri, xamlText, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .ApplyDocumentTextAsync(buildUri, xamlText, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> ApplyPropertyUpdateAsync(
+    public static async ValueTask<SourceGenHotDesignApplyResult> ApplyPropertyUpdateAsync(
         SourceGenHotDesignPropertyUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.ApplyPropertyUpdateAsync(request, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .ApplyPropertyUpdateAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> InsertElementAsync(
+    public static async ValueTask<SourceGenHotDesignApplyResult> InsertElementAsync(
         SourceGenHotDesignElementInsertRequest request,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.InsertElementAsync(request, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .InsertElementAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> RemoveElementAsync(
+    public static async ValueTask<SourceGenHotDesignApplyResult> RemoveElementAsync(
         SourceGenHotDesignElementRemoveRequest request,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.RemoveElementAsync(request, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .RemoveElementAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> UndoAsync(string? buildUri = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<SourceGenHotDesignApplyResult> UndoAsync(string? buildUri = null, CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.UndoAsync(buildUri, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .UndoAsync(buildUri, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> RedoAsync(string? buildUri = null, CancellationToken cancellationToken = default)
+    public static async ValueTask<SourceGenHotDesignApplyResult> RedoAsync(string? buildUri = null, CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignCoreTools.RedoAsync(buildUri, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignCoreTools
+            .RedoAsync(buildUri, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
-    public static ValueTask<SourceGenHotDesignApplyResult> ApplyUpdateAsync(
+    public static async ValueTask<SourceGenHotDesignApplyResult> ApplyUpdateAsync(
         SourceGenHotDesignUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignManager.ApplyUpdateAsync(request, cancellationToken);
+        SourceGenHotDesignApplyResult result = await XamlSourceGenHotDesignManager
+            .ApplyUpdateAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        PublishWorkspaceChanged();
+        return result;
     }
 
     public static SourceGenHotDesignApplyResult ApplyUpdate(
         SourceGenHotDesignUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
-        return XamlSourceGenHotDesignManager.ApplyUpdate(request, cancellationToken);
+        SourceGenHotDesignApplyResult result = XamlSourceGenHotDesignManager.ApplyUpdate(request, cancellationToken);
+        PublishWorkspaceChanged();
+        return result;
     }
 
     public static ValueTask<SourceGenHotDesignApplyResult> ApplyUpdateByUriAsync(
@@ -415,6 +458,11 @@ public static class XamlSourceGenHotDesignTool
             default:
                 return "Unknown command '" + command + "'. Supported commands: enable, disable, toggle, status, list, snapshot, set-mode, set-property-mode, set-hit-test-mode, panel-toggle, set-zoom, select-doc, select-element, apply-doc, set-property, undo, redo, apply-uri, apply-type.";
         }
+    }
+
+    private static void PublishWorkspaceChanged()
+    {
+        WorkspaceChanged?.Invoke();
     }
 
     private static bool TryParseWorkspaceMode(string? value, out SourceGenHotDesignWorkspaceMode mode)
