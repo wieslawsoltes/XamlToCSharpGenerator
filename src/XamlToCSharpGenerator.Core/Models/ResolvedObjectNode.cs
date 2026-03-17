@@ -21,7 +21,8 @@ public sealed record ResolvedObjectNode(
     int Column,
     ConditionalXamlExpression? Condition = null,
     ImmutableArray<ResolvedCollectionAddInstruction> ChildAddInstructions = default,
-    ResolvedObjectNodeSemanticFlags SemanticFlags = ResolvedObjectNodeSemanticFlags.None)
+    ResolvedObjectNodeSemanticFlags SemanticFlags = ResolvedObjectNodeSemanticFlags.None,
+    string? ContentPropertyTypeName = null)
 {
     public bool HasSemantic(ResolvedObjectNodeSemanticFlags semanticFlag)
     {

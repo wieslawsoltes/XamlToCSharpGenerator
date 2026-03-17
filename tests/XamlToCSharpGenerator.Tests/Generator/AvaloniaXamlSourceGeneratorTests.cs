@@ -13181,6 +13181,86 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Casts_StaticResource_Object_Node_For_Typed_Content_Attachment()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property | global::System.AttributeTargets.Class)]
+                public sealed class ContentAttribute : global::System.Attribute { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class Border : Control
+                {
+                    [global::Avalonia.Metadata.Content]
+                    public global::Avalonia.Controls.Control? Child { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public sealed class StaticResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public object? ResourceKey { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider) => null;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.ResourceDictionary { }
+            }
+            """;
+
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                x:Class="Demo.MainView">
+                <Border x:Key="SharedControl" />
+                <Border x:Key="HostBorder">
+                    <StaticResource ResourceKey="SharedControl" />
+                </Border>
+            </ResourceDictionary>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(
+            compilation,
+            xaml,
+            new[]
+            {
+                new KeyValuePair<string, string>(
+                    "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+                    "false")
+            });
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(
+            updatedCompilation.GetDiagnostics(),
+            diagnostic => diagnostic.Id == "CS0266");
+    }
+
+    [Fact]
     public void Resolves_DynamicResource_Expression_As_Binding_For_AvaloniaProperty_Assignment()
     {
         const string code = """

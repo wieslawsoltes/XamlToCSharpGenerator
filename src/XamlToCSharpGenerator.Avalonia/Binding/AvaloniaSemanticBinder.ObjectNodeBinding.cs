@@ -1706,6 +1706,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var resolvedContentPropertyName = attachmentMode == ResolvedChildAttachmentMode.Content
             ? explicitContentPropertyName ?? defaultContentPropertyName
             : null;
+        var resolvedContentPropertyTypeName = attachmentMode == ResolvedChildAttachmentMode.Content
+            ? ResolveContentPropertyTypeName(symbol, resolvedContentPropertyName)
+            : null;
 
         if (attachmentMode == ResolvedChildAttachmentMode.Content &&
             children.Count > 0 &&
@@ -1715,6 +1718,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var resolvedContentProperty = FindProperty(symbol, resolvedContentPropertyName!);
             if (resolvedContentProperty is not null)
             {
+                resolvedContentPropertyTypeName =
+                    resolvedContentProperty.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 var contentChildrenValues = children.ToImmutableArray();
                 var useCollectionAddForContent =
                     CanAddToCollectionProperty(symbol, resolvedContentProperty.Name) &&
@@ -1748,6 +1753,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     children.Clear();
                     attachmentMode = ResolvedChildAttachmentMode.None;
                     resolvedContentPropertyName = null;
+                    resolvedContentPropertyTypeName = null;
                 }
                 else if (CanMergeDictionaryProperty(symbol, resolvedContentProperty.Name) &&
                          ShouldUseDictionaryMergeForContentProperty(
@@ -1777,6 +1783,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     children.Clear();
                     attachmentMode = ResolvedChildAttachmentMode.None;
                     resolvedContentPropertyName = null;
+                    resolvedContentPropertyTypeName = null;
                 }
             }
         }
@@ -1852,7 +1859,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             Column: node.Column,
             Condition: node.Condition,
             ChildAddInstructions: childAddInstructions,
-            SemanticFlags: semanticFlags);
+            SemanticFlags: semanticFlags,
+            ContentPropertyTypeName: resolvedContentPropertyTypeName);
     }
 
     private static void TryAddTemplateDataTypeDirectiveAssignment(

@@ -1136,10 +1136,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 var contentPropertyName = string.IsNullOrWhiteSpace(node.ContentPropertyName)
                     ? "Content"
                     : node.ContentPropertyName!;
+                var contentPropertyTypeName = node.ContentPropertyTypeName;
                 TryBuildDirectClrPropertyAssignment(
                     variableName,
                     contentPropertyName,
-                    null,
+                    contentPropertyTypeName,
                     TopDownAttachValueToken,
                     out var topDownContentAssignment);
                 var shouldResetImplicitContent =
@@ -1178,7 +1179,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         TryBuildDirectClrPropertyAssignment(
                             variableName,
                             contentPropertyName,
-                            null,
+                            contentPropertyTypeName,
                             firstChildValueExpression,
                             out var directContentAssignment);
                         EmitStatementAt(
@@ -1192,7 +1193,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     TryBuildDirectClrPropertyAssignment(
                         variableName,
                         contentPropertyName,
-                        null,
+                        contentPropertyTypeName,
                         "default",
                         out var resetContentAssignment);
                     EmitNodeStatement(resetContentAssignment);
