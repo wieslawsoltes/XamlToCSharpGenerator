@@ -211,6 +211,31 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
     }
 
+    public async Task SendInputAsync(AxsgPreviewHostInputRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ThrowIfDisposed();
+        var transport = _transport ?? throw new InvalidOperationException("Preview session is not connected.");
+
+        if (string.Equals(request.EventType, "text", StringComparison.Ordinal))
+        {
+            var textInputMessage = PreviewKeyboardInputMapper.CreateTextInputEvent(request);
+            if (textInputMessage is null)
+            {
+                return;
+            }
+
+            await transport.SendTextInputEventAsync(textInputMessage, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (PreviewKeyboardInputMapper.TryCreateKeyEvent(request, out var keyEventMessage))
+        {
+            await transport.SendKeyEventAsync(keyEventMessage, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposeSource.IsCancellationRequested)

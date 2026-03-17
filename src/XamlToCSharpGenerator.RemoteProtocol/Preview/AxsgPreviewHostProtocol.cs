@@ -32,6 +32,11 @@ public static class AxsgPreviewHostProtocol
     public const string HotReloadCommand = "hotReload";
 
     /// <summary>
+    /// The preview input command name.
+    /// </summary>
+    public const string InputCommand = "input";
+
+    /// <summary>
     /// The preview stop command name.
     /// </summary>
     public const string StopCommand = "stop";
@@ -171,6 +176,75 @@ public static class AxsgPreviewHostProtocol
     }
 
     /// <summary>
+    /// Parses and validates a preview input request payload.
+    /// </summary>
+    public static AxsgPreviewHostInputRequest ParseInputRequest(JsonElement payload)
+    {
+        EnsureObjectPayload(payload, "Input payload");
+        AxsgPreviewHostInputRequest? request = payload.Deserialize<AxsgPreviewHostInputRequest>(JsonRpcSerializer.DefaultOptions);
+        if (request is null)
+        {
+            throw new InvalidOperationException("Input payload is invalid.");
+        }
+
+        string eventType = GetRequiredString(request.EventType, "eventType").Trim();
+        AxsgPreviewHostInputModifiers modifiers = request.Modifiers ?? new AxsgPreviewHostInputModifiers(
+            Alt: false,
+            Control: false,
+            Shift: false,
+            Meta: false);
+
+        if (string.Equals(eventType, "key", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!request.IsDown.HasValue)
+            {
+                throw new InvalidOperationException("isDown is required for key input.");
+            }
+
+            if (request.Location is < 0)
+            {
+                throw new InvalidOperationException("location must be non-negative.");
+            }
+
+            bool hasKeyShape =
+                !string.IsNullOrEmpty(request.Key) ||
+                !string.IsNullOrEmpty(request.Code) ||
+                !string.IsNullOrEmpty(request.KeySymbol);
+            if (!hasKeyShape)
+            {
+                throw new InvalidOperationException("key, code, or keySymbol is required for key input.");
+            }
+
+            return request with
+            {
+                EventType = "key",
+                Modifiers = modifiers
+            };
+        }
+
+        if (string.Equals(eventType, "text", StringComparison.OrdinalIgnoreCase))
+        {
+            if (request.Text is null)
+            {
+                throw new InvalidOperationException("text is required for text input.");
+            }
+
+            if (request.Text.Length == 0)
+            {
+                throw new InvalidOperationException("text input must not be empty.");
+            }
+
+            return request with
+            {
+                EventType = "text",
+                Modifiers = modifiers
+            };
+        }
+
+        throw new InvalidOperationException("Unsupported input eventType '" + eventType + "'.");
+    }
+
+    /// <summary>
     /// Creates a successful preview helper response envelope.
     /// </summary>
     public static AxsgPreviewHostResponseEnvelope CreateSuccessResponse(string? requestId, object? payload = null)
@@ -243,6 +317,11 @@ public static class AxsgPreviewHostProtocol
         if (string.Equals(normalized, HotReloadCommand, StringComparison.OrdinalIgnoreCase))
         {
             return HotReloadCommand;
+        }
+
+        if (string.Equals(normalized, InputCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return InputCommand;
         }
 
         if (string.Equals(normalized, StopCommand, StringComparison.OrdinalIgnoreCase))

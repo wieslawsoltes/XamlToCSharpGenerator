@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace XamlToCSharpGenerator.PreviewerHost.Protocol;
@@ -9,6 +10,7 @@ internal static class MinimalBson
     private const byte TypeDouble = 0x01;
     private const byte TypeString = 0x02;
     private const byte TypeDocument = 0x03;
+    private const byte TypeArray = 0x04;
     private const byte TypeBoolean = 0x08;
     private const byte TypeNull = 0x0A;
     private const byte TypeInt32 = 0x10;
@@ -72,6 +74,25 @@ internal static class MinimalBson
         return document;
     }
 
+    private static object?[] ReadArray(ReadOnlySpan<byte> payload, ref int offset)
+    {
+        Dictionary<string, object?> indexedValues = ReadDocument(payload, ref offset);
+        object?[] values = new object?[indexedValues.Count];
+        foreach (KeyValuePair<string, object?> pair in indexedValues)
+        {
+            if (!int.TryParse(pair.Key, NumberStyles.None, CultureInfo.InvariantCulture, out int index) ||
+                index < 0 ||
+                index >= values.Length)
+            {
+                throw new InvalidDataException("BSON array index is invalid.");
+            }
+
+            values[index] = pair.Value;
+        }
+
+        return values;
+    }
+
     private static object? ReadValue(byte elementType, ReadOnlySpan<byte> payload, ref int offset)
     {
         return elementType switch
@@ -79,6 +100,7 @@ internal static class MinimalBson
             TypeDouble => ReadDouble(payload, ref offset),
             TypeString => ReadString(payload, ref offset),
             TypeDocument => ReadDocument(payload, ref offset),
+            TypeArray => ReadArray(payload, ref offset),
             TypeBoolean => ReadBoolean(payload, ref offset),
             TypeNull => null,
             TypeInt32 => ReadInt32(payload, ref offset),
@@ -217,6 +239,12 @@ internal static class MinimalBson
                 WriteDocument(stream, nestedDocument);
                 return;
 
+            case IReadOnlyList<object?> arrayValue:
+                stream.WriteByte(TypeArray);
+                WriteCString(stream, name);
+                WriteArray(stream, arrayValue);
+                return;
+
             default:
                 throw new InvalidOperationException("Unsupported BSON value type: " + value.GetType().FullName);
         }
@@ -226,6 +254,17 @@ internal static class MinimalBson
     {
         var bytes = SerializeDocument(document);
         stream.Write(bytes, 0, bytes.Length);
+    }
+
+    private static void WriteArray(Stream stream, IReadOnlyList<object?> values)
+    {
+        var indexedValues = new Dictionary<string, object?>(values.Count, StringComparer.Ordinal);
+        for (int index = 0; index < values.Count; index++)
+        {
+            indexedValues[index.ToString(CultureInfo.InvariantCulture)] = values[index];
+        }
+
+        WriteDocument(stream, indexedValues);
     }
 
     private static void WriteCString(Stream stream, string value)

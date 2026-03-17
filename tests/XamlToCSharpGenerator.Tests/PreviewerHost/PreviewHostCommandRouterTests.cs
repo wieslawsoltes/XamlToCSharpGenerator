@@ -113,6 +113,46 @@ public sealed class PreviewHostCommandRouterTests
         Assert.Equal("6", response.RequestId);
     }
 
+    [Fact]
+    public async Task HandleCommandAsync_Input_Forwards_Request()
+    {
+        var session = new FakePreviewHostSession();
+        await using var router = new PreviewHostCommandRouter(() => session);
+
+        await router.HandleCommandAsync(
+            new AxsgPreviewHostCommandEnvelope(
+                AxsgPreviewHostProtocol.StartCommand,
+                "7",
+                CreatePayload(CreateStartRequest("xaml-1"))),
+            CancellationToken.None);
+
+        AxsgPreviewHostResponseEnvelope response = await router.HandleCommandAsync(
+            new AxsgPreviewHostCommandEnvelope(
+                AxsgPreviewHostProtocol.InputCommand,
+                "8",
+                CreatePayload(new AxsgPreviewHostInputRequest
+                {
+                    EventType = "key",
+                    IsDown = true,
+                    Key = "a",
+                    Code = "KeyA",
+                    Location = 0,
+                    KeySymbol = "a",
+                    Modifiers = new AxsgPreviewHostInputModifiers(
+                        Alt: false,
+                        Control: true,
+                        Shift: false,
+                        Meta: false)
+                })),
+            CancellationToken.None);
+
+        Assert.True(response.Ok);
+        Assert.NotNull(session.LastInputRequest);
+        Assert.Equal("key", session.LastInputRequest!.EventType);
+        Assert.Equal("KeyA", session.LastInputRequest.Code);
+        Assert.True(session.LastInputRequest.Modifiers!.Control);
+    }
+
     private static AxsgPreviewHostStartRequest CreateStartRequest(string xamlText)
     {
         return new AxsgPreviewHostStartRequest(
@@ -152,6 +192,8 @@ public sealed class PreviewHostCommandRouterTests
 
         public string? LastHotReloadXaml { get; private set; }
 
+        public AxsgPreviewHostInputRequest? LastInputRequest { get; private set; }
+
         public Task<AxsgPreviewHostStartResponse> StartAsync(
             AxsgPreviewHostStartRequest request,
             CancellationToken cancellationToken)
@@ -182,6 +224,12 @@ public sealed class PreviewHostCommandRouterTests
                 DateTimeOffset.UtcNow);
             UpdateCompleted?.Invoke(new AxsgPreviewHostUpdateResultEventPayload(true, null, null));
             return Task.FromResult(result);
+        }
+
+        public Task SendInputAsync(AxsgPreviewHostInputRequest request, CancellationToken cancellationToken)
+        {
+            LastInputRequest = request;
+            return Task.CompletedTask;
         }
 
         public ValueTask DisposeAsync()

@@ -20,6 +20,8 @@ internal interface IPreviewHostSession : IAsyncDisposable
         string xamlText,
         TimeSpan? timeout,
         CancellationToken cancellationToken);
+
+    Task SendInputAsync(AxsgPreviewHostInputRequest request, CancellationToken cancellationToken);
 }
 
 internal sealed class PreviewHostCommandRouter : IAsyncDisposable
@@ -55,6 +57,7 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
                 AxsgPreviewHostProtocol.StartCommand => await HandleStartAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.UpdateCommand => await HandleUpdateAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.HotReloadCommand => await HandleHotReloadAsync(command, cancellationToken).ConfigureAwait(false),
+                AxsgPreviewHostProtocol.InputCommand => await HandleInputAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.StopCommand => await HandleStopAsync(command).ConfigureAwait(false),
                 _ => AxsgPreviewHostProtocol.CreateFailureResponse(
                     command.RequestId,
@@ -108,6 +111,16 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
     private async Task<AxsgPreviewHostResponseEnvelope> HandleStopAsync(AxsgPreviewHostCommandEnvelope command)
     {
         await DisposeCurrentSessionAsync().ConfigureAwait(false);
+        return AxsgPreviewHostProtocol.CreateSuccessResponse(command.RequestId);
+    }
+
+    private async Task<AxsgPreviewHostResponseEnvelope> HandleInputAsync(
+        AxsgPreviewHostCommandEnvelope command,
+        CancellationToken cancellationToken)
+    {
+        IPreviewHostSession session = _session ?? throw new InvalidOperationException("Preview session has not been started.");
+        AxsgPreviewHostInputRequest request = AxsgPreviewHostProtocol.ParseInputRequest(command.Payload);
+        await session.SendInputAsync(request, cancellationToken).ConfigureAwait(false);
         return AxsgPreviewHostProtocol.CreateSuccessResponse(command.RequestId);
     }
 

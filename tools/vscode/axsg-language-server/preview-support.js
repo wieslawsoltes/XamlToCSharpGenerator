@@ -43,6 +43,11 @@ const {
   tryParseMsbuildJson
 } = require('./preview-utils');
 const {
+  createPreviewKeyboardInputPayloads,
+  createPreviewKeyInputPayload,
+  createPreviewTextInputPayload,
+  getPreviewKeyboardModifiers,
+  getPreviewKeyboardText,
   mapPreviewClientPointToRemotePoint,
   normalizePreviewRenderScale
 } = require('./preview-webview-helpers');
@@ -395,6 +400,11 @@ class AvaloniaPreviewSession {
         return;
       }
 
+      if (message.type === 'previewInput') {
+        this.handlePreviewInputMessage(message);
+        return;
+      }
+
       if (message.type === 'transportLog' && message.message) {
         this.controller.getOutputChannel().appendLine(`[preview-webview] ${message.message}`);
       }
@@ -663,6 +673,42 @@ class AvaloniaPreviewSession {
     if (this.activeCompilerMode && this.helper) {
       this.scheduleViewportResize();
     }
+  }
+
+  handlePreviewInputMessage(message) {
+    if (this.disposed || !this.helper || !this.currentLoopbackPreview) {
+      return;
+    }
+
+    const inputs = Array.isArray(message.inputs)
+      ? message.inputs.filter(input => input && typeof input === 'object' && typeof input.eventType === 'string')
+      : [];
+    if (inputs.length === 0) {
+      return;
+    }
+
+    const helper = this.helper;
+    const pending = [];
+    for (const input of inputs) {
+      pending.push(helper.sendCommand('input', input, 5000));
+    }
+
+    void Promise.allSettled(pending).then(results => {
+      const firstRejected = results.find(result => result.status === 'rejected');
+      if (!firstRejected || this.disposed || this.helper !== helper) {
+        return;
+      }
+
+      const error = firstRejected.reason instanceof Error
+        ? firstRejected.reason.message
+        : String(firstRejected.reason);
+      if (error === 'Preview host is not running.') {
+        return;
+      }
+
+      this.controller.getOutputChannel().appendLine(
+        `[preview] failed to forward keyboard input for ${this.fileName}: ${error}`);
+    });
   }
 
   async waitForInitialPreviewSizeAsync() {
@@ -1483,6 +1529,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   <script>
     ${normalizePreviewRenderScale.toString()}
     ${mapPreviewClientPointToRemotePoint.toString()}
+    ${getPreviewKeyboardModifiers.toString()}
+    ${getPreviewKeyboardText.toString()}
+    ${createPreviewKeyInputPayload.toString()}
+    ${createPreviewTextInputPayload.toString()}
+    ${createPreviewKeyboardInputPayloads.toString()}
     const content = document.getElementById('content');
     const status = document.getElementById('status');
     const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
@@ -1737,6 +1788,17 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       ].join(':'));
     }
 
+    function postPreviewInputPayloads(payloads) {
+      if (!vscodeApi || !Array.isArray(payloads) || payloads.length === 0) {
+        return;
+      }
+
+      vscodeApi.postMessage({
+        type: 'previewInput',
+        inputs: payloads
+      });
+    }
+
     function wireCanvasInput(canvas) {
       canvas.addEventListener('pointerdown', event => {
         canvas.focus();
@@ -1752,6 +1814,26 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         event.preventDefault();
         sendWheelMessage(event);
       }, { passive: false });
+      canvas.addEventListener('keydown', event => {
+        const payloads = createPreviewKeyboardInputPayloads(event, true);
+        if (payloads.length === 0) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        postPreviewInputPayloads(payloads);
+      });
+      canvas.addEventListener('keyup', event => {
+        const payloads = createPreviewKeyboardInputPayloads(event, false);
+        if (payloads.length === 0) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        postPreviewInputPayloads(payloads);
+      });
       canvas.addEventListener('contextmenu', event => event.preventDefault());
     }
 
