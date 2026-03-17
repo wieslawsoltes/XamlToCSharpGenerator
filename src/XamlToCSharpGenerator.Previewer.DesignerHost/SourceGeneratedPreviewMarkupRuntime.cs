@@ -50,7 +50,7 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
 
         var evaluator = GetOrCreateEvaluator(resolvedCode);
         var dependencyNames = ResolveDependencyNames(dependencyNamesBase64Url);
-        if (ShouldReturnBinding(targetProperty))
+        if (ShouldReturnBinding(targetObject, targetProperty))
         {
             return CreateBinding(evaluator, dependencyNames, rootObject, targetObject);
         }
@@ -91,9 +91,9 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             .ToArray();
     }
 
-    private static bool ShouldReturnBinding(object? targetProperty)
+    private static bool ShouldReturnBinding(object? targetObject, object? targetProperty)
     {
-        if (targetProperty is AvaloniaProperty)
+        if (TryResolveAvaloniaProperty(targetObject, targetProperty, out _))
         {
             return true;
         }
@@ -105,6 +105,59 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         }
 
         return targetType == typeof(object) || typeof(IBinding).IsAssignableFrom(targetType);
+    }
+
+    private static bool TryResolveAvaloniaProperty(
+        object? targetObject,
+        object? targetProperty,
+        out AvaloniaProperty? avaloniaProperty)
+    {
+        if (targetProperty is AvaloniaProperty directAvaloniaProperty)
+        {
+            avaloniaProperty = directAvaloniaProperty;
+            return true;
+        }
+
+        avaloniaProperty = null;
+        if (targetObject is null)
+        {
+            return false;
+        }
+
+        var propertyName = ResolveTargetPropertyName(targetProperty);
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return false;
+        }
+
+        var targetType = targetObject.GetType();
+        var avaloniaPropertyMemberName = propertyName + "Property";
+
+        var propertyField = targetType.GetField(
+            avaloniaPropertyMemberName,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (typeof(AvaloniaProperty).IsAssignableFrom(propertyField?.FieldType))
+        {
+            avaloniaProperty = propertyField?.GetValue(null) as AvaloniaProperty;
+            if (avaloniaProperty is not null)
+            {
+                return true;
+            }
+        }
+
+        var propertyValue = targetType.GetProperty(
+            avaloniaPropertyMemberName,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (typeof(AvaloniaProperty).IsAssignableFrom(propertyValue?.PropertyType))
+        {
+            avaloniaProperty = propertyValue?.GetValue(null) as AvaloniaProperty;
+            if (avaloniaProperty is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static Type? ResolveTargetType(object? targetProperty)
@@ -149,6 +202,32 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         }
 
         return null;
+    }
+
+    private static string? ResolveTargetPropertyName(object? targetProperty)
+    {
+        return targetProperty switch
+        {
+            AvaloniaProperty avaloniaProperty => avaloniaProperty.Name,
+            PropertyInfo propertyInfo => propertyInfo.Name,
+            EventInfo eventInfo => eventInfo.Name,
+            _ => TryResolveTargetPropertyNameByReflection(targetProperty)
+        };
+    }
+
+    private static string? TryResolveTargetPropertyNameByReflection(object? targetProperty)
+    {
+        if (targetProperty is null)
+        {
+            return null;
+        }
+
+        var nameProperty = targetProperty.GetType().GetProperty(
+            "Name",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        return nameProperty?.PropertyType == typeof(string)
+            ? nameProperty.GetValue(targetProperty) as string
+            : null;
     }
 
     private static IBinding CreateBinding(
