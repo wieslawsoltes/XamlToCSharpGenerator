@@ -4,6 +4,8 @@
 
 The repository ships both a recommended end-user install surface and the lower-level packages used to compose custom tooling, editors, and framework adapters.
 
+<img width="3494" height="1750" alt="image" src="https://github.com/user-attachments/assets/74951ae9-4866-4911-be11-be890f99dc31" />
+
 ## What Ships
 
 | Artifact | Kind | Package | Downloads | Audience | Install | Purpose |
