@@ -202,8 +202,7 @@ internal sealed class PreviewExpressionAnalysisContext
         var rewriter = new PreviewContextExpressionRewriter(
             GetMemberNames(sourceType),
             GetMemberNames(rootType),
-            GetMemberNames(targetType),
-            GetLocalNames(syntax));
+            GetMemberNames(targetType));
         if (rewriter.Visit(syntax) is not TSyntax rewritten)
         {
             return false;
@@ -270,13 +269,6 @@ internal sealed class PreviewExpressionAnalysisContext
         }
     }
 
-    private static ImmutableHashSet<string> GetLocalNames(SyntaxNode node)
-    {
-        var collector = new PreviewLocalNameCollector();
-        collector.Visit(node);
-        return collector.Names.ToImmutableHashSet(StringComparer.Ordinal);
-    }
-
     private static IReadOnlyList<string> ToOrderedDependencyArray(HashSet<string> dependencies)
     {
         return dependencies.Count == 0
@@ -284,105 +276,33 @@ internal sealed class PreviewExpressionAnalysisContext
             : dependencies.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
     }
 
-    private sealed class PreviewLocalNameCollector : CSharpSyntaxWalker
-    {
-        public HashSet<string> Names { get; } = new(StringComparer.Ordinal);
-
-        public override void VisitParameter(ParameterSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitParameter(node);
-        }
-
-        public override void VisitSimpleLambdaExpression(SimpleLambdaExpressionSyntax node)
-        {
-            AddName(node.Parameter.Identifier.ValueText);
-            base.VisitSimpleLambdaExpression(node);
-        }
-
-        public override void VisitParenthesizedLambdaExpression(ParenthesizedLambdaExpressionSyntax node)
-        {
-            foreach (var parameter in node.ParameterList.Parameters)
-            {
-                AddName(parameter.Identifier.ValueText);
-            }
-
-            base.VisitParenthesizedLambdaExpression(node);
-        }
-
-        public override void VisitAnonymousMethodExpression(AnonymousMethodExpressionSyntax node)
-        {
-            if (node.ParameterList is not null)
-            {
-                foreach (var parameter in node.ParameterList.Parameters)
-                {
-                    AddName(parameter.Identifier.ValueText);
-                }
-            }
-
-            base.VisitAnonymousMethodExpression(node);
-        }
-
-        public override void VisitVariableDeclarator(VariableDeclaratorSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitVariableDeclarator(node);
-        }
-
-        public override void VisitForEachStatement(ForEachStatementSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitForEachStatement(node);
-        }
-
-        public override void VisitCatchDeclaration(CatchDeclarationSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitCatchDeclaration(node);
-        }
-
-        public override void VisitSingleVariableDesignation(SingleVariableDesignationSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitSingleVariableDesignation(node);
-        }
-
-        public override void VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
-        {
-            AddName(node.Identifier.ValueText);
-            base.VisitLocalFunctionStatement(node);
-        }
-
-        private void AddName(string? name)
-        {
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                Names.Add(name!);
-            }
-        }
-    }
-
     private sealed class PreviewContextExpressionRewriter : CSharpSyntaxRewriter
     {
         private readonly ImmutableHashSet<string> _sourceMemberNames;
         private readonly ImmutableHashSet<string> _rootMemberNames;
         private readonly ImmutableHashSet<string> _targetMemberNames;
-        private readonly ImmutableHashSet<string> _localNames;
         private readonly Stack<HashSet<string>> _scopes = new();
 
         public PreviewContextExpressionRewriter(
             ImmutableHashSet<string> sourceMemberNames,
             ImmutableHashSet<string> rootMemberNames,
-            ImmutableHashSet<string> targetMemberNames,
-            ImmutableHashSet<string> localNames)
+            ImmutableHashSet<string> targetMemberNames)
         {
             _sourceMemberNames = sourceMemberNames;
             _rootMemberNames = rootMemberNames;
             _targetMemberNames = targetMemberNames;
-            _localNames = localNames;
+            _scopes.Push(new HashSet<string>(StringComparer.Ordinal));
         }
 
         public HashSet<string> Dependencies { get; } = new(StringComparer.Ordinal);
+
+        public override SyntaxNode? VisitBlock(BlockSyntax node)
+        {
+            PushScope(GetLocalFunctionNames(node));
+            var rewritten = base.VisitBlock(node);
+            PopScope();
+            return rewritten;
+        }
 
         public override SyntaxNode? VisitSimpleLambdaExpression(SimpleLambdaExpressionSyntax node)
         {
@@ -411,6 +331,70 @@ internal sealed class PreviewExpressionAnalysisContext
             return rewritten;
         }
 
+        public override SyntaxNode? VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
+        {
+            PushScope(node.ParameterList.Parameters.Select(static parameter => parameter.Identifier.ValueText));
+            var rewritten = base.VisitLocalFunctionStatement(node);
+            PopScope();
+            return rewritten;
+        }
+
+        public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
+        {
+            AddNameToCurrentScope(node.Identifier.ValueText);
+            return base.VisitVariableDeclarator(node);
+        }
+
+        public override SyntaxNode? VisitForStatement(ForStatementSyntax node)
+        {
+            PushScope(node.Declaration?.Variables.Select(static variable => variable.Identifier.ValueText) ?? []);
+            var rewritten = base.VisitForStatement(node);
+            PopScope();
+            return rewritten;
+        }
+
+        public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
+        {
+            ExpressionSyntax rewrittenExpression = (ExpressionSyntax)Visit(node.Expression)!;
+            PushScope(node.Identifier.ValueText);
+            StatementSyntax rewrittenStatement = (StatementSyntax)Visit(node.Statement)!;
+            PopScope();
+
+            return node
+                .WithExpression(rewrittenExpression)
+                .WithStatement(rewrittenStatement);
+        }
+
+        public override SyntaxNode? VisitUsingStatement(UsingStatementSyntax node)
+        {
+            PushScope(node.Declaration?.Variables.Select(static variable => variable.Identifier.ValueText) ?? []);
+            var rewritten = base.VisitUsingStatement(node);
+            PopScope();
+            return rewritten;
+        }
+
+        public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
+        {
+            PushScope(node.Declaration.Variables.Select(static variable => variable.Identifier.ValueText));
+            var rewritten = base.VisitFixedStatement(node);
+            PopScope();
+            return rewritten;
+        }
+
+        public override SyntaxNode? VisitCatchClause(CatchClauseSyntax node)
+        {
+            PushScope(node.Declaration?.Identifier.ValueText);
+            var rewritten = base.VisitCatchClause(node);
+            PopScope();
+            return rewritten;
+        }
+
+        public override SyntaxNode? VisitSingleVariableDesignation(SingleVariableDesignationSyntax node)
+        {
+            AddNameToCurrentScope(node.Identifier.ValueText);
+            return base.VisitSingleVariableDesignation(node);
+        }
+
         public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
         {
             var name = node.Identifier.ValueText;
@@ -418,7 +402,6 @@ internal sealed class PreviewExpressionAnalysisContext
                 name.Equals("source", StringComparison.Ordinal) ||
                 name.Equals("root", StringComparison.Ordinal) ||
                 name.Equals("target", StringComparison.Ordinal) ||
-                _localNames.Contains(name) ||
                 IsScopedName(name) ||
                 node.Parent is QualifiedNameSyntax or AliasQualifiedNameSyntax or NameColonSyntax)
             {
@@ -507,10 +490,25 @@ internal sealed class PreviewExpressionAnalysisContext
 
         private void PopScope()
         {
-            if (_scopes.Count > 0)
+            if (_scopes.Count > 1)
             {
                 _scopes.Pop();
             }
+        }
+
+        private void AddNameToCurrentScope(string? name)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                _scopes.Peek().Add(name!);
+            }
+        }
+
+        private static IEnumerable<string> GetLocalFunctionNames(BlockSyntax block)
+        {
+            return block.Statements
+                .OfType<LocalFunctionStatementSyntax>()
+                .Select(static statement => statement.Identifier.ValueText);
         }
 
         private bool IsScopedName(string name)
