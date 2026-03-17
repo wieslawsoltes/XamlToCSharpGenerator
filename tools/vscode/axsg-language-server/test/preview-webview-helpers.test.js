@@ -197,6 +197,27 @@ test('createPreviewTextInputPayload preserves macOS option text input', () => {
     });
 });
 
+test('createPreviewTextInputPayload uses committed composition text', () => {
+  assert.deepEqual(
+    createPreviewTextInputPayload({
+      key: 'Process',
+      code: 'KeyA',
+      data: '漢',
+      isComposing: true,
+      location: 0
+    }),
+    {
+      eventType: 'text',
+      text: '漢',
+      modifiers: {
+        alt: false,
+        control: false,
+        shift: false,
+        meta: false
+      }
+    });
+});
+
 test('createPreviewKeyboardInputPayloads emits key then text for printable input', () => {
   assert.deepEqual(
     createPreviewKeyboardInputPayloads(

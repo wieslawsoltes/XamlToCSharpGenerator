@@ -88,7 +88,9 @@ function createPreviewKeyInputPayload(event, isDown) {
 }
 
 function createPreviewTextInputPayload(event) {
-  const text = getPreviewKeyboardText(event);
+  const text = event && typeof event.data === 'string' && event.data.length > 0
+    ? event.data
+    : getPreviewKeyboardText(event);
   if (!text) {
     return null;
   }

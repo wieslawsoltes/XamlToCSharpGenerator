@@ -1834,6 +1834,16 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         event.stopPropagation();
         postPreviewInputPayloads(payloads);
       });
+      canvas.addEventListener('compositionend', event => {
+        const payload = createPreviewTextInputPayload(event);
+        if (!payload) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        postPreviewInputPayloads([payload]);
+      });
       canvas.addEventListener('contextmenu', event => event.preventDefault());
     }
 
