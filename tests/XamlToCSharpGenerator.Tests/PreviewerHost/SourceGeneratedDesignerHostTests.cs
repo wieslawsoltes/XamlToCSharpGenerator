@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Core;
 using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using XamlToCSharpGenerator.Runtime;
 using global::Avalonia.Markup.Xaml;
@@ -198,6 +199,64 @@ public class SourceGeneratedDesignerHostTests
             serviceProvider: provider);
 
         Assert.IsAssignableFrom<IBinding>(value);
+    }
+
+    [AvaloniaFact]
+    public void PreviewMarkupRuntime_Returns_Executable_Delegate_For_Event_Lambda_Targets()
+    {
+        var runtime = new SourceGeneratedPreviewMarkupRuntime();
+        var viewModel = new PreviewMarkupTestViewModel();
+        var root = new UserControl
+        {
+            DataContext = viewModel
+        };
+        var target = new Button
+        {
+            DataContext = viewModel
+        };
+        var eventInfo = typeof(Button).GetEvent(nameof(Button.Click))
+            ?? throw new InvalidOperationException("Button.Click event was not found.");
+        var provider = CreateProvideValueServiceProvider(root, target, eventInfo);
+
+        var value = runtime.ProvideValue(
+            code: "(sender, e) => source.ClickCount++",
+            codeBase64Url: null,
+            dependencyNamesBase64Url: null,
+            serviceProvider: provider);
+
+        var handler = Assert.IsAssignableFrom<Delegate>(value);
+        handler.DynamicInvoke(target, new RoutedEventArgs());
+
+        Assert.Equal(1, viewModel.ClickCount);
+    }
+
+    [AvaloniaFact]
+    public void PreviewMarkupRuntime_Returns_Executable_Delegate_For_Event_Statement_Blocks()
+    {
+        var runtime = new SourceGeneratedPreviewMarkupRuntime();
+        var viewModel = new PreviewMarkupTestViewModel();
+        var root = new UserControl
+        {
+            DataContext = viewModel
+        };
+        var target = new Button
+        {
+            DataContext = viewModel
+        };
+        var eventInfo = typeof(Button).GetEvent(nameof(Button.Click))
+            ?? throw new InvalidOperationException("Button.Click event was not found.");
+        var provider = CreateProvideValueServiceProvider(root, target, eventInfo);
+
+        var value = runtime.ProvideValue(
+            code: "if (sender == target && e is not null) { source.ClickCount++; }",
+            codeBase64Url: null,
+            dependencyNamesBase64Url: null,
+            serviceProvider: provider);
+
+        var handler = Assert.IsAssignableFrom<Delegate>(value);
+        handler.DynamicInvoke(target, new RoutedEventArgs());
+
+        Assert.Equal(1, viewModel.ClickCount);
     }
 
     [AvaloniaFact]
@@ -438,6 +497,7 @@ public sealed class PreviewMarkupTestViewModel : System.ComponentModel.INotifyPr
     private string? _productName;
     private string? _firstName;
     private string? _lastName;
+    private int _clickCount;
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
@@ -489,6 +549,23 @@ public sealed class PreviewMarkupTestViewModel : System.ComponentModel.INotifyPr
             PropertyChanged?.Invoke(
                 this,
                 new System.ComponentModel.PropertyChangedEventArgs(nameof(LastName)));
+        }
+    }
+
+    public int ClickCount
+    {
+        get => _clickCount;
+        set
+        {
+            if (_clickCount == value)
+            {
+                return;
+            }
+
+            _clickCount = value;
+            PropertyChanged?.Invoke(
+                this,
+                new System.ComponentModel.PropertyChangedEventArgs(nameof(ClickCount)));
         }
     }
 }

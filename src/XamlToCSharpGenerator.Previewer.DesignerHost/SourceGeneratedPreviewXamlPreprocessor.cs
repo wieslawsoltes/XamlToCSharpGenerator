@@ -761,12 +761,13 @@ internal static class SourceGeneratedPreviewXamlPreprocessor
     private static Type? ResolveDataType(XElement element, Type? inheritedDataType, Assembly localAssembly)
     {
         var attribute = element.Attribute(XamlNamespace + "DataType");
-        if (attribute is null || string.IsNullOrWhiteSpace(attribute.Value))
+        if (attribute is null ||
+            !PreviewTypeExpressionParser.TryExtractTypeToken(attribute.Value, out var typeToken))
         {
             return inheritedDataType;
         }
 
-        return ResolveTypeReference(element, attribute.Value, localAssembly) ?? inheritedDataType;
+        return ResolveTypeReference(element, typeToken, localAssembly) ?? inheritedDataType;
     }
 
     private static Type? ResolveElementType(XElement element, Assembly localAssembly)

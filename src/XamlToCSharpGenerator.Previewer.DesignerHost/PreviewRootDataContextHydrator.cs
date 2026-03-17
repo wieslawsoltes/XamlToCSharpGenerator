@@ -54,26 +54,13 @@ internal static class PreviewRootDataContextHydrator
             return false;
         }
 
-        var rawTypeToken = NormalizeTypeToken(dataTypeAttribute.Value);
-        if (string.IsNullOrWhiteSpace(rawTypeToken))
+        if (!PreviewTypeExpressionParser.TryExtractTypeToken(dataTypeAttribute.Value, out var rawTypeToken))
         {
             return false;
         }
 
         dataType = ResolveTypeReference(root, rawTypeToken, localAssembly);
         return dataType is not null;
-    }
-
-    private static string NormalizeTypeToken(string rawTypeToken)
-    {
-        var trimmed = rawTypeToken.Trim();
-        if (!trimmed.StartsWith("{x:Type", StringComparison.Ordinal) ||
-            !trimmed.EndsWith("}", StringComparison.Ordinal))
-        {
-            return trimmed;
-        }
-
-        return trimmed["{x:Type".Length..^1].Trim();
     }
 
     private static bool TryCreateDataContextInstance(Type dataType, out object? dataContext)

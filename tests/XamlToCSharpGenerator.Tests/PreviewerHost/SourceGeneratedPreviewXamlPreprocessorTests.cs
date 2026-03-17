@@ -39,6 +39,28 @@ public sealed class SourceGeneratedPreviewXamlPreprocessorTests
     }
 
     [Fact]
+    public void Rewrite_Resolves_XDataType_Type_Extension_When_Rewriting_Expressions()
+    {
+        var document = Rewrite("""
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="using:XamlToCSharpGenerator.Tests.PreviewerHost"
+                         x:Class="XamlToCSharpGenerator.Tests.PreviewerHost.PreviewTestRoot"
+                         x:DataType="{x:Type vm:PreviewTestViewModel}">
+              <TextBlock Text="{Name}" />
+            </UserControl>
+            """);
+
+        var textValue = document.Descendants().Single(element => element.Name.LocalName == "TextBlock")
+            .Attribute("Text")?.Value;
+
+        Assert.NotNull(textValue);
+        var (code, dependencyNames) = DecodeMarkupValue(textValue!);
+        Assert.Equal("source.Name", code);
+        Assert.Equal(["Name"], dependencyNames);
+    }
+
+    [Fact]
     public void Rewrite_Rewrites_Root_Shorthand_Using_XClass_Context()
     {
         var document = Rewrite("""

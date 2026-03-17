@@ -1,12 +1,11 @@
-using System.Collections.Concurrent;
 using System.Globalization;
-using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
-using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlToCSharpGenerator.ExpressionSemantics;
 using global::Avalonia;
 using global::Avalonia.Data;
 using global::Avalonia.Data.Converters;
@@ -21,7 +20,9 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
     private static readonly object EvaluatorCacheGate = new();
     private static readonly Dictionary<string, EvaluatorCacheEntry> EvaluatorCache = new(StringComparer.Ordinal);
     private static readonly LinkedList<string> EvaluatorCacheLru = new();
-    private static readonly ConcurrentDictionary<Type, Delegate> NoOpDelegateCache = new();
+    private static readonly object DelegateFactoryCacheGate = new();
+    private static readonly Dictionary<string, EvaluatorCacheEntry> DelegateFactoryCache = new(StringComparer.Ordinal);
+    private static readonly LinkedList<string> DelegateFactoryCacheLru = new();
     private static readonly Lazy<PortableExecutableReference[]> MetadataReferences = new(CreateMetadataReferences);
 
     public object? ProvideValue(
@@ -45,7 +46,7 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
 
         if (TryResolveDelegateType(targetProperty, out var delegateType))
         {
-            return CreateNoOpDelegate(delegateType);
+            return CreatePreviewDelegate(delegateType, resolvedCode, rootObject, targetObject);
         }
 
         var evaluator = GetOrCreateEvaluator(resolvedCode);
@@ -264,17 +265,7 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         object? rootObject,
         object? targetObject)
     {
-        object? sourceObject = null;
-        if (targetObject is StyledElement styledElement)
-        {
-            sourceObject = styledElement.DataContext;
-        }
-        else if (rootObject is StyledElement styledRoot)
-        {
-            sourceObject = styledRoot.DataContext;
-        }
-
-        return evaluator(sourceObject, rootObject, targetObject);
+        return evaluator(ResolveSourceObject(rootObject, targetObject), rootObject, targetObject);
     }
 
     private static object? CoerceEvaluatedValue(object? value, Type? targetType, CultureInfo culture)
@@ -322,20 +313,28 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         return value;
     }
 
-    private static Delegate CreateNoOpDelegate(Type delegateType)
+    private static object? ResolveSourceObject(object? rootObject, object? targetObject)
     {
-        return NoOpDelegateCache.GetOrAdd(delegateType, static type =>
+        if (targetObject is StyledElement styledElement)
         {
-            var invokeMethod = type.GetMethod("Invoke", BindingFlags.Instance | BindingFlags.Public)
-                ?? throw new InvalidOperationException("Delegate type '" + type.FullName + "' does not expose Invoke().");
-            var parameters = invokeMethod.GetParameters()
-                .Select(static parameter => Expression.Parameter(parameter.ParameterType, parameter.Name))
-                .ToArray();
-            Expression body = invokeMethod.ReturnType == typeof(void)
-                ? Expression.Empty()
-                : Expression.Default(invokeMethod.ReturnType);
-            return Expression.Lambda(type, body, parameters).Compile();
-        });
+            return styledElement.DataContext;
+        }
+
+        return rootObject is StyledElement styledRoot
+            ? styledRoot.DataContext
+            : null;
+    }
+
+    private static Delegate CreatePreviewDelegate(
+        Type delegateType,
+        string code,
+        object? rootObject,
+        object? targetObject)
+    {
+        var sourceObject = ResolveSourceObject(rootObject, targetObject);
+        var delegateFactory = GetOrCreateDelegateFactory(delegateType, code);
+        return (Delegate)(delegateFactory(sourceObject, rootObject, targetObject)
+            ?? throw new InvalidOperationException("Preview delegate factory returned null."));
     }
 
     internal static void ClearEvaluatorCacheForTests()
@@ -346,6 +345,13 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             entries = [.. EvaluatorCache.Values];
             EvaluatorCache.Clear();
             EvaluatorCacheLru.Clear();
+        }
+
+        lock (DelegateFactoryCacheGate)
+        {
+            entries.AddRange(DelegateFactoryCache.Values);
+            DelegateFactoryCache.Clear();
+            DelegateFactoryCacheLru.Clear();
         }
 
         for (var index = 0; index < entries.Count; index++)
@@ -371,33 +377,62 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
     {
         ArgumentException.ThrowIfNullOrEmpty(code);
 
-        lock (EvaluatorCacheGate)
+        return GetOrCreateCachedProvider(
+            code,
+            EvaluatorCacheGate,
+            EvaluatorCache,
+            EvaluatorCacheLru,
+            () => CompileEvaluatorEntry(code));
+    }
+
+    private static Func<object?, object?, object?, object?> GetOrCreateDelegateFactory(Type delegateType, string code)
+    {
+        ArgumentNullException.ThrowIfNull(delegateType);
+        ArgumentException.ThrowIfNullOrEmpty(code);
+
+        var cacheKey = delegateType.AssemblyQualifiedName + "\n" + code;
+        return GetOrCreateCachedProvider(
+            cacheKey,
+            DelegateFactoryCacheGate,
+            DelegateFactoryCache,
+            DelegateFactoryCacheLru,
+            () => CompileDelegateFactoryEntry(delegateType, code));
+    }
+
+    private static Func<object?, object?, object?, object?> GetOrCreateCachedProvider(
+        string cacheKey,
+        object gate,
+        Dictionary<string, EvaluatorCacheEntry> cache,
+        LinkedList<string> lru,
+        Func<EvaluatorCacheEntry> createEntry)
+    {
+        lock (gate)
         {
-            if (EvaluatorCache.TryGetValue(code, out var cachedEntry))
+            if (cache.TryGetValue(cacheKey, out var cachedEntry))
             {
-                TouchEvaluatorEntryNoLock(cachedEntry);
+                TouchEvaluatorEntryNoLock(cachedEntry, lru);
                 return cachedEntry.Evaluator;
             }
         }
 
-        var createdEntry = CompileEvaluatorEntry(code);
+        var createdEntry = createEntry();
         EvaluatorCacheEntry? entryToDispose = null;
         Func<object?, object?, object?, object?> evaluator;
-        lock (EvaluatorCacheGate)
+        lock (gate)
         {
-            if (EvaluatorCache.TryGetValue(code, out var cachedEntry))
+            if (cache.TryGetValue(cacheKey, out var cachedEntry))
             {
-                TouchEvaluatorEntryNoLock(cachedEntry);
+                TouchEvaluatorEntryNoLock(cachedEntry, lru);
                 evaluator = cachedEntry.Evaluator;
                 entryToDispose = createdEntry;
             }
             else
             {
-                var node = EvaluatorCacheLru.AddLast(code);
+                var node = lru.AddLast(cacheKey);
                 createdEntry.LruNode = node;
-                EvaluatorCache.Add(code, createdEntry);
+                cache.Add(cacheKey, createdEntry);
                 evaluator = createdEntry.Evaluator;
-                entryToDispose = TrimEvaluatorCacheNoLock();
+                entryToDispose = TrimEvaluatorCacheNoLock(cache, lru);
             }
         }
 
@@ -405,27 +440,29 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         return evaluator;
     }
 
-    private static void TouchEvaluatorEntryNoLock(EvaluatorCacheEntry entry)
+    private static void TouchEvaluatorEntryNoLock(EvaluatorCacheEntry entry, LinkedList<string> lru)
     {
-        if (entry.LruNode is null || entry.LruNode.List is null || entry.LruNode == EvaluatorCacheLru.Last)
+        if (entry.LruNode is null || entry.LruNode.List is null || entry.LruNode == lru.Last)
         {
             return;
         }
 
-        EvaluatorCacheLru.Remove(entry.LruNode);
-        EvaluatorCacheLru.AddLast(entry.LruNode);
+        lru.Remove(entry.LruNode);
+        lru.AddLast(entry.LruNode);
     }
 
-    private static EvaluatorCacheEntry? TrimEvaluatorCacheNoLock()
+    private static EvaluatorCacheEntry? TrimEvaluatorCacheNoLock(
+        Dictionary<string, EvaluatorCacheEntry> cache,
+        LinkedList<string> lru)
     {
-        if (EvaluatorCache.Count <= MaxCachedEvaluatorCount || EvaluatorCacheLru.First is null)
+        if (cache.Count <= MaxCachedEvaluatorCount || lru.First is null)
         {
             return null;
         }
 
-        var leastRecentlyUsedNode = EvaluatorCacheLru.First;
-        EvaluatorCacheLru.RemoveFirst();
-        if (!EvaluatorCache.Remove(leastRecentlyUsedNode.Value, out var entry))
+        var leastRecentlyUsedNode = lru.First;
+        lru.RemoveFirst();
+        if (!cache.Remove(leastRecentlyUsedNode.Value, out var entry))
         {
             return null;
         }
@@ -452,6 +489,131 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             "    }",
             "}");
 
+        return CompileProviderEntry(className, source, "Evaluate", code);
+    }
+
+    private static EvaluatorCacheEntry CompileDelegateFactoryEntry(Type delegateType, string code)
+    {
+        var cacheIdentity = (delegateType.AssemblyQualifiedName ?? delegateType.FullName ?? delegateType.Name) + "\n" + code;
+        var className = CreateEvaluatorClassName(cacheIdentity);
+        var source = string.Join(
+            Environment.NewLine,
+            "#nullable enable",
+            "using System;",
+            "public static class " + className,
+            "{",
+            "    public static object? Create(object? sourceObj, object? rootObj, object? targetObj)",
+            "    {",
+            "        dynamic source = sourceObj!;",
+            "        dynamic root = rootObj!;",
+            "        dynamic target = targetObj!;",
+            "        " + BuildDelegateDeclarationSource(delegateType, code),
+            "        return handler;",
+            "    }",
+            "}");
+
+        return CompileProviderEntry(className, source, "Create", code);
+    }
+
+    internal static string CreateEvaluatorClassName(string code)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(code);
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(code));
+        return "__AXSGPreviewExpr_" + Convert.ToHexString(hashBytes[..8]);
+    }
+
+    private static PortableExecutableReference[] CreateMetadataReferences()
+    {
+        var references = new List<PortableExecutableReference>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddMetadataReference(references, seenPaths, typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly);
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < assemblies.Length; index++)
+        {
+            AddMetadataReference(references, seenPaths, assemblies[index]);
+        }
+
+        return references.ToArray();
+    }
+
+    private static string BuildDelegateDeclarationSource(Type delegateType, string code)
+    {
+        var delegateTypeName = FormatTypeReference(delegateType);
+        if (CSharpMarkupExpressionSemantics.IsLambdaExpression(code))
+        {
+            return delegateTypeName + " handler = " + code + ";";
+        }
+
+        var invokeMethod = delegateType.GetMethod("Invoke", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new InvalidOperationException("Delegate type '" + delegateType.FullName + "' does not expose Invoke().");
+        var parameterList = string.Join(
+            ", ",
+            invokeMethod.GetParameters().Select((parameter, index) => GetDelegateParameterName(parameter.Name, index)));
+        var body = code.Trim();
+        if (invokeMethod.ReturnType == typeof(void))
+        {
+            return delegateTypeName + " handler = (" + parameterList + ") => { " + body + " };";
+        }
+
+        return delegateTypeName +
+            " handler = (" +
+            parameterList +
+            ") => { " +
+            body +
+            " return default(" +
+            FormatTypeReference(invokeMethod.ReturnType) +
+            "); };";
+    }
+
+    private static string GetDelegateParameterName(string? parameterName, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(parameterName) &&
+            SyntaxFacts.IsValidIdentifier(parameterName) &&
+            SyntaxFacts.GetKeywordKind(parameterName) == SyntaxKind.None)
+        {
+            return parameterName!;
+        }
+
+        return "arg" + index.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatTypeReference(Type type)
+    {
+        if (type.IsByRef)
+        {
+            return FormatTypeReference(type.GetElementType()
+                ?? throw new InvalidOperationException("By-ref type is missing its element type."));
+        }
+
+        if (type.IsArray)
+        {
+            return FormatTypeReference(type.GetElementType()
+                ?? throw new InvalidOperationException("Array type is missing its element type.")) + "[]";
+        }
+
+        if (!type.IsGenericType)
+        {
+            return "global::" + (type.FullName ?? type.Name).Replace('+', '.');
+        }
+
+        var genericDefinitionName = (type.GetGenericTypeDefinition().FullName ?? type.Name).Replace('+', '.');
+        var tickIndex = genericDefinitionName.IndexOf('`');
+        if (tickIndex >= 0)
+        {
+            genericDefinitionName = genericDefinitionName[..tickIndex];
+        }
+
+        var arguments = string.Join(", ", type.GetGenericArguments().Select(FormatTypeReference));
+        return "global::" + genericDefinitionName + "<" + arguments + ">";
+    }
+
+    private static EvaluatorCacheEntry CompileProviderEntry(
+        string className,
+        string source,
+        string methodName,
+        string code)
+    {
         var compilation = CSharpCompilation.Create(
             assemblyName: className,
             syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
@@ -477,7 +639,7 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
         {
             var assembly = loadContext.LoadFromStream(stream);
             var method = assembly.GetType(className, throwOnError: true)
-                ?.GetMethod("Evaluate", BindingFlags.Static | BindingFlags.Public)
+                ?.GetMethod(methodName, BindingFlags.Static | BindingFlags.Public)
                 ?? throw new InvalidOperationException("Preview evaluator method was not emitted.");
             var evaluator = (Func<object?, object?, object?, object?>)Delegate.CreateDelegate(
                 typeof(Func<object?, object?, object?, object?>),
@@ -489,28 +651,6 @@ internal sealed class SourceGeneratedPreviewMarkupRuntime
             loadContext.Unload();
             throw;
         }
-    }
-
-    internal static string CreateEvaluatorClassName(string code)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(code);
-
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(code));
-        return "__AXSGPreviewExpr_" + Convert.ToHexString(hashBytes[..8]);
-    }
-
-    private static PortableExecutableReference[] CreateMetadataReferences()
-    {
-        var references = new List<PortableExecutableReference>();
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        AddMetadataReference(references, seenPaths, typeof(Microsoft.CSharp.RuntimeBinder.Binder).Assembly);
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (var index = 0; index < assemblies.Length; index++)
-        {
-            AddMetadataReference(references, seenPaths, assemblies[index]);
-        }
-
-        return references.ToArray();
     }
 
     private static void AddMetadataReference(
