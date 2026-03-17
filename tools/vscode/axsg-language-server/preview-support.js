@@ -15,7 +15,6 @@ const {
   createPreviewBuildPlan,
   createPreviewStartPlan,
   extractPreviewSecurityCookie,
-  getPreviewViewportMetricsKey,
   hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_AVALONIA,
@@ -43,13 +42,17 @@ const {
   tryParseMsbuildJson
 } = require('./preview-utils');
 const {
+  calculatePreviewSurfaceBounds,
+  clampPreviewZoom,
   createPreviewKeyboardInputPayloads,
   createPreviewKeyInputPayload,
   createPreviewTextInputPayload,
+  formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
   mapPreviewClientPointToRemotePoint,
-  normalizePreviewRenderScale
+  normalizePreviewRenderScale,
+  stepPreviewZoom
 } = require('./preview-webview-helpers');
 
 const PROJECT_INFO_PROPERTIES = [
@@ -62,7 +65,6 @@ const PROJECT_INFO_PROPERTIES = [
 ];
 
 const DEFAULT_UPDATE_DELAY_MS = 300;
-const DEFAULT_RESIZE_DELAY_MS = 150;
 const DEFAULT_PREVIEW_SIZE_WAIT_MS = 750;
 const HOST_PROJECT_STATE_PREFIX = 'axsg.preview.hostProject::';
 const PREVIEW_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.PreviewerHost.dll';
@@ -232,8 +234,6 @@ class AvaloniaPreviewSession {
     this.previewSize = null;
     this.previewSizeReady = createDeferred();
     this.previewSizeReadyResolved = false;
-    this.resizeTimer = null;
-    this.lastAppliedPreviewSizeKey = '';
   }
 
   reveal() {
@@ -354,11 +354,6 @@ class AvaloniaPreviewSession {
       this.updateTimer = null;
     }
 
-    if (this.resizeTimer) {
-      clearTimeout(this.resizeTimer);
-      this.resizeTimer = null;
-    }
-
     if (this.panel) {
       const panel = this.panel;
       this.panel = null;
@@ -443,7 +438,6 @@ class AvaloniaPreviewSession {
         this.setStatus(`Starting ${attempt.label} preview...`);
         await this.startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt);
         this.activeCompilerMode = attempt.mode;
-        await this.applyPreviewSizeAsync();
         this.setStatus(getPreviewReadyStatus(this.fileName, attempt.mode));
         this.updatePanel();
         return;
@@ -498,9 +492,6 @@ class AvaloniaPreviewSession {
       payload.previewWidth = previewSize.width;
       payload.previewHeight = previewSize.height;
       payload.previewScale = previewSize.scale;
-      this.lastAppliedPreviewSizeKey = getPreviewViewportMetricsKey(previewSize);
-    } else {
-      this.lastAppliedPreviewSizeKey = '';
     }
 
     const startResult = await helper.sendCommand('start', payload);
@@ -605,7 +596,6 @@ class AvaloniaPreviewSession {
       this.currentPreviewUrl = '';
       this.currentLoopbackPreview = null;
       this.activeCompilerMode = null;
-      this.lastAppliedPreviewSizeKey = '';
       this.applyWebviewOptions();
     }
 
@@ -660,19 +650,13 @@ class AvaloniaPreviewSession {
       return;
     }
 
-    if (getPreviewViewportMetricsKey(this.previewSize) === getPreviewViewportMetricsKey(previewSize)) {
+    if (this.previewSizeReadyResolved) {
       return;
     }
 
     this.previewSize = previewSize;
-    if (!this.previewSizeReadyResolved) {
-      this.previewSizeReadyResolved = true;
-      this.previewSizeReady.resolve(previewSize);
-    }
-
-    if (this.activeCompilerMode && this.helper) {
-      this.scheduleViewportResize();
-    }
+    this.previewSizeReadyResolved = true;
+    this.previewSizeReady.resolve(previewSize);
   }
 
   handlePreviewInputMessage(message) {
@@ -725,70 +709,6 @@ class AvaloniaPreviewSession {
       this.previewSizeReady.promise.then(() => this.previewSize),
       delayAsync(timeoutMs).then(() => this.previewSize)
     ]);
-  }
-
-  scheduleViewportResize() {
-    if (this.disposed || !this.helper || !this.activeCompilerMode) {
-      return;
-    }
-
-    if (this.resizeTimer) {
-      clearTimeout(this.resizeTimer);
-    }
-
-    this.resizeTimer = setTimeout(() => {
-      this.resizeTimer = null;
-      this.updateChain = this.updateChain
-        .then(() => this.applyPreviewSizeAsync())
-        .catch(error => {
-          const message = error instanceof Error ? error.message : String(error);
-          this.controller.getOutputChannel().appendLine(
-            `[preview] failed to resize ${this.fileName} preview: ${message}`);
-        });
-    }, DEFAULT_RESIZE_DELAY_MS);
-  }
-
-  async applyPreviewSizeAsync() {
-    if (this.disposed || !this.helper || !this.previewSize || !this.activeCompilerMode) {
-      return;
-    }
-
-    const helper = this.helper;
-    const previewSizeKey = getPreviewViewportMetricsKey(this.previewSize);
-    if (!previewSizeKey || previewSizeKey === this.lastAppliedPreviewSizeKey) {
-      return;
-    }
-
-    if (this.helper !== helper) {
-      return;
-    }
-
-    this.setStatus('Resizing preview...');
-    this.captureCurrentDocumentText();
-    await this.resetHelperAsync(helper);
-    await this.start();
-  }
-
-  captureCurrentDocumentText() {
-    const openDocument = vscode.workspace.textDocuments.find(document =>
-      document.uri.toString() === this.documentUri);
-    if (!openDocument) {
-      return;
-    }
-
-    try {
-      this.launchInfo.documentText = resolvePreviewDocumentText(
-        openDocument.getText(),
-        tryReadDocumentTextFromDisk(openDocument.fileName),
-        openDocument.isDirty,
-        this.usesSourceGeneratedRefreshFlow()
-          ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
-          : PREVIEW_COMPILER_MODE_AVALONIA);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.controller.getOutputChannel().appendLine(
-        `[preview] failed to capture current document text for resize: ${message}`);
-    }
   }
 
   async updatePreviewUrlAsync(previewUrl) {
@@ -1441,6 +1361,9 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   const statusText = escapeHtml(status || 'Preview starting...');
   const escapedTitle = escapeHtml(title);
   const frameSourcePolicy = `${webview.cspSource} http: https: vscode-remote: vscode-webview: vscode-webview-resource:`;
+  const zoomOutIconPath = 'M11 8a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h5ZM8.5 2a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
+  const zoomResetIconPath = 'M4 10a6 6 0 0 1 10.47-4H12.5a.5.5 0 0 0 0 1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-1 0v1.6a7 7 0 1 0 1.98 4.36.5.5 0 1 0-1 .08L16 10a6 6 0 0 1-12 0Z';
+  const zoomInIconPath = 'M8.5 5.5c.28 0 .5.22.5.5v2h2a.5.5 0 0 1 0 1H9v2a.5.5 0 0 1-1 0V9H6a.5.5 0 0 1 0-1h2V6c0-.28.22-.5.5-.5Zm0-3.5a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1452,30 +1375,56 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     :root {
       color-scheme: light dark;
       font-family: var(--vscode-font-family);
+      --axsg-toolbar-height: 52px;
+      --axsg-stage-padding: 24px;
+      --axsg-surface-radius: 0px;
     }
 
     body {
       margin: 0;
       padding: 0;
-      background: var(--vscode-editor-background);
+      background:
+        radial-gradient(circle at top, rgba(56, 139, 253, 0.12), transparent 34%),
+        linear-gradient(180deg, var(--vscode-editor-background) 0%, var(--vscode-sideBar-background, var(--vscode-editor-background)) 100%);
       color: var(--vscode-editor-foreground);
       overflow: hidden;
     }
 
     .shell {
       display: grid;
-      grid-template-rows: 34px minmax(0, 1fr);
+      grid-template-rows: var(--axsg-toolbar-height) minmax(0, 1fr);
       height: 100vh;
     }
 
-    .status {
+    .toolbar {
       box-sizing: border-box;
       display: flex;
       align-items: center;
-      height: 34px;
-      padding: 0 12px;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: var(--axsg-toolbar-height);
+      padding: 0 16px;
       border-bottom: 1px solid var(--vscode-panel-border);
-      background: var(--vscode-editorWidget-background);
+      background: color-mix(in srgb, var(--vscode-editorWidget-background) 94%, transparent);
+      backdrop-filter: blur(18px);
+    }
+
+    .toolbar-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .toolbar-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .status {
+      min-width: 0;
       font-size: 12px;
       line-height: 1.4;
       white-space: nowrap;
@@ -1483,17 +1432,104 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       text-overflow: ellipsis;
     }
 
+    .toolbar-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      padding: 4px;
+      border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    .icon-button {
+      width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      color: var(--vscode-editor-foreground);
+      background: transparent;
+      cursor: pointer;
+      transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    .icon-button:hover {
+      background: color-mix(in srgb, var(--vscode-button-background) 22%, transparent);
+    }
+
+    .icon-button:active {
+      transform: translateY(1px);
+    }
+
+    .icon-button:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
+
+    .icon-button:disabled {
+      opacity: 0.5;
+      cursor: default;
+      transform: none;
+    }
+
+    .icon-button svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+
+    .zoom-value {
+      min-width: 48px;
+      padding: 0 8px 0 4px;
+      text-align: right;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--vscode-descriptionForeground);
+    }
+
     #content {
       min-height: 0;
       min-width: 0;
+      overflow: auto;
+      box-sizing: border-box;
+      padding: var(--axsg-stage-padding);
+      background:
+        linear-gradient(rgba(127, 127, 127, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 127, 127, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(127, 127, 127, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 127, 127, 0.03) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.03));
+      background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px, auto;
+      background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px, 0 0;
     }
 
-    .preview-frame {
+    .preview-stage {
+      min-width: 100%;
+      min-height: 100%;
       display: grid;
-      place-items: start center;
-      overflow: auto;
-      height: 100%;
-      background: white;
+      place-items: center;
+      box-sizing: border-box;
+    }
+
+    .preview-host {
+      width: fit-content;
+      height: fit-content;
+    }
+
+    .preview-surface {
+      display: inline-block;
+      border: 1px solid rgba(127, 127, 127, 0.18);
+      border-radius: var(--axsg-surface-radius);
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow:
+        0 22px 48px rgba(0, 0, 0, 0.18),
+        0 6px 16px rgba(0, 0, 0, 0.12);
     }
 
     .preview-canvas {
@@ -1504,8 +1540,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     iframe {
-      width: 100%;
-      height: 100%;
+      display: block;
       border: 0;
       background: white;
     }
@@ -1513,20 +1548,66 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     .placeholder {
       display: grid;
       place-items: center;
-      height: 100%;
+      min-height: 100%;
       color: var(--vscode-descriptionForeground);
       font-size: 13px;
+      text-align: center;
+    }
+
+    .placeholder-card {
+      max-width: 320px;
+      padding: 20px 22px;
+      border: 1px solid rgba(127, 127, 127, 0.14);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--vscode-editorWidget-background) 94%, transparent);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12);
+    }
+
+    @media (max-width: 720px) {
+      .toolbar {
+        padding: 0 12px;
+      }
+
+      #content {
+        padding: 16px;
+      }
+
+      .zoom-value {
+        min-width: 42px;
+        padding-right: 6px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="shell">
-    <div class="status" id="status">${statusText}</div>
+    <div class="toolbar">
+      <div class="toolbar-copy">
+        <div class="toolbar-label">AXSG Preview</div>
+        <div class="status" id="status">${statusText}</div>
+      </div>
+      <div class="toolbar-actions" aria-label="Preview zoom controls">
+        <button class="icon-button" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomOutIconPath}"></path></svg>
+        </button>
+        <button class="icon-button" id="zoom-reset" type="button" title="Reset zoom to 100%" aria-label="Reset zoom to 100%">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomResetIconPath}"></path></svg>
+        </button>
+        <button class="icon-button" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomInIconPath}"></path></svg>
+        </button>
+        <div class="zoom-value" id="zoom-value">100%</div>
+      </div>
+    </div>
     <div id="content">${iframeUrl
-      ? `<iframe id="preview" src="${iframeUrl}" sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock"></iframe>`
-      : `<div class="placeholder">Preview is starting...</div>`}</div>
+      ? `<div class="preview-stage" id="preview-stage"><div class="preview-host" id="preview-host"><div class="preview-surface" id="preview-surface"><iframe id="preview" src="${iframeUrl}" sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock"></iframe></div></div></div>`
+      : `<div class="preview-stage" id="preview-stage"><div class="placeholder"><div class="placeholder-card">Preview is starting...</div></div></div>`}</div>
   </div>
   <script>
+    ${calculatePreviewSurfaceBounds.toString()}
+    ${clampPreviewZoom.toString()}
+    ${stepPreviewZoom.toString()}
+    ${formatPreviewZoomLabel.toString()}
     ${normalizePreviewRenderScale.toString()}
     ${mapPreviewClientPointToRemotePoint.toString()}
     ${getPreviewKeyboardModifiers.toString()}
@@ -1536,13 +1617,21 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     ${createPreviewKeyboardInputPayloads.toString()}
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    const zoomOutButton = document.getElementById('zoom-out');
+    const zoomResetButton = document.getElementById('zoom-reset');
+    const zoomInButton = document.getElementById('zoom-in');
+    const zoomValue = document.getElementById('zoom-value');
     const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+    const persistedState = vscodeApi && typeof vscodeApi.getState === 'function'
+      ? vscodeApi.getState()
+      : null;
     let previewSocket = null;
     let previewSocketKey = '';
     let nextFrame = null;
     let activePreviewRenderScale = 1;
     let pendingViewportReport = 0;
     let displayScaleWatcher = null;
+    let currentZoom = clampPreviewZoom(persistedState && persistedState.zoom, 1);
 
     function getViewportScale() {
       const scale = Number(window.devicePixelRatio || 1);
@@ -1553,14 +1642,22 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       return scale;
     }
 
+    function persistViewState() {
+      if (!vscodeApi || typeof vscodeApi.setState !== 'function') {
+        return;
+      }
+
+      vscodeApi.setState({ zoom: currentZoom });
+    }
+
     function reportViewportSize() {
       if (!vscodeApi) {
         return;
       }
 
-      const bounds = content.getBoundingClientRect();
-      const width = Math.max(1, Math.round(content.clientWidth || bounds.width));
-      const height = Math.max(1, Math.round(content.clientHeight || bounds.height));
+      const bounds = getPreviewSurfaceBounds();
+      const width = Math.max(1, Math.round(bounds.width));
+      const height = Math.max(1, Math.round(bounds.height));
       vscodeApi.postMessage({
         type: 'viewportSize',
         width,
@@ -1573,6 +1670,90 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const nextText = text || 'Preview ready.';
       status.textContent = nextText;
       status.title = nextText;
+    }
+
+    function updateZoomUi() {
+      const zoomText = formatPreviewZoomLabel(currentZoom);
+      zoomValue.textContent = zoomText;
+      zoomValue.title = 'Preview zoom ' + zoomText;
+      zoomOutButton.disabled = currentZoom <= 0.25;
+      zoomResetButton.disabled = Math.abs(currentZoom - 1) < 0.001;
+      zoomInButton.disabled = currentZoom >= 3;
+    }
+
+    function getPreviewSurfaceBounds() {
+      const bounds = content.getBoundingClientRect();
+      const computedStyle = typeof window.getComputedStyle === 'function'
+        ? window.getComputedStyle(content)
+        : null;
+      const horizontalPadding = computedStyle
+        ? (Number.parseFloat(computedStyle.paddingLeft || '0') + Number.parseFloat(computedStyle.paddingRight || '0'))
+        : 48;
+      const verticalPadding = computedStyle
+        ? (Number.parseFloat(computedStyle.paddingTop || '0') + Number.parseFloat(computedStyle.paddingBottom || '0'))
+        : 48;
+      // Use the stage bounds instead of clientWidth/clientHeight so scrollbars from the
+      // rendered preview do not feed back into preview host resize requests.
+      return calculatePreviewSurfaceBounds(
+        bounds.width || 0,
+        bounds.height || 0,
+        horizontalPadding,
+        verticalPadding);
+    }
+
+    function applyCanvasZoom() {
+      const canvas = document.getElementById('preview-canvas');
+      if (!canvas || !nextFrame) {
+        return;
+      }
+
+      const scale = getViewportScale();
+      canvas.style.width = ((nextFrame.width / scale) * currentZoom) + 'px';
+      canvas.style.height = ((nextFrame.height / scale) * currentZoom) + 'px';
+    }
+
+    function applyIframeZoom(host, surface, iframe) {
+      if (!host || !surface || !iframe) {
+        return;
+      }
+
+      const bounds = getPreviewSurfaceBounds();
+      surface.style.width = bounds.width + 'px';
+      surface.style.height = bounds.height + 'px';
+      surface.style.transform = 'scale(' + currentZoom + ')';
+      surface.style.transformOrigin = 'top center';
+      host.style.width = (bounds.width * currentZoom) + 'px';
+      host.style.height = (bounds.height * currentZoom) + 'px';
+      iframe.style.width = bounds.width + 'px';
+      iframe.style.height = bounds.height + 'px';
+    }
+
+    function applyCurrentZoom() {
+      const canvas = document.getElementById('preview-canvas');
+      if (canvas) {
+        applyCanvasZoom();
+        return;
+      }
+
+      const host = document.getElementById('preview-host');
+      const surface = document.getElementById('preview-surface');
+      const iframe = document.getElementById('preview');
+      if (host && surface && iframe) {
+        applyIframeZoom(host, surface, iframe);
+      }
+    }
+
+    function setZoom(nextZoom) {
+      const normalizedZoom = clampPreviewZoom(nextZoom, currentZoom);
+      if (Math.abs(normalizedZoom - currentZoom) < 0.001) {
+        updateZoomUi();
+        return;
+      }
+
+      currentZoom = normalizedZoom;
+      persistViewState();
+      updateZoomUi();
+      applyCurrentZoom();
     }
 
     function scheduleViewportSizeReport() {
@@ -1652,10 +1833,55 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         disposePreviewSocket();
       }
       content.innerHTML = '';
+      const stage = document.createElement('div');
+      stage.id = 'preview-stage';
+      stage.className = 'preview-stage';
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder';
-      placeholder.textContent = text || 'Preview is starting...';
-      content.appendChild(placeholder);
+      const placeholderCard = document.createElement('div');
+      placeholderCard.className = 'placeholder-card';
+      placeholderCard.textContent = text || 'Preview is starting...';
+      placeholder.appendChild(placeholderCard);
+      stage.appendChild(placeholder);
+      content.appendChild(stage);
+    }
+
+    function ensurePreviewStage() {
+      let stage = document.getElementById('preview-stage');
+      if (!stage) {
+        content.innerHTML = '';
+        stage = document.createElement('div');
+        stage.id = 'preview-stage';
+        stage.className = 'preview-stage';
+        content.appendChild(stage);
+      }
+
+      return stage;
+    }
+
+    function ensurePreviewSurface() {
+      const stage = ensurePreviewStage();
+      let host = document.getElementById('preview-host');
+      let surface = document.getElementById('preview-surface');
+      if (!host || !surface) {
+        host = document.createElement('div');
+        host.id = 'preview-host';
+        host.className = 'preview-host';
+        surface = document.createElement('div');
+        surface.id = 'preview-surface';
+        surface.className = 'preview-surface';
+        host.appendChild(surface);
+        stage.innerHTML = '';
+        stage.appendChild(host);
+      }
+
+      host.style.width = '';
+      host.style.height = '';
+      surface.style.width = '';
+      surface.style.height = '';
+      surface.style.transform = '';
+      surface.style.transformOrigin = '';
+      return { host, surface };
     }
 
     function ensureCanvas() {
@@ -1664,34 +1890,34 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         return canvas;
       }
 
-      content.innerHTML = '';
-      const frame = document.createElement('div');
-      frame.className = 'preview-frame';
+      const { surface } = ensurePreviewSurface();
+      surface.innerHTML = '';
       canvas = document.createElement('canvas');
       canvas.id = 'preview-canvas';
       canvas.className = 'preview-canvas';
       canvas.tabIndex = 0;
       wireCanvasInput(canvas);
-      frame.appendChild(canvas);
-      content.appendChild(frame);
+      surface.appendChild(canvas);
       return canvas;
     }
 
     function renderIframe(previewUrl) {
       disposePreviewSocket();
+      const { host, surface } = ensurePreviewSurface();
       let iframe = document.getElementById('preview');
       if (!iframe) {
-        content.innerHTML = '';
+        surface.innerHTML = '';
         iframe = document.createElement('iframe');
         iframe.id = 'preview';
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-pointer-lock');
-        content.appendChild(iframe);
+        surface.appendChild(iframe);
       }
 
       if (iframe.src !== previewUrl) {
         iframe.src = previewUrl;
       }
 
+      applyIframeZoom(host, surface, iframe);
       scheduleViewportSizeReport();
     }
 
@@ -1701,7 +1927,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         event.clientX - rect.left,
         event.clientY - rect.top,
         getViewportScale(),
-        activePreviewRenderScale);
+        activePreviewRenderScale,
+        currentZoom);
     }
 
     function getMouseButton(event) {
@@ -1855,9 +2082,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const canvas = ensureCanvas();
       canvas.width = nextFrame.width;
       canvas.height = nextFrame.height;
-      const scale = getViewportScale();
-      canvas.style.width = (nextFrame.width / scale) + 'px';
-      canvas.style.height = (nextFrame.height / scale) + 'px';
+      applyCanvasZoom();
 
       const context = canvas.getContext('2d');
       const imageData = new ImageData(new Uint8ClampedArray(frameBuffer), nextFrame.width, nextFrame.height);
@@ -1964,18 +2189,36 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       renderPlaceholder('Preview is starting...');
     }
 
+    zoomOutButton.addEventListener('click', () => {
+      setZoom(stepPreviewZoom(currentZoom, -1));
+    });
+    zoomResetButton.addEventListener('click', () => {
+      setZoom(1);
+    });
+    zoomInButton.addEventListener('click', () => {
+      setZoom(stepPreviewZoom(currentZoom, 1));
+    });
+
     window.addEventListener('message', event => {
       const message = event.data || {};
       if (message.type === 'update') {
         updatePreview(message.previewUrl, message.loopbackPreview, message.status);
       }
     });
-    window.addEventListener('resize', scheduleViewportSizeReport);
+    window.addEventListener('resize', () => {
+      applyCurrentZoom();
+      scheduleViewportSizeReport();
+    });
     if (typeof ResizeObserver === 'function') {
-      const observer = new ResizeObserver(() => scheduleViewportSizeReport());
+      const observer = new ResizeObserver(() => {
+        applyCurrentZoom();
+        scheduleViewportSizeReport();
+      });
       observer.observe(content);
     }
     updateStatusText(status.textContent);
+    updateZoomUi();
+    applyCurrentZoom();
     watchDisplayScaleChanges();
     scheduleViewportSizeReport();
   </script>

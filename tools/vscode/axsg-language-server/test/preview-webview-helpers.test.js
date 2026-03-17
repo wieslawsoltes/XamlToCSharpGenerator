@@ -1,15 +1,77 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 
 const {
+  calculatePreviewSurfaceBounds,
+  clampPreviewZoom,
   createPreviewKeyboardInputPayloads,
   createPreviewKeyInputPayload,
   createPreviewTextInputPayload,
+  formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
   mapPreviewClientPointToRemotePoint,
-  normalizePreviewRenderScale
+  normalizePreviewRenderScale,
+  stepPreviewZoom
 } = require('../preview-webview-helpers');
+
+test('calculatePreviewSurfaceBounds subtracts stage padding from stable bounds', () => {
+  assert.deepEqual(
+    calculatePreviewSurfaceBounds(1280, 720, 48, 48),
+    {
+      width: 1232,
+      height: 672
+    });
+});
+
+test('calculatePreviewSurfaceBounds clamps invalid inputs to a minimum renderable size', () => {
+  assert.deepEqual(
+    calculatePreviewSurfaceBounds(undefined, Number.NaN, 48, 48),
+    {
+      width: 1,
+      height: 1
+    });
+});
+
+test('clampPreviewZoom bounds zoom levels to the supported range', () => {
+  assert.equal(clampPreviewZoom(0.1), 0.25);
+  assert.equal(clampPreviewZoom(1.4), 1.4);
+  assert.equal(clampPreviewZoom(8), 3);
+});
+
+test('stepPreviewZoom applies fixed zoom increments in both directions', () => {
+  assert.equal(stepPreviewZoom(1, 1), 1.1);
+  assert.equal(stepPreviewZoom(1, -1), 0.9);
+  assert.equal(stepPreviewZoom(0.25, -1), 0.25);
+});
+
+test('formatPreviewZoomLabel renders rounded percentages', () => {
+  assert.equal(formatPreviewZoomLabel(1), '100%');
+  assert.equal(formatPreviewZoomLabel(1.26), '126%');
+});
+
+test('zoom helpers stay self-contained when serialized into the webview', () => {
+  const context = vm.createContext({});
+  vm.runInContext(`
+    ${calculatePreviewSurfaceBounds.toString()}
+    ${clampPreviewZoom.toString()}
+    ${stepPreviewZoom.toString()}
+    ${formatPreviewZoomLabel.toString()}
+    globalThis.results = {
+      bounds: calculatePreviewSurfaceBounds(1280, 720, 48, 48),
+      clamped: clampPreviewZoom(0.1),
+      stepped: stepPreviewZoom(1, 1),
+      label: formatPreviewZoomLabel(1.25)
+    };
+  `, context);
+
+  assert.equal(context.results.bounds.width, 1232);
+  assert.equal(context.results.bounds.height, 672);
+  assert.equal(context.results.clamped, 0.25);
+  assert.equal(context.results.stepped, 1.1);
+  assert.equal(context.results.label, '125%');
+});
 
 test('normalizePreviewRenderScale converts Avalonia frame DPI to render scale', () => {
   assert.equal(normalizePreviewRenderScale(192, 1), 2);
@@ -41,6 +103,15 @@ test('mapPreviewClientPointToRemotePoint compensates for differing viewport and 
     {
       x: 240,
       y: 160
+    });
+});
+
+test('mapPreviewClientPointToRemotePoint compensates for client zoom', () => {
+  assert.deepEqual(
+    mapPreviewClientPointToRemotePoint(200, 120, 1, 1, 2),
+    {
+      x: 100,
+      y: 60
     });
 });
 

@@ -1,3 +1,52 @@
+function clampPreviewZoom(zoom, fallbackZoom = 1) {
+  const minPreviewZoom = 0.25;
+  const maxPreviewZoom = 3;
+  const normalizedFallback = Number.isFinite(Number(fallbackZoom))
+    ? Number(fallbackZoom)
+    : 1;
+  const normalizedValue = Number(zoom);
+  const clampedValue = Number.isFinite(normalizedValue)
+    ? normalizedValue
+    : normalizedFallback;
+
+  return Math.min(maxPreviewZoom, Math.max(minPreviewZoom, clampedValue));
+}
+
+function stepPreviewZoom(currentZoom, direction) {
+  const previewZoomStep = 0.1;
+  const normalizedDirection = Number(direction);
+  if (!Number.isFinite(normalizedDirection) || normalizedDirection === 0) {
+    return clampPreviewZoom(currentZoom);
+  }
+
+  const nextZoom = clampPreviewZoom(currentZoom) + (normalizedDirection > 0 ? previewZoomStep : -previewZoomStep);
+  return clampPreviewZoom(Math.round(nextZoom * 100) / 100);
+}
+
+function formatPreviewZoomLabel(zoom) {
+  return Math.round(clampPreviewZoom(zoom) * 100) + '%';
+}
+
+function calculatePreviewSurfaceBounds(boundsWidth, boundsHeight, horizontalPadding = 0, verticalPadding = 0) {
+  const normalizedBoundsWidth = Number(boundsWidth);
+  const normalizedBoundsHeight = Number(boundsHeight);
+  const normalizedHorizontalPadding = Number(horizontalPadding);
+  const normalizedVerticalPadding = Number(verticalPadding);
+
+  return {
+    width: Math.max(
+      1,
+      Math.round(
+        (Number.isFinite(normalizedBoundsWidth) ? normalizedBoundsWidth : 0) -
+        (Number.isFinite(normalizedHorizontalPadding) ? normalizedHorizontalPadding : 0))),
+    height: Math.max(
+      1,
+      Math.round(
+        (Number.isFinite(normalizedBoundsHeight) ? normalizedBoundsHeight : 0) -
+        (Number.isFinite(normalizedVerticalPadding) ? normalizedVerticalPadding : 0)))
+  };
+}
+
 function normalizePreviewRenderScale(dpiOrScale, fallbackScale = 1) {
   const normalizedFallback = Number.isFinite(Number(fallbackScale)) && Number(fallbackScale) > 0
     ? Number(fallbackScale)
@@ -13,14 +62,15 @@ function normalizePreviewRenderScale(dpiOrScale, fallbackScale = 1) {
     : normalizedValue;
 }
 
-function mapPreviewClientPointToRemotePoint(offsetX, offsetY, viewportScale, previewRenderScale) {
+function mapPreviewClientPointToRemotePoint(offsetX, offsetY, viewportScale, previewRenderScale, previewZoom = 1) {
   const normalizedViewportScale = normalizePreviewRenderScale(viewportScale, 1);
   const normalizedPreviewRenderScale = normalizePreviewRenderScale(previewRenderScale, normalizedViewportScale);
+  const normalizedPreviewZoom = clampPreviewZoom(previewZoom, 1);
   const scaleFactor = normalizedViewportScale / normalizedPreviewRenderScale;
 
   return {
-    x: Number(offsetX) * scaleFactor,
-    y: Number(offsetY) * scaleFactor
+    x: Number(offsetX) * scaleFactor / normalizedPreviewZoom,
+    y: Number(offsetY) * scaleFactor / normalizedPreviewZoom
   };
 }
 
@@ -120,11 +170,15 @@ function createPreviewKeyboardInputPayloads(event, isDown) {
 }
 
 module.exports = {
+  calculatePreviewSurfaceBounds,
+  clampPreviewZoom,
   createPreviewKeyboardInputPayloads,
   createPreviewKeyInputPayload,
   createPreviewTextInputPayload,
+  formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
   mapPreviewClientPointToRemotePoint,
-  normalizePreviewRenderScale
+  normalizePreviewRenderScale,
+  stepPreviewZoom
 };
