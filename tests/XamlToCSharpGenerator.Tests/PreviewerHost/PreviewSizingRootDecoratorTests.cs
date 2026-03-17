@@ -48,6 +48,25 @@ public class PreviewSizingRootDecoratorTests
     }
 
     [AvaloniaFact]
+    public void Apply_Uses_Authored_Design_Size_Before_Configured_Fallback()
+    {
+        var control = new Border();
+
+        PreviewSizingRootDecorator.Configure(640, 360);
+        PreviewSizingRootDecorator.Apply(
+            control,
+            """
+            <Border xmlns="https://github.com/avaloniaui"
+                    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                    d:DesignWidth="800"
+                    d:DesignHeight="450" />
+            """);
+
+        Assert.Equal(800, control.Width);
+        Assert.Equal(450, control.Height);
+    }
+
+    [AvaloniaFact]
     public void Apply_Returns_Sized_Host_For_ResourceDictionary_Without_PreviewWith()
     {
         var dictionary = new ResourceDictionary();

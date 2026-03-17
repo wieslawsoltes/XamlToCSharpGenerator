@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Xml.Linq;
 using global::Avalonia;
 using global::Avalonia.Controls;
 using global::Avalonia.Controls.Primitives;
@@ -9,6 +11,7 @@ namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
 internal static class PreviewSizingRootDecorator
 {
+    private const string DesignNamespaceUri = "http://schemas.microsoft.com/expression/blend/2008";
     private static readonly object Sync = new();
     private static double? s_previewWidth;
     private static double? s_previewHeight;
@@ -22,7 +25,7 @@ internal static class PreviewSizingRootDecorator
         }
     }
 
-    public static object Apply(object loadedRoot)
+    public static object Apply(object loadedRoot, string? authoredXaml = null)
     {
         ArgumentNullException.ThrowIfNull(loadedRoot);
 
@@ -33,6 +36,10 @@ internal static class PreviewSizingRootDecorator
             previewWidth = s_previewWidth;
             previewHeight = s_previewHeight;
         }
+
+        var authoredSize = TryExtractDesignSize(authoredXaml);
+        previewWidth = authoredSize.Width ?? previewWidth;
+        previewHeight = authoredSize.Height ?? previewHeight;
 
         if (loadedRoot is IStyle style)
         {
@@ -82,6 +89,38 @@ internal static class PreviewSizingRootDecorator
     private static double? NormalizeSize(double? value)
     {
         return value is > 0 ? value : null;
+    }
+
+    private static (double? Width, double? Height) TryExtractDesignSize(string? authoredXaml)
+    {
+        if (string.IsNullOrWhiteSpace(authoredXaml))
+        {
+            return default;
+        }
+
+        try
+        {
+            var document = XDocument.Parse(authoredXaml, LoadOptions.PreserveWhitespace);
+            if (document.Root is null)
+            {
+                return default;
+            }
+
+            return (
+                ParseDesignSize(document.Root.Attribute(XName.Get("DesignWidth", DesignNamespaceUri))?.Value),
+                ParseDesignSize(document.Root.Attribute(XName.Get("DesignHeight", DesignNamespaceUri))?.Value));
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private static double? ParseDesignSize(string? value)
+    {
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : null;
     }
 
     private static object PrepareStylePreview(IStyle style, double? previewWidth, double? previewHeight)

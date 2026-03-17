@@ -26,7 +26,9 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         var proxy = RuntimeXamlLoaderProxyFactory.Create(
             loaderContractType,
             (document, configuration) =>
-                PreviewSizingRootDecorator.Apply(loadHandler(document, configuration)));
+                PreviewSizingRootDecorator.Apply(
+                    loadHandler(document, configuration),
+                    SourceGeneratedRuntimeXamlLoader.ReadXamlText(document)));
         var locatorType = Type.GetType("Avalonia.AvaloniaLocator, Avalonia.Base", throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia locator type was not found.");
         var currentMutableProperty = locatorType.GetProperty(
