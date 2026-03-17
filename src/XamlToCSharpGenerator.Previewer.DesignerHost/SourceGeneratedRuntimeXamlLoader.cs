@@ -254,7 +254,7 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
 
         return AvaloniaSourceGeneratedXamlLoader.Load(
             CloneDocument(document, rootInstance: document.RootInstance, xamlText),
-            CloneConfiguration(configuration));
+            CreatePreviewConfiguration(configuration));
     }
 
     private static bool TryApplyLiveOverlay(
@@ -274,7 +274,7 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
                 : xamlText;
             result = AvaloniaRuntimeXamlLoader.Load(
                 CloneDocument(document, baselineRoot, rewrittenXaml),
-                CloneConfiguration(configuration));
+                CreatePreviewConfiguration(configuration));
             return true;
         }
         catch (Exception ex)
@@ -305,13 +305,14 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         return clone;
     }
 
-    private static RuntimeXamlLoaderConfiguration CloneConfiguration(RuntimeXamlLoaderConfiguration configuration)
+    private static RuntimeXamlLoaderConfiguration CreatePreviewConfiguration(RuntimeXamlLoaderConfiguration configuration)
     {
         return new RuntimeXamlLoaderConfiguration
         {
             LocalAssembly = configuration.LocalAssembly,
             UseCompiledBindingsByDefault = configuration.UseCompiledBindingsByDefault,
-            DesignMode = configuration.DesignMode,
+            // VS Code preview must materialize design-only constructs such as Design.PreviewWith.
+            DesignMode = true,
             CreateSourceInfo = configuration.CreateSourceInfo,
             DiagnosticHandler = configuration.DiagnosticHandler
         };

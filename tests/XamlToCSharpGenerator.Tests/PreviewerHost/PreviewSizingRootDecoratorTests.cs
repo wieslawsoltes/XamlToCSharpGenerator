@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using XamlToCSharpGenerator.Previewer.DesignerHost;
+using global::Avalonia.Markup.Xaml;
 
 namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 
@@ -75,6 +76,42 @@ public class PreviewSizingRootDecoratorTests
         Assert.Equal(360, previewHost.Height);
         Assert.NotNull(previewHost.Resources);
         Assert.Contains(dictionary, previewHost.Resources!.MergedDictionaries);
+    }
+
+    [AvaloniaFact]
+    public void Apply_Uses_Runtime_Loaded_DesignPreviewWith_For_ResourceDictionary()
+    {
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <Design.PreviewWith>
+                <Border>
+                  <TextBlock Text="Slider preview host" />
+                </Border>
+              </Design.PreviewWith>
+              <Thickness x:Key="SliderPadding">12</Thickness>
+            </ResourceDictionary>
+            """;
+
+        var dictionary = Assert.IsType<ResourceDictionary>(AvaloniaRuntimeXamlLoader.Load(
+            new RuntimeXamlLoaderDocument(
+                new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+                rootInstance: null,
+                xaml),
+            new RuntimeXamlLoaderConfiguration
+            {
+                LocalAssembly = typeof(PreviewSizingRootDecoratorTests).Assembly,
+                DesignMode = true
+            }));
+
+        PreviewSizingRootDecorator.Configure(560, 420);
+        var result = Assert.IsType<Border>(PreviewSizingRootDecorator.Apply(dictionary));
+
+        Assert.Equal(560, result.Width);
+        Assert.Equal(420, result.Height);
+        Assert.Equal("Slider preview host", Assert.IsType<TextBlock>(result.Child).Text);
+        Assert.NotNull(result.Resources);
+        Assert.Contains(dictionary, result.Resources!.MergedDictionaries);
     }
 
     [AvaloniaFact]

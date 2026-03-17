@@ -227,6 +227,30 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [Fact]
+    public void CreatePreviewConfiguration_Forces_DesignMode_For_Preview_Loads()
+    {
+        var method = typeof(SourceGeneratedRuntimeXamlLoader).GetMethod(
+            "CreatePreviewConfiguration",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("CreatePreviewConfiguration method was not found.");
+        var original = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly,
+            UseCompiledBindingsByDefault = true,
+            DesignMode = false,
+            CreateSourceInfo = true
+        };
+
+        var cloned = Assert.IsType<RuntimeXamlLoaderConfiguration>(method.Invoke(null, [original]));
+
+        Assert.Same(original.LocalAssembly, cloned.LocalAssembly);
+        Assert.Equal(original.UseCompiledBindingsByDefault, cloned.UseCompiledBindingsByDefault);
+        Assert.True(cloned.DesignMode);
+        Assert.Equal(original.CreateSourceInfo, cloned.CreateSourceInfo);
+        Assert.Null(cloned.DiagnosticHandler);
+    }
+
+    [Fact]
     public void ShouldApplyLiveOverlay_Returns_False_When_File_Matches_Current_Build_Output()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
