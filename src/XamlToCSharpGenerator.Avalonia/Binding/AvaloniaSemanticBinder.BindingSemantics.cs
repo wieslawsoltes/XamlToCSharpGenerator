@@ -840,7 +840,24 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var property = FindAccessibleProperty(compilation, accessibilityWithin, targetType, propertyName, out foundInaccessibleProperty);
         if (property is not null)
         {
-            accessExpression = targetExpression + (acceptsNull ? "?." : ".") + property.Name;
+            if (property.IsStatic)
+            {
+                accessExpression = property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) +
+                                   "." +
+                                   property.Name;
+                if (acceptsNull)
+                {
+                    pendingConditionalAccessScope = CreatePendingConditionalAccessScope(
+                        targetExpression,
+                        accessExpression,
+                        out _);
+                }
+            }
+            else
+            {
+                accessExpression = targetExpression + (acceptsNull ? "?." : ".") + property.Name;
+            }
+
             normalizedSegment = property.Name;
             resultType = property.Type;
             return true;
