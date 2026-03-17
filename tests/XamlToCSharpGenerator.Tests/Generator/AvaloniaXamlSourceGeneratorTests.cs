@@ -7581,6 +7581,97 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Materializes_Object_Element_XType_To_Runtime_DataType_Assignment()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class StyledElement { }
+            }
+
+            namespace Avalonia.Collections
+            {
+                public class AvaloniaList<T> : global::System.Collections.Generic.List<T> { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                    public void Register(string name, object element) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+                public class TextBlock : Control { }
+
+                public class UserControl : Control
+                {
+                    public global::Avalonia.Collections.AvaloniaList<global::Avalonia.Controls.Templates.IDataTemplate> DataTemplates { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Controls.Templates
+            {
+                public interface IDataTemplate { }
+
+                public class TemplateResult<T>
+                {
+                    public TemplateResult(T result, global::Avalonia.Controls.INameScope scope) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.Templates
+            {
+                public class DataTemplate : global::Avalonia.Controls.Templates.IDataTemplate
+                {
+                    public object? Content { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public class ValueEditor<T> { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView">
+                <UserControl.DataTemplates>
+                    <DataTemplate>
+                        <DataTemplate.DataType>
+                            <x:Type TypeName="vm:ValueEditor"
+                                    x:TypeArguments="x:Boolean" />
+                        </DataTemplate.DataType>
+                        <TextBlock />
+                    </DataTemplate>
+                </UserControl.DataTemplates>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(updatedCompilation.GetDiagnostics(), diagnostic => diagnostic.Id == "CS0144");
+
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        Assert.Contains("typeof(global::Demo.ViewModels.ValueEditor<bool>)", generated);
+        Assert.DoesNotContain("new global::System.Type()", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Uses_DataTemplate_DataType_Property_As_Compiled_Binding_Source_Scope()
     {
         const string code = """

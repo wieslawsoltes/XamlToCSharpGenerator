@@ -69,6 +69,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 rootTypeSymbol);
         }
 
+        if (IsXamlTypeNode(node))
+        {
+            return BindXamlTypeNode(
+                node,
+                compilation,
+                diagnostics,
+                document,
+                options);
+        }
+
         var compileBindingsEnabled = node.CompileBindings ?? inheritedCompileBindingsEnabled;
         var scopeContext = new BindingScopeContext(
             node,
@@ -2528,6 +2538,204 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         return node.XmlNamespace == Xaml2006.NamespaceName &&
                node.XmlTypeName.Equals("Array", StringComparison.Ordinal);
+    }
+
+    private static bool IsXamlTypeNode(XamlObjectNode node)
+    {
+        return node.XmlNamespace == Xaml2006.NamespaceName &&
+               node.XmlTypeName.Equals("Type", StringComparison.Ordinal);
+    }
+
+    private static ResolvedObjectNode BindXamlTypeNode(
+        XamlObjectNode node,
+        Compilation compilation,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        XamlDocumentModel document,
+        GeneratorOptions options)
+    {
+        var normalizedNodeName = NormalizeObjectNodeName(node.Name);
+        if (!TryResolveXamlTypeNodeReferencedType(node, compilation, document, out var referencedType, out var typeToken))
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                "AXSG0101",
+                string.IsNullOrWhiteSpace(typeToken)
+                    ? "x:Type requires a resolvable TypeName, Type, or text payload."
+                    : $"x:Type target type '{typeToken}' could not be resolved.",
+                document.FilePath,
+                node.Line,
+                node.Column,
+                options.StrictMode));
+
+            return new ResolvedObjectNode(
+                KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+                Name: normalizedNodeName,
+                TypeName: "global::System.Type",
+                IsBindingObjectNode: false,
+                FactoryExpression: "default(global::System.Type)",
+                FactoryValueRequirements: ResolvedValueRequirements.None,
+                UseServiceProviderConstructor: false,
+                UseTopDownInitialization: false,
+                PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
+                PropertyElementAssignments: ImmutableArray<ResolvedPropertyElementAssignment>.Empty,
+                EventSubscriptions: ImmutableArray<ResolvedEventSubscription>.Empty,
+                Children: ImmutableArray<ResolvedObjectNode>.Empty,
+                ChildAttachmentMode: ResolvedChildAttachmentMode.None,
+                ContentPropertyName: null,
+                Line: node.Line,
+                Column: node.Column,
+                Condition: node.Condition);
+        }
+
+        return new ResolvedObjectNode(
+            KeyExpression: BuildObjectNodeKeyExpression(node.Key, compilation, document),
+            Name: normalizedNodeName,
+            TypeName: "global::System.Type",
+            IsBindingObjectNode: false,
+            FactoryExpression: "typeof(" + referencedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ")",
+            FactoryValueRequirements: ResolvedValueRequirements.None,
+            UseServiceProviderConstructor: false,
+            UseTopDownInitialization: false,
+            PropertyAssignments: ImmutableArray<ResolvedPropertyAssignment>.Empty,
+            PropertyElementAssignments: ImmutableArray<ResolvedPropertyElementAssignment>.Empty,
+            EventSubscriptions: ImmutableArray<ResolvedEventSubscription>.Empty,
+            Children: ImmutableArray<ResolvedObjectNode>.Empty,
+            ChildAttachmentMode: ResolvedChildAttachmentMode.None,
+            ContentPropertyName: null,
+            Line: node.Line,
+            Column: node.Column,
+            Condition: node.Condition);
+    }
+
+    private static bool TryResolveXamlTypeNodeReferencedType(
+        XamlObjectNode node,
+        Compilation compilation,
+        XamlDocumentModel document,
+        out INamedTypeSymbol referencedType,
+        out string typeToken)
+    {
+        referencedType = null!;
+        typeToken = string.Empty;
+
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (assignment.IsAttached)
+            {
+                continue;
+            }
+
+            var normalizedName = NormalizePropertyName(assignment.PropertyName);
+            if ((normalizedName.Equals("TypeName", StringComparison.Ordinal) ||
+                 normalizedName.Equals("Type", StringComparison.Ordinal)) &&
+                !string.IsNullOrWhiteSpace(assignment.Value))
+            {
+                typeToken = Unquote(assignment.Value).Trim();
+                break;
+            }
+        }
+
+        if (typeToken.Length == 0)
+        {
+            foreach (var propertyElement in node.PropertyElements)
+            {
+                var normalizedName = NormalizePropertyName(propertyElement.PropertyName);
+                if (!(normalizedName.Equals("TypeName", StringComparison.Ordinal) ||
+                      normalizedName.Equals("Type", StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var propertyElementValue) &&
+                    !string.IsNullOrWhiteSpace(propertyElementValue))
+                {
+                    typeToken = Unquote(propertyElementValue).Trim();
+                    break;
+                }
+            }
+        }
+
+        if (typeToken.Length == 0 &&
+            node.ConstructorArguments.Length == 1 &&
+            TryGetSingleMarkupExtensionArgumentValue(node.ConstructorArguments[0], out var constructorArgumentValue) &&
+            !string.IsNullOrWhiteSpace(constructorArgumentValue))
+        {
+            typeToken = Unquote(constructorArgumentValue).Trim();
+        }
+
+        if (typeToken.Length == 0)
+        {
+            var rawTextContent = node.RawTextContent?.Trim();
+            if (!string.IsNullOrWhiteSpace(rawTextContent))
+            {
+                typeToken = Unquote(rawTextContent!).Trim();
+            }
+        }
+
+        if (typeToken.Length == 0)
+        {
+            var textContent = node.TextContent?.Trim();
+            if (!string.IsNullOrWhiteSpace(textContent))
+            {
+                typeToken = Unquote(textContent!).Trim();
+            }
+        }
+
+        if (typeToken.Length == 0)
+        {
+            return false;
+        }
+
+        if (node.TypeArguments.Length > 0 &&
+            !TryParseGenericTypeToken(typeToken, out _, out _))
+        {
+            var resolvedTypeArguments = new List<ITypeSymbol>(node.TypeArguments.Length);
+            foreach (var typeArgumentToken in node.TypeArguments)
+            {
+                var resolvedTypeArgument = ResolveTypeToken(compilation, document, typeArgumentToken, document.ClassNamespace);
+                if (resolvedTypeArgument is null)
+                {
+                    return false;
+                }
+
+                resolvedTypeArguments.Add(resolvedTypeArgument);
+            }
+
+            INamedTypeSymbol? genericType = null;
+            if (XamlTokenSplitSemantics.TrySplitAtFirstSeparator(
+                    typeToken,
+                    ':',
+                    out var prefix,
+                    out var xmlTypeName) &&
+                document.XmlNamespaces.TryGetValue(prefix, out var xmlNamespace))
+            {
+                genericType = ResolveTypeSymbol(compilation, xmlNamespace, xmlTypeName, node.TypeArguments.Length);
+            }
+            else if (typeToken.IndexOf('.') < 0 &&
+                     document.XmlNamespaces.TryGetValue(string.Empty, out var defaultXmlNamespace))
+            {
+                genericType = ResolveTypeSymbol(compilation, defaultXmlNamespace, typeToken, node.TypeArguments.Length);
+            }
+
+            genericType ??= ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace);
+            if (genericType is not null)
+            {
+                if (genericType.TypeParameters.Length == resolvedTypeArguments.Count)
+                {
+                    referencedType = genericType.Construct(resolvedTypeArguments.ToArray());
+                    return true;
+                }
+
+                if (genericType.OriginalDefinition.TypeParameters.Length == resolvedTypeArguments.Count)
+                {
+                    referencedType = genericType.OriginalDefinition.Construct(resolvedTypeArguments.ToArray());
+                    return true;
+                }
+            }
+
+            typeToken += "(" + string.Join(", ", node.TypeArguments) + ")";
+        }
+
+        referencedType = ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace)!;
+        return referencedType is not null;
     }
 
     private static ResolvedObjectNode BindXamlArrayNode(
