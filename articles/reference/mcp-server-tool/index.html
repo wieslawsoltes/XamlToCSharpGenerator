@@ -163,11 +163,22 @@
 <p>Primary tool surface:</p>
 <ul>
 <li><code>axsg.preview.projectContext</code></li>
+<li><code>axsg.workspace.metadataDocument</code></li>
+<li><code>axsg.workspace.inlineCSharpProjections</code></li>
+<li><code>axsg.workspace.csharpReferences</code></li>
+<li><code>axsg.workspace.csharpDeclarations</code></li>
+<li><code>axsg.workspace.renamePropagation</code></li>
+<li><code>axsg.workspace.prepareRename</code></li>
+<li><code>axsg.workspace.rename</code></li>
+<li>shared snapshot tools from the runtime catalog such as:
+<ul>
 <li><code>axsg.hotReload.status</code></li>
 <li><code>axsg.hotDesign.status</code></li>
 <li><code>axsg.hotDesign.documents</code></li>
 <li><code>axsg.hotDesign.workspace</code></li>
 <li><code>axsg.studio.status</code></li>
+</ul>
+</li>
 </ul>
 <p>Primary resources:</p>
 <ul>
@@ -177,6 +188,7 @@
 <li><code>axsg://runtime/studio/status</code></li>
 </ul>
 <p>Those resources use the same payload shape as the runtime-attached host, but on the standalone tool they are only snapshots from the <code>axsg-mcp</code> process itself. They are not subscriptions into a separate running Avalonia app.</p>
+<p>For the dedicated workspace language-service tool guidance, see <a href="/XamlToCSharpGenerator/articles/guides/workspace-mcp-language-tools">Workspace MCP Language Tools</a>.</p>
 <h2 id="what-it-does-not-do">What it does not do</h2>
 <p>It does not automatically attach to a separate running Avalonia app.</p>
 <p>That means:</p>
@@ -196,6 +208,7 @@
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/workspace-mcp-language-tools">Workspace MCP Language Tools</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/tooling-stack">Tooling Stack Packages</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/artifact-matrix">Artifact Matrix</a></li>

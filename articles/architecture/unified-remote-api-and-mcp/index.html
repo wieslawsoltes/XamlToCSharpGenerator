@@ -174,6 +174,7 @@
 <li>serialization options</li>
 <li>request and response helpers</li>
 <li>transport-neutral command routers</li>
+<li>transport-neutral query and mutation services</li>
 </ul>
 <p>AXSG does not share:</p>
 <ul>
@@ -239,8 +240,15 @@
 <ul>
 <li><code>AxsgPreviewQueryService</code></li>
 <li><code>AxsgRuntimeQueryService</code></li>
+<li><code>AxsgWorkspaceLanguageQueryService</code></li>
 </ul>
-<p>Those are consumed by both LSP and MCP hosts so the same operation shape does not get reimplemented per adapter.</p>
+<p>The transport-neutral runtime mutation layer now lives in services such as:</p>
+<ul>
+<li><code>AxsgRuntimeHotReloadService</code></li>
+<li><code>AxsgRuntimeHotDesignService</code></li>
+<li><code>AxsgRuntimeStudioService</code></li>
+</ul>
+<p>Those are consumed by LSP, MCP, preview, and studio adapters so the same operation shape does not get reimplemented per adapter.</p>
 <h2 id="mcp-host-split">MCP host split</h2>
 <p>AXSG intentionally has more than one MCP host because workspace state and live runtime state are not the same thing.</p>
 <h3 id="workspace-mcp-host">Workspace MCP host</h3>
@@ -248,7 +256,7 @@
 <ul>
 <li>runs independently as <code>axsg-mcp</code></li>
 <li>sees files, projects, and workspace options</li>
-<li>is best for preview project-context resolution and general tooling queries</li>
+<li>is best for preview project-context resolution, metadata/projection queries, cross-language navigation, and rename planning</li>
 </ul>
 <p>It does not automatically attach to a live Avalonia app.</p>
 <h3 id="runtime-mcp-host">Runtime MCP host</h3>
@@ -256,7 +264,7 @@
 <ul>
 <li>runs inside the Avalonia process</li>
 <li>sees hot reload, hot design, and studio state directly</li>
-<li>supports <code>resources/subscribe</code> and event-style resource updates</li>
+<li>supports <code>resources/subscribe</code>, focused snapshot resources, per-build hot design workspace resources, and event-style resource updates</li>
 </ul>
 <p>This is the host you want for <code>dotnet watch</code>, hot reload, hot design, and live-app inspection.</p>
 <h3 id="preview-mcp-host">Preview MCP host</h3>
@@ -280,7 +288,7 @@
 <p>AXSG now uses a capability-based model:</p>
 <ul>
 <li>workspace MCP host: query-oriented, poll after changes</li>
-<li>runtime MCP host: subscribe to status and event resources</li>
+<li>runtime MCP host: subscribe to status, focused snapshot, and event resources</li>
 <li>preview MCP host: subscribe to lifecycle resources and react to list-changed notifications</li>
 </ul>
 <p>This split matches the real ownership model of the processes instead of pretending one host can answer every question equally well.</p>
@@ -299,6 +307,22 @@
 <li>transport-neutral preview session/router underneath</li>
 <li>MCP adapter on top</li>
 <li>status and event resources as the subscription surface</li>
+</ul>
+<h2 id="resource-specialization">Resource specialization</h2>
+<p>The runtime MCP host now distinguishes between:</p>
+<ul>
+<li>coarse snapshots such as <code>axsg://runtime/hotdesign/status</code></li>
+<li>focused snapshots such as <code>axsg://runtime/hotdesign/workspace/current</code>, <code>.../document/selected</code>, and <code>.../element/selected</code></li>
+<li>dynamic per-build workspace resources under <code>axsg://runtime/hotdesign/workspace/by-build-uri/&lt;escaped-build-uri&gt;</code></li>
+</ul>
+<p>That split exists so clients can keep local state synchronized without rereading the entire coarse workspace after every small mutation.</p>
+<h2 id="current-high-value-mcp-guides">Current high-value MCP guides</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/workspace-mcp-language-tools">Workspace MCP Language Tools</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-hot-design-control">Runtime MCP Hot Design Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-studio-control">Runtime MCP Studio Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
 </ul>
 <h2 id="related-docs">Related docs</h2>
 <ul>

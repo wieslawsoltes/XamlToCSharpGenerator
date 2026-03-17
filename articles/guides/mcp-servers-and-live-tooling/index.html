@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.6e0a345db57e68bcd4769da8bf273d17.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-6,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.f9caf0257ea5a41ace800fc791b7ba52.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-6,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -365,7 +365,8 @@ dotnet watch run --project samples/SourceGenCrudSample/SourceGenCrudSample.cspro
 <ul>
 <li>hot reload status subscriptions</li>
 <li>hot design document and workspace inspection</li>
-<li>studio status and event streams</li>
+<li>hot design control and edit application</li>
+<li>studio status, scopes, and session/event streams</li>
 </ul>
 <h2 id="3-hot-reload-hot-design-and-studio-resources">3. Hot reload, hot design, and studio resources</h2>
 <p>The runtime host exposes the live runtime-facing resources:</p>
@@ -374,22 +375,65 @@ dotnet watch run --project samples/SourceGenCrudSample/SourceGenCrudSample.cspro
 <li><code>axsg://runtime/hotreload/events</code></li>
 <li><code>axsg://runtime/hotdesign/status</code></li>
 <li><code>axsg://runtime/hotdesign/documents</code></li>
+<li><code>axsg://runtime/hotdesign/workspace/current</code></li>
+<li><code>axsg://runtime/hotdesign/document/selected</code></li>
+<li><code>axsg://runtime/hotdesign/element/selected</code></li>
 <li><code>axsg://runtime/hotdesign/events</code></li>
 <li><code>axsg://runtime/studio/status</code></li>
+<li><code>axsg://runtime/studio/scopes</code></li>
 <li><code>axsg://runtime/studio/events</code></li>
 </ul>
+<p>The runtime host also publishes one dynamic per-build workspace resource per registered hot design document:</p>
+<pre><code class="language-text">axsg://runtime/hotdesign/workspace/by-build-uri/&lt;escaped-build-uri&gt;
+</code></pre>
 <p>The matching tools are:</p>
 <ul>
 <li><code>axsg.hotReload.status</code></li>
+<li><code>axsg.hotReload.enable</code></li>
+<li><code>axsg.hotReload.disable</code></li>
+<li><code>axsg.hotReload.toggle</code></li>
+<li><code>axsg.hotReload.trackedDocuments</code></li>
+<li><code>axsg.hotReload.remoteTransportStatus</code></li>
+<li><code>axsg.hotReload.lastOperation</code></li>
 <li><code>axsg.hotDesign.status</code></li>
 <li><code>axsg.hotDesign.documents</code></li>
 <li><code>axsg.hotDesign.workspace</code></li>
+<li><code>axsg.hotDesign.selectDocument</code></li>
+<li><code>axsg.hotDesign.selectElement</code></li>
+<li><code>axsg.hotDesign.applyDocumentText</code></li>
+<li><code>axsg.hotDesign.applyPropertyUpdate</code></li>
+<li><code>axsg.hotDesign.insertElement</code></li>
+<li><code>axsg.hotDesign.removeElement</code></li>
+<li><code>axsg.hotDesign.undo</code></li>
+<li><code>axsg.hotDesign.redo</code></li>
+<li><code>axsg.hotDesign.setWorkspaceMode</code></li>
+<li><code>axsg.hotDesign.setPropertyFilterMode</code></li>
+<li><code>axsg.hotDesign.setHitTestMode</code></li>
+<li><code>axsg.hotDesign.togglePanel</code></li>
+<li><code>axsg.hotDesign.setPanelVisibility</code></li>
+<li><code>axsg.hotDesign.setCanvasZoom</code></li>
+<li><code>axsg.hotDesign.setCanvasFormFactor</code></li>
+<li><code>axsg.hotDesign.setCanvasTheme</code></li>
+<li><code>axsg.studio.enable</code></li>
+<li><code>axsg.studio.disable</code></li>
+<li><code>axsg.studio.configure</code></li>
+<li><code>axsg.studio.startSession</code></li>
+<li><code>axsg.studio.stopSession</code></li>
+<li><code>axsg.studio.applyUpdate</code></li>
+<li><code>axsg.studio.scopes</code></li>
 <li><code>axsg.studio.status</code></li>
 </ul>
 <p>Recommended client behavior:</p>
 <ul>
-<li>use <code>tools/call</code> for one-shot snapshots</li>
-<li>use <code>resources/subscribe</code> for status and event resources in a live app</li>
+<li>use <code>tools/call</code> for mutations and one-shot reads</li>
+<li>use <code>resources/subscribe</code> for focused status and event resources in a live app</li>
+<li>relist resources after <code>notifications/resources/list_changed</code> if you care about per-build workspace resources</li>
+</ul>
+<p>For the detailed control surfaces:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-hot-design-control">Runtime MCP Hot Design Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-studio-control">Runtime MCP Studio Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/workspace-mcp-language-tools">Workspace MCP Language Tools</a></li>
 </ul>
 <h2 id="4-run-the-preview-host-in-mcp-mode">4. Run the preview host in MCP mode</h2>
 <p>The preview host also supports MCP directly:</p>
@@ -446,7 +490,7 @@ dotnet watch run --project samples/SourceGenCrudSample/SourceGenCrudSample.cspro
 <p>More concretely:</p>
 <ul>
 <li><code>axsg-mcp</code> is stateless enough that <code>tools/list</code>, <code>tools/call</code>, and <code>resources/read</code> are the expected workflow</li>
-<li><code>XamlSourceGenRuntimeMcpServer</code> should be treated as a live stream of status and event resources</li>
+<li><code>XamlSourceGenRuntimeMcpServer</code> should be treated as a live stream of status, focused snapshot, and event resources</li>
 <li><code>PreviewHostMcpServer</code> supports dynamic tools and resources, so relist after <code>notifications/tools/list_changed</code> or <code>notifications/resources/list_changed</code></li>
 </ul>
 <h2 id="7-troubleshooting">7. Troubleshooting</h2>
@@ -463,6 +507,9 @@ dotnet watch run --project samples/SourceGenCrudSample/SourceGenCrudSample.cspro
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/workspace-mcp-language-tools">Workspace MCP Language Tools</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-hot-design-control">Runtime MCP Hot Design Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-studio-control">Runtime MCP Studio Control</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/hot-reload-and-hot-design">Hot Reload and Hot Design</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>

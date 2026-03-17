@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Runtime MCP Studio Control | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Runtime MCP Studio Control | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Runtime MCP Studio Control Use this guide when you want to drive AXSG studio state from MCP against a live Avalonia process. Studio MCP control lives on the runtime host because studio is part of the running application state. Use this guide when you want to enable or configure studio remotely you need to start or stop studio sessions you want to query studio scopes and then apply a studio...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Runtime MCP Studio Control | XamlToCSharpGenerator">
+<meta property="og:title" content="Runtime MCP Studio Control | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Runtime MCP Studio Control Use this guide when you want to drive AXSG studio state from MCP against a live Avalonia process. Studio MCP control lives on the runtime host because studio is part of the running application state. Use this guide when you want to enable or configure studio remotely you need to start or stop studio sessions you want to query studio scopes and then apply a studio...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Runtime MCP Studio Control | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.f9caf0257ea5a41ace800fc791b7ba52.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-9,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Runtime MCP Studio Control  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="runtime-mcp-studio-control">Runtime MCP Studio Control</h1>
+<p>Use this guide when you want to drive AXSG studio state from MCP against a live Avalonia process.</p>
+<p>Studio MCP control lives on the runtime host because studio is part of the running application state.</p>
+<h2 id="use-this-guide-when">Use this guide when</h2>
+<ul>
+<li>you want to enable or configure studio remotely</li>
+<li>you need to start or stop studio sessions</li>
+<li>you want to query studio scopes and then apply a studio update</li>
+<li>you want one MCP result that includes the update result, studio status, and refreshed hot design workspace</li>
+</ul>
+<h2 id="studio-tools">Studio tools</h2>
+<ul>
+<li><code>axsg.studio.enable</code></li>
+<li><code>axsg.studio.disable</code></li>
+<li><code>axsg.studio.configure</code></li>
+<li><code>axsg.studio.startSession</code></li>
+<li><code>axsg.studio.stopSession</code></li>
+<li><code>axsg.studio.applyUpdate</code></li>
+<li><code>axsg.studio.scopes</code></li>
+<li><code>axsg.studio.status</code></li>
+</ul>
+<h2 id="studio-resources">Studio resources</h2>
+<ul>
+<li><code>axsg://runtime/studio/status</code></li>
+<li><code>axsg://runtime/studio/scopes</code></li>
+<li><code>axsg://runtime/studio/events</code></li>
+</ul>
+<p>In practice, studio clients often also subscribe to:</p>
+<ul>
+<li><code>axsg://runtime/hotdesign/workspace/current</code></li>
+</ul>
+<p>because the studio update result is usually interpreted together with the active hot design workspace.</p>
+<h2 id="recommended-client-model">Recommended client model</h2>
+<p>Use this rule:</p>
+<ul>
+<li>subscribe to <code>studio/status</code> and <code>studio/events</code></li>
+<li>read <code>studio/scopes</code> when scope selection UI needs a refresh</li>
+<li>subscribe to <code>hotdesign/workspace/current</code> if the studio UX also shows the active design surface</li>
+</ul>
+<h2 id="1-enable-or-configure-studio">1. Enable or configure studio</h2>
+<h3 id="minimal-enable">Minimal enable</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 10,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.studio.enable&quot;,
+    &quot;arguments&quot;: {
+      &quot;showOverlayIndicator&quot;: false,
+      &quot;enableExternalWindow&quot;: false
+    }
+  }
+}
+</code></pre>
+<h3 id="configure-an-existing-session">Configure an existing session</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 11,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.studio.configure&quot;,
+    &quot;arguments&quot;: {
+      &quot;canvasLayoutMode&quot;: &quot;Stacked&quot;,
+      &quot;enableRemoteDesign&quot;: true,
+      &quot;remoteHost&quot;: &quot;127.0.0.1&quot;,
+      &quot;remotePort&quot;: 45832,
+      &quot;waitMode&quot;: &quot;HotReload&quot;,
+      &quot;fallbackPolicy&quot;: &quot;RuntimeApply&quot;
+    }
+  }
+}
+</code></pre>
+<p>Both tools return the full studio status snapshot, including:</p>
+<ul>
+<li><code>sessionId</code></li>
+<li><code>currentState</code></li>
+<li><code>options</code></li>
+<li><code>remote</code></li>
+<li><code>scopes</code></li>
+<li>recent <code>operations</code></li>
+</ul>
+<h2 id="2-start-a-studio-session">2. Start a studio session</h2>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 12,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.studio.startSession&quot;,
+    &quot;arguments&quot;: {}
+  }
+}
+</code></pre>
+<p>The returned status payload includes the new <code>sessionId</code>.</p>
+<h2 id="3-read-studio-scopes">3. Read studio scopes</h2>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 13,
+  &quot;method&quot;: &quot;resources/read&quot;,
+  &quot;params&quot;: {
+    &quot;uri&quot;: &quot;axsg://runtime/studio/scopes&quot;
+  }
+}
+</code></pre>
+<p>Each scope entry includes:</p>
+<ul>
+<li><code>scopeKind</code></li>
+<li><code>id</code></li>
+<li><code>displayName</code></li>
+<li><code>targetTypeName</code></li>
+<li><code>buildUri</code></li>
+</ul>
+<p>Use that payload when the client needs to present scope selection without pulling the full studio status object again.</p>
+<h2 id="4-apply-a-studio-update">4. Apply a studio update</h2>
+<p><code>axsg.studio.applyUpdate</code> is the studio mutation entry point.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 14,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.studio.applyUpdate&quot;,
+    &quot;arguments&quot;: {
+      &quot;requestId&quot;: &quot;studio-001&quot;,
+      &quot;correlationId&quot;: 42,
+      &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+      &quot;xamlText&quot;: &quot;&lt;UserControl xmlns=\&quot;https://github.com/avaloniaui\&quot;&gt;&lt;TextBlock Text=\&quot;Studio\&quot;/&gt;&lt;/UserControl&gt;&quot;,
+      &quot;waitMode&quot;: &quot;HotReload&quot;,
+      &quot;fallbackPolicy&quot;: &quot;RuntimeApply&quot;,
+      &quot;persistChangesToSource&quot;: true,
+      &quot;timeoutMs&quot;: 3000
+    }
+  }
+}
+</code></pre>
+<p>Result shape:</p>
+<pre><code class="language-json">{
+  &quot;applyResult&quot;: {
+    &quot;succeeded&quot;: true,
+    &quot;state&quot;: &quot;Completed&quot;,
+    &quot;requestId&quot;: &quot;studio-001&quot;,
+    &quot;correlationId&quot;: 42,
+    &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+    &quot;sourcePersisted&quot;: true,
+    &quot;localUpdateObserved&quot;: true,
+    &quot;runtimeFallbackApplied&quot;: false
+  },
+  &quot;status&quot;: {
+    &quot;isEnabled&quot;: true,
+    &quot;currentState&quot;: &quot;Ready&quot;
+  },
+  &quot;workspace&quot;: {
+    &quot;activeBuildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;
+  }
+}
+</code></pre>
+<p>That combined response is deliberate:</p>
+<ul>
+<li><code>applyResult</code> tells you what happened</li>
+<li><code>status</code> tells you what studio thinks the session state is now</li>
+<li><code>workspace</code> gives the refreshed hot design projection for the updated target</li>
+</ul>
+<h2 id="wait-mode-and-fallback-policy">Wait mode and fallback policy</h2>
+<p>The studio apply path supports:</p>
+<ul>
+<li><code>waitMode</code></li>
+<li><code>fallbackPolicy</code></li>
+<li><code>persistChangesToSource</code></li>
+<li><code>timeoutMs</code></li>
+</ul>
+<p>Use them when your client needs explicit control over whether it waits for hot reload completion or allows runtime fallback behavior.</p>
+<p>Typical choices:</p>
+<ul>
+<li>optimistic local designer: <code>waitMode = None</code></li>
+<li>synchronized live-app tooling: <code>waitMode = HotReload</code></li>
+<li>resilient editing tool: <code>fallbackPolicy = RuntimeApply</code></li>
+</ul>
+<h2 id="subscribe-then-apply-flow">Subscribe-then-apply flow</h2>
+<p>Recommended pattern:</p>
+<ol>
+<li>subscribe to <code>axsg://runtime/studio/status</code></li>
+<li>subscribe to <code>axsg://runtime/studio/events</code></li>
+<li>optionally subscribe to <code>axsg://runtime/hotdesign/workspace/current</code></li>
+<li>call <code>axsg.studio.applyUpdate</code></li>
+<li>consume the direct tool result</li>
+<li>keep the subscribed resources alive for later status and operation changes</li>
+</ol>
+<p>This keeps the client responsive:</p>
+<ul>
+<li>direct response for the mutation that just happened</li>
+<li>subscriptions for everything that happens afterward</li>
+</ul>
+<h2 id="stop-the-session">Stop the session</h2>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 15,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.studio.stopSession&quot;,
+    &quot;arguments&quot;: {}
+  }
+}
+</code></pre>
+<p>This returns the updated status snapshot after the current session has been cleared.</p>
+<h2 id="relationship-to-hot-design-mcp-control">Relationship to hot design MCP control</h2>
+<p>Studio and hot design overlap, but they are not the same surface:</p>
+<ul>
+<li>hot design MCP is the direct design-workspace and edit-control surface</li>
+<li>studio MCP is the session-oriented orchestration surface</li>
+</ul>
+<p>Use hot design tools when you want direct element/document/canvas edits.</p>
+<p>Use studio tools when you want:</p>
+<ul>
+<li>studio session lifecycle</li>
+<li>studio-scoped update orchestration</li>
+<li>studio option and remote design configuration</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-hot-design-control">Runtime MCP Hot Design Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/runtime-avalonia">Package: XamlToCSharpGenerator.Runtime.Avalonia</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

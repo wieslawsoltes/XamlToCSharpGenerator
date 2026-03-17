@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Runtime MCP Hot Design Control | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Runtime MCP Hot Design Control | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Runtime MCP Hot Design Control Use this guide when you want to drive AXSG hot design from an MCP client against a live Avalonia process. This is the runtime-attached host surface exposed by XamlSourceGenRuntimeMcpServer, not the standalone workspace tool and not the preview host. Use this guide when you are running the app under dotnet watch and need live hot design control you want to select documents or elements remotely...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Runtime MCP Hot Design Control | XamlToCSharpGenerator">
+<meta property="og:title" content="Runtime MCP Hot Design Control | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Runtime MCP Hot Design Control Use this guide when you want to drive AXSG hot design from an MCP client against a live Avalonia process. This is the runtime-attached host surface exposed by XamlSourceGenRuntimeMcpServer, not the standalone workspace tool and not the preview host. Use this guide when you are running the app under dotnet watch and need live hot design control you want to select documents or elements remotely...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Runtime MCP Hot Design Control | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.f9caf0257ea5a41ace800fc791b7ba52.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-8,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/guides/' class='breadcrumb-link  '>Guides</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Runtime MCP Hot Design Control  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="runtime-mcp-hot-design-control">Runtime MCP Hot Design Control</h1>
+<p>Use this guide when you want to drive AXSG hot design from an MCP client against a live Avalonia process.</p>
+<p>This is the runtime-attached host surface exposed by <code>XamlSourceGenRuntimeMcpServer</code>, not the standalone workspace tool and not the preview host.</p>
+<h2 id="use-this-guide-when">Use this guide when</h2>
+<ul>
+<li>you are running the app under <code>dotnet watch</code> and need live hot design control</li>
+<li>you want to select documents or elements remotely</li>
+<li>you want to apply XAML, property, or element edits through MCP</li>
+<li>you want focused workspace resources instead of rereading the entire coarse snapshot after every change</li>
+</ul>
+<h2 id="before-you-start">Before you start</h2>
+<p>You need:</p>
+<ul>
+<li>AXSG hot design enabled in the running app</li>
+<li>the runtime MCP host embedded into that app</li>
+<li>an MCP client connected to the runtime host transport</li>
+</ul>
+<p>If you still need to choose the host or wire the transport, start with <a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a>.</p>
+<h2 id="hot-design-tools">Hot design tools</h2>
+<h3 id="runtime-mode-and-snapshot-tools">Runtime mode and snapshot tools</h3>
+<ul>
+<li><code>axsg.hotDesign.enable</code></li>
+<li><code>axsg.hotDesign.disable</code></li>
+<li><code>axsg.hotDesign.toggle</code></li>
+<li><code>axsg.hotDesign.status</code></li>
+<li><code>axsg.hotDesign.documents</code></li>
+<li><code>axsg.hotDesign.workspace</code></li>
+</ul>
+<h3 id="selection-and-workspace-controls">Selection and workspace controls</h3>
+<ul>
+<li><code>axsg.hotDesign.selectDocument</code></li>
+<li><code>axsg.hotDesign.selectElement</code></li>
+<li><code>axsg.hotDesign.setWorkspaceMode</code></li>
+<li><code>axsg.hotDesign.setPropertyFilterMode</code></li>
+<li><code>axsg.hotDesign.setHitTestMode</code></li>
+<li><code>axsg.hotDesign.togglePanel</code></li>
+<li><code>axsg.hotDesign.setPanelVisibility</code></li>
+<li><code>axsg.hotDesign.setCanvasZoom</code></li>
+<li><code>axsg.hotDesign.setCanvasFormFactor</code></li>
+<li><code>axsg.hotDesign.setCanvasTheme</code></li>
+</ul>
+<h3 id="edit-and-history-tools">Edit and history tools</h3>
+<ul>
+<li><code>axsg.hotDesign.applyDocumentText</code></li>
+<li><code>axsg.hotDesign.applyPropertyUpdate</code></li>
+<li><code>axsg.hotDesign.insertElement</code></li>
+<li><code>axsg.hotDesign.removeElement</code></li>
+<li><code>axsg.hotDesign.undo</code></li>
+<li><code>axsg.hotDesign.redo</code></li>
+</ul>
+<h2 id="hot-design-resources">Hot design resources</h2>
+<h3 id="coarse-snapshots">Coarse snapshots</h3>
+<ul>
+<li><code>axsg://runtime/hotdesign/status</code></li>
+<li><code>axsg://runtime/hotdesign/documents</code></li>
+<li><code>axsg://runtime/hotdesign/events</code></li>
+</ul>
+<h3 id="focused-snapshots">Focused snapshots</h3>
+<ul>
+<li><code>axsg://runtime/hotdesign/workspace/current</code></li>
+<li><code>axsg://runtime/hotdesign/document/selected</code></li>
+<li><code>axsg://runtime/hotdesign/element/selected</code></li>
+</ul>
+<h3 id="per-build-workspace-snapshots">Per-build workspace snapshots</h3>
+<p>The runtime host also publishes one workspace resource per registered hot design document:</p>
+<pre><code class="language-text">axsg://runtime/hotdesign/workspace/by-build-uri/&lt;escaped-build-uri&gt;
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">axsg://runtime/hotdesign/workspace/by-build-uri/avares%3A%2F%2FMyApp%2FViews%2FMainView.axaml
+</code></pre>
+<p>These resources appear and disappear as hot design documents register or unregister. Clients should react to <code>notifications/resources/list_changed</code> and then relist resources when they care about per-build snapshots.</p>
+<h2 id="recommended-client-model">Recommended client model</h2>
+<p>Use this rule:</p>
+<ul>
+<li>subscribe to status and focused resources</li>
+<li>read per-build workspace resources on demand</li>
+<li>relist resources after <code>notifications/resources/list_changed</code></li>
+</ul>
+<p>Recommended baseline subscriptions:</p>
+<ul>
+<li><code>axsg://runtime/hotdesign/status</code></li>
+<li><code>axsg://runtime/hotdesign/events</code></li>
+<li><code>axsg://runtime/hotdesign/workspace/current</code></li>
+<li><code>axsg://runtime/hotdesign/document/selected</code></li>
+<li><code>axsg://runtime/hotdesign/element/selected</code></li>
+</ul>
+<p>That gives an editor-like client enough live state to:</p>
+<ul>
+<li>know whether hot design is enabled</li>
+<li>follow active document changes</li>
+<li>follow element selection changes</li>
+<li>react to edit application results and failures</li>
+</ul>
+<p>without rereading the full workspace tree after every mutation.</p>
+<h2 id="subscribe-then-mutate-flow">Subscribe-then-mutate flow</h2>
+<h3 id="1-subscribe-to-the-focused-workspace-resource">1. Subscribe to the focused workspace resource</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 10,
+  &quot;method&quot;: &quot;resources/subscribe&quot;,
+  &quot;params&quot;: {
+    &quot;uri&quot;: &quot;axsg://runtime/hotdesign/workspace/current&quot;
+  }
+}
+</code></pre>
+<h3 id="2-select-the-active-document">2. Select the active document</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 11,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.hotDesign.selectDocument&quot;,
+    &quot;arguments&quot;: {
+      &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;
+    }
+  }
+}
+</code></pre>
+<p>The tool returns the refreshed workspace snapshot directly. The runtime host also publishes <code>notifications/resources/updated</code> for the focused workspace resources, so subscribed clients can update incrementally.</p>
+<h3 id="3-apply-a-property-edit">3. Apply a property edit</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 12,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.hotDesign.applyPropertyUpdate&quot;,
+    &quot;arguments&quot;: {
+      &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+      &quot;elementId&quot;: &quot;submitButton&quot;,
+      &quot;propertyName&quot;: &quot;Content&quot;,
+      &quot;propertyValue&quot;: &quot;Save changes&quot;,
+      &quot;persistChangesToSource&quot;: true,
+      &quot;waitForHotReload&quot;: false
+    }
+  }
+}
+</code></pre>
+<p>Result shape:</p>
+<pre><code class="language-json">{
+  &quot;applyResult&quot;: {
+    &quot;succeeded&quot;: true,
+    &quot;message&quot;: &quot;Applied hot design update.&quot;,
+    &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+    &quot;sourcePersisted&quot;: true,
+    &quot;minimalDiffApplied&quot;: true,
+    &quot;hotReloadObserved&quot;: false,
+    &quot;runtimeFallbackApplied&quot;: false
+  },
+  &quot;workspace&quot;: {
+    &quot;activeBuildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+    &quot;selectedElementId&quot;: &quot;submitButton&quot;
+  }
+}
+</code></pre>
+<h3 id="4-read-the-focused-selected-element-resource-if-needed">4. Read the focused selected-element resource if needed</h3>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 13,
+  &quot;method&quot;: &quot;resources/read&quot;,
+  &quot;params&quot;: {
+    &quot;uri&quot;: &quot;axsg://runtime/hotdesign/element/selected&quot;
+  }
+}
+</code></pre>
+<p>The resource payload includes:</p>
+<ul>
+<li><code>activeBuildUri</code></li>
+<li><code>selectedElementId</code></li>
+<li><code>element</code></li>
+</ul>
+<p>That makes it cheaper to refresh inspector-like UI than rereading the entire workspace tree.</p>
+<h2 id="document-text-apply-flow">Document-text apply flow</h2>
+<p>Use <code>axsg.hotDesign.applyDocumentText</code> when the client owns the edited XAML text directly.</p>
+<pre><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 20,
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;axsg.hotDesign.applyDocumentText&quot;,
+    &quot;arguments&quot;: {
+      &quot;buildUri&quot;: &quot;avares://MyApp/Views/MainView.axaml&quot;,
+      &quot;xamlText&quot;: &quot;&lt;UserControl xmlns=\&quot;https://github.com/avaloniaui\&quot;&gt;&lt;TextBlock Text=\&quot;Live\&quot;/&gt;&lt;/UserControl&gt;&quot;
+    }
+  }
+}
+</code></pre>
+<p>Use this when your client edits the full document buffer.</p>
+<p>Prefer <code>applyPropertyUpdate</code>, <code>insertElement</code>, or <code>removeElement</code> when the client is operating structurally and wants AXSG to produce the minimal text diff for that specific mutation.</p>
+<h2 id="undo-and-redo">Undo and redo</h2>
+<p>Use:</p>
+<ul>
+<li><code>axsg.hotDesign.undo</code></li>
+<li><code>axsg.hotDesign.redo</code></li>
+</ul>
+<p>Both return:</p>
+<ul>
+<li><code>applyResult</code></li>
+<li>refreshed <code>workspace</code></li>
+</ul>
+<p>The workspace payload includes:</p>
+<ul>
+<li><code>canUndo</code></li>
+<li><code>canRedo</code></li>
+</ul>
+<p>so clients can keep toolbar state aligned without separate bookkeeping.</p>
+<h2 id="canvas-and-panel-controls">Canvas and panel controls</h2>
+<p>These tools all return the refreshed workspace snapshot:</p>
+<ul>
+<li><code>axsg.hotDesign.setWorkspaceMode</code></li>
+<li><code>axsg.hotDesign.setPropertyFilterMode</code></li>
+<li><code>axsg.hotDesign.setHitTestMode</code></li>
+<li><code>axsg.hotDesign.togglePanel</code></li>
+<li><code>axsg.hotDesign.setPanelVisibility</code></li>
+<li><code>axsg.hotDesign.setCanvasZoom</code></li>
+<li><code>axsg.hotDesign.setCanvasFormFactor</code></li>
+<li><code>axsg.hotDesign.setCanvasTheme</code></li>
+</ul>
+<p>That means a client can treat them as pure mutations plus snapshot refresh, rather than mixing a mutating call with an immediate follow-up workspace read.</p>
+<h2 id="resource-invalidation-model">Resource invalidation model</h2>
+<p>After hot design changes:</p>
+<ul>
+<li><code>notifications/resources/updated</code> is sent for focused resources such as <code>workspace/current</code>, <code>document/selected</code>, and <code>element/selected</code></li>
+<li><code>notifications/resources/list_changed</code> is sent when the registered document set changes and per-build workspace resources may have appeared or disappeared</li>
+</ul>
+<p>Use this rule:</p>
+<ul>
+<li>if the active document or selection changed, trust the updated focused resources</li>
+<li>if the document catalog changed, relist resources before assuming your cached per-build URIs are still valid</li>
+</ul>
+<h2 id="when-to-read-the-coarse-workspace">When to read the coarse workspace</h2>
+<p>Use <code>axsg.hotDesign.workspace</code> or <code>axsg://runtime/hotdesign/workspace/current</code> when you need:</p>
+<ul>
+<li>the full element tree</li>
+<li>property entries</li>
+<li>toolbox categories</li>
+<li>full canvas and panel state in one read</li>
+</ul>
+<p>Do not use the full workspace snapshot for every tiny repaint when you only need:</p>
+<ul>
+<li>current selection</li>
+<li>current document</li>
+<li>one tracked build URI</li>
+</ul>
+<p>That is what the focused resources are for.</p>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/runtime-mcp-studio-control">Runtime MCP Studio Control</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/architecture/unified-remote-api-and-mcp">Unified Remote API and MCP</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/runtime-avalonia">Package: XamlToCSharpGenerator.Runtime.Avalonia</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>
