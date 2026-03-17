@@ -299,6 +299,62 @@ public class SourceGeneratedDesignerHostTests
         }
     }
 
+    [AvaloniaFact]
+    public void RuntimeXamlLoader_Hydrates_Root_XDataType_For_Standalone_Preview_Expressions()
+    {
+        SourceGenPreviewMarkupRuntime.Install(new SourceGeneratedPreviewMarkupRuntime().ProvideValue);
+
+        try
+        {
+            var loader = new SourceGeneratedRuntimeXamlLoader();
+            var root = new UserControl();
+            var xaml = BuildHydratedAuthoredPreviewXaml();
+
+            var result = loader.LoadCore(
+                new RuntimeXamlLoaderDocument(
+                    new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+                    root,
+                    xaml),
+                new RuntimeXamlLoaderConfiguration
+                {
+                    LocalAssembly = typeof(SourceGeneratedDesignerHostTests).Assembly
+                },
+                xaml,
+                sourceFilePath: null,
+                assemblyPath: null,
+                (_, _, _) => root,
+                (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration configuration, object baselineRoot, string authoredXaml, out object overlayResult) =>
+                {
+                    var rewrittenXaml = SourceGeneratedPreviewXamlPreprocessor.Rewrite(
+                        authoredXaml,
+                        typeof(SourceGeneratedDesignerHostTests).Assembly);
+                    overlayResult = AvaloniaRuntimeXamlLoader.Load(
+                        new RuntimeXamlLoaderDocument(
+                            new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+                            baselineRoot,
+                            rewrittenXaml),
+                        configuration);
+                    return true;
+                });
+
+            Assert.Same(root, result);
+            Assert.IsType<PreviewHydratedViewModel>(root.DataContext);
+
+            var panel = Assert.IsType<StackPanel>(root.Content);
+            var textBlock = Assert.IsType<TextBlock>(panel.Children[0]);
+            var button = Assert.IsType<Button>(panel.Children[1]);
+
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal("Hydrated Widget", textBlock.Text);
+            Assert.Equal("Ada Lovelace", button.Content);
+        }
+        finally
+        {
+            SourceGenPreviewMarkupRuntime.Uninstall();
+        }
+    }
+
     private static IServiceProvider CreateProvideValueServiceProvider(
         object rootObject,
         object targetObject,
@@ -353,6 +409,21 @@ public class SourceGeneratedDesignerHostTests
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                             xmlns:local="clr-namespace:XamlToCSharpGenerator.Tests.PreviewerHost;assembly=XamlToCSharpGenerator.Tests"
                             x:DataType="local:PreviewMarkupTestViewModel">
+                   <StackPanel>
+                       <TextBlock Text="{CSharp Code=source.ProductName}" />
+                       <Button Content="{= FirstName + ' ' + LastName}" />
+                   </StackPanel>
+               </UserControl>
+               """;
+    }
+
+    private static string BuildHydratedAuthoredPreviewXaml()
+    {
+        return """
+               <UserControl xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:local="clr-namespace:XamlToCSharpGenerator.Tests.PreviewerHost;assembly=XamlToCSharpGenerator.Tests"
+                            x:DataType="local:PreviewHydratedViewModel">
                    <StackPanel>
                        <TextBlock Text="{CSharp Code=source.ProductName}" />
                        <Button Content="{= FirstName + ' ' + LastName}" />

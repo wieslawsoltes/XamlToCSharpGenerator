@@ -1,7 +1,11 @@
 using System.Text;
+using System.Reflection;
+using System.Runtime.Loader;
 using Avalonia;
 using Avalonia.Controls;
 using global::Avalonia.Markup.Xaml;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.Previewer.DesignerHost;
 
 namespace XamlToCSharpGenerator.Tests.PreviewerHost;
@@ -48,6 +52,113 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         {
             SourceGeneratedRuntimeXamlLoader.ClearLastGoodOverlayCacheForTests();
         }
+    }
+
+    [Fact]
+    public void LoadCore_Hydrates_Root_DataContext_From_XDataType_When_Unset()
+    {
+        var loader = new SourceGeneratedRuntimeXamlLoader();
+        var root = new UserControl();
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+            root,
+            BuildHydratedPreviewXaml());
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(PreviewHydratedViewModel).Assembly
+        };
+        object? overlayObservedDataContext = null;
+
+        var result = loader.LoadCore(
+            document,
+            configuration,
+            BuildHydratedPreviewXaml(),
+            sourceFilePath: null,
+            assemblyPath: null,
+            (_, _, _) => root,
+            (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration _, object baselineRoot, string _, out object overlayResult) =>
+            {
+                overlayObservedDataContext = Assert.IsType<UserControl>(baselineRoot).DataContext;
+                overlayResult = baselineRoot;
+                return true;
+            });
+
+        Assert.Same(root, result);
+        Assert.IsType<PreviewHydratedViewModel>(root.DataContext);
+        Assert.IsType<PreviewHydratedViewModel>(overlayObservedDataContext);
+    }
+
+    [Fact]
+    public void LoadCore_Does_Not_Override_Explicit_Root_DataContext()
+    {
+        var loader = new SourceGeneratedRuntimeXamlLoader();
+        var explicitDataContext = new object();
+        var root = new UserControl
+        {
+            DataContext = explicitDataContext
+        };
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+            root,
+            BuildHydratedPreviewXaml());
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(PreviewHydratedViewModel).Assembly
+        };
+
+        var result = loader.LoadCore(
+            document,
+            configuration,
+            BuildHydratedPreviewXaml(),
+            sourceFilePath: null,
+            assemblyPath: null,
+            (_, _, _) => root,
+            (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration _, object baselineRoot, string _, out object overlayResult) =>
+            {
+                overlayResult = baselineRoot;
+                return true;
+            });
+
+        Assert.Same(root, result);
+        Assert.Same(explicitDataContext, root.DataContext);
+    }
+
+    [Fact]
+    public void LoadCore_Hydrates_Root_DataContext_From_External_XDataType_Assembly_On_Demand()
+    {
+        var loader = new SourceGeneratedRuntimeXamlLoader();
+        var assemblyName = "AxsgPreviewHydratedVm_" + Guid.NewGuid().ToString("N");
+        var assemblyImage = CompileExternalHydratedViewModelAssembly(assemblyName);
+        using var resolver = new TestAssemblyResolveScope(assemblyName, assemblyImage);
+        var root = new UserControl();
+        var xaml = BuildExternalHydratedPreviewXaml(assemblyName);
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/Preview.axaml"),
+            root,
+            xaml);
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(PreviewHydratedViewModel).Assembly
+        };
+
+        var result = loader.LoadCore(
+            document,
+            configuration,
+            xaml,
+            sourceFilePath: null,
+            assemblyPath: null,
+            (_, _, _) => root,
+            (RuntimeXamlLoaderDocument _, RuntimeXamlLoaderConfiguration _, object baselineRoot, string _, out object overlayResult) =>
+            {
+                overlayResult = baselineRoot;
+                return true;
+            });
+
+        Assert.Same(root, result);
+        Assert.True(resolver.WasResolved);
+        Assert.NotNull(root.DataContext);
+        Assert.Equal("ExternalPreviewHydration.ExternalPreviewHydratedViewModel", root.DataContext!.GetType().FullName);
+        Assert.Equal(assemblyName, root.DataContext.GetType().Assembly.GetName().Name);
     }
 
     [Fact]
@@ -289,6 +400,106 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         finally
         {
             Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    private static string BuildHydratedPreviewXaml()
+    {
+        return """
+               <UserControl xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:local="clr-namespace:XamlToCSharpGenerator.Tests.PreviewerHost;assembly=XamlToCSharpGenerator.Tests"
+                            x:DataType="local:PreviewHydratedViewModel" />
+               """;
+    }
+
+    private static string BuildExternalHydratedPreviewXaml(string assemblyName)
+    {
+        return $$"""
+               <UserControl xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:local="clr-namespace:ExternalPreviewHydration;assembly={{assemblyName}}"
+                            x:DataType="local:ExternalPreviewHydratedViewModel" />
+               """;
+    }
+
+    private static byte[] CompileExternalHydratedViewModelAssembly(string assemblyName)
+    {
+        var source = """
+            namespace ExternalPreviewHydration;
+
+            public sealed class ExternalPreviewHydratedViewModel
+            {
+                public string ProductName { get; } = "External";
+            }
+            """;
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: assemblyName + ".cs");
+        var references = CreateLoadedAssemblyMetadataReferences();
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit external hydrated view-model test assembly: " +
+            string.Join(Environment.NewLine, emitResult.Diagnostics));
+        return stream.ToArray();
+    }
+
+    private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()
+    {
+        var references = new List<MetadataReference>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < loadedAssemblies.Length; index++)
+        {
+            var assembly = loadedAssemblies[index];
+            if (assembly.IsDynamic ||
+                string.IsNullOrWhiteSpace(assembly.Location) ||
+                !seenPaths.Add(assembly.Location))
+            {
+                continue;
+            }
+
+            references.Add(MetadataReference.CreateFromFile(assembly.Location));
+        }
+
+        return references;
+    }
+
+    private sealed class TestAssemblyResolveScope : IDisposable
+    {
+        private readonly string _assemblyName;
+        private readonly byte[] _assemblyImage;
+
+        public TestAssemblyResolveScope(string assemblyName, byte[] assemblyImage)
+        {
+            _assemblyName = assemblyName;
+            _assemblyImage = assemblyImage;
+            AssemblyLoadContext.Default.Resolving += OnResolving;
+        }
+
+        public bool WasResolved { get; private set; }
+
+        public void Dispose()
+        {
+            AssemblyLoadContext.Default.Resolving -= OnResolving;
+        }
+
+        private Assembly? OnResolving(AssemblyLoadContext context, AssemblyName assemblyName)
+        {
+            if (!string.Equals(assemblyName.Name, _assemblyName, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            WasResolved = true;
+            return context.LoadFromStream(new MemoryStream(_assemblyImage, writable: false));
         }
     }
 }
