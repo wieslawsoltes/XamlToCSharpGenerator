@@ -334,7 +334,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Condition: assignment.Condition,
                         ValueKind: ResolvedValueKind.Binding,
                         ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
-                        PreserveBindingValue: HasAssignBindingAttribute(property)));
+                        PreserveBindingValue: HasAssignBindingAttribute(property),
+                        RequiresObjectInitializer: RequiresObjectInitializer(
+                            property,
+                            ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)),
+                        ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                            property,
+                            compilation,
+                            unsafeAccessors),
+                        IsInitOnlyClrProperty: property.SetMethod?.IsInitOnly == true));
                     continue;
                 }
 
@@ -462,7 +470,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Condition: assignment.Condition,
                         ValueKind: ResolvedValueKind.Binding,
                         ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
-                        PreserveBindingValue: HasAssignBindingAttribute(property)));
+                        PreserveBindingValue: HasAssignBindingAttribute(property),
+                        RequiresObjectInitializer: RequiresObjectInitializer(
+                            property,
+                            ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)),
+                        ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                            property,
+                            compilation,
+                            unsafeAccessors),
+                        IsInitOnlyClrProperty: property.SetMethod?.IsInitOnly == true));
                     continue;
                 }
 
@@ -634,7 +650,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             Condition: assignment.Condition,
                             ValueKind: ResolvedValueKind.Binding,
                             ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
-                            PreserveBindingValue: HasAssignBindingAttribute(property)));
+                            PreserveBindingValue: HasAssignBindingAttribute(property),
+                            RequiresObjectInitializer: RequiresObjectInitializer(
+                                property,
+                                ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)),
+                            ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                                property,
+                                compilation,
+                                unsafeAccessors),
+                            IsInitOnlyClrProperty: property.SetMethod?.IsInitOnly == true));
                         continue;
                     }
 
@@ -841,7 +865,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
                         property,
                         compilation,
-                        unsafeAccessors)));
+                        unsafeAccessors),
+                    IsInitOnlyClrProperty: property.SetMethod?.IsInitOnly == true));
                 continue;
             }
 
@@ -1071,7 +1096,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         Condition: propertyElement.Condition,
                         ValueKind: ResolvedValueKind.Binding,
                         ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
-                        PreserveBindingValue: HasAssignBindingAttribute(inlineProperty)));
+                        PreserveBindingValue: HasAssignBindingAttribute(inlineProperty),
+                        RequiresObjectInitializer: RequiresObjectInitializer(
+                            inlineProperty,
+                            ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)),
+                        ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                            inlineProperty,
+                            compilation,
+                            unsafeAccessors),
+                        IsInitOnlyClrProperty: inlineProperty.SetMethod?.IsInitOnly == true));
                     continue;
                 }
             }
@@ -1613,7 +1646,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
                             contentProperty,
                             compilation,
-                            unsafeAccessors)));
+                            unsafeAccessors),
+                        IsInitOnlyClrProperty: contentProperty.SetMethod?.IsInitOnly == true));
                     handledAsContentProperty = true;
                 }
                 else if (contentProperty is not null &&
@@ -1885,7 +1919,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
                 dataTypeProperty,
                 compilation,
-                unsafeAccessors)));
+                unsafeAccessors),
+            IsInitOnlyClrProperty: dataTypeProperty.SetMethod?.IsInitOnly == true));
     }
 
     private static string? ResolveInitOnlySetterUnsafeAccessorMethodName(

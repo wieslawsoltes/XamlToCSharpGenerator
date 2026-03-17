@@ -48,4 +48,19 @@ public static class SourceGenProvideValueTargetPropertyFactory
 
         return new ClrPropertyInfo(name, Getter, Setter, typeof(TValue));
     }
+
+    public static IPropertyInfo CreateReadOnly<TTarget, TValue>(string name)
+    {
+        if (name is null)
+        {
+            throw new ArgumentNullException(nameof(name));
+        }
+
+        object? Getter(object _)
+        {
+            throw new NotSupportedException($"Property '{name}' is read-only in source-generated context.");
+        }
+
+        return new ClrPropertyInfo(name, Getter, null, typeof(TValue));
+    }
 }

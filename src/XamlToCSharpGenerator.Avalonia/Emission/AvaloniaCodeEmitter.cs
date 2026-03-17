@@ -5474,6 +5474,18 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         if (!string.IsNullOrWhiteSpace(assignment.ClrPropertyOwnerTypeName) &&
             !string.IsNullOrWhiteSpace(assignment.ClrPropertyTypeName))
         {
+            if (assignment.IsInitOnlyClrProperty)
+            {
+                return
+                    "global::XamlToCSharpGenerator.Runtime.SourceGenProvideValueTargetPropertyFactory.CreateReadOnly<" +
+                    assignment.ClrPropertyOwnerTypeName +
+                    ", " +
+                    assignment.ClrPropertyTypeName +
+                    ">(\"" +
+                    Escape(assignment.PropertyName) +
+                    "\")";
+            }
+
             return
                 "global::XamlToCSharpGenerator.Runtime.SourceGenProvideValueTargetPropertyFactory.CreateWritable<" +
                 assignment.ClrPropertyOwnerTypeName +

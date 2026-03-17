@@ -19690,6 +19690,63 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Emits_ReadOnly_ProvideValueTarget_And_UnsafeAccessor_For_InitOnly_StaticResource_Clr_Property()
+    {
+        const string code = """
+            namespace System.Runtime.CompilerServices
+            {
+                public sealed class IsExternalInit { }
+            }
+
+            namespace Avalonia.Data.Core
+            {
+                public interface IPropertyInfo { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object?> { }
+            }
+
+            namespace Demo
+            {
+                public sealed class SvgSource
+                {
+                    public string? Css { get; init; }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:d="clr-namespace:Demo">
+                <x:String x:Key="GenericIconStyle">path { fill: #fff; }</x:String>
+                <d:SvgSource x:Key="PrimaryIcon"
+                             Css="{StaticResource GenericIconStyle}" />
+            </ResourceDictionary>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = updatedCompilation.SyntaxTrees
+            .Select(static tree => tree.ToString())
+            .First(source => source.Contains("ProvideStaticResource(\"GenericIconStyle\"", StringComparison.Ordinal));
+        Assert.Contains(
+            "SourceGenProvideValueTargetPropertyFactory.CreateReadOnly<global::Demo.SvgSource, string",
+            generated);
+        Assert.Contains("ProvideStaticResource(\"GenericIconStyle\"", generated);
+        Assert.Contains("__AXSG_UnsafeAccessor_", generated);
+        Assert.DoesNotContain(
+            "static (__target, __value) => __target.Css = __value",
+            generated,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Emits_InitOnly_Root_Clr_Property_Assignments_For_Existing_Root_Instances_Using_UnsafeAccessor()
     {
         const string code = """
