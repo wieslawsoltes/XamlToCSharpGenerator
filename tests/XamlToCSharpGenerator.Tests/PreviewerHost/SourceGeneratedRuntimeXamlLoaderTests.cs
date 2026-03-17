@@ -56,6 +56,49 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [AvaloniaFact]
+    public void TryApplyLiveOverlay_Clears_Root_Collections_Declared_On_Base_Type_Property_Elements()
+    {
+        var method = typeof(SourceGeneratedRuntimeXamlLoader).GetMethod(
+            "TryApplyLiveOverlay",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TryApplyLiveOverlay method was not found.");
+        var root = new PreviewOverlayTestControl();
+        var xaml = BuildOverlayCollectionResetXaml();
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/PreviewOverlay.axaml"),
+            root,
+            xaml);
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly,
+            DesignMode = true
+        };
+        var baseline = Assert.IsType<PreviewOverlayTestControl>(AvaloniaRuntimeXamlLoader.Load(document, configuration));
+
+        var baselineResources = Assert.IsAssignableFrom<ResourceDictionary>(baseline.Resources);
+        Assert.Equal("Orange", baselineResources["Accent"]);
+        Assert.Single(baseline.Styles);
+        Assert.Single(baseline.DataTemplates);
+
+        object?[] args = [document, configuration, baseline, xaml, null];
+
+        var success = Assert.IsType<bool>(method.Invoke(null, args));
+        var result = Assert.IsType<PreviewOverlayTestControl>(args[4]);
+
+        Assert.True(success);
+        Assert.Same(baseline, result);
+
+        var resultResources = Assert.IsAssignableFrom<ResourceDictionary>(result.Resources);
+        Assert.Equal("Orange", resultResources["Accent"]);
+        Assert.Single(resultResources);
+        Assert.Single(result.Styles);
+        Assert.Single(result.DataTemplates);
+
+        var textBlock = Assert.IsType<TextBlock>(result.Content);
+        Assert.Equal("Orange", textBlock.Text);
+    }
+
+    [AvaloniaFact]
     public void LoadCore_Hydrates_Root_DataContext_From_XDataType_When_Unset()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -435,6 +478,29 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                             xmlns:local="clr-namespace:XamlToCSharpGenerator.Tests.PreviewerHost;assembly=XamlToCSharpGenerator.Tests"
                             x:DataType="local:PreviewHydratedViewModel" />
+               """;
+    }
+
+    private static string BuildOverlayCollectionResetXaml()
+    {
+        return """
+               <local:PreviewOverlayTestControl xmlns="https://github.com/avaloniaui"
+                                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                                xmlns:local="clr-namespace:XamlToCSharpGenerator.Tests.PreviewerHost;assembly=XamlToCSharpGenerator.Tests"
+                                                xmlns:system="using:System">
+                   <UserControl.Styles>
+                       <Style Selector="TextBlock" />
+                   </UserControl.Styles>
+                   <UserControl.Resources>
+                       <system:String x:Key="Accent">Orange</system:String>
+                   </UserControl.Resources>
+                   <UserControl.DataTemplates>
+                       <DataTemplate DataType="system:String">
+                           <TextBlock Text="Template" />
+                       </DataTemplate>
+                   </UserControl.DataTemplates>
+                   <TextBlock Text="{StaticResource Accent}" />
+               </local:PreviewOverlayTestControl>
                """;
     }
 

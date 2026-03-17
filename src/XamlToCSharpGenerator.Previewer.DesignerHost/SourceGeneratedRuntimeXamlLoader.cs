@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using global::Avalonia;
 using global::Avalonia.Controls;
 using global::Avalonia.Controls.Templates;
@@ -13,6 +14,15 @@ namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 
 internal sealed class SourceGeneratedRuntimeXamlLoader
 {
+    [Flags]
+    private enum RootOverlayCollections
+    {
+        None = 0,
+        Resources = 1 << 0,
+        Styles = 1 << 1,
+        DataTemplates = 1 << 2
+    }
+
     private static readonly ConcurrentDictionary<string, string> LastGoodOverlayByDocument = new(StringComparer.OrdinalIgnoreCase);
 
     public object Load(RuntimeXamlLoaderDocument document, RuntimeXamlLoaderConfiguration configuration)
@@ -269,6 +279,7 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         try
         {
             var localAssembly = configuration.LocalAssembly ?? baselineRoot.GetType().Assembly;
+            PrepareBaselineForOverlay(baselineRoot, xamlText);
             var rewrittenXaml = SourceGeneratedPreviewMarkupRuntimeInstaller.IsInstalled
                 ? SourceGeneratedPreviewXamlPreprocessor.Rewrite(xamlText, localAssembly)
                 : xamlText;
@@ -283,6 +294,135 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
             result = baselineRoot;
             return false;
         }
+    }
+
+    private static void PrepareBaselineForOverlay(object baselineRoot, string xamlText)
+    {
+        switch (baselineRoot)
+        {
+            case null:
+                return;
+            case ResourceDictionary resourceDictionary:
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(resourceDictionary);
+                return;
+            case Styles styles:
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(styles);
+                return;
+            case DataTemplates dataTemplates:
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(dataTemplates);
+                return;
+            case StyleBase styleBase:
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(styleBase.Setters);
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(styleBase.Children);
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(styleBase.Resources);
+                XamlSourceGenHotReloadStateTracker.TryClearCollection(styleBase.Animations);
+                return;
+            case Application application:
+                PrepareRootHostCollections(application, xamlText);
+                return;
+            case Control control:
+                PrepareRootHostCollections(control, xamlText);
+                return;
+        }
+    }
+
+    private static void PrepareRootHostCollections(Application application, string xamlText)
+    {
+        var declarations = GetRootOverlayCollections(xamlText, application.GetType());
+        if ((declarations & RootOverlayCollections.Resources) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(application.Resources);
+        }
+
+        if ((declarations & RootOverlayCollections.Styles) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(application.Styles);
+        }
+
+        if ((declarations & RootOverlayCollections.DataTemplates) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(application.DataTemplates);
+        }
+    }
+
+    private static void PrepareRootHostCollections(Control control, string xamlText)
+    {
+        var declarations = GetRootOverlayCollections(xamlText, control.GetType());
+        if ((declarations & RootOverlayCollections.Resources) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(control.Resources);
+        }
+
+        if ((declarations & RootOverlayCollections.Styles) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(control.Styles);
+        }
+
+        if ((declarations & RootOverlayCollections.DataTemplates) != 0)
+        {
+            XamlSourceGenHotReloadStateTracker.TryClearCollection(control.DataTemplates);
+        }
+    }
+
+    private static RootOverlayCollections GetRootOverlayCollections(string xamlText, Type rootType)
+    {
+        if (string.IsNullOrWhiteSpace(xamlText))
+        {
+            return RootOverlayCollections.None;
+        }
+
+        try
+        {
+            var document = XDocument.Parse(xamlText, LoadOptions.PreserveWhitespace);
+            if (document.Root is null)
+            {
+                return RootOverlayCollections.None;
+            }
+
+            var recognizedOwners = GetRecognizedRootOwnerNames(rootType);
+            var declarations = RootOverlayCollections.None;
+            foreach (var childElement in document.Root.Elements())
+            {
+                var localName = childElement.Name.LocalName;
+                var separatorIndex = localName.IndexOf('.');
+                if (separatorIndex <= 0 || separatorIndex >= localName.Length - 1)
+                {
+                    continue;
+                }
+
+                var ownerToken = localName[..separatorIndex];
+                if (!recognizedOwners.Contains(ownerToken))
+                {
+                    continue;
+                }
+
+                var propertyToken = localName[(separatorIndex + 1)..];
+                declarations |= propertyToken switch
+                {
+                    nameof(StyledElement.Resources) => RootOverlayCollections.Resources,
+                    nameof(StyledElement.Styles) => RootOverlayCollections.Styles,
+                    nameof(Control.DataTemplates) => RootOverlayCollections.DataTemplates,
+                    _ => RootOverlayCollections.None
+                };
+            }
+
+            return declarations;
+        }
+        catch
+        {
+            return RootOverlayCollections.None;
+        }
+    }
+
+    private static HashSet<string> GetRecognizedRootOwnerNames(Type rootType)
+    {
+        var owners = new HashSet<string>(StringComparer.Ordinal);
+        for (var current = rootType; current is not null && current != typeof(object); current = current.BaseType)
+        {
+            owners.Add(current.Name);
+        }
+
+        return owners;
     }
 
     internal delegate bool TryApplyLiveOverlayDelegate(
