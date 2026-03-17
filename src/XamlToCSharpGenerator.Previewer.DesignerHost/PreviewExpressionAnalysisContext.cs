@@ -339,6 +339,71 @@ internal sealed class PreviewExpressionAnalysisContext
             return rewritten;
         }
 
+        public override SyntaxNode? VisitIfStatement(IfStatementSyntax node)
+        {
+            ExpressionSyntax rewrittenCondition = RewriteExpressionWithPatternScopes(node.Condition, out var trueScopeNames);
+
+            PushScope(trueScopeNames);
+            StatementSyntax rewrittenStatement = (StatementSyntax)Visit(node.Statement)!;
+            PopScope();
+
+            ElseClauseSyntax? rewrittenElse = node.Else is null
+                ? null
+                : (ElseClauseSyntax)Visit(node.Else)!;
+
+            return node
+                .WithCondition(rewrittenCondition)
+                .WithStatement(rewrittenStatement)
+                .WithElse(rewrittenElse);
+        }
+
+        public override SyntaxNode? VisitWhileStatement(WhileStatementSyntax node)
+        {
+            ExpressionSyntax rewrittenCondition = RewriteExpressionWithPatternScopes(node.Condition, out var trueScopeNames);
+
+            PushScope(trueScopeNames);
+            StatementSyntax rewrittenStatement = (StatementSyntax)Visit(node.Statement)!;
+            PopScope();
+
+            return node
+                .WithCondition(rewrittenCondition)
+                .WithStatement(rewrittenStatement);
+        }
+
+        public override SyntaxNode? VisitConditionalExpression(ConditionalExpressionSyntax node)
+        {
+            ExpressionSyntax rewrittenCondition = RewriteExpressionWithPatternScopes(node.Condition, out var trueScopeNames);
+
+            PushScope(trueScopeNames);
+            ExpressionSyntax rewrittenWhenTrue = (ExpressionSyntax)Visit(node.WhenTrue)!;
+            PopScope();
+
+            ExpressionSyntax rewrittenWhenFalse = (ExpressionSyntax)Visit(node.WhenFalse)!;
+
+            return node
+                .WithCondition(rewrittenCondition)
+                .WithWhenTrue(rewrittenWhenTrue)
+                .WithWhenFalse(rewrittenWhenFalse);
+        }
+
+        public override SyntaxNode? VisitSwitchExpressionArm(SwitchExpressionArmSyntax node)
+        {
+            PatternSyntax rewrittenPattern = (PatternSyntax)Visit(node.Pattern)!;
+            var patternNames = GetPatternDesignationNames(node.Pattern);
+
+            PushScope(patternNames);
+            WhenClauseSyntax? rewrittenWhenClause = node.WhenClause is null
+                ? null
+                : (WhenClauseSyntax)Visit(node.WhenClause)!;
+            ExpressionSyntax rewrittenExpression = (ExpressionSyntax)Visit(node.Expression)!;
+            PopScope();
+
+            return node
+                .WithPattern(rewrittenPattern)
+                .WithWhenClause(rewrittenWhenClause)
+                .WithExpression(rewrittenExpression);
+        }
+
         public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
         {
             AddNameToCurrentScope(node.Identifier.ValueText);
@@ -405,8 +470,19 @@ internal sealed class PreviewExpressionAnalysisContext
 
         public override SyntaxNode? VisitSingleVariableDesignation(SingleVariableDesignationSyntax node)
         {
-            AddNameToCurrentScope(node.Identifier.ValueText);
+            if (!IsPatternDesignation(node))
+            {
+                AddNameToCurrentScope(node.Identifier.ValueText);
+            }
+
             return base.VisitSingleVariableDesignation(node);
+        }
+
+        public override SyntaxNode? VisitBinaryExpression(BinaryExpressionSyntax node)
+        {
+            return node.IsKind(SyntaxKind.LogicalAndExpression)
+                ? RewriteExpressionWithPatternScopes(node, out _)
+                : base.VisitBinaryExpression(node);
         }
 
         public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
@@ -624,6 +700,86 @@ internal sealed class PreviewExpressionAnalysisContext
             }
 
             return false;
+        }
+
+        private ExpressionSyntax RewriteExpressionWithPatternScopes(
+            ExpressionSyntax node,
+            out IReadOnlyCollection<string> trueScopeNames)
+        {
+            switch (node)
+            {
+                case ParenthesizedExpressionSyntax parenthesizedExpression:
+                    ExpressionSyntax rewrittenInnerExpression = RewriteExpressionWithPatternScopes(
+                        parenthesizedExpression.Expression,
+                        out trueScopeNames);
+                    return parenthesizedExpression.WithExpression(rewrittenInnerExpression);
+
+                case BinaryExpressionSyntax binaryExpression when binaryExpression.IsKind(SyntaxKind.LogicalAndExpression):
+                    ExpressionSyntax rewrittenLeft = RewriteExpressionWithPatternScopes(
+                        binaryExpression.Left,
+                        out var leftTrueScopeNames);
+
+                    PushScope(leftTrueScopeNames);
+                    ExpressionSyntax rewrittenRight = RewriteExpressionWithPatternScopes(
+                        binaryExpression.Right,
+                        out var rightTrueScopeNames);
+                    PopScope();
+
+                    trueScopeNames = MergeScopedNames(leftTrueScopeNames, rightTrueScopeNames);
+                    return binaryExpression
+                        .WithLeft(rewrittenLeft)
+                        .WithRight(rewrittenRight);
+
+                case IsPatternExpressionSyntax isPatternExpression:
+                    ExpressionSyntax rewrittenExpression = (ExpressionSyntax)Visit(isPatternExpression.Expression)!;
+                    PatternSyntax rewrittenPattern = (PatternSyntax)Visit(isPatternExpression.Pattern)!;
+                    trueScopeNames = GetPatternDesignationNames(isPatternExpression.Pattern);
+                    return isPatternExpression
+                        .WithExpression(rewrittenExpression)
+                        .WithPattern(rewrittenPattern);
+
+                default:
+                    trueScopeNames = Array.Empty<string>();
+                    return (ExpressionSyntax)Visit(node)!;
+            }
+        }
+
+        private static IReadOnlyCollection<string> MergeScopedNames(
+            IReadOnlyCollection<string> first,
+            IReadOnlyCollection<string> second)
+        {
+            if (first.Count == 0)
+            {
+                return second;
+            }
+
+            if (second.Count == 0)
+            {
+                return first;
+            }
+
+            var merged = new HashSet<string>(first, StringComparer.Ordinal);
+            merged.UnionWith(second);
+            return merged;
+        }
+
+        private static IReadOnlyCollection<string> GetPatternDesignationNames(SyntaxNode node)
+        {
+            var names = node.DescendantNodesAndSelf()
+                .OfType<SingleVariableDesignationSyntax>()
+                .Where(IsPatternDesignation)
+                .Select(static designation => designation.Identifier.ValueText)
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            return names.Length == 0
+                ? Array.Empty<string>()
+                : names;
+        }
+
+        private static bool IsPatternDesignation(SingleVariableDesignationSyntax node)
+        {
+            return node.Ancestors().Any(static ancestor => ancestor is PatternSyntax);
         }
     }
 }
