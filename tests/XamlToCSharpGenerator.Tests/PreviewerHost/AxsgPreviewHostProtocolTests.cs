@@ -80,6 +80,44 @@ public sealed class AxsgPreviewHostProtocolTests
     }
 
     [Fact]
+    public void ParseInputRequest_Normalizes_Key_Input_And_Defaults_Modifiers()
+    {
+        var payload = JsonDocument.Parse(
+            """
+            {
+              "eventType": "KEY",
+              "isDown": true,
+              "key": "a",
+              "code": "KeyQ",
+              "location": 0
+            }
+            """).RootElement.Clone();
+
+        var request = AxsgPreviewHostProtocol.ParseInputRequest(payload);
+
+        Assert.Equal("key", request.EventType);
+        Assert.True(request.IsDown);
+        Assert.Equal("a", request.Key);
+        Assert.Equal("KeyQ", request.Code);
+        Assert.Equal(0, request.Location);
+        Assert.NotNull(request.Modifiers);
+        Assert.False(request.Modifiers!.Alt);
+        Assert.False(request.Modifiers.Control);
+        Assert.False(request.Modifiers.Shift);
+        Assert.False(request.Modifiers.Meta);
+    }
+
+    [Fact]
+    public void ParseInputRequest_Rejects_Unsupported_Event_Type()
+    {
+        var payload = JsonDocument.Parse("""{"eventType":"wheel"}""").RootElement.Clone();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => AxsgPreviewHostProtocol.ParseInputRequest(payload));
+
+        Assert.Equal("Unsupported input eventType 'wheel'.", exception.Message);
+    }
+
+    [Fact]
     public void CreateSuccessResponse_Serializes_Strongly_Typed_Payload()
     {
         var response = AxsgPreviewHostProtocol.CreateSuccessResponse(

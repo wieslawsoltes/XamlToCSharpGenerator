@@ -1,0 +1,186 @@
+using System.Reflection;
+using XamlToCSharpGenerator.Previewer.DesignerHost;
+
+namespace XamlToCSharpGenerator.Tests.PreviewerHost;
+
+public sealed class PreviewExpressionAnalysisContextTests
+{
+    private static readonly Assembly TestAssembly = typeof(PreviewTestRoot).Assembly;
+
+    [Fact]
+    public void TryRewritePreviewExpression_DoesNotLeak_NestedLambdaParameter_Names_Into_OuterScope()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewExpression(
+            typeof(PreviewTestViewModel),
+            rootType: null,
+            targetType: null,
+            "Name + new[] { 1 }.Select(Name => Name.ToString()).First()",
+            out var rewrittenExpression,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Equal(
+            "source.Name + new[] { 1 }.Select(Name => Name.ToString()).First()",
+            rewrittenExpression);
+        Assert.Equal(["Name"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewExpression_DoesNotRewrite_QueryRangeVariables()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewExpression(
+            typeof(PreviewQueryTestViewModel),
+            rootType: null,
+            targetType: null,
+            "from Name in Items select Name",
+            out var rewrittenExpression,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Equal("from Name in source.Items select Name", rewrittenExpression);
+        Assert.Equal(["Items"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewExpression_DoesNotRewrite_JoinInto_ContinuationVariables()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewExpression(
+            typeof(PreviewQueryTestViewModel),
+            rootType: null,
+            targetType: null,
+            "from Name in Items join Alias in OtherItems on Name equals Alias into Matches select Matches",
+            out var rewrittenExpression,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Equal(
+            "from Name in source.Items join Alias in source.OtherItems on Name equals Alias into Matches select Matches",
+            rewrittenExpression);
+        Assert.Equal(["Items", "OtherItems"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewStatements_DoesNotLeak_PatternVariables_Outside_IfBody()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewStatements(
+            typeof(PreviewPatternScopeTestViewModel),
+            rootType: null,
+            targetType: null,
+            """
+            if (Value is string Name)
+            {
+                _ = Name;
+            }
+
+            Name = Name.Trim();
+            """,
+            out var rewrittenStatements,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Contains("if (source.Value is string Name)", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("_ = Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("source.Name = source.Name.Trim();", rewrittenStatements, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ = source.Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Equal(["Name", "Value"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewExpression_Keeps_PatternVariables_In_LogicalAnd_RightOperand()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewExpression(
+            typeof(PreviewPatternScopeTestViewModel),
+            rootType: null,
+            targetType: null,
+            "Value is string Name && Name.Length > 0",
+            out var rewrittenExpression,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Equal("source.Value is string Name && Name.Length > 0", rewrittenExpression);
+        Assert.Equal(["Value"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewExpression_Keeps_PatternVariables_In_Conditional_TrueBranch_Only()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewExpression(
+            typeof(PreviewPatternScopeTestViewModel),
+            rootType: null,
+            targetType: null,
+            "Value is string Name ? Name : Name",
+            out var rewrittenExpression,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Equal("source.Value is string Name ? Name : source.Name", rewrittenExpression);
+        Assert.Equal(["Name", "Value"], dependencyNames);
+    }
+
+    [Fact]
+    public void TryRewritePreviewStatements_Keeps_SwitchCasePatternVariables_In_WhenClause_And_CaseBody()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewStatements(
+            typeof(PreviewPatternScopeTestViewModel),
+            rootType: null,
+            targetType: null,
+            """
+            switch (Value)
+            {
+                case string Name when Name.Length > 0:
+                    _ = Name;
+                    break;
+            }
+
+            Name = Name.Trim();
+            """,
+            out var rewrittenStatements,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Contains("switch (source.Value)", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("case string Name when Name.Length > 0:", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("_ = Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("source.Name = source.Name.Trim();", rewrittenStatements, StringComparison.Ordinal);
+        Assert.DoesNotContain("when source.Name.Length", rewrittenStatements, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ = source.Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Equal(["Name", "Value"], dependencyNames);
+    }
+}
+
+internal sealed class PreviewQueryTestViewModel
+{
+    public string Name { get; set; } = string.Empty;
+
+    public IEnumerable<string> Items { get; set; } = Array.Empty<string>();
+
+    public IEnumerable<string> OtherItems { get; set; } = Array.Empty<string>();
+}
+
+internal sealed class PreviewPatternScopeTestViewModel
+{
+    public object? Value { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+}

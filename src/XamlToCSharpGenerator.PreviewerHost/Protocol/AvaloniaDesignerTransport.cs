@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net.Sockets;
+using Avalonia.Remote.Protocol.Input;
 
 namespace XamlToCSharpGenerator.PreviewerHost.Protocol;
 
@@ -70,6 +71,51 @@ internal sealed class AvaloniaDesignerTransport : IAsyncDisposable
             AvaloniaDesignerMessageGuids.ClientViewportAllocated,
             MinimalBson.SerializeDocument(viewportAllocated),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task SendKeyEventAsync(KeyEventMessage message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["IsDown"] = message.IsDown,
+            ["Key"] = (int)message.Key,
+            ["PhysicalKey"] = (int)message.PhysicalKey
+        };
+        if (!string.IsNullOrEmpty(message.KeySymbol))
+        {
+            document["KeySymbol"] = message.KeySymbol;
+        }
+
+        if (message.Modifiers is { Length: > 0 })
+        {
+            document["Modifiers"] = Array.ConvertAll(message.Modifiers, static modifier => (object?)(int)modifier);
+        }
+
+        return SendMessageAsync(
+            AvaloniaDesignerMessageGuids.KeyEvent,
+            MinimalBson.SerializeDocument(document),
+            cancellationToken);
+    }
+
+    public Task SendTextInputEventAsync(TextInputEventMessage message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Text"] = message.Text
+        };
+        if (message.Modifiers is { Length: > 0 })
+        {
+            document["Modifiers"] = Array.ConvertAll(message.Modifiers, static modifier => (object?)(int)modifier);
+        }
+
+        return SendMessageAsync(
+            AvaloniaDesignerMessageGuids.TextInputEvent,
+            MinimalBson.SerializeDocument(document),
+            cancellationToken);
     }
 
     public async Task<object?> ReadMessageAsync(CancellationToken cancellationToken)

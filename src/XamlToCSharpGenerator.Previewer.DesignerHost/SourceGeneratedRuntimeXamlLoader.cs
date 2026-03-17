@@ -43,7 +43,14 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         Func<RuntimeXamlLoaderDocument, RuntimeXamlLoaderConfiguration, string, object> baselineLoader,
         TryApplyLiveOverlayDelegate overlayApplier)
     {
+        var localAssembly = configuration.LocalAssembly ?? Assembly.GetEntryAssembly();
+        PreviewRootDataContextHydrator.TryHydrate(document.RootInstance, xamlText, localAssembly);
+
         var baseline = baselineLoader(document, configuration, xamlText);
+        PreviewRootDataContextHydrator.TryHydrate(
+            baseline,
+            xamlText,
+            localAssembly ?? baseline.GetType().Assembly);
         var cacheKey = GetOverlayCacheKey(document, sourceFilePath);
         if (!ShouldApplyPreviewOverlay(
                 baseline,
@@ -57,16 +64,28 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
 
         if (overlayApplier(document, configuration, baseline, xamlText, out var overlaidRoot))
         {
+            PreviewRootDataContextHydrator.TryHydrate(
+                overlaidRoot,
+                xamlText,
+                localAssembly ?? overlaidRoot.GetType().Assembly);
             LastGoodOverlayByDocument[cacheKey] = xamlText;
             return overlaidRoot;
         }
 
         var fallbackBaseline = baselineLoader(document, configuration, xamlText);
+        PreviewRootDataContextHydrator.TryHydrate(
+            fallbackBaseline,
+            xamlText,
+            localAssembly ?? fallbackBaseline.GetType().Assembly);
         if (LastGoodOverlayByDocument.TryGetValue(cacheKey, out var lastGoodXaml) &&
             !string.Equals(lastGoodXaml, xamlText, StringComparison.Ordinal))
         {
             if (overlayApplier(document, configuration, fallbackBaseline, lastGoodXaml, out var lastGoodRoot))
             {
+                PreviewRootDataContextHydrator.TryHydrate(
+                    lastGoodRoot,
+                    lastGoodXaml,
+                    localAssembly ?? lastGoodRoot.GetType().Assembly);
                 Log("Live preview XAML was invalid. Reverted to the last known good unsaved preview.");
                 return lastGoodRoot;
             }

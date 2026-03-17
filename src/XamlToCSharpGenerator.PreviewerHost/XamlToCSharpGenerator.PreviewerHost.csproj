@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Avalonia.Remote.Protocol" Version="11.3.12" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj" />
   </ItemGroup>
 </Project>

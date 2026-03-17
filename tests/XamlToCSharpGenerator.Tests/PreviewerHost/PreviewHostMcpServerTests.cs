@@ -592,6 +592,11 @@ public sealed class PreviewHostMcpServerTests
             return Task.FromResult(result);
         }
 
+        public Task SendInputAsync(AxsgPreviewHostInputRequest request, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync()
         {
             return ValueTask.CompletedTask;

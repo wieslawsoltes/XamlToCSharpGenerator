@@ -40,6 +40,37 @@ public sealed record AxsgPreviewHostUpdateRequest(string XamlText);
 public sealed record AxsgPreviewHostHotReloadRequest(string XamlText, int? TimeoutMs);
 
 /// <summary>
+/// Represents modifier state captured for preview input dispatch.
+/// </summary>
+public sealed record AxsgPreviewHostInputModifiers(
+    bool Alt,
+    bool Control,
+    bool Shift,
+    bool Meta);
+
+/// <summary>
+/// Represents a normalized preview input request for an active preview helper session.
+/// </summary>
+public sealed record AxsgPreviewHostInputRequest
+{
+    public string? EventType { get; init; }
+
+    public bool? IsDown { get; init; }
+
+    public string? Key { get; init; }
+
+    public string? Code { get; init; }
+
+    public int? Location { get; init; }
+
+    public string? KeySymbol { get; init; }
+
+    public string? Text { get; init; }
+
+    public AxsgPreviewHostInputModifiers? Modifiers { get; init; }
+}
+
+/// <summary>
 /// Represents the payload returned for a successful preview helper ping.
 /// </summary>
 public sealed record AxsgPreviewHostPingResponse(bool Pong);
