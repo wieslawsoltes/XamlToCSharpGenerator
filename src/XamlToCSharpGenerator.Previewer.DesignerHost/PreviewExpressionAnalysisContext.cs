@@ -404,6 +404,46 @@ internal sealed class PreviewExpressionAnalysisContext
                 .WithExpression(rewrittenExpression);
         }
 
+        public override SyntaxNode? VisitCasePatternSwitchLabel(CasePatternSwitchLabelSyntax node)
+        {
+            PatternSyntax rewrittenPattern = (PatternSyntax)Visit(node.Pattern)!;
+            var patternNames = GetPatternDesignationNames(node.Pattern);
+
+            PushScope(patternNames);
+            WhenClauseSyntax? rewrittenWhenClause = node.WhenClause is null
+                ? null
+                : (WhenClauseSyntax)Visit(node.WhenClause)!;
+            PopScope();
+
+            return node
+                .WithPattern(rewrittenPattern)
+                .WithWhenClause(rewrittenWhenClause);
+        }
+
+        public override SyntaxNode? VisitSwitchSection(SwitchSectionSyntax node)
+        {
+            var rewrittenLabels = new SyntaxList<SwitchLabelSyntax>();
+            for (var index = 0; index < node.Labels.Count; index++)
+            {
+                rewrittenLabels = rewrittenLabels.Add((SwitchLabelSyntax)Visit(node.Labels[index])!);
+            }
+
+            var sectionPatternNames = GetSwitchSectionPatternNames(node.Labels);
+            PushScope(sectionPatternNames);
+
+            var rewrittenStatements = new SyntaxList<StatementSyntax>();
+            for (var index = 0; index < node.Statements.Count; index++)
+            {
+                rewrittenStatements = rewrittenStatements.Add((StatementSyntax)Visit(node.Statements[index])!);
+            }
+
+            PopScope();
+
+            return node
+                .WithLabels(rewrittenLabels)
+                .WithStatements(rewrittenStatements);
+        }
+
         public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
         {
             AddNameToCurrentScope(node.Identifier.ValueText);
@@ -775,6 +815,41 @@ internal sealed class PreviewExpressionAnalysisContext
             return names.Length == 0
                 ? Array.Empty<string>()
                 : names;
+        }
+
+        private static IReadOnlyCollection<string> GetSwitchSectionPatternNames(SyntaxList<SwitchLabelSyntax> labels)
+        {
+            HashSet<string>? sharedPatternNames = null;
+
+            for (var index = 0; index < labels.Count; index++)
+            {
+                if (labels[index] is not CasePatternSwitchLabelSyntax casePatternLabel)
+                {
+                    return Array.Empty<string>();
+                }
+
+                var labelPatternNames = GetPatternDesignationNames(casePatternLabel.Pattern);
+                if (labelPatternNames.Count == 0)
+                {
+                    return Array.Empty<string>();
+                }
+
+                if (sharedPatternNames is null)
+                {
+                    sharedPatternNames = new HashSet<string>(labelPatternNames, StringComparer.Ordinal);
+                    continue;
+                }
+
+                sharedPatternNames.IntersectWith(labelPatternNames);
+                if (sharedPatternNames.Count == 0)
+                {
+                    return Array.Empty<string>();
+                }
+            }
+
+            return sharedPatternNames is null || sharedPatternNames.Count == 0
+                ? Array.Empty<string>()
+                : sharedPatternNames;
         }
 
         private static bool IsPatternDesignation(SingleVariableDesignationSyntax node)

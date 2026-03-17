@@ -134,6 +134,39 @@ public sealed class PreviewExpressionAnalysisContextTests
         Assert.Equal("source.Value is string Name ? Name : source.Name", rewrittenExpression);
         Assert.Equal(["Name", "Value"], dependencyNames);
     }
+
+    [Fact]
+    public void TryRewritePreviewStatements_Keeps_SwitchCasePatternVariables_In_WhenClause_And_CaseBody()
+    {
+        var context = PreviewExpressionAnalysisContext.ForAssembly(TestAssembly);
+
+        var rewritten = context.TryRewritePreviewStatements(
+            typeof(PreviewPatternScopeTestViewModel),
+            rootType: null,
+            targetType: null,
+            """
+            switch (Value)
+            {
+                case string Name when Name.Length > 0:
+                    _ = Name;
+                    break;
+            }
+
+            Name = Name.Trim();
+            """,
+            out var rewrittenStatements,
+            out var dependencyNames,
+            out var errorMessage);
+
+        Assert.True(rewritten, errorMessage);
+        Assert.Contains("switch (source.Value)", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("case string Name when Name.Length > 0:", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("_ = Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Contains("source.Name = source.Name.Trim();", rewrittenStatements, StringComparison.Ordinal);
+        Assert.DoesNotContain("when source.Name.Length", rewrittenStatements, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ = source.Name;", rewrittenStatements, StringComparison.Ordinal);
+        Assert.Equal(["Name", "Value"], dependencyNames);
+    }
 }
 
 internal sealed class PreviewQueryTestViewModel
