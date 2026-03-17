@@ -19,6 +19,7 @@ using global::Avalonia.Platform;
 using global::Avalonia.Styling;
 using global::Avalonia.Threading;
 using global::Avalonia.VisualTree;
+using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -831,6 +832,114 @@ public static class SourceGenMarkupExtensionRuntime
         return false;
     }
 
+    private static bool TryPrepareBindingForNonStyledDataContextTarget(
+        AvaloniaObject target,
+        IBinding binding,
+        object? anchor,
+        out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (binding is not Binding dataBinding ||
+            target is StyledElement ||
+            !IsBindingSourceUnset(dataBinding) ||
+            dataBinding.ElementName is not null ||
+            dataBinding.RelativeSource is not null ||
+            IsRootedBindingPath(dataBinding.Path))
+        {
+            return true;
+        }
+
+        if (anchor is not StyledElement styledAnchor)
+        {
+            TraceBinding(
+                $"Deferred data-context binding preparation: target={target.GetType().FullName}, anchor=<null>, path={dataBinding.Path ?? "<null>"}.");
+            deferredException = new InvalidOperationException("Cannot find a DataContext to bind to.");
+            return false;
+        }
+
+        dataBinding.Source = styledAnchor;
+        dataBinding.Path = QualifyDataContextPath(dataBinding.Path);
+        TraceBinding(
+            $"Rewrote data-context binding: target={target.GetType().FullName}, anchor={styledAnchor.GetType().FullName}, path={dataBinding.Path}.");
+        return true;
+    }
+
+    private static string QualifyDataContextPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) ||
+            string.Equals(path, ".", StringComparison.Ordinal))
+        {
+            return "DataContext";
+        }
+
+        return path[0] == '['
+            ? $"DataContext{path}"
+            : $"DataContext.{path}";
+    }
+
+    private static bool IsRootedBindingPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var trimmedPath = path.Trim();
+        return BindingSourceQuerySemantics.TryParseElementName(trimmedPath, out _) ||
+               BindingSourceQuerySemantics.TryParseSelf(trimmedPath, out _) ||
+               BindingSourceQuerySemantics.TryParseParent(trimmedPath, out _);
+    }
+
+    private static bool TryPrepareBindingForDetachedTarget(
+        AvaloniaObject target,
+        object? binding,
+        object? anchor,
+        out InvalidOperationException? deferredException)
+    {
+        deferredException = null;
+
+        if (binding is null)
+        {
+            return true;
+        }
+
+        if (binding is MultiBinding multiBinding)
+        {
+            for (var index = 0; index < multiBinding.Bindings.Count; index++)
+            {
+                if (!TryPrepareBindingForDetachedTarget(target, multiBinding.Bindings[index], anchor, out deferredException))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (binding is not IBinding avaloniaBinding)
+        {
+            return true;
+        }
+
+        if (!TryPrepareBindingForNonStyledTemplatedParentTarget(target, avaloniaBinding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        if (!TryPrepareBindingForNonLogicalAncestorTarget(target, avaloniaBinding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        if (!TryPrepareBindingForNonStyledDataContextTarget(target, avaloniaBinding, anchor, out deferredException))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
     {
         var fallbackSynchronizationContext = SynchronizationContext.Current as AvaloniaSynchronizationContext;
@@ -893,12 +1002,7 @@ public static class SourceGenMarkupExtensionRuntime
     {
         deferredException = null;
 
-        if (!TryPrepareBindingForNonStyledTemplatedParentTarget(target, binding, anchor, out deferredException))
-        {
-            return false;
-        }
-
-        if (!TryPrepareBindingForNonLogicalAncestorTarget(target, binding, anchor, out deferredException))
+        if (!TryPrepareBindingForDetachedTarget(target, binding, anchor, out deferredException))
         {
             return false;
         }

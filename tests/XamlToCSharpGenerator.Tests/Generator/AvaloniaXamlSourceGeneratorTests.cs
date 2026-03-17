@@ -17551,6 +17551,287 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Emits_KeyBinding_Command_And_CommandParameter_Bindings_With_Runtime_Gesture_Markup_Extension()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public object? this[global::Avalonia.Data.IndexerDescriptor descriptor] { set { } }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public class Binding
+                {
+                    public Binding() { }
+                    public Binding(string path) { }
+                }
+
+                public sealed class IndexerDescriptor
+                {
+                    public IndexerDescriptor(global::System.Type type, string name, object? argument) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0
+                }
+
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Control = 1,
+                    Meta = 2
+                }
+
+                public sealed class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+
+                public class InputElement : global::Avalonia.AvaloniaObject
+                {
+                    public global::System.Collections.Generic.IList<global::Avalonia.Input.KeyBinding> KeyBindings { get; } =
+                        new global::System.Collections.Generic.List<global::Avalonia.Input.KeyBinding>();
+                }
+
+                public sealed class KeyBinding : InputElement
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty CommandProperty = new global::Avalonia.AvaloniaProperty();
+                    public static readonly global::Avalonia.AvaloniaProperty CommandParameterProperty = new global::Avalonia.AvaloniaProperty();
+                    public static readonly global::Avalonia.AvaloniaProperty GestureProperty = new global::Avalonia.AvaloniaProperty();
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                    public object? CommandParameter { get; set; }
+                    public global::Avalonia.Input.KeyGesture? Gesture { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl : global::Avalonia.Input.InputElement
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo.Markup
+            {
+                public sealed class PlatformGesture : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public string? Text { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider)
+                    {
+                        return global::Avalonia.Input.KeyGesture.Parse(Text ?? string.Empty);
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:m="using:Demo.Markup"
+                         x:Class="Demo.MainView">
+                <UserControl.KeyBindings>
+                    <KeyBinding Command="{Binding Trigger}"
+                                CommandParameter="{Binding}"
+                                Gesture="{m:PlatformGesture Text=Primary+N}"
+                                x:CompileBindings="False" />
+                </UserControl.KeyBindings>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains(
+            "global::Avalonia.Input.KeyBinding.CommandProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(new global::Avalonia.Data.Binding(\"Trigger\")",
+            generated);
+        Assert.Contains(
+            "global::Avalonia.Input.KeyBinding.CommandParameterProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(new global::Avalonia.Data.Binding(\".\")",
+            generated);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(", generated);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
+        Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
+    }
+
+    [Fact]
+    public void Emits_Compiled_KeyBinding_Command_And_CommandParameter_Bindings()
+    {
+        const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+
+                public class AvaloniaObject
+                {
+                    public void SetValue(global::Avalonia.AvaloniaProperty property, object? value) { }
+                    public object? this[global::Avalonia.Data.IndexerDescriptor descriptor] { set { } }
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public class Binding
+                {
+                    public Binding() { }
+                    public Binding(string path) { }
+                }
+
+                public sealed class IndexerDescriptor
+                {
+                    public IndexerDescriptor(global::System.Type type, string name, object? argument) { }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension
+                {
+                    public abstract object? ProvideValue(global::System.IServiceProvider serviceProvider);
+                }
+            }
+
+            namespace Avalonia.Input
+            {
+                public enum Key
+                {
+                    None = 0
+                }
+
+                public enum KeyModifiers
+                {
+                    None = 0,
+                    Control = 1,
+                    Meta = 2
+                }
+
+                public sealed class KeyGesture
+                {
+                    public KeyGesture(Key key, KeyModifiers modifiers)
+                    {
+                    }
+
+                    public static KeyGesture Parse(string value) => new KeyGesture(Key.None, KeyModifiers.None);
+                }
+
+                public class InputElement : global::Avalonia.AvaloniaObject
+                {
+                    public global::System.Collections.Generic.IList<global::Avalonia.Input.KeyBinding> KeyBindings { get; } =
+                        new global::System.Collections.Generic.List<global::Avalonia.Input.KeyBinding>();
+                }
+
+                public sealed class KeyBinding : InputElement
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty CommandProperty = new global::Avalonia.AvaloniaProperty();
+                    public static readonly global::Avalonia.AvaloniaProperty CommandParameterProperty = new global::Avalonia.AvaloniaProperty();
+                    public static readonly global::Avalonia.AvaloniaProperty GestureProperty = new global::Avalonia.AvaloniaProperty();
+                    public global::System.Windows.Input.ICommand? Command { get; set; }
+                    public object? CommandParameter { get; set; }
+                    public global::Avalonia.Input.KeyGesture? Gesture { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl : global::Avalonia.Input.InputElement
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo.Markup
+            {
+                public sealed class PlatformGesture : global::Avalonia.Markup.Xaml.MarkupExtension
+                {
+                    public string? Text { get; set; }
+
+                    public override object? ProvideValue(global::System.IServiceProvider serviceProvider)
+                    {
+                        return global::Avalonia.Input.KeyGesture.Parse(Text ?? string.Empty);
+                    }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainVm
+                {
+                    public global::System.Windows.Input.ICommand Trigger { get; set; } = null!;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:m="using:Demo.Markup"
+                         xmlns:vm="using:Demo.ViewModels"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <UserControl.KeyBindings>
+                    <KeyBinding Command="{Binding Trigger}"
+                                CommandParameter="{Binding}"
+                                Gesture="{m:PlatformGesture Text=Primary+N}" />
+                </UserControl.KeyBindings>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+
+        Assert.Contains("ProvideExpressionBinding<global::Demo.ViewModels.MainVm>", generated);
+        Assert.Contains("global::Avalonia.Input.KeyBinding.CommandProperty", generated);
+        Assert.Contains("global::Avalonia.Input.KeyBinding.CommandParameterProperty", generated);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(", generated);
+        Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
+    }
+
+    [Fact]
     public void Emits_Indexer_Assignment_For_Binding_PropertyElement_On_Avalonia_Property()
     {
         const string code = """

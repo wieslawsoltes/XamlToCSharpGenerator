@@ -10,6 +10,7 @@
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="../XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" />
     <ProjectReference Include="../XamlToCSharpGenerator.RemoteProtocol/XamlToCSharpGenerator.RemoteProtocol.csproj" />
+    <ProjectReference Include="../XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true' and '$(TargetFramework)' == 'net10.0'">
@@ -24,6 +25,9 @@
     </Reference>
     <Reference Include="XamlToCSharpGenerator.RemoteProtocol">
       <HintPath>..\XamlToCSharpGenerator.RemoteProtocol\bin\$(Configuration)\$(TargetFramework)\XamlToCSharpGenerator.RemoteProtocol.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
     </Reference>
   </ItemGroup>
 

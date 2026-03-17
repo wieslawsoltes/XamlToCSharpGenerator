@@ -532,7 +532,7 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Same(contextMenu, anchor);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ApplyBinding_Retries_When_Detached_Parent_Anchor_Gains_DataContext()
     {
         var contextMenu = new ContextMenu();
@@ -552,7 +552,7 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal("Close", menuItem.Header);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ApplyExpressionBinding_Retries_When_Detached_Parent_Anchor_Gains_DataContext()
     {
         var contextMenu = new ContextMenu();
@@ -580,6 +580,166 @@ public class SourceGenMarkupExtensionRuntimeTests
         contextMenu.DataContext = new DeferredAnchorViewModel();
 
         Assert.Equal("Close", menuItem.Header);
+    }
+
+    [AvaloniaFact]
+    public void ApplyExpressionBinding_Retries_When_KeyBinding_Anchor_Gains_DataContext()
+    {
+        var root = new UserControl();
+        var keyBinding = new global::Avalonia.Input.KeyBinding();
+        root.KeyBindings.Add(keyBinding);
+
+        var anchor = SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(keyBinding, [keyBinding, root]);
+        var commandBinding = SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<DeferredKeyBindingViewModel>(
+            static source => source.Trigger,
+            new[] { "Trigger" },
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: keyBinding,
+            targetProperty: global::Avalonia.Input.KeyBinding.CommandProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: [keyBinding, root]);
+        var parameterBinding = SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<DeferredKeyBindingViewModel>(
+            static source => source,
+            Array.Empty<string>(),
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: keyBinding,
+            targetProperty: global::Avalonia.Input.KeyBinding.CommandParameterProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: [keyBinding, root]);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandProperty,
+            commandBinding,
+            anchor);
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandParameterProperty,
+            parameterBinding,
+            anchor);
+
+        Assert.Null(keyBinding.Command);
+        Assert.Null(keyBinding.CommandParameter);
+
+        var viewModel = new DeferredKeyBindingViewModel();
+        root.DataContext = viewModel;
+        Dispatcher.UIThread.RunJobs();
+
+        var command = Assert.IsAssignableFrom<ICommand>(keyBinding.Command);
+        Assert.Same(viewModel, keyBinding.CommandParameter);
+
+        command.Execute(keyBinding.CommandParameter);
+
+        Assert.Equal(1, viewModel.ExecuteCount);
+        Assert.Same(viewModel, viewModel.LastParameter);
+    }
+
+    [AvaloniaFact]
+    public void ApplyBinding_Retries_When_KeyBinding_Anchor_Gains_DataContext()
+    {
+        var root = new UserControl();
+        var keyBinding = new global::Avalonia.Input.KeyBinding();
+        root.KeyBindings.Add(keyBinding);
+
+        var anchor = SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(keyBinding, [keyBinding, root]);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandProperty,
+            new Binding("Trigger"),
+            anchor);
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandParameterProperty,
+            new Binding("."),
+            anchor);
+        keyBinding.Gesture = new global::Avalonia.Input.KeyGesture(
+            global::Avalonia.Input.Key.N,
+            global::Avalonia.Input.KeyModifiers.Control);
+
+        Assert.Null(keyBinding.Command);
+        Assert.Null(keyBinding.CommandParameter);
+
+        var viewModel = new DeferredKeyBindingViewModel();
+        root.DataContext = viewModel;
+        Dispatcher.UIThread.RunJobs();
+
+        var command = Assert.IsAssignableFrom<ICommand>(keyBinding.Command);
+        Assert.Same(viewModel, keyBinding.CommandParameter);
+
+        command.Execute(keyBinding.CommandParameter);
+
+        Assert.Equal(1, viewModel.ExecuteCount);
+        Assert.Same(viewModel, viewModel.LastParameter);
+    }
+
+    [AvaloniaFact]
+    public void ApplyBinding_Resolves_ElementName_For_KeyBinding_CommandParameter()
+    {
+        var root = new UserControl();
+        var nameScope = new NameScope();
+        var source = new TextBlock
+        {
+            Text = "Close"
+        };
+        nameScope.Register("ShortcutTarget", source);
+
+        var keyBinding = new global::Avalonia.Input.KeyBinding();
+        root.KeyBindings.Add(keyBinding);
+
+        var anchor = SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(keyBinding, [keyBinding, root]);
+        var binding = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(
+            new Binding("Text")
+            {
+                ElementName = "ShortcutTarget"
+            },
+            nameScope);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandParameterProperty,
+            binding,
+            anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Close", keyBinding.CommandParameter);
+
+        source.Text = "Open";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Open", keyBinding.CommandParameter);
+    }
+
+    [AvaloniaFact]
+    public void ApplyBinding_Preserves_Rooted_ElementName_Path_For_KeyBinding_CommandParameter()
+    {
+        var root = new UserControl();
+        var nameScope = new NameScope();
+        var source = new TextBlock
+        {
+            Text = "Close"
+        };
+        nameScope.Register("ShortcutTarget", source);
+        var keyBinding = new global::Avalonia.Input.KeyBinding();
+        root.KeyBindings.Add(keyBinding);
+
+        var anchor = SourceGenMarkupExtensionRuntime.ResolveBindingAnchor(keyBinding, [keyBinding, root]);
+        var binding = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(
+            new Binding("#ShortcutTarget.Text"),
+            nameScope);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(
+            keyBinding,
+            global::Avalonia.Input.KeyBinding.CommandParameterProperty,
+            binding,
+            anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Close", keyBinding.CommandParameter);
     }
 
     [AvaloniaFact]
@@ -1269,6 +1429,46 @@ public class SourceGenMarkupExtensionRuntimeTests
         public TestFactory Factory { get; }
 
         public DeferredDockable Dockable { get; }
+    }
+
+    private sealed class DeferredKeyBindingViewModel
+    {
+        public DeferredKeyBindingViewModel()
+        {
+            Trigger = new TestDelegateCommand(parameter =>
+            {
+                ExecuteCount++;
+                LastParameter = parameter;
+            });
+        }
+
+        public ICommand Trigger { get; }
+
+        public object Payload { get; } = new object();
+
+        public int ExecuteCount { get; private set; }
+
+        public object? LastParameter { get; private set; }
+    }
+
+    private sealed class TestDelegateCommand : ICommand
+    {
+        private readonly Action<object?> _execute;
+
+        public TestDelegateCommand(Action<object?> execute)
+        {
+            _execute = execute;
+        }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter) => _execute(parameter);
+
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
     }
 
 }
