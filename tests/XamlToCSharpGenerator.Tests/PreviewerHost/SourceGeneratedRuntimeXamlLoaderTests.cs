@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
 using global::Avalonia.Markup.Xaml;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -12,7 +13,7 @@ namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 
 public sealed class SourceGeneratedRuntimeXamlLoaderTests
 {
-    [Fact]
+    [AvaloniaFact]
     public void LoadCore_Reuses_Initial_Baseline_For_Successful_Live_Overlay()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -54,7 +55,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void LoadCore_Hydrates_Root_DataContext_From_XDataType_When_Unset()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -88,7 +89,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         Assert.IsType<PreviewHydratedViewModel>(overlayObservedDataContext);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void LoadCore_Does_Not_Override_Explicit_Root_DataContext()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -123,7 +124,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         Assert.Same(explicitDataContext, root.DataContext);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void LoadCore_Hydrates_Root_DataContext_From_External_XDataType_Assembly_On_Demand()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -161,7 +162,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         Assert.Equal(assemblyName, root.DataContext.GetType().Assembly.GetName().Name);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -310,7 +311,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ShouldApplyPreviewOverlay_Returns_True_For_ResourceDictionary_When_File_Matches_Current_Build_Output()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -341,7 +342,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ShouldApplyPreviewOverlay_Returns_False_For_Control_When_File_Matches_Current_Build_Output()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -372,7 +373,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ShouldApplyPreviewOverlay_Returns_True_For_Application_When_File_Matches_Current_Build_Output()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
