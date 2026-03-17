@@ -860,14 +860,23 @@ internal static class SourceGeneratedPreviewXamlPreprocessor
     {
         if (!string.IsNullOrWhiteSpace(assemblyName))
         {
+            var seenAssemblies = new HashSet<string>(StringComparer.Ordinal);
             var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
             for (var index = 0; index < loadedAssemblies.Length; index++)
             {
                 var assembly = loadedAssemblies[index];
-                if (string.Equals(assembly.GetName().Name, assemblyName, StringComparison.Ordinal))
+                if (AssemblyMatchesName(assembly, assemblyName) &&
+                    seenAssemblies.Add(assembly.FullName ?? assemblyName))
                 {
                     yield return assembly;
                 }
+            }
+
+            if (TryLoadAssemblyByName(assemblyName, out var loadedAssembly) &&
+                loadedAssembly is not null &&
+                seenAssemblies.Add(loadedAssembly.FullName ?? assemblyName))
+            {
+                yield return loadedAssembly;
             }
 
             yield break;
@@ -883,6 +892,49 @@ internal static class SourceGeneratedPreviewXamlPreprocessor
             {
                 yield return assembly;
             }
+        }
+    }
+
+    private static bool AssemblyMatchesName(Assembly assembly, string requestedAssemblyName)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        ArgumentException.ThrowIfNullOrEmpty(requestedAssemblyName);
+
+        if (string.Equals(assembly.FullName, requestedAssemblyName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var loadedName = assembly.GetName().Name;
+        if (string.Equals(loadedName, requestedAssemblyName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        try
+        {
+            var requestedName = new AssemblyName(requestedAssemblyName).Name;
+            return !string.IsNullOrWhiteSpace(requestedName) &&
+                   string.Equals(loadedName, requestedName, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryLoadAssemblyByName(string assemblyName, out Assembly? assembly)
+    {
+        assembly = null;
+
+        try
+        {
+            assembly = Assembly.Load(new AssemblyName(assemblyName));
+            return assembly is not null;
+        }
+        catch
+        {
+            return false;
         }
     }
 

@@ -1,6 +1,10 @@
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.Markup.Xaml;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Previewer.DesignerHost;
 using XamlToCSharpGenerator.Runtime;
@@ -218,6 +222,31 @@ public sealed class SourceGeneratedPreviewXamlPreprocessorTests
         Assert.Equal("{Binding Name}", textValue);
     }
 
+    [Fact]
+    public void Rewrite_Leaves_Custom_Markup_Extension_Unchanged_When_Assembly_Is_Loaded_On_Demand()
+    {
+        var assemblyName = "AxsgPreviewExternalMarkup_" + Guid.NewGuid().ToString("N");
+        var assemblyImage = CompileExternalMarkupExtensionAssembly(assemblyName);
+        using var resolver = new TestAssemblyResolveScope(assemblyName, assemblyImage);
+
+        var document = Rewrite($$"""
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="using:XamlToCSharpGenerator.Tests.PreviewerHost"
+                         xmlns:ext="clr-namespace:ExternalPreviewMarkup;assembly={{assemblyName}}"
+                         x:Class="XamlToCSharpGenerator.Tests.PreviewerHost.PreviewTestRoot"
+                         x:DataType="vm:PreviewTestViewModel">
+              <TextBlock Text="{ext:Echo Value=Name}" />
+            </UserControl>
+            """);
+
+        var textValue = document.Descendants().Single(element => element.Name.LocalName == "TextBlock")
+            .Attribute("Text")?.Value;
+
+        Assert.True(resolver.WasResolved);
+        Assert.Equal("{ext:Echo Value=Name}", textValue);
+    }
+
     private static XDocument Rewrite(string xaml)
     {
         RegisterPreviewTestTypes();
@@ -245,6 +274,92 @@ public sealed class SourceGeneratedPreviewXamlPreprocessorTests
             : Array.Empty<string>();
 
         return (PreviewMarkupValueCodec.DecodeBase64Url(encodedCode), dependencyNames);
+    }
+
+    private static byte[] CompileExternalMarkupExtensionAssembly(string assemblyName)
+    {
+        var source = """
+            using System;
+            using Avalonia.Markup.Xaml;
+
+            namespace ExternalPreviewMarkup;
+
+            public sealed class EchoExtension : MarkupExtension
+            {
+                public string? Value { get; set; }
+
+                public override object? ProvideValue(IServiceProvider serviceProvider)
+                    => Value;
+            }
+            """;
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: assemblyName + ".cs");
+        var references = CreateLoadedAssemblyMetadataReferences();
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit preview markup-extension test assembly: " +
+            string.Join(Environment.NewLine, emitResult.Diagnostics));
+        return stream.ToArray();
+    }
+
+    private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()
+    {
+        var references = new List<MetadataReference>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (var index = 0; index < loadedAssemblies.Length; index++)
+        {
+            var assembly = loadedAssemblies[index];
+            if (assembly.IsDynamic ||
+                string.IsNullOrWhiteSpace(assembly.Location) ||
+                !seenPaths.Add(assembly.Location))
+            {
+                continue;
+            }
+
+            references.Add(MetadataReference.CreateFromFile(assembly.Location));
+        }
+
+        return references;
+    }
+
+    private sealed class TestAssemblyResolveScope : IDisposable
+    {
+        private readonly string _assemblyName;
+        private readonly byte[] _assemblyImage;
+
+        public TestAssemblyResolveScope(string assemblyName, byte[] assemblyImage)
+        {
+            _assemblyName = assemblyName;
+            _assemblyImage = assemblyImage;
+            AssemblyLoadContext.Default.Resolving += OnResolving;
+        }
+
+        public bool WasResolved { get; private set; }
+
+        public void Dispose()
+        {
+            AssemblyLoadContext.Default.Resolving -= OnResolving;
+        }
+
+        private Assembly? OnResolving(AssemblyLoadContext context, AssemblyName assemblyName)
+        {
+            if (!string.Equals(assemblyName.Name, _assemblyName, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            WasResolved = true;
+            return context.LoadFromStream(new MemoryStream(_assemblyImage, writable: false));
+        }
     }
 }
 
