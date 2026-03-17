@@ -6,6 +6,90 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal static class AxsgRuntimePayloadBuilder
 {
+    public static object BuildHotReloadStatusPayload(SourceGenHotReloadStatus status)
+    {
+        return new
+        {
+            status.IsEnabled,
+            status.IsIdePollingFallbackEnabled,
+            status.RegisteredTypeCount,
+            status.RegisteredBuildUriCount,
+            transportMode = status.TransportMode.ToString(),
+            lastTransportStatus = BuildHotReloadTransportStatusPayload(status.LastTransportStatus),
+            lastRemoteOperation = BuildHotReloadRemoteOperationStatusPayload(status.LastRemoteOperationStatus)
+        };
+    }
+
+    public static object? BuildHotReloadTransportStatusPayload(SourceGenHotReloadTransportStatus? status)
+    {
+        if (status is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            kind = status.Kind.ToString(),
+            status.TransportName,
+            mode = status.Mode.ToString(),
+            status.Message,
+            status.TimestampUtc,
+            status.IsFallback,
+            exception = status.Exception?.Message
+        };
+    }
+
+    public static object? BuildHotReloadRemoteOperationStatusPayload(SourceGenHotReloadRemoteOperationStatus? status)
+    {
+        if (status is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            status.OperationId,
+            status.RequestId,
+            status.CorrelationId,
+            state = status.State.ToString(),
+            status.StartedAtUtc,
+            status.CompletedAtUtc,
+            request = new
+            {
+                status.Request.OperationId,
+                status.Request.RequestId,
+                status.Request.CorrelationId,
+                status.Request.ApplyAll,
+                status.Request.TypeNames,
+                status.Request.BuildUris,
+                status.Request.Trigger
+            },
+            result = status.Result is null ? null : new
+            {
+                status.Result.OperationId,
+                status.Result.RequestId,
+                status.Result.CorrelationId,
+                state = status.Result.State.ToString(),
+                isSuccess = status.Result.IsSuccess,
+                status.Result.Message,
+                status.Result.Diagnostics
+            },
+            status.Diagnostics
+        };
+    }
+
+    public static object BuildHotReloadTrackedDocumentsPayload(IReadOnlyList<SourceGenHotReloadTrackedDocumentDescriptor> trackedDocuments)
+    {
+        return trackedDocuments.Select(static document => new
+        {
+            trackingTypeName = document.TrackingType.FullName,
+            document.BuildUri,
+            document.SourcePath,
+            document.LiveInstanceCount,
+            document.IsSourceWatched
+        });
+    }
+
     public static object BuildRuntimeEventsPayload(IReadOnlyList<AxsgRuntimeMcpEventEntry> events)
     {
         return events.Select(static entry => new
@@ -40,7 +124,12 @@ internal static class AxsgRuntimePayloadBuilder
 
     public static object BuildHotDesignDocumentsPayload(IReadOnlyList<SourceGenHotDesignDocumentDescriptor> documents)
     {
-        return documents.Select(static document => new
+        return documents.Select(static document => BuildHotDesignDocumentPayload(document));
+    }
+
+    public static object BuildHotDesignDocumentPayload(SourceGenHotDesignDocumentDescriptor document)
+    {
+        return new
         {
             rootTypeName = document.RootType.FullName,
             document.BuildUri,
@@ -49,7 +138,18 @@ internal static class AxsgRuntimePayloadBuilder
             documentRole = document.DocumentRole.ToString(),
             artifactKind = document.ArtifactKind.ToString(),
             document.ScopeHints
-        });
+        };
+    }
+
+    public static object BuildHotDesignSelectedDocumentPayload(
+        string? activeBuildUri,
+        SourceGenHotDesignDocumentDescriptor? document)
+    {
+        return new
+        {
+            activeBuildUri,
+            document = document is null ? null : BuildHotDesignDocumentPayload(document)
+        };
     }
 
     public static object BuildStudioStatusPayload(SourceGenStudioStatusSnapshot snapshot)
@@ -71,6 +171,7 @@ internal static class AxsgRuntimePayloadBuilder
                 snapshot.Options.EnableExternalWindow,
                 snapshot.Options.AutoOpenStudioWindowOnStartup,
                 snapshot.Options.EnableTracing,
+                canvasLayoutMode = snapshot.Options.CanvasLayoutMode.ToString(),
                 snapshot.Options.MaxOperationHistoryEntries,
                 snapshot.Options.EnableRemoteDesign,
                 snapshot.Options.RemoteHost,
@@ -89,14 +190,7 @@ internal static class AxsgRuntimePayloadBuilder
                 snapshot.Remote.VncEndpoint,
                 snapshot.Remote.UpdatedAtUtc
             },
-            scopes = snapshot.Scopes.Select(static scope => new
-            {
-                scopeKind = scope.ScopeKind.ToString(),
-                scope.Id,
-                scope.DisplayName,
-                targetTypeName = scope.TargetType?.FullName,
-                scope.BuildUri
-            }),
+            scopes = BuildStudioScopesPayload(snapshot.Scopes),
             operations = snapshot.Operations.Select(static operation => new
             {
                 operation.OperationId,
@@ -115,6 +209,23 @@ internal static class AxsgRuntimePayloadBuilder
                 result = operation.Result is null ? null : BuildStudioUpdateResultPayload(operation.Result),
                 diagnostics = operation.Diagnostics
             })
+        };
+    }
+
+    public static object BuildStudioScopesPayload(IReadOnlyList<SourceGenStudioScopeDescriptor> scopes)
+    {
+        return scopes.Select(static scope => BuildStudioScopePayload(scope));
+    }
+
+    public static object BuildStudioScopePayload(SourceGenStudioScopeDescriptor scope)
+    {
+        return new
+        {
+            scopeKind = scope.ScopeKind.ToString(),
+            scope.Id,
+            scope.DisplayName,
+            targetTypeName = scope.TargetType?.FullName,
+            scope.BuildUri
         };
     }
 
@@ -138,9 +249,43 @@ internal static class AxsgRuntimePayloadBuilder
         };
     }
 
+    public static object BuildStudioApplyPayload(
+        SourceGenStudioUpdateResult result,
+        SourceGenStudioStatusSnapshot status,
+        object? workspace = null)
+    {
+        return new
+        {
+            applyResult = BuildStudioUpdateResultPayload(result),
+            status = BuildStudioStatusPayload(status),
+            workspace
+        };
+    }
+
+    public static object BuildHotDesignApplyResultPayload(SourceGenHotDesignApplyResult result)
+    {
+        return new
+        {
+            result.Succeeded,
+            result.Message,
+            result.BuildUri,
+            targetTypeName = result.TargetType?.FullName,
+            result.SourcePath,
+            result.SourcePersisted,
+            result.MinimalDiffApplied,
+            result.MinimalDiffStart,
+            result.MinimalDiffRemovedLength,
+            result.MinimalDiffInsertedLength,
+            result.HotReloadObserved,
+            result.RuntimeFallbackApplied,
+            error = result.Error?.Message
+        };
+    }
+
     public static object BuildHotDesignWorkspacePayload(
         SourceGenHotDesignWorkspaceSnapshot workspace,
-        SourceGenStudioStatusSnapshot studioStatus)
+        SourceGenStudioStatusSnapshot studioStatus,
+        SourceGenHotDesignHitTestMode hitTestMode)
     {
         return new
         {
@@ -158,6 +303,7 @@ internal static class AxsgRuntimePayloadBuilder
             },
             mode = workspace.Mode.ToString(),
             propertyFilterMode = workspace.PropertyFilterMode.ToString(),
+            hitTestMode = hitTestMode.ToString(),
             panels = new
             {
                 workspace.Panels.ToolbarVisible,
@@ -219,6 +365,19 @@ internal static class AxsgRuntimePayloadBuilder
         };
     }
 
+    public static object BuildHotDesignSelectedElementPayload(
+        string? activeBuildUri,
+        string? selectedElementId,
+        SourceGenHotDesignElementNode? element)
+    {
+        return new
+        {
+            activeBuildUri,
+            selectedElementId,
+            element = element is null ? null : BuildElementNodePayload(element)
+        };
+    }
+
     public static IReadOnlyList<object> BuildElementPayload(IReadOnlyList<SourceGenHotDesignElementNode> elements)
     {
         if (elements.Count == 0)
@@ -229,26 +388,30 @@ internal static class AxsgRuntimePayloadBuilder
         var output = new List<object>(elements.Count);
         for (int index = 0; index < elements.Count; index++)
         {
-            SourceGenHotDesignElementNode element = elements[index];
-            output.Add(new
-            {
-                element.Id,
-                element.DisplayName,
-                element.TypeName,
-                element.XamlName,
-                element.Classes,
-                element.Depth,
-                element.IsSelected,
-                element.Line,
-                element.IsExpanded,
-                element.DescendantCount,
-                element.SourceBuildUri,
-                element.SourceElementId,
-                element.IsLive,
-                children = BuildElementPayload(element.Children)
-            });
+            output.Add(BuildElementNodePayload(elements[index]));
         }
 
         return output;
+    }
+
+    private static object BuildElementNodePayload(SourceGenHotDesignElementNode element)
+    {
+        return new
+        {
+            element.Id,
+            element.DisplayName,
+            element.TypeName,
+            element.XamlName,
+            element.Classes,
+            element.Depth,
+            element.IsSelected,
+            element.Line,
+            element.IsExpanded,
+            element.DescendantCount,
+            element.SourceBuildUri,
+            element.SourceElementId,
+            element.IsLive,
+            children = BuildElementPayload(element.Children)
+        };
     }
 }

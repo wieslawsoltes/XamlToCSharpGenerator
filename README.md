@@ -141,6 +141,9 @@ For feature-specific details:
 - inline C# code blocks: [`site/articles/guides/inline-csharp-code.md`](site/articles/guides/inline-csharp-code.md)
 - iOS hot reload: [`site/articles/guides/hot-reload-ios.md`](site/articles/guides/hot-reload-ios.md)
 - MCP hosts and live tooling: [`site/articles/guides/mcp-servers-and-live-tooling.md`](site/articles/guides/mcp-servers-and-live-tooling.md)
+- workspace MCP language tools: [`site/articles/guides/workspace-mcp-language-tools.md`](site/articles/guides/workspace-mcp-language-tools.md)
+- runtime MCP hot design control: [`site/articles/guides/runtime-mcp-hot-design-control.md`](site/articles/guides/runtime-mcp-hot-design-control.md)
+- runtime MCP studio control: [`site/articles/guides/runtime-mcp-studio-control.md`](site/articles/guides/runtime-mcp-studio-control.md)
 
 ## MCP Hosts
 
@@ -157,6 +160,9 @@ Use the preview host when a custom client needs explicit preview start, in-proce
 The full operational guide is here:
 
 - [`site/articles/guides/mcp-servers-and-live-tooling.md`](site/articles/guides/mcp-servers-and-live-tooling.md)
+- [`site/articles/guides/workspace-mcp-language-tools.md`](site/articles/guides/workspace-mcp-language-tools.md)
+- [`site/articles/guides/runtime-mcp-hot-design-control.md`](site/articles/guides/runtime-mcp-hot-design-control.md)
+- [`site/articles/guides/runtime-mcp-studio-control.md`](site/articles/guides/runtime-mcp-studio-control.md)
 - [`site/articles/guides/preview-mcp-host-and-live-preview.md`](site/articles/guides/preview-mcp-host-and-live-preview.md)
 - [`site/articles/architecture/unified-remote-api-and-mcp.md`](site/articles/architecture/unified-remote-api-and-mcp.md)
 

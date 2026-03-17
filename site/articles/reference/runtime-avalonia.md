@@ -52,3 +52,5 @@ If generated code is correct but the running application still behaves incorrect
 - [Runtime and Hot Reload](../architecture/runtime-and-hot-reload/)
 - [Hot Reload and Hot Design](../guides/hot-reload-and-hot-design/)
 - [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)
+- [Runtime MCP Hot Design Control](../guides/runtime-mcp-hot-design-control/)
+- [Runtime MCP Studio Control](../guides/runtime-mcp-studio-control/)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -105,6 +106,51 @@ public static class XamlSourceGenHotReloadManager
                 TransportMode,
                 LastTransportStatus,
                 LastRemoteOperationStatus);
+        }
+    }
+
+    public static IReadOnlyList<SourceGenHotReloadTrackedDocumentDescriptor> GetTrackedDocuments()
+    {
+        lock (Sync)
+        {
+            if (Registrations.Count == 0)
+            {
+                return Array.Empty<SourceGenHotReloadTrackedDocumentDescriptor>();
+            }
+
+            var trackedTypes = Registrations.Keys
+                .OrderBy(static type => type.FullName, StringComparer.Ordinal)
+                .ToArray();
+
+            var documents = new SourceGenHotReloadTrackedDocumentDescriptor[trackedTypes.Length];
+            for (var index = 0; index < trackedTypes.Length; index++)
+            {
+                Type trackedType = trackedTypes[index];
+                int liveInstanceCount = 0;
+                if (Instances.TryGetValue(trackedType, out List<WeakReference<object>>? references))
+                {
+                    PruneDeadReferences(references);
+                    liveInstanceCount = references.Count;
+                }
+
+                BuildUrisByType.TryGetValue(trackedType, out string? buildUri);
+                string? sourcePath = null;
+                bool isSourceWatched = false;
+                if (IdeSourcePathWatchers.TryGetValue(trackedType, out SourcePathWatchState? watchState))
+                {
+                    sourcePath = watchState.SourcePath;
+                    isSourceWatched = true;
+                }
+
+                documents[index] = new SourceGenHotReloadTrackedDocumentDescriptor(
+                    trackedType,
+                    buildUri,
+                    sourcePath,
+                    liveInstanceCount,
+                    isSourceWatched);
+            }
+
+            return documents;
         }
     }
 

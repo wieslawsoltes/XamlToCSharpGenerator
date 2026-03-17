@@ -22,6 +22,9 @@ These guides are task-oriented. Start here when you know what you want to do but
 - [Navigation and Refactorings](navigation-and-refactorings/)
 - [VS Code and Language Service](vscode-language-service/)
 - [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
+- [Workspace MCP Language Tools](workspace-mcp-language-tools/)
+- [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
+- [Runtime MCP Studio Control](runtime-mcp-studio-control/)
 - [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
 
 ### Runtime and hot reload workflows
@@ -49,8 +52,11 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 1. [VS Code and Language Service](vscode-language-service/)
 2. [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
-3. [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
-4. [Navigation and Refactorings](navigation-and-refactorings/)
+3. [Workspace MCP Language Tools](workspace-mcp-language-tools/)
+4. [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
+5. [Runtime MCP Studio Control](runtime-mcp-studio-control/)
+6. [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
+7. [Navigation and Refactorings](navigation-and-refactorings/)
 
 ### CI, release, and maintenance work
 

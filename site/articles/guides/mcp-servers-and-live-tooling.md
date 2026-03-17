@@ -224,7 +224,8 @@ The runtime MCP host is the one you use for:
 
 - hot reload status subscriptions
 - hot design document and workspace inspection
-- studio status and event streams
+- hot design control and edit application
+- studio status, scopes, and session/event streams
 
 ## 3. Hot reload, hot design, and studio resources
 
@@ -234,22 +235,68 @@ The runtime host exposes the live runtime-facing resources:
 - `axsg://runtime/hotreload/events`
 - `axsg://runtime/hotdesign/status`
 - `axsg://runtime/hotdesign/documents`
+- `axsg://runtime/hotdesign/workspace/current`
+- `axsg://runtime/hotdesign/document/selected`
+- `axsg://runtime/hotdesign/element/selected`
 - `axsg://runtime/hotdesign/events`
 - `axsg://runtime/studio/status`
+- `axsg://runtime/studio/scopes`
 - `axsg://runtime/studio/events`
+
+The runtime host also publishes one dynamic per-build workspace resource per registered hot design document:
+
+```text
+axsg://runtime/hotdesign/workspace/by-build-uri/<escaped-build-uri>
+```
 
 The matching tools are:
 
 - `axsg.hotReload.status`
+- `axsg.hotReload.enable`
+- `axsg.hotReload.disable`
+- `axsg.hotReload.toggle`
+- `axsg.hotReload.trackedDocuments`
+- `axsg.hotReload.remoteTransportStatus`
+- `axsg.hotReload.lastOperation`
 - `axsg.hotDesign.status`
 - `axsg.hotDesign.documents`
 - `axsg.hotDesign.workspace`
+- `axsg.hotDesign.selectDocument`
+- `axsg.hotDesign.selectElement`
+- `axsg.hotDesign.applyDocumentText`
+- `axsg.hotDesign.applyPropertyUpdate`
+- `axsg.hotDesign.insertElement`
+- `axsg.hotDesign.removeElement`
+- `axsg.hotDesign.undo`
+- `axsg.hotDesign.redo`
+- `axsg.hotDesign.setWorkspaceMode`
+- `axsg.hotDesign.setPropertyFilterMode`
+- `axsg.hotDesign.setHitTestMode`
+- `axsg.hotDesign.togglePanel`
+- `axsg.hotDesign.setPanelVisibility`
+- `axsg.hotDesign.setCanvasZoom`
+- `axsg.hotDesign.setCanvasFormFactor`
+- `axsg.hotDesign.setCanvasTheme`
+- `axsg.studio.enable`
+- `axsg.studio.disable`
+- `axsg.studio.configure`
+- `axsg.studio.startSession`
+- `axsg.studio.stopSession`
+- `axsg.studio.applyUpdate`
+- `axsg.studio.scopes`
 - `axsg.studio.status`
 
 Recommended client behavior:
 
-- use `tools/call` for one-shot snapshots
-- use `resources/subscribe` for status and event resources in a live app
+- use `tools/call` for mutations and one-shot reads
+- use `resources/subscribe` for focused status and event resources in a live app
+- relist resources after `notifications/resources/list_changed` if you care about per-build workspace resources
+
+For the detailed control surfaces:
+
+- [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
+- [Runtime MCP Studio Control](runtime-mcp-studio-control/)
+- [Workspace MCP Language Tools](workspace-mcp-language-tools/)
 
 ## 4. Run the preview host in MCP mode
 
@@ -316,7 +363,7 @@ Use this rule:
 More concretely:
 
 - `axsg-mcp` is stateless enough that `tools/list`, `tools/call`, and `resources/read` are the expected workflow
-- `XamlSourceGenRuntimeMcpServer` should be treated as a live stream of status and event resources
+- `XamlSourceGenRuntimeMcpServer` should be treated as a live stream of status, focused snapshot, and event resources
 - `PreviewHostMcpServer` supports dynamic tools and resources, so relist after `notifications/tools/list_changed` or `notifications/resources/list_changed`
 
 ## 7. Troubleshooting
@@ -344,6 +391,9 @@ Use `axsg-mcp --workspace ...` and call `axsg.preview.projectContext`.
 ## Related docs
 
 - [Unified Remote API and MCP](../architecture/unified-remote-api-and-mcp/)
+- [Workspace MCP Language Tools](workspace-mcp-language-tools/)
+- [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
+- [Runtime MCP Studio Control](runtime-mcp-studio-control/)
 - [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
 - [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 - [VS Code and Language Service](vscode-language-service/)

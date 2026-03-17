@@ -33,11 +33,19 @@ The tool exposes a query-oriented MCP surface over the workspace and shared AXSG
 Primary tool surface:
 
 - `axsg.preview.projectContext`
-- `axsg.hotReload.status`
-- `axsg.hotDesign.status`
-- `axsg.hotDesign.documents`
-- `axsg.hotDesign.workspace`
-- `axsg.studio.status`
+- `axsg.workspace.metadataDocument`
+- `axsg.workspace.inlineCSharpProjections`
+- `axsg.workspace.csharpReferences`
+- `axsg.workspace.csharpDeclarations`
+- `axsg.workspace.renamePropagation`
+- `axsg.workspace.prepareRename`
+- `axsg.workspace.rename`
+- shared snapshot tools from the runtime catalog such as:
+  - `axsg.hotReload.status`
+  - `axsg.hotDesign.status`
+  - `axsg.hotDesign.documents`
+  - `axsg.hotDesign.workspace`
+  - `axsg.studio.status`
 
 Primary resources:
 
@@ -47,6 +55,8 @@ Primary resources:
 - `axsg://runtime/studio/status`
 
 Those resources use the same payload shape as the runtime-attached host, but on the standalone tool they are only snapshots from the `axsg-mcp` process itself. They are not subscriptions into a separate running Avalonia app.
+
+For the dedicated workspace language-service tool guidance, see [Workspace MCP Language Tools](../guides/workspace-mcp-language-tools/).
 
 ## What it does not do
 
@@ -70,6 +80,7 @@ For live runtime state, host the runtime MCP server in-process inside the applic
 ## Related docs
 
 - [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)
+- [Workspace MCP Language Tools](../guides/workspace-mcp-language-tools/)
 - [Unified Remote API and MCP](../architecture/unified-remote-api-and-mcp/)
 - [Tooling Stack Packages](tooling-stack/)
 - [Artifact Matrix](artifact-matrix/)
