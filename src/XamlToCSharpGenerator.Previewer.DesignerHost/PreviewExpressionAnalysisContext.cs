@@ -389,6 +389,20 @@ internal sealed class PreviewExpressionAnalysisContext
             return rewritten;
         }
 
+        public override SyntaxNode? VisitQueryExpression(QueryExpressionSyntax node)
+        {
+            FromClauseSyntax rewrittenFromClause = node.FromClause
+                .WithExpression((ExpressionSyntax)Visit(node.FromClause.Expression)!);
+
+            PushScope(node.FromClause.Identifier.ValueText);
+            QueryBodySyntax rewrittenBody = RewriteQueryBody(node.Body);
+            PopScope();
+
+            return node
+                .WithFromClause(rewrittenFromClause)
+                .WithBody(rewrittenBody);
+        }
+
         public override SyntaxNode? VisitSingleVariableDesignation(SingleVariableDesignationSyntax node)
         {
             AddNameToCurrentScope(node.Identifier.ValueText);
@@ -496,6 +510,16 @@ internal sealed class PreviewExpressionAnalysisContext
             }
         }
 
+        private HashSet<string> DetachCurrentScope()
+        {
+            return _scopes.Pop();
+        }
+
+        private void RestoreScope(HashSet<string> scope)
+        {
+            _scopes.Push(scope);
+        }
+
         private void AddNameToCurrentScope(string? name)
         {
             if (!string.IsNullOrWhiteSpace(name))
@@ -509,6 +533,84 @@ internal sealed class PreviewExpressionAnalysisContext
             return block.Statements
                 .OfType<LocalFunctionStatementSyntax>()
                 .Select(static statement => statement.Identifier.ValueText);
+        }
+
+        private QueryBodySyntax RewriteQueryBody(QueryBodySyntax node)
+        {
+            var rewrittenClauses = new SyntaxList<QueryClauseSyntax>();
+            for (var index = 0; index < node.Clauses.Count; index++)
+            {
+                rewrittenClauses = rewrittenClauses.Add(RewriteQueryClause(node.Clauses[index]));
+            }
+
+            SelectOrGroupClauseSyntax rewrittenSelectOrGroup = (SelectOrGroupClauseSyntax)Visit(node.SelectOrGroup)!;
+            QueryContinuationSyntax? rewrittenContinuation = null;
+            if (node.Continuation is not null)
+            {
+                var currentScope = DetachCurrentScope();
+                PushScope(node.Continuation.Identifier.ValueText);
+                QueryBodySyntax rewrittenContinuationBody = RewriteQueryBody(node.Continuation.Body);
+                PopScope();
+                RestoreScope(currentScope);
+
+                rewrittenContinuation = node.Continuation.WithBody(rewrittenContinuationBody);
+            }
+
+            return node
+                .WithClauses(rewrittenClauses)
+                .WithSelectOrGroup(rewrittenSelectOrGroup)
+                .WithContinuation(rewrittenContinuation);
+        }
+
+        private QueryClauseSyntax RewriteQueryClause(QueryClauseSyntax clause)
+        {
+            return clause switch
+            {
+                FromClauseSyntax fromClause => RewriteFromClause(fromClause),
+                LetClauseSyntax letClause => RewriteLetClause(letClause),
+                JoinClauseSyntax joinClause => RewriteJoinClause(joinClause),
+                _ => (QueryClauseSyntax)Visit(clause)!
+            };
+        }
+
+        private FromClauseSyntax RewriteFromClause(FromClauseSyntax node)
+        {
+            FromClauseSyntax rewritten = node
+                .WithExpression((ExpressionSyntax)Visit(node.Expression)!);
+            AddNameToCurrentScope(node.Identifier.ValueText);
+            return rewritten;
+        }
+
+        private LetClauseSyntax RewriteLetClause(LetClauseSyntax node)
+        {
+            LetClauseSyntax rewritten = node
+                .WithExpression((ExpressionSyntax)Visit(node.Expression)!);
+            AddNameToCurrentScope(node.Identifier.ValueText);
+            return rewritten;
+        }
+
+        private JoinClauseSyntax RewriteJoinClause(JoinClauseSyntax node)
+        {
+            ExpressionSyntax rewrittenInExpression = (ExpressionSyntax)Visit(node.InExpression)!;
+            ExpressionSyntax rewrittenLeftExpression = (ExpressionSyntax)Visit(node.LeftExpression)!;
+
+            PushScope(node.Identifier.ValueText);
+            ExpressionSyntax rewrittenRightExpression = (ExpressionSyntax)Visit(node.RightExpression)!;
+            PopScope();
+
+            if (node.Into is null)
+            {
+                AddNameToCurrentScope(node.Identifier.ValueText);
+            }
+            else
+            {
+                AddNameToCurrentScope(node.Into.Identifier.ValueText);
+            }
+
+            return node
+                .WithInExpression(rewrittenInExpression)
+                .WithLeftExpression(rewrittenLeftExpression)
+                .WithRightExpression(rewrittenRightExpression);
         }
 
         private bool IsScopedName(string name)
