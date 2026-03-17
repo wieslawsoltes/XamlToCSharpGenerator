@@ -1136,10 +1136,11 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 var contentPropertyName = string.IsNullOrWhiteSpace(node.ContentPropertyName)
                     ? "Content"
                     : node.ContentPropertyName!;
+                var contentPropertyTypeName = node.ContentPropertyTypeName;
                 TryBuildDirectClrPropertyAssignment(
                     variableName,
                     contentPropertyName,
-                    null,
+                    contentPropertyTypeName,
                     TopDownAttachValueToken,
                     out var topDownContentAssignment);
                 var shouldResetImplicitContent =
@@ -1178,7 +1179,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         TryBuildDirectClrPropertyAssignment(
                             variableName,
                             contentPropertyName,
-                            null,
+                            contentPropertyTypeName,
                             firstChildValueExpression,
                             out var directContentAssignment);
                         EmitStatementAt(
@@ -1192,7 +1193,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                     TryBuildDirectClrPropertyAssignment(
                         variableName,
                         contentPropertyName,
-                        null,
+                        contentPropertyTypeName,
                         "default",
                         out var resetContentAssignment);
                     EmitNodeStatement(resetContentAssignment);
@@ -5474,6 +5475,18 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         if (!string.IsNullOrWhiteSpace(assignment.ClrPropertyOwnerTypeName) &&
             !string.IsNullOrWhiteSpace(assignment.ClrPropertyTypeName))
         {
+            if (assignment.IsInitOnlyClrProperty)
+            {
+                return
+                    "global::XamlToCSharpGenerator.Runtime.SourceGenProvideValueTargetPropertyFactory.CreateReadOnly<" +
+                    assignment.ClrPropertyOwnerTypeName +
+                    ", " +
+                    assignment.ClrPropertyTypeName +
+                    ">(\"" +
+                    Escape(assignment.PropertyName) +
+                    "\")";
+            }
+
             return
                 "global::XamlToCSharpGenerator.Runtime.SourceGenProvideValueTargetPropertyFactory.CreateWritable<" +
                 assignment.ClrPropertyOwnerTypeName +

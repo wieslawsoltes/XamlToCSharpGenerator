@@ -5,15 +5,15 @@ namespace XamlToCSharpGenerator.Tests.LanguageService;
 public sealed class UriPathHelperTests
 {
     [Theory]
-    [InlineData(@"C:\Users\soltes\Cerebre\nest\NestStudioPro\Views\Diagram\MachineLearning\MainView.axaml")]
-    [InlineData("C:/Users/soltes/Cerebre/nest/NestStudioPro/Views/Diagram/MachineLearning/MainView.axaml")]
-    [InlineData("/C:/Users/soltes/Cerebre/nest/NestStudioPro/Views/Diagram/MachineLearning/MainView.axaml")]
+    [InlineData(@"C:\Users\dev\Projects\SampleApp\Views\Editor\MainView.axaml")]
+    [InlineData("C:/Users/dev/Projects/SampleApp/Views/Editor/MainView.axaml")]
+    [InlineData("/C:/Users/dev/Projects/SampleApp/Views/Editor/MainView.axaml")]
     public void NormalizeFilePath_Normalizes_Windows_Drive_Rooted_Shapes(string input)
     {
         var normalized = UriPathHelper.NormalizeFilePath(input);
 
         Assert.Equal(
-            @"C:\Users\soltes\Cerebre\nest\NestStudioPro\Views\Diagram\MachineLearning\MainView.axaml",
+            @"C:\Users\dev\Projects\SampleApp\Views\Editor\MainView.axaml",
             normalized,
             ignoreCase: true,
             ignoreLineEndingDifferences: false,
@@ -24,10 +24,10 @@ public sealed class UriPathHelperTests
     public void ToFilePath_Normalizes_Windows_File_Uri()
     {
         var normalized = UriPathHelper.ToFilePath(
-            "file:///C%3A/Users/soltes/Cerebre/nest/NestStudioPro/Views/Diagram/MachineLearning/MainView.axaml");
+            "file:///C%3A/Users/dev/Projects/SampleApp/Views/Editor/MainView.axaml");
 
         Assert.Equal(
-            @"C:\Users\soltes\Cerebre\nest\NestStudioPro\Views\Diagram\MachineLearning\MainView.axaml",
+            @"C:\Users\dev\Projects\SampleApp\Views\Editor\MainView.axaml",
             normalized,
             ignoreCase: true,
             ignoreLineEndingDifferences: false,
@@ -38,10 +38,10 @@ public sealed class UriPathHelperTests
     public void ToDocumentUri_Converts_LeadingSlash_Windows_Path_To_File_Uri()
     {
         var uri = UriPathHelper.ToDocumentUri(
-            "/C:/Users/soltes/Cerebre/nest/NestStudioPro/Views/Diagram/MachineLearning/MainView.axaml");
+            "/C:/Users/dev/Projects/SampleApp/Views/Editor/MainView.axaml");
 
         Assert.Equal(
-            "file:///C:/Users/soltes/Cerebre/nest/NestStudioPro/Views/Diagram/MachineLearning/MainView.axaml",
+            "file:///C:/Users/dev/Projects/SampleApp/Views/Editor/MainView.axaml",
             uri,
             ignoreCase: true,
             ignoreLineEndingDifferences: false,
