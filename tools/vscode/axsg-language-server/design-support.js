@@ -33,7 +33,7 @@ class DesignSessionController {
     this.lastUnavailableMessage = null;
     this.suppressEditorSync = false;
     this.editorSelectionTimer = null;
-    this.preferencesAppliedSessions = new WeakSet();
+    this.preferencesAppliedSessions = new WeakMap();
     this.logicalExpandedIds = new Set(this.context.workspaceState.get(LOGICAL_EXPANDED_STATE_KEY, []));
     this.visualExpandedIds = new Set(this.context.workspaceState.get(VISUAL_EXPANDED_STATE_KEY, []));
     this.workspaceMode = this.context.workspaceState.get(WORKSPACE_MODE_STATE_KEY, DEFAULT_WORKSPACE_MODE);
@@ -351,29 +351,50 @@ class DesignSessionController {
   }
 
   async ensureSessionPreferencesAsync(session) {
-    if (!this.workspace || this.currentSession !== session || this.preferencesAppliedSessions.has(session)) {
+    if (!this.workspace || this.currentSession !== session) {
       return;
     }
 
-    this.preferencesAppliedSessions.add(session);
+    const appliedPreferences = this.preferencesAppliedSessions.get(session) || {
+      workspaceMode: null,
+      hitTestMode: null,
+      selectedDocumentBuildUri: null
+    };
 
     let changed = false;
-    if (!sameText(this.workspace.mode, this.workspaceMode)) {
+    if (!sameText(this.workspace.mode, this.workspaceMode) &&
+      !sameText(appliedPreferences.workspaceMode, this.workspaceMode)) {
       await session.sendDesignCommand('setWorkspaceMode', { mode: this.workspaceMode });
+      appliedPreferences.workspaceMode = this.workspaceMode;
       changed = true;
+    } else if (sameText(this.workspace.mode, this.workspaceMode)) {
+      appliedPreferences.workspaceMode = this.workspaceMode;
     }
 
-    if (!sameText(this.workspace.hitTestMode, this.hitTestMode)) {
+    if (!sameText(this.workspace.hitTestMode, this.hitTestMode) &&
+      !sameText(appliedPreferences.hitTestMode, this.hitTestMode)) {
       await session.sendDesignCommand('setHitTestMode', { mode: this.hitTestMode });
+      appliedPreferences.hitTestMode = this.hitTestMode;
       changed = true;
+    } else if (sameText(this.workspace.hitTestMode, this.hitTestMode)) {
+      appliedPreferences.hitTestMode = this.hitTestMode;
     }
 
     const hasPreferredDocument = this.selectedDocumentBuildUri &&
       this.getWorkspaceDocuments().some(document => sameText(document.buildUri, this.selectedDocumentBuildUri));
-    if (hasPreferredDocument && !sameText(this.workspace.activeBuildUri, this.selectedDocumentBuildUri)) {
+    if (hasPreferredDocument &&
+      !sameText(this.workspace.activeBuildUri, this.selectedDocumentBuildUri) &&
+      !sameText(appliedPreferences.selectedDocumentBuildUri, this.selectedDocumentBuildUri)) {
       await session.sendDesignCommand('selectDocument', { buildUri: this.selectedDocumentBuildUri });
+      appliedPreferences.selectedDocumentBuildUri = this.selectedDocumentBuildUri;
       changed = true;
+    } else if (!this.selectedDocumentBuildUri) {
+      appliedPreferences.selectedDocumentBuildUri = null;
+    } else if (sameText(this.workspace.activeBuildUri, this.selectedDocumentBuildUri)) {
+      appliedPreferences.selectedDocumentBuildUri = this.selectedDocumentBuildUri;
     }
+
+    this.preferencesAppliedSessions.set(session, appliedPreferences);
 
     if (changed) {
       await this.loadSessionStateAsync(session);
@@ -518,7 +539,7 @@ class DesignSessionController {
 
   async selectAtPoint(session, x, y, updateSelection) {
     if (!session || typeof x !== 'number' || typeof y !== 'number') {
-      return;
+      return null;
     }
 
     try {
@@ -535,6 +556,11 @@ class DesignSessionController {
       }
 
       if (updateSelection) {
+        if (result && result.succeeded === false) {
+          this.publishPreviewDesignState();
+          return result;
+        }
+
         await this.refreshFromSession(session, 'selectAtPoint');
         const selectedElement = this.getSelectedElement();
         if (selectedElement) {
@@ -543,10 +569,13 @@ class DesignSessionController {
       } else {
         this.publishPreviewDesignState();
       }
+
+      return result || null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.handleDesignTransportFailure(session, message);
       this.getOutputChannel().appendLine(`[design] selectAtPoint failed: ${message}`);
+      return null;
     }
   }
 
@@ -672,7 +701,11 @@ class DesignSessionController {
       return;
     }
 
-    await this.selectAtPoint(session, x, y, true);
+    const hitTestResult = await this.selectAtPoint(session, x, y, true);
+    if (!hitTestResult || hitTestResult.succeeded === false || !hitTestResult.elementId) {
+      return;
+    }
+
     await this.insertToolboxItem(toolboxItem);
   }
 

@@ -237,6 +237,94 @@ test('handleSessionEvent refreshes panelActivated session when it is active', as
   ]);
 });
 
+test('ensureSessionPreferencesAsync retries saved document selection when documents appear later', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const session = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.currentSession = session;
+  controller.selectedDocumentBuildUri = 'avares://tests/Second.axaml';
+  controller.loadSessionStateAsync = async () => {};
+  controller.workspace = {
+    mode: 'Interactive',
+    hitTestMode: 'Logical',
+    activeBuildUri: 'avares://tests/First.axaml',
+    documents: []
+  };
+
+  await controller.ensureSessionPreferencesAsync(session);
+  assert.deepEqual(sentCommands, []);
+
+  controller.workspace = {
+    mode: 'Interactive',
+    hitTestMode: 'Logical',
+    activeBuildUri: 'avares://tests/First.axaml',
+    documents: [
+      { buildUri: 'avares://tests/First.axaml' },
+      { buildUri: 'avares://tests/Second.axaml' }
+    ]
+  };
+
+  await controller.ensureSessionPreferencesAsync(session);
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectDocument',
+      payload: {
+        buildUri: 'avares://tests/Second.axaml'
+      }
+    }
+  ]);
+});
+
+test('insertToolboxItemAtPoint aborts insertion when hit testing misses a parent', async () => {
+  const { controller } = createController();
+  let insertCalls = 0;
+
+  controller.selectAtPoint = async () => ({
+    succeeded: false,
+    elementId: null
+  });
+  controller.insertToolboxItem = async () => {
+    insertCalls++;
+  };
+
+  await controller.insertToolboxItemAtPoint(
+    { setDesignState() {} },
+    { name: 'Button' },
+    10,
+    20);
+
+  assert.equal(insertCalls, 0);
+});
+
+test('insertToolboxItemAtPoint inserts after a successful hit test', async () => {
+  const { controller } = createController();
+  let insertCalls = 0;
+
+  controller.selectAtPoint = async () => ({
+    succeeded: true,
+    elementId: '0/0/1'
+  });
+  controller.insertToolboxItem = async () => {
+    insertCalls++;
+  };
+
+  await controller.insertToolboxItemAtPoint(
+    { setDesignState() {} },
+    { name: 'Button' },
+    10,
+    20);
+
+  assert.equal(insertCalls, 1);
+});
+
 test('toolbox drag controller publishes custom and text payloads', async () => {
   const vscodeMock = createVscodeMock();
   const { DesignToolboxDragAndDropController } = loadDesignSupport(vscodeMock);
