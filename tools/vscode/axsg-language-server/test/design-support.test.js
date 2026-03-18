@@ -187,6 +187,30 @@ test('disconnected transport detection includes disposed and peer reset messages
   assert.equal(controller.isDisconnectedTransportMessage('Some unrelated error'), false);
 });
 
+test('handleSessionEvent refreshes previewStarted session when no active session is resolved yet', async () => {
+  const { controller } = createController();
+  const previewSession = { setDesignState() {} };
+  const refreshes = [];
+
+  controller.currentSession = null;
+  controller.refreshFromSession = async (session, reason) => {
+    refreshes.push({ session, reason });
+  };
+
+  await controller.handleSessionEvent({
+    session: previewSession,
+    event: 'previewStarted',
+    payload: {}
+  });
+
+  assert.deepEqual(refreshes, [
+    {
+      session: previewSession,
+      reason: 'previewStarted'
+    }
+  ]);
+});
+
 test('toolbox drag controller publishes custom and text payloads', async () => {
   const vscodeMock = createVscodeMock();
   const { DesignToolboxDragAndDropController } = loadDesignSupport(vscodeMock);

@@ -213,7 +213,11 @@ class DesignSessionController {
     }
 
     const activeSession = this.previewController.getActiveSession();
-    if (!activeSession || event.session !== activeSession) {
+    if (activeSession) {
+      if (event.session !== activeSession) {
+        return;
+      }
+    } else if (event.event !== 'previewStarted' && (!this.currentSession || event.session !== this.currentSession)) {
       return;
     }
 

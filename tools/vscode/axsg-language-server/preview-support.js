@@ -973,11 +973,20 @@ class AvaloniaPreviewController {
 
   getActiveSession() {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      return null;
+    if (editor) {
+      const editorSession = this.getSession(editor.document.uri.toString());
+      if (editorSession) {
+        return editorSession;
+      }
     }
 
-    return this.getSession(editor.document.uri.toString());
+    for (const session of this.sessions.values()) {
+      if (session && session.panel && session.panel.active) {
+        return session;
+      }
+    }
+
+    return null;
   }
 
   async resolveLaunchInfo(document, progress) {
