@@ -539,6 +539,109 @@ public class XamlSourceGenStudioRemoteDesignServerTests
     }
 
     [AvaloniaFact]
+    public async Task Preview_Remote_GetWorkspace_Falls_Back_To_Preview_Bridge_When_Registrations_Are_Cleared()
+    {
+        ResetRuntimeState();
+        string sourcePath = CreateTempFile("""
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel x:Name="RootPanel">
+    <TextBox x:Name="PreviewTextBox" Text="Hello" />
+  </StackPanel>
+</UserControl>
+""");
+
+        string buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/PreviewWorkspaceFallback.axaml";
+        int port = AllocateTcpPort();
+        var options = new SourceGenStudioOptions
+        {
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = port
+        };
+        var server = new XamlSourceGenStudioRemoteDesignServer(options);
+
+        var root = new UserControl
+        {
+            Width = 220,
+            Height = 120,
+            Content = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new TextBox
+                    {
+                        Name = "PreviewTextBox",
+                        Width = 120,
+                        Text = "Hello"
+                    }
+                }
+            }
+        };
+        var window = new Window
+        {
+            Width = 260,
+            Height = 180,
+            Content = root
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+            XamlSourceGenStudioManager.Enable(options);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+            XamlSourceGenHotDesignManager.ClearRegistrations();
+
+            server.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            JsonElement workspaceResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getWorkspace\"}");
+            Assert.True(workspaceResponse.GetProperty("ok").GetBoolean());
+            JsonElement workspacePayload = workspaceResponse.GetProperty("payload");
+            Assert.Equal(buildUri, workspacePayload.GetProperty("activeBuildUri").GetString());
+            Assert.Single(workspacePayload.GetProperty("documents").EnumerateArray());
+
+            JsonElement logicalTreeResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getLogicalTree\"}");
+            Assert.True(logicalTreeResponse.GetProperty("ok").GetBoolean());
+            string? elementId = FindElementIdByXamlName(logicalTreeResponse.GetProperty("payload").GetProperty("elements"), "PreviewTextBox");
+            Assert.False(string.IsNullOrWhiteSpace(elementId));
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            server.Stop();
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
     public async Task Preview_Remote_GetVisualTree_Succeeds_For_Deep_Live_Trees()
     {
         ResetRuntimeState();

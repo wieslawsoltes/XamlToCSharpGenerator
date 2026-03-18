@@ -100,7 +100,15 @@ public sealed class AxsgRuntimeQueryService
     /// </summary>
     public SourceGenHotDesignWorkspaceSnapshot GetHotDesignWorkspace(string? buildUri = null, string? search = null)
     {
-        return XamlSourceGenHotDesignTool.GetWorkspaceSnapshot(buildUri, search);
+        SourceGenHotDesignWorkspaceSnapshot workspace = XamlSourceGenHotDesignTool.GetWorkspaceSnapshot(buildUri, search);
+        if (workspace.Documents.Count > 0)
+        {
+            return workspace;
+        }
+
+        return AxsgPreviewHotDesignQuerySupport.TryGetWorkspaceSnapshot(buildUri, search, out SourceGenHotDesignWorkspaceSnapshot previewWorkspace)
+            ? previewWorkspace
+            : workspace;
     }
 
     /// <summary>

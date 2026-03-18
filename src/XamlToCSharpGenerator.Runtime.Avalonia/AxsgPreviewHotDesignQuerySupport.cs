@@ -8,6 +8,36 @@ namespace XamlToCSharpGenerator.Runtime;
 
 internal static class AxsgPreviewHotDesignQuerySupport
 {
+    internal static bool TryGetWorkspaceSnapshot(string? buildUri, string? search, out SourceGenHotDesignWorkspaceSnapshot workspace)
+    {
+        workspace = default!;
+
+        if (!AxsgPreviewHotDesignSessionBridge.TryGetCurrentDocument(
+                out var rootControl,
+                out var currentBuildUri,
+                out var sourcePath,
+                out var xamlText) ||
+            rootControl is null ||
+            string.IsNullOrWhiteSpace(currentBuildUri))
+        {
+            return false;
+        }
+
+        string resolvedBuildUri = string.IsNullOrWhiteSpace(buildUri) ? currentBuildUri! : buildUri.Trim();
+        if (!string.Equals(resolvedBuildUri, currentBuildUri, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        workspace = XamlSourceGenHotDesignCoreTools.BuildPreviewWorkspaceSnapshot(
+            rootControl.GetType(),
+            resolvedBuildUri,
+            sourcePath,
+            xamlText,
+            search);
+        return true;
+    }
+
     internal static SourceGenHotDesignLiveTreeSnapshot GetLiveTree(
         SourceGenHotDesignHitTestMode mode,
         string? buildUri,

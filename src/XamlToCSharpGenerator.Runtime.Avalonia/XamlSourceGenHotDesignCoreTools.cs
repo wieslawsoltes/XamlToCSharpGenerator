@@ -7,7 +7,9 @@ using System.Xml.Linq;
 using System.Xml;
 using Avalonia;
 using global::Avalonia.Controls;
+using global::Avalonia.Controls.Templates;
 using global::Avalonia.Media;
+using global::Avalonia.Styling;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -200,6 +202,96 @@ public static class XamlSourceGenHotDesignCoreTools
             CanUndo: canUndo,
             CanRedo: canRedo,
             CurrentXamlText: currentText,
+            Documents: documents,
+            Elements: elements,
+            Properties: properties,
+            Toolbox: BuildToolboxCategories(documents, search));
+    }
+
+    internal static SourceGenHotDesignWorkspaceSnapshot BuildPreviewWorkspaceSnapshot(
+        Type rootType,
+        string buildUri,
+        string? sourcePath,
+        string? xamlText,
+        string? search = null)
+    {
+        ArgumentNullException.ThrowIfNull(rootType);
+        ThrowIfNullOrWhiteSpace(buildUri, nameof(buildUri));
+
+        SourceGenHotDesignStatus status = XamlSourceGenHotDesignManager.GetStatus();
+        string normalizedBuildUri = buildUri.Trim();
+        string? normalizedSourcePath = string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath.Trim();
+
+        string? currentSelectedElementId;
+        SourceGenHotDesignWorkspaceMode currentMode;
+        SourceGenHotDesignPropertyFilterMode currentPropertyFilterMode;
+        SourceGenHotDesignPanelState currentPanelState;
+        SourceGenHotDesignCanvasState currentCanvasState;
+        bool canUndo;
+        bool canRedo;
+
+        lock (Sync)
+        {
+            ActiveBuildUri = normalizedBuildUri;
+            currentSelectedElementId = SelectedElementId;
+            currentMode = WorkspaceMode;
+            currentPropertyFilterMode = PropertyFilterMode;
+            currentPanelState = PanelState.Clone();
+            currentCanvasState = CanvasState.Clone();
+            if (Histories.TryGetValue(normalizedBuildUri, out DocumentHistoryState? history))
+            {
+                canUndo = history.UndoStack.Count > 0;
+                canRedo = history.RedoStack.Count > 0;
+            }
+            else
+            {
+                canUndo = false;
+                canRedo = false;
+            }
+        }
+
+        IReadOnlyList<SourceGenHotDesignElementNode> elements = BuildElementTree(
+            xamlText,
+            currentSelectedElementId,
+            search,
+            normalizedBuildUri,
+            out bool selectionExists);
+        if (!selectionExists)
+        {
+            currentSelectedElementId = SelectPreferredElementId(elements);
+            lock (Sync)
+            {
+                SelectedElementId = currentSelectedElementId;
+            }
+        }
+
+        IReadOnlyList<SourceGenHotDesignPropertyEntry> properties = BuildPropertyEntries(
+            xamlText,
+            currentSelectedElementId,
+            currentPropertyFilterMode);
+        SourceGenHotDesignDocumentDescriptor[] documents =
+        [
+            new SourceGenHotDesignDocumentDescriptor(
+                rootType,
+                normalizedBuildUri,
+                normalizedSourcePath,
+                LiveInstanceCount: 1,
+                InferPreviewDocumentRole(rootType),
+                InferPreviewArtifactKind(rootType),
+                ScopeHints: null)
+        ];
+
+        return new SourceGenHotDesignWorkspaceSnapshot(
+            Status: status,
+            Mode: currentMode,
+            PropertyFilterMode: currentPropertyFilterMode,
+            Panels: currentPanelState,
+            Canvas: currentCanvasState,
+            ActiveBuildUri: normalizedBuildUri,
+            SelectedElementId: currentSelectedElementId,
+            CanUndo: canUndo,
+            CanRedo: canRedo,
+            CurrentXamlText: xamlText,
             Documents: documents,
             Elements: elements,
             Properties: properties,
@@ -1712,6 +1804,31 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         collector.Add(type);
+    }
+
+    private static SourceGenHotDesignDocumentRole InferPreviewDocumentRole(Type rootType)
+    {
+        return rootType switch
+        {
+            _ when typeof(Application).IsAssignableFrom(rootType) => SourceGenHotDesignDocumentRole.Root,
+            _ when typeof(ResourceDictionary).IsAssignableFrom(rootType) => SourceGenHotDesignDocumentRole.Resources,
+            _ when typeof(IDataTemplate).IsAssignableFrom(rootType) => SourceGenHotDesignDocumentRole.Template,
+            _ when typeof(IStyle).IsAssignableFrom(rootType) => SourceGenHotDesignDocumentRole.Theme,
+            _ => SourceGenHotDesignDocumentRole.Root
+        };
+    }
+
+    private static SourceGenHotDesignArtifactKind InferPreviewArtifactKind(Type rootType)
+    {
+        return rootType switch
+        {
+            _ when typeof(Application).IsAssignableFrom(rootType) => SourceGenHotDesignArtifactKind.Application,
+            _ when typeof(ResourceDictionary).IsAssignableFrom(rootType) => SourceGenHotDesignArtifactKind.ResourceDictionary,
+            _ when typeof(ControlTheme).IsAssignableFrom(rootType) => SourceGenHotDesignArtifactKind.ControlTheme,
+            _ when typeof(IDataTemplate).IsAssignableFrom(rootType) => SourceGenHotDesignArtifactKind.Template,
+            _ when typeof(IStyle).IsAssignableFrom(rootType) => SourceGenHotDesignArtifactKind.Style,
+            _ => SourceGenHotDesignArtifactKind.View
+        };
     }
 
     private static SourceGenHotDesignDocumentDescriptor? FindDocumentByBuildUri(

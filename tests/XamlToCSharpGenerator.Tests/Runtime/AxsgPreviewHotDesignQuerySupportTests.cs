@@ -161,6 +161,68 @@ public sealed class AxsgPreviewHotDesignQuerySupportTests
         }
     }
 
+    [AvaloniaFact]
+    public void GetHotDesignWorkspace_Falls_Back_To_Preview_Bridge_When_Registrations_Are_Empty()
+    {
+        ResetRuntimeState();
+        string sourcePath = CreateTempFile("""
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel x:Name="RootPanel">
+    <TextBox x:Name="PreviewTextBox" Text="Hello" />
+  </StackPanel>
+</UserControl>
+""");
+        const string buildUri = "avares://tests/AxsgPreviewHotDesignQuerySupportTests/FallbackWorkspace.axaml";
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+
+            var root = new UserControl
+            {
+                Content = new StackPanel
+                {
+                    Name = "RootPanel",
+                    Children =
+                    {
+                        new TextBox
+                        {
+                            Name = "PreviewTextBox",
+                            Text = "Hello"
+                        }
+                    }
+                }
+            };
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+            XamlSourceGenHotDesignManager.ClearRegistrations();
+
+            var queryService = new AxsgRuntimeQueryService();
+            SourceGenHotDesignWorkspaceSnapshot workspace = queryService.GetHotDesignWorkspace(buildUri, search: null);
+
+            Assert.Equal(buildUri, workspace.ActiveBuildUri);
+            Assert.Single(workspace.Documents);
+            Assert.Equal(buildUri, workspace.Documents[0].BuildUri);
+            SourceGenHotDesignElementNode rootNode = Assert.Single(workspace.Elements);
+            Assert.Equal("0", rootNode.Id);
+            Assert.NotNull(FindByName(rootNode, "PreviewTextBox"));
+        }
+        finally
+        {
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
     private static SourceGenHotDesignElementNode? FindByName(SourceGenHotDesignElementNode node, string xamlName)
     {
         if (string.Equals(node.XamlName, xamlName, StringComparison.Ordinal))
