@@ -9,6 +9,21 @@ namespace XamlToCSharpGenerator.LanguageService.Definitions;
 
 internal static class XamlUriValueNavigationService
 {
+    public static bool TryResolveDocumentUri(
+        XamlAnalysisResult analysis,
+        string sourceValue,
+        out string targetUri)
+    {
+        targetUri = string.Empty;
+        if (!TryResolveTargetFilePath(analysis, sourceValue, out var targetFilePath))
+        {
+            return false;
+        }
+
+        targetUri = UriPathHelper.ToDocumentUri(targetFilePath);
+        return true;
+    }
+
     public static bool TryResolveDefinitionAtOffset(
         XamlAnalysisResult analysis,
         SourcePosition position,
@@ -29,13 +44,13 @@ internal static class XamlUriValueNavigationService
             return false;
         }
 
-        if (!TryResolveTargetFilePath(analysis, attribute.Value, out var targetFilePath))
+        if (!TryResolveDocumentUri(analysis, attribute.Value, out var targetUri))
         {
             return false;
         }
 
         definitionLocation = new XamlDefinitionLocation(
-            UriPathHelper.ToDocumentUri(targetFilePath),
+            targetUri,
             new SourceRange(new SourcePosition(0, 0), new SourcePosition(0, 0)));
         return true;
     }

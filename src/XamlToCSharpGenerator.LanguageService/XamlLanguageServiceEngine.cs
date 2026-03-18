@@ -1,19 +1,27 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
+using XamlToCSharpGenerator.LanguageService.Folding;
+using XamlToCSharpGenerator.LanguageService.Formatting;
+using XamlToCSharpGenerator.LanguageService.Highlights;
 using XamlToCSharpGenerator.LanguageService.Hover;
 using XamlToCSharpGenerator.LanguageService.InlineCode;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
+using XamlToCSharpGenerator.LanguageService.LinkedEditing;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Refactorings;
+using XamlToCSharpGenerator.LanguageService.Selection;
 using XamlToCSharpGenerator.LanguageService.SemanticTokens;
+using XamlToCSharpGenerator.LanguageService.SignatureHelp;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.LanguageService.Workspace;
@@ -30,14 +38,22 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     private readonly XamlCompilerAnalysisService _analysisService;
     private readonly XamlCompletionService _completionService;
     private readonly XamlHoverService _hoverService;
+    private readonly XamlDocumentLinkService _documentLinkService;
+    private readonly XamlDocumentHighlightService _documentHighlightService;
     private readonly XamlInlayHintService _inlayHintService;
     private readonly XamlDefinitionService _definitionService;
+    private readonly XamlFoldingRangeService _foldingRangeService;
+    private readonly XamlDocumentFormattingService _formattingService;
     private readonly XamlReferenceService _referenceService;
     private readonly CSharpToXamlNavigationService _csharpToXamlNavigationService;
     private readonly XamlDocumentSymbolService _documentSymbolService;
+    private readonly XamlWorkspaceSymbolService _workspaceSymbolService;
     private readonly XamlSemanticTokenService _semanticTokenService;
+    private readonly XamlSignatureHelpService _signatureHelpService;
     private readonly XamlInlineCSharpProjectionService _inlineCSharpProjectionService;
+    private readonly XamlLinkedEditingRangeService _linkedEditingRangeService;
     private readonly XamlRefactoringService _refactoringService;
+    private readonly XamlSelectionRangeService _selectionRangeService;
     private readonly ConcurrentDictionary<string, int> _uriGenerations =
         new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<AnalysisCacheKey, (int Version, XamlAnalysisResult Result)> _analysisCache =
@@ -65,20 +81,47 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _analysisService = new XamlCompilerAnalysisService(_compilationProvider);
         _completionService = new XamlCompletionService();
         _hoverService = new XamlHoverService();
+        _documentLinkService = new XamlDocumentLinkService();
+        _documentHighlightService = new XamlDocumentHighlightService();
         _inlayHintService = new XamlInlayHintService();
         _definitionService = new XamlDefinitionService();
+        _foldingRangeService = new XamlFoldingRangeService();
+        _formattingService = new XamlDocumentFormattingService();
         _referenceService = new XamlReferenceService();
         _csharpToXamlNavigationService = new CSharpToXamlNavigationService(
             _documentStore,
             _analysisService,
             new CSharpSymbolResolutionService(_compilationProvider));
         _documentSymbolService = new XamlDocumentSymbolService();
+        _workspaceSymbolService = new XamlWorkspaceSymbolService();
         _semanticTokenService = new XamlSemanticTokenService();
+        _signatureHelpService = new XamlSignatureHelpService();
         _inlineCSharpProjectionService = new XamlInlineCSharpProjectionService();
+        _linkedEditingRangeService = new XamlLinkedEditingRangeService();
+        _selectionRangeService = new XamlSelectionRangeService();
         var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService);
         var renameRefactoringProvider = new XamlRenameRefactoringProvider(renameService);
+        var namespacePrefixSuggestionService = new XamlNamespacePrefixSuggestionService();
+        var bindingRefactoringProvider = new XamlBindingMarkupRefactoringProvider(_documentStore, _analysisService);
+        var classPartialRefactoringProvider = new XamlClassPartialRefactoringProvider(_documentStore, _analysisService);
+        var classModifierRefactoringProvider = new XamlClassModifierRefactoringProvider(_documentStore, _analysisService);
+        var eventHandlerRefactoringProvider = new XamlEventHandlerRefactoringProvider(_documentStore, _analysisService);
+        var includeRefactoringProvider = new XamlIncludeRefactoringProvider(_documentStore, _analysisService);
+        var propertyElementRefactoringProvider = new XamlPropertyElementRefactoringProvider(_documentStore, _analysisService);
+        var namespaceImportRefactoringProvider = new XamlNamespaceImportRefactoringProvider(
+            _documentStore,
+            _analysisService,
+            namespacePrefixSuggestionService);
         _refactoringService = new XamlRefactoringService(
-            ImmutableArray.Create<IXamlRefactoringProvider>(renameRefactoringProvider),
+            ImmutableArray.Create<IXamlRefactoringProvider>(
+                renameRefactoringProvider,
+                bindingRefactoringProvider,
+                classPartialRefactoringProvider,
+                classModifierRefactoringProvider,
+                eventHandlerRefactoringProvider,
+                includeRefactoringProvider,
+                propertyElementRefactoringProvider,
+                namespaceImportRefactoringProvider),
             renameRefactoringProvider);
     }
 
@@ -217,6 +260,79 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return references;
     }
 
+    public async Task<ImmutableArray<XamlDocumentHighlight>> GetDocumentHighlightsAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var references = await GetReferencesAsync(uri, position, options, cancellationToken).ConfigureAwait(false);
+        return _documentHighlightService.GetDocumentHighlights(uri, references);
+    }
+
+    public async Task<ImmutableArray<XamlDocumentLink>> GetDocumentLinksAsync(
+        string uri,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? ImmutableArray<XamlDocumentLink>.Empty
+            : _documentLinkService.GetDocumentLinks(analysis);
+    }
+
+    public async Task<ImmutableArray<XamlDocumentTextEdit>> FormatDocumentAsync(
+        string uri,
+        XamlFormattingOptions options,
+        CancellationToken cancellationToken)
+    {
+        var document = _documentStore.Get(uri);
+        var text = document?.Text;
+        if (text is null)
+        {
+            var filePath = UriPathHelper.ToFilePath(uri);
+            if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+            {
+                text = await File.ReadAllTextAsync(filePath, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (text is null || !_formattingService.TryFormat(text, options, out var formattedText))
+        {
+            return ImmutableArray<XamlDocumentTextEdit>.Empty;
+        }
+
+        var sourceText = SourceText.From(text);
+        var lastLine = sourceText.Lines[sourceText.Lines.Count - 1];
+        var endLinePosition = sourceText.Lines.GetLinePosition(lastLine.End);
+        var range = new SourceRange(
+            new SourcePosition(0, 0),
+            new SourcePosition(endLinePosition.Line, endLinePosition.Character));
+
+        return ImmutableArray.Create(new XamlDocumentTextEdit(range, formattedText));
+    }
+
+    public async Task<ImmutableArray<XamlFoldingRange>> GetFoldingRangesAsync(
+        string uri,
+        CancellationToken cancellationToken)
+    {
+        var document = _documentStore.Get(uri);
+        var text = document?.Text;
+        if (text is null)
+        {
+            var filePath = UriPathHelper.ToFilePath(uri);
+            if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+            {
+                text = await File.ReadAllTextAsync(filePath, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return text is null
+            ? ImmutableArray<XamlFoldingRange>.Empty
+            : _foldingRangeService.GetFoldingRanges(text);
+    }
+
     public Task<ImmutableArray<XamlReferenceLocation>> GetXamlReferencesForCSharpSymbolAsync(
         string uri,
         SourcePosition position,
@@ -293,6 +409,107 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         return analysis is null
             ? ImmutableArray<XamlDocumentSymbol>.Empty
             : _documentSymbolService.GetDocumentSymbols(analysis);
+    }
+
+    public async Task<XamlSignatureHelp?> GetSignatureHelpAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? null
+            : _signatureHelpService.GetSignatureHelp(analysis, position);
+    }
+
+    public async Task<ImmutableArray<XamlWorkspaceSymbol>> GetWorkspaceSymbolsAsync(
+        string query,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        options ??= XamlLanguageServiceOptions.Default;
+        var normalizedQuery = query?.Trim() ?? string.Empty;
+        var builder = ImmutableArray.CreateBuilder<XamlWorkspaceSymbol>();
+        var seenFiles = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var document in _documentStore.GetOpenDocuments())
+        {
+            if (string.IsNullOrWhiteSpace(document.FilePath) || !seenFiles.Add(document.FilePath))
+            {
+                continue;
+            }
+
+            var analysis = await GetAnalysisAsync(
+                document.Uri,
+                options,
+                GetCurrentUriGeneration(document.Uri),
+                cancellationToken).ConfigureAwait(false);
+            if (analysis is null)
+            {
+                continue;
+            }
+
+            AddMatchingWorkspaceSymbols(builder, _workspaceSymbolService.GetWorkspaceSymbols(analysis), normalizedQuery);
+        }
+
+        foreach (var filePath in XamlProjectFileDiscoveryService.DiscoverWorkspaceXamlFilePaths(options.WorkspaceRoot))
+        {
+            if (!seenFiles.Add(filePath) || !File.Exists(filePath))
+            {
+                continue;
+            }
+
+            var uri = UriPathHelper.ToDocumentUri(filePath);
+            var text = await File.ReadAllTextAsync(filePath, cancellationToken).ConfigureAwait(false);
+            var analysis = await AnalyzeAsync(
+                new LanguageServiceDocument(uri, filePath, text, 0),
+                GetSharedAnalysisOptions(options),
+                cancellationToken).ConfigureAwait(false);
+            AddMatchingWorkspaceSymbols(builder, _workspaceSymbolService.GetWorkspaceSymbols(analysis), normalizedQuery);
+        }
+
+        return SortWorkspaceSymbolsDeterministically(builder);
+    }
+
+    public async Task<ImmutableArray<XamlSelectionRange>> GetSelectionRangesAsync(
+        string uri,
+        ImmutableArray<SourcePosition> positions,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (positions.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlSelectionRange>.Empty;
+        }
+
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
+        if (analysis is null)
+        {
+            return ImmutableArray<XamlSelectionRange>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlSelectionRange>(positions.Length);
+        foreach (var position in positions)
+        {
+            builder.Add(_selectionRangeService.GetSelectionRange(analysis, position));
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    public async Task<XamlLinkedEditingRanges?> GetLinkedEditingRangesAsync(
+        string uri,
+        SourcePosition position,
+        XamlLanguageServiceOptions options,
+        CancellationToken cancellationToken)
+    {
+        var generation = GetCurrentUriGeneration(uri);
+        var analysis = await GetAnalysisAsync(uri, options, generation, cancellationToken).ConfigureAwait(false);
+        return analysis is null
+            ? null
+            : _linkedEditingRangeService.GetLinkedEditingRanges(analysis, position);
     }
 
     public async Task<ImmutableArray<XamlSemanticToken>> GetSemanticTokensAsync(
@@ -698,6 +915,60 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         }
 
         return builder?.ToImmutable() ?? hints;
+    }
+
+    private static void AddMatchingWorkspaceSymbols(
+        ImmutableArray<XamlWorkspaceSymbol>.Builder builder,
+        ImmutableArray<XamlWorkspaceSymbol> symbols,
+        string query)
+    {
+        foreach (var symbol in symbols)
+        {
+            if (!string.IsNullOrEmpty(query) &&
+                symbol.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0 &&
+                (string.IsNullOrWhiteSpace(symbol.ContainerName) ||
+                 symbol.ContainerName.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0))
+            {
+                continue;
+            }
+
+            builder.Add(symbol);
+        }
+    }
+
+    private static ImmutableArray<XamlWorkspaceSymbol> SortWorkspaceSymbolsDeterministically(
+        ImmutableArray<XamlWorkspaceSymbol>.Builder builder)
+    {
+        if (builder.Count == 0)
+        {
+            return ImmutableArray<XamlWorkspaceSymbol>.Empty;
+        }
+
+        var items = builder.ToArray();
+        Array.Sort(items, static (left, right) =>
+        {
+            var byName = StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+            if (byName != 0)
+            {
+                return byName;
+            }
+
+            var byUri = StringComparer.OrdinalIgnoreCase.Compare(left.Uri, right.Uri);
+            if (byUri != 0)
+            {
+                return byUri;
+            }
+
+            var byStartLine = left.Range.Start.Line.CompareTo(right.Range.Start.Line);
+            if (byStartLine != 0)
+            {
+                return byStartLine;
+            }
+
+            return left.Range.Start.Character.CompareTo(right.Range.Start.Character);
+        });
+
+        return ImmutableArray.Create(items);
     }
 
     private static int ComparePositions(SourcePosition left, SourcePosition right)

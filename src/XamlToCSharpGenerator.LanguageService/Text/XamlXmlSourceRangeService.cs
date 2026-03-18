@@ -119,6 +119,38 @@ internal static class XamlXmlSourceRangeService
         return true;
     }
 
+    public static bool TryCreateAttributeRange(string text, XAttribute attribute, out SourceRange range)
+    {
+        range = default;
+        if (!TryGetAttributeNameBounds(text, attribute, out var nameStart, out _) ||
+            !TryCreateAttributeValueRange(text, attribute, out var valueRange))
+        {
+            return false;
+        }
+
+        var valueEndOffset = TextCoordinateHelper.GetOffset(text, valueRange.End);
+        if (valueEndOffset < 0 || valueEndOffset >= text.Length)
+        {
+            return false;
+        }
+
+        var closingQuoteOffset = valueEndOffset;
+        while (closingQuoteOffset < text.Length && text[closingQuoteOffset] is not '"' and not '\'')
+        {
+            closingQuoteOffset++;
+        }
+
+        if (closingQuoteOffset >= text.Length)
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, nameStart),
+            TextCoordinateHelper.GetPosition(text, closingQuoteOffset + 1));
+        return true;
+    }
+
     public static bool TryFindAttributeAtPosition(
         string text,
         XDocument? xmlDocument,
@@ -215,6 +247,135 @@ internal static class XamlXmlSourceRangeService
         return true;
     }
 
+    public static bool TryCreateElementRange(string text, XElement element, out SourceRange range)
+    {
+        range = default;
+        if (string.IsNullOrEmpty(text) ||
+            element is not IXmlLineInfo lineInfo ||
+            !lineInfo.HasLineInfo())
+        {
+            return false;
+        }
+
+        var start = new SourcePosition(
+            Math.Max(0, lineInfo.LineNumber - 1),
+            Math.Max(0, lineInfo.LinePosition - 1));
+        var startOffset = NormalizeElementStartOffset(text, TextCoordinateHelper.GetOffset(text, start));
+        if (startOffset < 0 || startOffset >= text.Length)
+        {
+            return false;
+        }
+
+        if (!TryFindElementBounds(text, startOffset, out _, out var endOffset))
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, startOffset),
+            TextCoordinateHelper.GetPosition(text, endOffset));
+        return true;
+    }
+
+    public static bool TryCreateClosingElementNameRange(string text, XElement element, out SourceRange range)
+    {
+        range = default;
+        if (string.IsNullOrEmpty(text) ||
+            element is not IXmlLineInfo lineInfo ||
+            !lineInfo.HasLineInfo())
+        {
+            return false;
+        }
+
+        var start = new SourcePosition(
+            Math.Max(0, lineInfo.LineNumber - 1),
+            Math.Max(0, lineInfo.LinePosition - 1));
+        var startOffset = NormalizeElementStartOffset(text, TextCoordinateHelper.GetOffset(text, start));
+        if (startOffset < 0 || startOffset >= text.Length ||
+            !TryFindElementBounds(text, startOffset, out var startTagEnd, out var elementEnd))
+        {
+            return false;
+        }
+
+        var closingTagStart = FindClosingTagStart(text, startTagEnd + 1, elementEnd);
+        if (closingTagStart < 0)
+        {
+            return false;
+        }
+
+        var nameStart = closingTagStart + 2;
+        while (nameStart < elementEnd && char.IsWhiteSpace(text[nameStart]))
+        {
+            nameStart++;
+        }
+
+        var nameEnd = nameStart;
+        while (nameEnd < elementEnd &&
+               !char.IsWhiteSpace(text[nameEnd]) &&
+               text[nameEnd] != '>')
+        {
+            nameEnd++;
+        }
+
+        if (nameEnd <= nameStart)
+        {
+            return false;
+        }
+
+        range = new SourceRange(
+            TextCoordinateHelper.GetPosition(text, nameStart),
+            TextCoordinateHelper.GetPosition(text, nameEnd));
+        return true;
+    }
+
+    public static bool TryFindInnermostElementAtPosition(
+        string text,
+        XDocument? xmlDocument,
+        SourcePosition position,
+        out XElement element,
+        out SourceRange elementRange)
+    {
+        element = null!;
+        elementRange = default;
+        if (xmlDocument?.Root is null)
+        {
+            return false;
+        }
+
+        XElement? bestElement = null;
+        SourceRange bestRange = default;
+        var bestSpanLength = int.MaxValue;
+
+        foreach (var candidateElement in xmlDocument.Root.DescendantsAndSelf())
+        {
+            if (!TryCreateElementRange(text, candidateElement, out var candidateRange) ||
+                !ContainsPosition(text, candidateRange, position))
+            {
+                continue;
+            }
+
+            var spanLength = TextCoordinateHelper.GetOffset(text, candidateRange.End) -
+                             TextCoordinateHelper.GetOffset(text, candidateRange.Start);
+            if (spanLength < 0 || spanLength >= bestSpanLength)
+            {
+                continue;
+            }
+
+            bestElement = candidateElement;
+            bestRange = candidateRange;
+            bestSpanLength = spanLength;
+        }
+
+        if (bestElement is null)
+        {
+            return false;
+        }
+
+        element = bestElement;
+        elementRange = bestRange;
+        return true;
+    }
+
     public static bool TryCreateElementContentRange(
         string text,
         XElement element,
@@ -233,19 +394,23 @@ internal static class XamlXmlSourceRangeService
         var elementStart = new SourcePosition(
             Math.Max(0, lineInfo.LineNumber - 1),
             Math.Max(0, lineInfo.LinePosition - 1));
-        var elementOffset = TextCoordinateHelper.GetOffset(text, elementStart);
+        var elementOffset = NormalizeElementStartOffset(text, TextCoordinateHelper.GetOffset(text, elementStart));
         if (elementOffset < 0 || elementOffset >= text.Length)
         {
             return false;
         }
 
-        var startTagEnd = FindElementStartTagEnd(text, elementOffset);
+        if (!TryFindElementBounds(text, elementOffset, out var startTagEnd, out var elementEnd))
+        {
+            return false;
+        }
+
         if (startTagEnd < 0 || startTagEnd >= text.Length)
         {
             return false;
         }
 
-        var closingTagStart = FindClosingTagStart(text, startTagEnd + 1, element.Name.LocalName);
+        var closingTagStart = FindClosingTagStart(text, startTagEnd + 1, elementEnd);
         if (closingTagStart < 0 || closingTagStart < startTagEnd + 1)
         {
             return false;
@@ -395,42 +560,167 @@ internal static class XamlXmlSourceRangeService
         return -1;
     }
 
-    private static int FindClosingTagStart(string text, int searchStart, string localName)
+    private static bool TryFindElementBounds(string text, int startOffset, out int startTagEnd, out int elementEnd)
     {
-        for (var index = text.IndexOf("</", searchStart, StringComparison.Ordinal);
-             index >= 0;
-             index = text.IndexOf("</", index + 2, StringComparison.Ordinal))
+        startTagEnd = FindElementStartTagEnd(text, startOffset);
+        elementEnd = -1;
+        if (startTagEnd < 0)
         {
-            var nameStart = index + 2;
-            while (nameStart < text.Length && char.IsWhiteSpace(text[nameStart]))
-            {
-                nameStart++;
-            }
+            return false;
+        }
 
-            var cursor = nameStart;
-            while (cursor < text.Length &&
-                   !char.IsWhiteSpace(text[cursor]) &&
-                   text[cursor] != '>')
-            {
-                cursor++;
-            }
+        if (startTagEnd > startOffset && text[startTagEnd - 1] == '/')
+        {
+            elementEnd = startTagEnd + 1;
+            return true;
+        }
 
-            if (cursor <= nameStart)
+        if (!TryGetElementNameBounds(text, startOffset, out var nameStart, out var nameLength))
+        {
+            return false;
+        }
+
+        var qualifiedName = text.Substring(nameStart, nameLength);
+        var depth = 1;
+        for (var index = startTagEnd + 1; index < text.Length; index++)
+        {
+            if (text[index] != '<')
             {
                 continue;
             }
 
-            var qualifiedName = text.Substring(nameStart, cursor - nameStart);
-            var separator = qualifiedName.IndexOf(':');
-            var candidateLocalName = separator >= 0 && separator < qualifiedName.Length - 1
-                ? qualifiedName.Substring(separator + 1)
-                : qualifiedName;
-            if (string.Equals(candidateLocalName, localName, StringComparison.Ordinal))
+            if (StartsWith(text, index, "<!--"))
+            {
+                var commentEnd = text.IndexOf("-->", index + 4, StringComparison.Ordinal);
+                if (commentEnd < 0)
+                {
+                    break;
+                }
+
+                index = commentEnd + 2;
+                continue;
+            }
+
+            if (StartsWith(text, index, "<![CDATA["))
+            {
+                var cdataEnd = text.IndexOf("]]>", index + 9, StringComparison.Ordinal);
+                if (cdataEnd < 0)
+                {
+                    break;
+                }
+
+                index = cdataEnd + 2;
+                continue;
+            }
+
+            if (StartsWith(text, index, "<?"))
+            {
+                var processingEnd = text.IndexOf("?>", index + 2, StringComparison.Ordinal);
+                if (processingEnd < 0)
+                {
+                    break;
+                }
+
+                index = processingEnd + 1;
+                continue;
+            }
+
+            if (index + 1 < text.Length && text[index + 1] == '!')
+            {
+                var declarationEnd = FindElementStartTagEnd(text, index);
+                if (declarationEnd < 0)
+                {
+                    break;
+                }
+
+                index = declarationEnd;
+                continue;
+            }
+
+            var isClosingTag = index + 1 < text.Length && text[index + 1] == '/';
+            var tokenStart = isClosingTag ? index + 2 : index + 1;
+            if (!TryGetElementNameBounds(text, tokenStart, out var candidateNameStart, out var candidateNameLength))
+            {
+                continue;
+            }
+
+            var candidateName = text.Substring(candidateNameStart, candidateNameLength);
+            var candidateTagEnd = FindElementStartTagEnd(text, tokenStart);
+            if (candidateTagEnd < 0)
+            {
+                break;
+            }
+
+            if (!string.Equals(candidateName, qualifiedName, StringComparison.Ordinal))
+            {
+                index = candidateTagEnd;
+                continue;
+            }
+
+            if (isClosingTag)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    elementEnd = candidateTagEnd + 1;
+                    return true;
+                }
+
+                index = candidateTagEnd;
+                continue;
+            }
+
+            if (candidateTagEnd > index && text[candidateTagEnd - 1] != '/')
+            {
+                depth++;
+            }
+
+            index = candidateTagEnd;
+        }
+
+        return false;
+    }
+
+    private static int FindClosingTagStart(string text, int searchStart, int elementEnd)
+    {
+        for (var index = searchStart; index < elementEnd - 1; index++)
+        {
+            if (text[index] == '<' && text[index + 1] == '/')
             {
                 return index;
             }
         }
 
         return -1;
+    }
+
+    private static bool StartsWith(string text, int index, string value)
+    {
+        return index + value.Length <= text.Length &&
+               string.CompareOrdinal(text, index, value, 0, value.Length) == 0;
+    }
+
+    private static int NormalizeElementStartOffset(string text, int offset)
+    {
+        if (offset <= 0 || offset >= text.Length || text[offset] == '<')
+        {
+            return offset;
+        }
+
+        for (var index = offset; index >= 0; index--)
+        {
+            var current = text[index];
+            if (current == '<')
+            {
+                return index;
+            }
+
+            if (current is '\r' or '\n')
+            {
+                break;
+            }
+        }
+
+        return offset;
     }
 }

@@ -49,6 +49,26 @@ internal static class XamlProjectFileDiscoveryService
         return builder.ToImmutable();
     }
 
+    public static ImmutableArray<string> DiscoverWorkspaceXamlFilePaths(string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var seen = new HashSet<string>(PathComparer);
+        foreach (var projectPath in GetCachedWorkspaceProjectPaths(workspaceRoot))
+        {
+            foreach (var filePath in GetCachedProjectXamlFileList(projectPath))
+            {
+                AddCandidatePath(builder, seen, filePath);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
     public static bool TryResolveProjectXamlFileByTargetPath(
         string? projectPath,
         string? currentFilePath,
@@ -107,6 +127,45 @@ internal static class XamlProjectFileDiscoveryService
 
         var normalizedFilePath = NormalizePath(filePath);
         foreach (var candidate in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        {
+            if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
+            {
+                continue;
+            }
+
+            entry = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool TryResolveExplicitProjectXamlEntryByFilePath(
+        string? projectPath,
+        string? currentFilePath,
+        string filePath,
+        out ProjectXamlFileEntry entry)
+    {
+        entry = default;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        var resolvedProjectPath = ResolveProjectPath(projectPath, currentFilePath);
+        if (resolvedProjectPath is null)
+        {
+            return false;
+        }
+
+        var projectDirectory = Path.GetDirectoryName(resolvedProjectPath);
+        if (string.IsNullOrWhiteSpace(projectDirectory) || !Directory.Exists(projectDirectory))
+        {
+            return false;
+        }
+
+        var normalizedFilePath = NormalizePath(filePath);
+        foreach (var candidate in EnumerateExplicitXamlIncludes(resolvedProjectPath, projectDirectory))
         {
             if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
             {

@@ -395,6 +395,767 @@ public sealed class XamlRefactoringTests
         Assert.Contains("x:Reference renamedTarget", rewrittenXaml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task CodeActions_ForBindingWithAmbientDataType_IncludeConvertToCompiledBinding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+                            "             xmlns:vm=\"using:TestApp.Controls\"\n" +
+                            "             x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Name}\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Binding", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Convert to CompiledBinding"));
+        Assert.Equal("refactor.rewrite", action.Kind);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("{CompiledBinding Name}", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForCompiledBinding_IncludeConvertToBinding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/CompiledBindingConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+                            "             xmlns:vm=\"using:TestApp.Controls\"\n" +
+                            "             x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Name}\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("CompiledBinding", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Convert to Binding"));
+        Assert.Equal("refactor.rewrite", action.Kind);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("{Binding Name}", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForCompiledBindingWithoutDataType_IncludeQuickFixToBinding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/CompiledBindingWithoutDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Name}\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("CompiledBinding", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Fix missing x:DataType by converting to Binding"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("{Binding Name}", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForCompiledBindingWithInvalidPath_IncludeQuickFixToBinding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/CompiledBindingInvalidPathView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+                            "             xmlns:vm=\"using:TestApp.Controls\"\n" +
+                            "             x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding MissingName}\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("CompiledBinding", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Fix invalid compiled binding path by converting to Binding"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("{Binding MissingName}", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OpenDocument_ForXClassWithoutPartial_ReturnsDiagnostic()
+    {
+        var project = await CreateXClassPartialProjectAsync(isPartial: false);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: true);
+
+            var diagnostics = await engine.OpenDocumentAsync(
+                project.XamlUri,
+                project.XamlText,
+                version: 1,
+                options,
+                CancellationToken.None);
+
+            Assert.Contains(diagnostics, static diagnostic => diagnostic.Code == "AXSG0109");
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForXClassWithoutPartial_IncludeQuickFixToAddPartial()
+    {
+        var project = await CreateXClassPartialProjectAsync(isPartial: false);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.XamlClassPosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Fix x:Class companion type by adding partial"));
+            Assert.Equal("quickfix", action.Kind);
+            Assert.True(action.IsPreferred);
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.CodeUri, out var edits));
+
+            var rewrittenCode = ApplyEdits(project.CodeText, edits);
+            Assert.Contains("public partial class MainView", rewrittenCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForXClassWithPartial_DoNotIncludeQuickFix()
+    {
+        var project = await CreateXClassPartialProjectAsync(isPartial: true);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.XamlClassPosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            Assert.DoesNotContain(actions, static item => item.Title == "AXSG: Fix x:Class companion type by adding partial");
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OpenDocument_ForInvalidXClassModifier_ReturnsDiagnostic()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/InvalidXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"friend\" />";
+
+        var diagnostics = await engine.OpenDocumentAsync(
+            uri,
+            xaml,
+            version: 1,
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: true),
+            CancellationToken.None);
+
+        Assert.Contains(diagnostics, static diagnostic => diagnostic.Code == "AXSG0104");
+    }
+
+    [Fact]
+    public async Task CodeActions_ForInvalidXClassModifier_IncludeQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/InvalidXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"friend\" />";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            new SourcePosition(0, 0),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Set x:ClassModifier to public"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("x:ClassModifier=\"public\"", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForMismatchedXClassModifier_IncludeQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/MismatchedXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"internal\" />";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            new SourcePosition(0, 0),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Set x:ClassModifier to public"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        Assert.Contains("x:ClassModifier=\"public\"", rewrittenXaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForMatchingXClassModifier_DoNotIncludeQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/MatchingXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"public\" />";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            new SourcePosition(0, 0),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(actions, static item => item.Title.StartsWith("AXSG: Set x:ClassModifier to ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeActions_ForBindingWithoutAmbientDataType_DoNotIncludeConvertToCompiledBinding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingWithoutDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <TextBlock Text=\"{Binding Name}\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Binding", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(actions, static item => item.Title == "AXSG: Convert to CompiledBinding");
+    }
+
+    [Fact]
+    public async Task CodeActions_ForPropertyAttribute_IncludeConvertToPropertyElement()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/PropertyElementConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <TextBlock Text=\"Hello\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Text=", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Convert attribute to property element"));
+        Assert.Equal("refactor.rewrite", action.Kind);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                                "  <TextBlock>\n" +
+                                "    <TextBlock.Text>Hello</TextBlock.Text>\n" +
+                                "  </TextBlock>\n" +
+                                "</UserControl>";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForDirectiveAttribute_DoNotIncludeConvertToPropertyElement()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/DirectiveAttributeConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+                            "  <TextBlock x:Name=\"Title\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("x:Name", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(actions, static item => item.Title == "AXSG: Convert attribute to property element");
+    }
+
+    [Fact]
+    public async Task CodeActions_ForEventAttribute_DoNotIncludeConvertToPropertyElement()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/EventAttributeConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <Button Click=\"OnClick\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("Click=", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(actions, static item => item.Title == "AXSG: Convert attribute to property element");
+    }
+
+    [Fact]
+    public async Task CodeActions_ForUnresolvedElementType_IncludeNamespaceImportQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        const string uri = "file:///tmp/NamespaceImportView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <ThemeDoodad />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.True(
+            actions.Any(),
+            "Expected at least one code action, but none were returned. Titles: " +
+            string.Join(", ", actions.Select(static item => item.Title)));
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Import namespace for local:ThemeDoodad"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<UserControl xmlns=\"using:Host.Controls\" xmlns:local=\"using:Demo.Controls\">\n" +
+                                "  <local:ThemeDoodad />\n" +
+                                "</UserControl>";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForUnresolvedAttachedPropertyOwner_IncludeNamespaceImportQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        const string uri = "file:///tmp/NamespaceImportAttachedPropertyView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <UserControl ThemeDoodad.Accent=\"True\" />\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ThemeDoodad.Accent", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.True(
+            actions.Any(),
+            "Expected at least one code action, but none were returned. Titles: " +
+            string.Join(", ", actions.Select(static item => item.Title)));
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Import namespace for local:ThemeDoodad"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<UserControl xmlns=\"using:Host.Controls\" xmlns:local=\"using:Demo.Controls\">\n" +
+                                "  <UserControl local:ThemeDoodad.Accent=\"True\" />\n" +
+                                "</UserControl>";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForUnresolvedSetterPropertyOwner_IncludeNamespaceImportQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        const string uri = "file:///tmp/NamespaceImportSetterPropertyView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"UserControl\">\n" +
+                            "      <Setter Property=\"ThemeDoodad.Accent\" Value=\"True\" />\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ThemeDoodad.Accent", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.True(
+            actions.Any(),
+            "Expected at least one code action, but none were returned. Titles: " +
+            string.Join(", ", actions.Select(static item => item.Title)));
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Import namespace for local:ThemeDoodad"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<UserControl xmlns=\"using:Host.Controls\" xmlns:local=\"using:Demo.Controls\">\n" +
+                                "  <UserControl.Styles>\n" +
+                                "    <Style Selector=\"UserControl\">\n" +
+                                "      <Setter Property=\"local:ThemeDoodad.Accent\" Value=\"True\" />\n" +
+                                "    </Style>\n" +
+                                "  </UserControl.Styles>\n" +
+                                "</UserControl>";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForUnresolvedXDataTypeValue_IncludeNamespaceImportQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        const string uri = "file:///tmp/NamespaceImportXDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:DataType=\"ThemeDoodad\" />";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.True(
+            actions.Any(),
+            "Expected at least one code action, but none were returned. Titles: " +
+            string.Join(", ", actions.Select(static item => item.Title)));
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Import namespace for local:ThemeDoodad"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<UserControl xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:DataType=\"local:ThemeDoodad\" xmlns:local=\"using:Demo.Controls\" />";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForUnresolvedControlThemeTargetType_IncludeNamespaceImportQuickFix()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        const string uri = "file:///tmp/NamespaceImportControlThemeTargetType.axaml";
+        const string xaml = "<ControlTheme xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" TargetType=\"{x:Type ThemeDoodad}\" />";
+
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false);
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var actions = await engine.GetCodeActionsAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2),
+            options,
+            documentTextOverride: null,
+            CancellationToken.None);
+
+        Assert.True(
+            actions.Any(),
+            "Expected at least one code action, but none were returned. Titles: " +
+            string.Join(", ", actions.Select(static item => item.Title)));
+        var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Import namespace for local:ThemeDoodad"));
+        Assert.Equal("quickfix", action.Kind);
+        Assert.True(action.IsPreferred);
+        Assert.NotNull(action.Edit);
+        Assert.True(action.Edit!.Changes.TryGetValue(uri, out var edits));
+
+        var rewrittenXaml = ApplyEdits(xaml, edits);
+        const string expected = "<ControlTheme xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" TargetType=\"{x:Type local:ThemeDoodad}\" xmlns:local=\"using:Demo.Controls\" />";
+        Assert.Equal(expected, rewrittenXaml);
+    }
+
+    [Fact]
+    public async Task CodeActions_ForMissingEventHandler_IncludeQuickFixToAddHandlerStub()
+    {
+        var project = await CreateEventHandlerProjectAsync(withIncompatibleHandler: false);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.EventHandlerPosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Add event handler 'OnClick'"));
+            Assert.Equal("quickfix", action.Kind);
+            Assert.True(action.IsPreferred);
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.CodeUri, out var edits));
+
+            var rewrittenCode = ApplyEdits(project.CodeText, edits);
+            Assert.Contains("private void OnClick(", rewrittenCode, StringComparison.Ordinal);
+            Assert.Contains("global::System.EventArgs e", rewrittenCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForIncompatibleEventHandler_IncludeQuickFixToAddCompatibleOverload()
+    {
+        var project = await CreateEventHandlerProjectAsync(withIncompatibleHandler: true);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.EventHandlerPosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Add compatible event handler overload 'OnClick'"));
+            Assert.Equal("quickfix", action.Kind);
+            Assert.True(action.IsPreferred);
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.CodeUri, out var edits));
+
+            var rewrittenCode = ApplyEdits(project.CodeText, edits);
+            Assert.Contains("private void OnClick()", rewrittenCode, StringComparison.Ordinal);
+            Assert.Contains("private void OnClick(", rewrittenCode, StringComparison.Ordinal);
+            Assert.Contains("global::System.EventArgs e", rewrittenCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForEventHandlerWithOutParameter_IncludeThrowingStub()
+    {
+        var project = await CreateEventHandlerProjectAsync(withIncompatibleHandler: false, useOutParameterEvent: true);
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.EventHandlerPosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Add event handler 'OnClick'"));
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.CodeUri, out var edits));
+
+            var rewrittenCode = ApplyEdits(project.CodeText, edits);
+            Assert.Contains("private void OnClick(", rewrittenCode, StringComparison.Ordinal);
+            Assert.Contains("out int size", rewrittenCode, StringComparison.Ordinal);
+            Assert.Contains("throw new global::System.NotImplementedException();", rewrittenCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForMissingIncludeTargetFromProject_IncludeQuickFixToAddAvaloniaXamlItem()
+    {
+        var project = await CreateMissingIncludeProjectAsync();
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.IncludePosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Add included XAML file to project"));
+            Assert.Equal("quickfix", action.Kind);
+            Assert.True(action.IsPreferred);
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.ProjectUri, out var edits));
+
+            var rewrittenProject = ApplyEdits(project.ProjectText, edits);
+            Assert.Contains("<AvaloniaXaml Include=\"Themes/Shared.axaml\" />", rewrittenProject, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeActions_ForInvalidInclude_IncludeQuickFixToRemoveElement()
+    {
+        var project = await CreateInvalidIncludeProjectAsync();
+        try
+        {
+            using var engine = new XamlLanguageServiceEngine(new MsBuildCompilationProvider());
+            var options = new XamlLanguageServiceOptions(project.RootPath, IncludeSemanticDiagnostics: false);
+
+            await engine.OpenDocumentAsync(project.XamlUri, project.XamlText, version: 1, options, CancellationToken.None);
+
+            var actions = await engine.GetCodeActionsAsync(
+                project.XamlUri,
+                project.IncludePosition,
+                options,
+                documentTextOverride: null,
+                CancellationToken.None);
+
+            var action = Assert.Single(actions.Where(static item => item.Title == "AXSG: Remove invalid include"));
+            Assert.Equal("quickfix", action.Kind);
+            Assert.NotNull(action.Edit);
+            Assert.True(action.Edit!.Changes.TryGetValue(project.XamlUri, out var edits));
+
+            var rewrittenXaml = ApplyEdits(project.XamlText, edits);
+            Assert.DoesNotContain("<StyleInclude", rewrittenXaml, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
     private static async Task<RenameProjectFixture> CreateRenameProjectAsync()
     {
         var rootPath = Path.Combine(Path.GetTempPath(), "axsg-ls-rename-" + Guid.NewGuid().ToString("N"));
@@ -551,6 +1312,272 @@ public sealed class XamlRefactoringTests
             usageXaml);
     }
 
+    private static async Task<XClassPartialProjectFixture> CreateXClassPartialProjectAsync(bool isPartial)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-ls-xclass-partial-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        string classDeclaration = isPartial
+            ? "    public partial class MainView : TestApp.Controls.UserControl { }\n"
+            : "    public class MainView : TestApp.Controls.UserControl { }\n";
+
+        string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"using:TestApp\", \"TestApp\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "}\n\n" +
+            "namespace TestApp\n" +
+            "{\n" +
+            classDeclaration +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+            "             x:Class=\"TestApp.MainView\" />\n";
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new XClassPartialProjectFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            codeText,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("MainView", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<EventHandlerProjectFixture> CreateEventHandlerProjectAsync(
+        bool withIncompatibleHandler,
+        bool useOutParameterEvent = false)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-ls-event-handler-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        string handlerDeclaration = withIncompatibleHandler
+            ? "\n    private void OnClick() { }\n"
+            : "\n";
+
+        string delegateDeclaration = useOutParameterEvent
+            ? "    public delegate void ClickHandler(object? sender, out int size);\n"
+            : string.Empty;
+
+        string eventDeclaration = useOutParameterEvent
+            ? "        public event ClickHandler? Click;\n"
+            : "        public event EventHandler? Click;\n";
+
+        string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"using:TestApp\", \"TestApp\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n\n" +
+            "    public class Button\n" +
+            "    {\n" +
+            delegateDeclaration +
+            eventDeclaration +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp\n" +
+            "{\n" +
+            "    public partial class MainView : TestApp.Controls.UserControl\n" +
+            "    {" +
+            handlerDeclaration +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+            "             x:Class=\"TestApp.MainView\">\n" +
+            "  <Button Click=\"OnClick\" />\n" +
+            "</UserControl>\n";
+
+        const string projectText =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>";
+
+        await File.WriteAllTextAsync(projectPath, projectText);
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new EventHandlerProjectFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            codeText,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("Click", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<MissingIncludeProjectFixture> CreateMissingIncludeProjectAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-ls-missing-include-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+        Directory.CreateDirectory(Path.Combine(rootPath, "Themes"));
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "Types.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+        var includedPath = Path.Combine(rootPath, "Themes", "Shared.axaml");
+
+        const string projectText =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>";
+
+        const string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "    public class Styles { }\n" +
+            "    public class StyleInclude\n" +
+            "    {\n" +
+            "        public string Source { get; set; } = string.Empty;\n" +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <UserControl.Styles>\n" +
+            "    <StyleInclude Source=\"/Themes/Shared.axaml\" />\n" +
+            "  </UserControl.Styles>\n" +
+            "</UserControl>\n";
+
+        const string includedText =
+            "<Styles xmlns=\"https://github.com/avaloniaui\" />\n";
+
+        await File.WriteAllTextAsync(projectPath, projectText);
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+        await File.WriteAllTextAsync(includedPath, includedText);
+
+        return new MissingIncludeProjectFixture(
+            rootPath,
+            new Uri(projectPath).AbsoluteUri,
+            projectText,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("StyleInclude", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<InvalidIncludeProjectFixture> CreateInvalidIncludeProjectAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-ls-invalid-include-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "Types.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        const string projectText =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>";
+
+        const string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "    public class Styles { }\n" +
+            "    public class StyleInclude\n" +
+            "    {\n" +
+            "        public string Source { get; set; } = string.Empty;\n" +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <UserControl.Styles>\n" +
+            "    <StyleInclude />\n" +
+            "  </UserControl.Styles>\n" +
+            "</UserControl>\n";
+
+        await File.WriteAllTextAsync(projectPath, projectText);
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new InvalidIncludeProjectFixture(
+            rootPath,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("StyleInclude", StringComparison.Ordinal) + 2));
+    }
+
     private static SourcePosition GetPosition(string text, int offset)
     {
         var line = 0;
@@ -628,4 +1655,34 @@ public sealed class XamlRefactoringTests
         SourcePosition ResourceKeyPosition,
         string UsageUri,
         string UsageXaml);
+
+    private sealed record XClassPartialProjectFixture(
+        string RootPath,
+        string CodeUri,
+        string CodeText,
+        string XamlUri,
+        string XamlText,
+        SourcePosition XamlClassPosition);
+
+    private sealed record EventHandlerProjectFixture(
+        string RootPath,
+        string CodeUri,
+        string CodeText,
+        string XamlUri,
+        string XamlText,
+        SourcePosition EventHandlerPosition);
+
+    private sealed record MissingIncludeProjectFixture(
+        string RootPath,
+        string ProjectUri,
+        string ProjectText,
+        string XamlUri,
+        string XamlText,
+        SourcePosition IncludePosition);
+
+    private sealed record InvalidIncludeProjectFixture(
+        string RootPath,
+        string XamlUri,
+        string XamlText,
+        SourcePosition IncludePosition);
 }

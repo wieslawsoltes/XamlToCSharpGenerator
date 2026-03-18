@@ -137,6 +137,51 @@ internal static class XamlTypeReferenceNavigationResolver
         return TryResolveByFullTypeName(analysis, normalizedTypeToken, out resolvedTypeReference);
     }
 
+    public static bool TryNormalizeTypeReferenceToken(string? rawTypeValue, out string normalizedTypeToken)
+    {
+        normalizedTypeToken = NormalizeTypeReferenceToken(rawTypeValue);
+        return !string.IsNullOrWhiteSpace(normalizedTypeToken);
+    }
+
+    public static bool TryRewriteTypeReferenceToken(
+        string? rawTypeValue,
+        string replacementTypeToken,
+        out string rewrittenValue)
+    {
+        rewrittenValue = string.Empty;
+        if (string.IsNullOrWhiteSpace(replacementTypeToken))
+        {
+            return false;
+        }
+
+        var candidate = rawTypeValue?.Trim();
+        if (string.IsNullOrWhiteSpace(candidate) || !candidate.StartsWith("{", StringComparison.Ordinal))
+        {
+            rewrittenValue = replacementTypeToken;
+            return true;
+        }
+
+        var closingBrace = candidate.LastIndexOf('}');
+        var inner = closingBrace > 0
+            ? candidate.Substring(1, closingBrace - 1).Trim()
+            : candidate.TrimStart('{').Trim();
+        if (!inner.StartsWith("x:Type", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var typePayload = inner.Substring("x:Type".Length).Trim();
+        var suffix = string.Empty;
+        var commaIndex = typePayload.IndexOf(',');
+        if (commaIndex >= 0)
+        {
+            suffix = typePayload.Substring(commaIndex);
+        }
+
+        rewrittenValue = "{x:Type " + replacementTypeToken + suffix + "}";
+        return true;
+    }
+
     private static bool TryResolveByQualifiedTypeToken(
         XamlAnalysisResult analysis,
         ImmutableDictionary<string, string> prefixMap,
@@ -245,9 +290,14 @@ internal static class XamlTypeReferenceNavigationResolver
         return false;
     }
 
-    private static string NormalizeTypeReferenceToken(string rawTypeValue)
+    private static string NormalizeTypeReferenceToken(string? rawTypeValue)
     {
-        var candidate = rawTypeValue.Trim();
+        var candidate = rawTypeValue?.Trim();
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return string.Empty;
+        }
+
         if (candidate.Length == 0)
         {
             return string.Empty;

@@ -88,6 +88,46 @@ public sealed class AvaloniaTypeIndexTests
         Assert.Equal("App.Dialogs.SharedPage", dialogType!.FullTypeName);
     }
 
+    [Fact]
+    public void FindTypesByXmlTypeName_IncludesExplicitXmlnsMappingsForProjectTypes()
+    {
+        var compilation = CreateCompilation("""
+                                            using System;
+
+                                            [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:Host.Controls", "Host.Controls")]
+                                            [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:Demo.Controls", "Demo.Controls")]
+
+                                            namespace Avalonia.Metadata
+                                            {
+                                                [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                                public sealed class XmlnsDefinitionAttribute : Attribute
+                                                {
+                                                    public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                                }
+                                            }
+
+                                            namespace Host.Controls
+                                            {
+                                                public class UserControl { }
+                                            }
+
+                                            namespace Demo.Controls
+                                            {
+                                                public class ThemeDoodad { }
+                                            }
+                                            """);
+
+        var index = AvaloniaTypeIndex.Create(compilation);
+        var matches = index.FindTypesByXmlTypeName("ThemeDoodad");
+
+        Assert.Contains(matches, static item =>
+            item.FullTypeName == "Demo.Controls.ThemeDoodad" &&
+            item.XmlNamespace == "using:Demo.Controls");
+        Assert.Contains(matches, static item =>
+            item.FullTypeName == "Demo.Controls.ThemeDoodad" &&
+            item.XmlNamespace == "https://github.com/avaloniaui");
+    }
+
     private static Compilation CreateCompilation(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source, path: "/tmp/AvaloniaTypeIndexTests.cs");

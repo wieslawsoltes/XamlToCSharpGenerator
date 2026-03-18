@@ -113,51 +113,14 @@ public sealed class XamlDefinitionService
         string identifier)
     {
         var builder = ImmutableArray.CreateBuilder<XamlDefinitionLocation>();
-
-        foreach (var resource in analysis.ParsedDocument!.Resources)
+        foreach (var range in XamlResourceDeclarationRangeService.FindDeclarationRanges(analysis, identifier))
         {
-            TryAddDefinition(resource.Key, resource.Line, resource.Column, identifier, analysis.Document.FilePath, builder);
-        }
-
-        foreach (var template in analysis.ParsedDocument.Templates)
-        {
-            TryAddDefinition(template.Key, template.Line, template.Column, identifier, analysis.Document.FilePath, builder);
-        }
-
-        foreach (var style in analysis.ParsedDocument.Styles)
-        {
-            TryAddDefinition(style.Key, style.Line, style.Column, identifier, analysis.Document.FilePath, builder);
-        }
-
-        foreach (var controlTheme in analysis.ParsedDocument.ControlThemes)
-        {
-            TryAddDefinition(controlTheme.Key, controlTheme.Line, controlTheme.Column, identifier, analysis.Document.FilePath, builder);
+            builder.Add(new XamlDefinitionLocation(
+                UriPathHelper.ToDocumentUri(analysis.Document.FilePath),
+                range));
         }
 
         return builder.ToImmutable();
-    }
-
-    private static bool TryAddDefinition(
-        string? key,
-        int line,
-        int column,
-        string identifier,
-        string filePath,
-        ImmutableArray<XamlDefinitionLocation>.Builder builder)
-    {
-        if (string.IsNullOrWhiteSpace(key) || !string.Equals(key, identifier, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var start = new SourcePosition(
-            Math.Max(0, line - 1),
-            Math.Max(0, column - 1));
-        var end = new SourcePosition(start.Line, start.Character + Math.Max(1, key.Length));
-        builder.Add(new XamlDefinitionLocation(
-            UriPathHelper.ToDocumentUri(filePath),
-            new SourceRange(start, end)));
-        return true;
     }
 
     private static bool HasNamedElementDeclaration(XamlAnalysisResult analysis, string identifier)
