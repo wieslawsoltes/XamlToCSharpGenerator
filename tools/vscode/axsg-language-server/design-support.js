@@ -29,6 +29,8 @@ class DesignSessionController {
     this.logicalTree = null;
     this.visualTree = null;
     this.overlay = null;
+    this.lastUnavailableKind = null;
+    this.lastUnavailableMessage = null;
     this.suppressEditorSync = false;
     this.editorSelectionTimer = null;
     this.preferencesAppliedSessions = new WeakSet();
@@ -92,6 +94,12 @@ class DesignSessionController {
 
     context.subscriptions.push(vscode.commands.registerCommand('axsg.design.refresh', async () => {
       await this.refreshFromActiveSession('command');
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('axsg.design.syncFromEditor', async () => {
+      await this.syncFromActiveEditorSelectionAsync();
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('axsg.design.revealSelection', async () => {
+      await this.revealSelectedElementAsync();
     }));
     context.subscriptions.push(vscode.commands.registerCommand('axsg.design.undo', async () => {
       await this.applyMutation('undo', {});
@@ -304,6 +312,10 @@ class DesignSessionController {
 
     try {
       await this.loadSessionStateAsync(session);
+      if (this.workspace) {
+        this.lastUnavailableKind = null;
+        this.lastUnavailableMessage = null;
+      }
       await this.ensureSessionPreferencesAsync(session);
       this.refreshProviders();
       this.publishPreviewDesignState();
@@ -378,10 +390,13 @@ class DesignSessionController {
     this.logicalTree = null;
     this.visualTree = null;
     this.overlay = null;
+    this.lastUnavailableKind = null;
+    this.lastUnavailableMessage = null;
     this.refreshProviders();
   }
 
   refreshProviders() {
+    this.updateViewMessages();
     this.documentsProvider.refresh();
     this.toolboxProvider.refresh();
     this.logicalTreeProvider.refresh();
@@ -394,13 +409,20 @@ class DesignSessionController {
       return;
     }
 
-    if (!this.workspace) {
-      this.currentSession.setDesignState({ available: false });
+    const availabilityState = this.getAvailabilityState();
+    if (!availabilityState.available) {
+      this.currentSession.setDesignState({
+        available: false,
+        reason: availabilityState.kind,
+        message: availabilityState.message
+      });
       return;
     }
 
     this.currentSession.setDesignState({
       available: true,
+      reason: availabilityState.kind,
+      message: availabilityState.message,
       workspaceMode: this.workspace.mode || DEFAULT_WORKSPACE_MODE,
       hitTestMode: this.workspace.hitTestMode || DEFAULT_HIT_TEST_MODE,
       canUndo: !!this.workspace.canUndo,
@@ -537,8 +559,14 @@ class DesignSessionController {
     this.logicalTree = null;
     this.visualTree = null;
     this.overlay = null;
+    this.lastUnavailableKind = 'transportDisconnected';
+    this.lastUnavailableMessage = this.getTransportFailureMessage();
     this.refreshProviders();
-    session.setDesignState({ available: false });
+    session.setDesignState({
+      available: false,
+      reason: this.lastUnavailableKind,
+      message: this.lastUnavailableMessage
+    });
   }
 
   isDisconnectedTransportMessage(message) {
@@ -582,6 +610,32 @@ class DesignSessionController {
 
     await this.currentSession.sendDesignCommand('setPropertyFilterMode', { mode });
     await this.refreshFromSession(this.currentSession, 'setPropertyFilterMode');
+  }
+
+  async syncFromActiveEditorSelectionAsync() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !this.isXamlDocument(editor.document)) {
+      await vscode.window.showInformationMessage('Open a XAML or AXAML editor to sync the AXSG Inspector selection.');
+      return;
+    }
+
+    const session = this.previewController.getSession(editor.document.uri.toString());
+    if (!session) {
+      await vscode.window.showInformationMessage('Open AXSG Preview for the current document before syncing the AXSG Inspector selection.');
+      return;
+    }
+
+    await this.syncEditorSelectionAsync(editor);
+  }
+
+  async revealSelectedElementAsync() {
+    const selectedElement = this.getSelectedElement();
+    if (!selectedElement) {
+      await vscode.window.showInformationMessage('Select an element in the AXSG Inspector or preview before revealing it in the editor.');
+      return;
+    }
+
+    await this.revealElementInEditor(selectedElement);
   }
 
   async applyPropertyUpdate(propertyName, propertyValue, removeProperty = false) {
@@ -772,6 +826,89 @@ class DesignSessionController {
     return this.workspace && Array.isArray(this.workspace.documents)
       ? this.workspace.documents
       : [];
+  }
+
+  getAvailabilityState() {
+    if (!this.currentSession) {
+      return {
+        available: false,
+        kind: 'noPreviewSession',
+        message: 'Open or focus an AXSG preview to populate the AXSG Inspector.'
+      };
+    }
+
+    if (!this.workspace) {
+      return {
+        available: false,
+        kind: this.lastUnavailableKind || 'workspaceUnavailable',
+        message: this.lastUnavailableMessage || 'AXSG Inspector is waiting for preview design data.'
+      };
+    }
+
+    const workspaceMode = this.workspace.mode || DEFAULT_WORKSPACE_MODE;
+    const hitTestMode = this.workspace.hitTestMode || DEFAULT_HIT_TEST_MODE;
+    if (sameText(workspaceMode, DEFAULT_WORKSPACE_MODE)) {
+      return {
+        available: true,
+        kind: 'interactiveReady',
+        message: `Interactive mode is active. Switch Mode to Design or Agent to inspect the ${hitTestMode.toLowerCase()} tree and select elements from the preview surface.`
+      };
+    }
+
+    return {
+      available: true,
+      kind: 'ready',
+      message: `Inspector ready in ${workspaceMode} mode using the ${hitTestMode.toLowerCase()} tree.`
+    };
+  }
+
+  updateViewMessages() {
+    const availabilityState = this.getAvailabilityState();
+    const documents = this.getWorkspaceDocuments();
+    const toolboxItems = this.workspace && Array.isArray(this.workspace.toolbox)
+      ? this.workspace.toolbox
+      : [];
+    const logicalElements = this.getLiveTree('logical');
+    const visualElements = this.getLiveTree('visual');
+    const interactiveGuidance = availabilityState.kind === 'interactiveReady'
+      ? availabilityState.message
+      : '';
+
+    if (this.documentsTreeView) {
+      this.documentsTreeView.message = !availabilityState.available
+        ? availabilityState.message
+        : (documents.length === 0
+            ? 'No design documents were reported for the current preview.'
+            : '');
+    }
+
+    if (this.toolboxTreeView) {
+      this.toolboxTreeView.message = !availabilityState.available
+        ? availabilityState.message
+        : (toolboxItems.length === 0
+            ? 'No toolbox items are available for the current document.'
+            : '');
+    }
+
+    if (this.logicalTreeView) {
+      this.logicalTreeView.message = !availabilityState.available
+        ? availabilityState.message
+        : (logicalElements.length === 0
+            ? (interactiveGuidance || 'No logical tree is available for the current preview.')
+            : '');
+    }
+
+    if (this.visualTreeView) {
+      this.visualTreeView.message = !availabilityState.available
+        ? availabilityState.message
+        : (visualElements.length === 0
+            ? (interactiveGuidance || 'No visual tree is available for the current preview.')
+            : '');
+    }
+  }
+
+  getTransportFailureMessage() {
+    return 'AXSG Inspector lost its preview design connection. Refresh the preview to restore documents, trees, and properties.';
   }
 
   getSelectedElement() {
@@ -1085,6 +1222,7 @@ class DesignPropertiesViewProvider {
       return;
     }
 
+    const availabilityState = this.controller.getAvailabilityState();
     const properties = this.controller.workspace && Array.isArray(this.controller.workspace.properties)
       ? this.controller.workspace.properties
       : [];
@@ -1092,18 +1230,23 @@ class DesignPropertiesViewProvider {
       this.view.webview,
       this.controller.getSelectedElement(),
       properties,
-      this.controller.workspace?.propertyFilterMode || 'Smart');
+      this.controller.workspace?.propertyFilterMode || 'Smart',
+      availabilityState);
   }
 }
 
-function renderPropertiesViewHtml(webview, selectedElement, properties, propertyFilterMode) {
+function renderPropertiesViewHtml(webview, selectedElement, properties, propertyFilterMode, availabilityState) {
   const cspSource = webview.cspSource;
+  const inspectorAvailable = !availabilityState || availabilityState.available;
   const selectedTitle = selectedElement
     ? escapeHtml(selectedElement.displayName || selectedElement.typeName || selectedElement.id)
-    : 'No selection';
+    : (inspectorAvailable ? 'No selection' : 'Inspector unavailable');
   const selectedSubtitle = selectedElement
     ? escapeHtml([selectedElement.typeName, selectedElement.xamlName ? `x:Name=${selectedElement.xamlName}` : null].filter(Boolean).join(' • '))
-    : 'Select an element in the preview or tree to inspect its properties.';
+    : escapeHtml(inspectorAvailable
+        ? ((availabilityState && availabilityState.kind === 'interactiveReady' && availabilityState.message) ||
+            'Select an element in the preview or tree to inspect its properties.')
+        : (availabilityState && availabilityState.message) || 'AXSG Inspector is not ready for this preview.');
   const propertyCount = Array.isArray(properties) ? properties.length : 0;
   const propertyGroups = buildPropertyGroups(properties);
 

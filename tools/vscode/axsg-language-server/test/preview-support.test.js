@@ -102,3 +102,47 @@ test('getActiveSession prefers the active preview panel over a stale text editor
 
   assert.equal(controller.getActiveSession(), activePreviewSession);
 });
+
+test('describePreviewDesignState reports unavailable inspector state', () => {
+  const vscodeMock = createVscodeMock();
+  const { describePreviewDesignState } = loadPreviewSupport(vscodeMock);
+
+  assert.deepEqual(describePreviewDesignState(null), {
+    kind: 'unavailable',
+    available: false,
+    badgeText: 'Inspector unavailable',
+    message: 'AXSG Inspector is waiting for preview design data.'
+  });
+});
+
+test('describePreviewDesignState reports interactive preview guidance', () => {
+  const vscodeMock = createVscodeMock();
+  const { describePreviewDesignState } = loadPreviewSupport(vscodeMock);
+  const description = describePreviewDesignState({
+    available: true,
+    workspaceMode: 'Interactive',
+    hitTestMode: 'Visual'
+  });
+
+  assert.equal(description.kind, 'interactive');
+  assert.equal(description.available, true);
+  assert.equal(description.badgeText, 'Interactive mode');
+  assert.match(description.message, /Switch Mode to Design or Agent/);
+  assert.match(description.message, /visual tree/);
+});
+
+test('describePreviewDesignState reports ready inspector state', () => {
+  const vscodeMock = createVscodeMock();
+  const { describePreviewDesignState } = loadPreviewSupport(vscodeMock);
+
+  assert.deepEqual(describePreviewDesignState({
+    available: true,
+    workspaceMode: 'Design',
+    hitTestMode: 'Logical'
+  }), {
+    kind: 'ready',
+    available: true,
+    badgeText: 'Design / Logical',
+    message: 'Inspector ready in Design mode using the logical tree.'
+  });
+});

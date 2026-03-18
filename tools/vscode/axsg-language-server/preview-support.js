@@ -1503,6 +1503,44 @@ async function evaluateProjectInfo(projectPath, preferredTargetFramework, dotNet
   };
 }
 
+function describePreviewDesignState(designState) {
+  const fallbackUnavailableMessage = 'AXSG Inspector is waiting for preview design data.';
+  const workspaceMode = typeof designState?.workspaceMode === 'string' && designState.workspaceMode.trim().length > 0
+    ? designState.workspaceMode.trim()
+    : 'Interactive';
+  const hitTestMode = typeof designState?.hitTestMode === 'string' && designState.hitTestMode.trim().length > 0
+    ? designState.hitTestMode.trim()
+    : 'Logical';
+  const explicitMessage = typeof designState?.message === 'string' && designState.message.trim().length > 0
+    ? designState.message.trim()
+    : '';
+
+  if (!designState || !designState.available) {
+    return {
+      kind: 'unavailable',
+      available: false,
+      badgeText: 'Inspector unavailable',
+      message: explicitMessage || fallbackUnavailableMessage
+    };
+  }
+
+  if (workspaceMode === 'Interactive') {
+    return {
+      kind: 'interactive',
+      available: true,
+      badgeText: 'Interactive mode',
+      message: explicitMessage || `Interactive mode is active. Switch Mode to Design or Agent to inspect the ${hitTestMode.toLowerCase()} tree and select elements from the preview surface.`
+    };
+  }
+
+  return {
+    kind: 'ready',
+    available: true,
+    badgeText: `${workspaceMode} / ${hitTestMode}`,
+    message: explicitMessage || `Inspector ready in ${workspaceMode} mode using the ${hitTestMode.toLowerCase()} tree.`
+  };
+}
+
 function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   const iframeUrl = previewUrl ? escapeHtml(previewUrl) : '';
   const statusText = escapeHtml(status || 'Preview starting...');
@@ -1564,6 +1602,13 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       gap: 2px;
     }
 
+    .status-row {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .toolbar-meta {
       display: inline-flex;
       align-items: center;
@@ -1582,11 +1627,46 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     .status {
       min-width: 0;
+      flex: 1 1 auto;
       font-size: 12px;
       line-height: 1.4;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .design-status {
+      flex: 0 0 auto;
+      max-width: min(280px, 46vw);
+      padding: 3px 10px;
+      border: 1px solid rgba(127, 127, 127, 0.22);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--vscode-descriptionForeground);
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+    }
+
+    .design-status.unavailable {
+      color: var(--vscode-errorForeground);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground) 45%, transparent);
+      background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 40%, transparent);
+    }
+
+    .design-status.interactive {
+      color: var(--vscode-terminal-ansiYellow, var(--vscode-editorWarning-foreground, #cca700));
+      border-color: color-mix(in srgb, var(--vscode-terminal-ansiYellow, #cca700) 42%, transparent);
+      background: color-mix(in srgb, var(--vscode-editorWarning-background, #5c4b00) 24%, transparent);
+    }
+
+    .design-status.ready {
+      color: var(--vscode-terminal-ansiGreen, var(--vscode-testing-iconPassed, #1f883d));
+      border-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen, #1f883d) 38%, transparent);
+      background: color-mix(in srgb, var(--vscode-testing-iconPassed, #1f883d) 16%, transparent);
     }
 
     .toolbar-controls,
@@ -1845,7 +1925,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     <div class="toolbar">
       <div class="toolbar-copy">
         <div class="toolbar-label">AXSG Preview</div>
-        <div class="status" id="status">${statusText}</div>
+        <div class="status-row">
+          <div class="status" id="status">${statusText}</div>
+          <div class="design-status unavailable" id="design-status" title="AXSG Inspector is waiting for preview design data.">Inspector unavailable</div>
+        </div>
       </div>
       <div class="toolbar-meta">
         <div class="toolbar-controls" aria-label="AXSG design controls">
@@ -1884,6 +1967,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       : `<div class="preview-stage" id="preview-stage"><div class="placeholder"><div class="placeholder-card">Preview is starting...</div></div></div>`}</div>
   </div>
   <script>
+    ${describePreviewDesignState.toString()}
     ${calculatePreviewSurfaceBounds.toString()}
     ${clampPreviewZoom.toString()}
     ${stepPreviewZoom.toString()}
@@ -1901,6 +1985,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     const TOOLBOX_ITEM_TEXT_PREFIX = ${JSON.stringify(DESIGN_TOOLBOX_TEXT_PREFIX)};
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    const designStatus = document.getElementById('design-status');
     const workspaceModeSelect = document.getElementById('workspace-mode');
     const hitTestModeSelect = document.getElementById('hit-test-mode');
     const zoomOutButton = document.getElementById('zoom-out');
@@ -1962,6 +2047,18 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const nextText = text || 'Preview ready.';
       status.textContent = nextText;
       status.title = nextText;
+    }
+
+    function updateDesignStatusBadge() {
+      if (!designStatus) {
+        return;
+      }
+
+      const description = describePreviewDesignState(currentDesignState);
+      designStatus.textContent = description.badgeText;
+      designStatus.title = description.message;
+      designStatus.classList.remove('unavailable', 'interactive', 'ready');
+      designStatus.classList.add(description.kind);
     }
 
     function updateZoomUi() {
@@ -2659,9 +2756,12 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const surface = document.getElementById('preview-surface');
       const iframe = document.getElementById('preview');
       const canvas = document.getElementById('preview-canvas');
-      const available = !!(currentDesignState && currentDesignState.available);
+      const designDescription = describePreviewDesignState(currentDesignState);
+      const available = designDescription.available;
       const interactive = isInteractiveWorkspaceMode();
       const dragActive = available && toolboxDragActive;
+
+      updateDesignStatusBadge();
 
       workspaceModeSelect.disabled = !available;
       hitTestModeSelect.disabled = !available;
@@ -2671,6 +2771,14 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       hitTestModeSelect.value = available && currentDesignState.hitTestMode
         ? currentDesignState.hitTestMode
         : 'Logical';
+      workspaceModeSelect.title = !available
+        ? designDescription.message
+        : 'Change AXSG design mode for preview inspection.';
+      hitTestModeSelect.title = !available
+        ? designDescription.message
+        : (interactive
+            ? designDescription.message
+            : 'Choose whether preview hit testing uses the logical or visual tree.');
 
       if (overlayLayer) {
         overlayLayer.classList.toggle('design-active', available && !interactive);
@@ -3177,5 +3285,6 @@ function escapeHtml(text) {
 }
 
 module.exports = {
-  AvaloniaPreviewController
+  AvaloniaPreviewController,
+  describePreviewDesignState
 };

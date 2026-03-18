@@ -63,6 +63,16 @@
         ]
       }
     ],
+    "snippets": [
+      {
+        "language": "axaml",
+        "path": "./snippets/xaml.code-snippets"
+      },
+      {
+        "language": "xaml",
+        "path": "./snippets/xaml.code-snippets"
+      }
+    ],
     "semanticTokenTypes": [
       {
         "id": "xamlDelimiter",
@@ -416,6 +426,18 @@
         "icon": "$(layout-sidebar-left)"
       },
       {
+        "command": "axsg.design.syncFromEditor",
+        "title": "AXSG Inspector: Sync Selection From Editor",
+        "category": "AXSG Inspector",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "axsg.design.revealSelection",
+        "title": "AXSG Inspector: Reveal Selection In Editor",
+        "category": "AXSG Inspector",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "axsg.design.undo",
         "title": "AXSG Inspector: Undo",
         "category": "AXSG Inspector",
@@ -444,6 +466,12 @@
         },
         {
           "command": "axsg.design.focus"
+        },
+        {
+          "command": "axsg.design.syncFromEditor"
+        },
+        {
+          "command": "axsg.design.revealSelection"
         },
         {
           "command": "axsg.design.undo"
@@ -498,14 +526,24 @@
           "group": "navigation@1"
         },
         {
+          "command": "axsg.design.syncFromEditor",
+          "when": "view == axsgDesignDocumentsView || view == axsgDesignToolboxView || view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "axsg.design.revealSelection",
+          "when": "view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
+          "group": "navigation@3"
+        },
+        {
           "command": "axsg.design.undo",
           "when": "view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
-          "group": "navigation@2"
+          "group": "navigation@4"
         },
         {
           "command": "axsg.design.redo",
           "when": "view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
-          "group": "navigation@3"
+          "group": "navigation@5"
         }
       ]
     },

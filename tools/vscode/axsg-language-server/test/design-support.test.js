@@ -41,7 +41,9 @@ function createVscodeMock() {
       Collapsed: 1,
       Expanded: 2
     },
-    window: {},
+    window: {
+      async showInformationMessage() {}
+    },
     workspace: {},
     Uri: {
       file: value => ({ fsPath: value })
@@ -323,4 +325,40 @@ test('renderPropertiesViewHtml renders a property-grid layout with name filterin
   assert.match(html, /id="property-summary">2 properties</);
   assert.match(html, /class="group-table"/);
   assert.match(html, /<textarea class="editor-textarea" data-property-input/);
+});
+
+test('updateViewMessages uses interactive guidance for empty live trees', () => {
+  const { controller } = createController();
+  controller.currentSession = { setDesignState() {} };
+  controller.workspace = {
+    mode: 'Interactive',
+    hitTestMode: 'Logical',
+    documents: [],
+    toolbox: []
+  };
+  controller.logicalTreeView = {};
+  controller.visualTreeView = {};
+
+  controller.updateViewMessages();
+
+  assert.match(controller.logicalTreeView.message, /Interactive mode is active/);
+  assert.match(controller.visualTreeView.message, /Interactive mode is active/);
+});
+
+test('renderPropertiesViewHtml shows inspector availability guidance when no selection exists', () => {
+  const vscodeMock = createVscodeMock();
+  const { renderPropertiesViewHtml } = loadDesignSupport(vscodeMock);
+  const html = renderPropertiesViewHtml(
+    { cspSource: 'vscode-test' },
+    null,
+    [],
+    'Smart',
+    {
+      available: true,
+      kind: 'interactiveReady',
+      message: 'Interactive mode is active. Switch Mode to Design or Agent to inspect the logical tree and select elements from the preview surface.'
+    });
+
+  assert.match(html, /No selection/);
+  assert.match(html, /Interactive mode is active\./);
 });
