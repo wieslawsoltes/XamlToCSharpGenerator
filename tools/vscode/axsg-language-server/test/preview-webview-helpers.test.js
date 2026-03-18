@@ -11,8 +11,10 @@ const {
   formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
+  mapPreviewClientPointToDesignPoint,
   mapPreviewClientPointToRemotePoint,
   normalizePreviewRenderScale,
+  projectPreviewOverlayBounds,
   stepPreviewZoom
 } = require('../preview-webview-helpers');
 
@@ -58,11 +60,15 @@ test('zoom helpers stay self-contained when serialized into the webview', () => 
     ${clampPreviewZoom.toString()}
     ${stepPreviewZoom.toString()}
     ${formatPreviewZoomLabel.toString()}
+    ${mapPreviewClientPointToDesignPoint.toString()}
+    ${projectPreviewOverlayBounds.toString()}
     globalThis.results = {
       bounds: calculatePreviewSurfaceBounds(1280, 720, 48, 48),
       clamped: clampPreviewZoom(0.1),
       stepped: stepPreviewZoom(1, 1),
-      label: formatPreviewZoomLabel(1.25)
+      label: formatPreviewZoomLabel(1.25),
+      designPoint: mapPreviewClientPointToDesignPoint(240, 120, 2),
+      overlay: projectPreviewOverlayBounds({ X: 20, Y: 10, Width: 100, Height: 50 }, 400, 200, 800, 400)
     };
   `, context);
 
@@ -71,6 +77,10 @@ test('zoom helpers stay self-contained when serialized into the webview', () => 
   assert.equal(context.results.clamped, 0.25);
   assert.equal(context.results.stepped, 1.1);
   assert.equal(context.results.label, '125%');
+  assert.equal(context.results.designPoint.x, 120);
+  assert.equal(context.results.designPoint.y, 60);
+  assert.equal(context.results.overlay.left, 40);
+  assert.equal(context.results.overlay.height, 100);
 });
 
 test('normalizePreviewRenderScale converts Avalonia frame DPI to render scale', () => {
@@ -112,6 +122,36 @@ test('mapPreviewClientPointToRemotePoint compensates for client zoom', () => {
     {
       x: 100,
       y: 60
+  });
+});
+
+test('mapPreviewClientPointToDesignPoint removes the client zoom factor', () => {
+  assert.deepEqual(
+    mapPreviewClientPointToDesignPoint(240, 150, 2),
+    {
+      x: 120,
+      y: 75
+    });
+});
+
+test('projectPreviewOverlayBounds maps logical preview bounds onto the rendered surface', () => {
+  assert.deepEqual(
+    projectPreviewOverlayBounds(
+      {
+        X: 100,
+        Y: 50,
+        Width: 200,
+        Height: 100
+      },
+      800,
+      400,
+      1200,
+      600),
+    {
+      left: 150,
+      top: 75,
+      width: 300,
+      height: 150
     });
 });
 

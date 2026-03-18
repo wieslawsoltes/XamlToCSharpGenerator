@@ -51,7 +51,7 @@ Relevant settings:
 - `axsg.preview.buildBeforeLaunch`
 - `axsg.preview.autoUpdateDelayMs`
 
-`axsg.preview.compilerMode = sourceGenerated` is now the default. `auto` also prefers source-generated preview when AXSG runtime output is available, and falls back to Avalonia/XamlX only when it is not.
+`axsg.preview.compilerMode = auto` is the default. It prefers source-generated preview first and falls back to Avalonia/XamlX when needed without treating the fallback path as an error.
 
 ## MCP and Preview Hosts
 

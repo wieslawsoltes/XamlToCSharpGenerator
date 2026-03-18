@@ -9,10 +9,12 @@ const {
   createCommandFailureMessage,
   createPreviewBuildPlan,
   createPreviewStartPlan,
+  enumeratePreviewAssemblyArtifacts,
   extractPreviewSecurityCookie,
   hasPendingPreviewText,
   getPreviewViewportMetricsKey,
   resolveAvaloniaPreviewerToolPaths,
+  resolvePreviewDesignAssemblyPath,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
@@ -26,6 +28,8 @@ const {
   resolveLoopbackPreviewWebviewTarget,
   resolveConfiguredProjectPath,
   resolvePreviewDocumentText,
+  resolveEffectivePreviewMode,
+  resolvePreviewBuildMode,
   resolvePreviewCompilerMode,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
@@ -294,13 +298,17 @@ test('resolvePreviewCompilerMode prefers source-generated preview in auto mode w
   try {
     const targetPath = path.join(tempRoot, 'Demo.dll');
     fs.writeFileSync(targetPath, '', 'utf8');
-    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), '', 'utf8');
+    fs.writeFileSync(
+      path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'),
+      '...SourceGenPreviewMarkupRuntime...',
+      'utf8');
 
     const actual = resolvePreviewCompilerMode('auto', { targetPath });
     assert.deepEqual(actual, {
       requestedMode: PREVIEW_COMPILER_MODE_AUTO,
       preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-      sourceGeneratedSupported: true
+      sourceGeneratedSupported: true,
+      sourceGeneratedLivePreviewSupported: true
     });
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -312,8 +320,50 @@ test('resolvePreviewCompilerMode falls back to Avalonia mode when source-generat
   assert.deepEqual(actual, {
     requestedMode: PREVIEW_COMPILER_MODE_AUTO,
     preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
-    sourceGeneratedSupported: false
+    sourceGeneratedSupported: false,
+    sourceGeneratedLivePreviewSupported: false
   });
+});
+
+test('resolvePreviewCompilerMode falls back to Avalonia mode when AXSG live preview support is missing', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), 'stale-runtime', 'utf8');
+
+    const actual = resolvePreviewCompilerMode('auto', { targetPath });
+    assert.deepEqual(actual, {
+      requestedMode: PREVIEW_COMPILER_MODE_AUTO,
+      preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      sourceGeneratedSupported: true,
+      sourceGeneratedLivePreviewSupported: false
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('resolvePreviewBuildMode keeps source-generated builds enabled in auto mode when AXSG runtime output exists', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), 'stale-runtime', 'utf8');
+
+    assert.equal(resolvePreviewBuildMode('auto', { targetPath }), PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('resolveEffectivePreviewMode prefers the resolved runtime mode over the preferred launch mode', () => {
+  assert.equal(
+    resolveEffectivePreviewMode({
+      preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+      resolvedMode: PREVIEW_COMPILER_MODE_AVALONIA
+    }),
+    PREVIEW_COMPILER_MODE_AVALONIA);
 });
 
 test('resolvePreviewDocumentText uses persisted text for dirty source-generated startup', () => {
@@ -457,6 +507,56 @@ test('resolveAvaloniaPreviewerToolPaths de-duplicates identical host paths', () 
     [
       path.normalize('/tmp/shared/Avalonia.Designer.HostApp.dll')
     ]);
+});
+
+test('resolvePreviewDesignAssemblyPath aligns a referenced source assembly to the host output directory', () => {
+  assert.equal(
+    resolvePreviewDesignAssemblyPath(
+      '/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll',
+      '/repo/samples/ControlCatalog.Desktop/bin/Debug/net10.0/ControlCatalog.Desktop.dll',
+      true),
+    path.normalize('/repo/samples/ControlCatalog.Desktop/bin/Debug/net10.0/ControlCatalog.dll'));
+});
+
+test('resolvePreviewDesignAssemblyPath keeps the source output when the host does not reference it', () => {
+  assert.equal(
+    resolvePreviewDesignAssemblyPath(
+      '/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll',
+      '/repo/samples/StandaloneHost/bin/Debug/net10.0/StandaloneHost.dll',
+      false),
+    path.normalize('/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll'));
+});
+
+test('enumeratePreviewAssemblyArtifacts includes deps and pdb sidecars for aligned previews', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-artifacts-'));
+  try {
+    const sourceDirectory = path.join(tempRoot, 'source');
+    const previewDirectory = path.join(tempRoot, 'preview');
+    fs.mkdirSync(sourceDirectory, { recursive: true });
+    fs.mkdirSync(previewDirectory, { recursive: true });
+
+    const sourceAssemblyPath = path.join(sourceDirectory, 'ControlCatalog.dll');
+    fs.writeFileSync(sourceAssemblyPath, 'assembly', 'utf8');
+    fs.writeFileSync(path.join(sourceDirectory, 'ControlCatalog.pdb'), 'symbols', 'utf8');
+    fs.writeFileSync(path.join(sourceDirectory, 'ControlCatalog.deps.json'), '{}', 'utf8');
+
+    const artifacts = enumeratePreviewAssemblyArtifacts(
+      sourceAssemblyPath,
+      path.join(previewDirectory, 'ControlCatalog.dll'));
+
+    assert.deepEqual(
+      artifacts.map(entry => ({
+        source: path.basename(entry.sourcePath),
+        target: path.basename(entry.targetPath)
+      })),
+      [
+        { source: 'ControlCatalog.dll', target: 'ControlCatalog.dll' },
+        { source: 'ControlCatalog.pdb', target: 'ControlCatalog.pdb' },
+        { source: 'ControlCatalog.deps.json', target: 'ControlCatalog.deps.json' }
+      ]);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('createPreviewStartPlan requires the bundled designer host when source-generated mode is forced', () => {

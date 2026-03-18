@@ -1,0 +1,278 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const Module = require('node:module');
+const {
+  DESIGN_TOOLBOX_ITEM_MIME,
+  DESIGN_TOOLBOX_TEXT_MIME,
+  DESIGN_TOOLBOX_TEXT_PREFIX
+} = require('../design-toolbox-dnd');
+
+function createVscodeMock() {
+  class EventEmitter {
+    constructor() {
+      this.event = () => {};
+    }
+
+    fire() {}
+  }
+
+  return {
+    EventEmitter,
+    DataTransferItem: class DataTransferItem {
+      constructor(value) {
+        this.value = value;
+      }
+
+      async asString() {
+        return typeof this.value === 'string'
+          ? this.value
+          : JSON.stringify(this.value);
+      }
+    },
+    DocumentDropEdit: class DocumentDropEdit {
+      constructor(insertText, title) {
+        this.insertText = insertText;
+        this.title = title;
+      }
+    },
+    TreeItem: class TreeItem {},
+    TreeItemCollapsibleState: {
+      None: 0,
+      Collapsed: 1,
+      Expanded: 2
+    },
+    window: {},
+    workspace: {},
+    Uri: {
+      file: value => ({ fsPath: value })
+    },
+    Range: class Range {},
+    Selection: class Selection {}
+  };
+}
+
+function loadDesignSupport(vscodeMock) {
+  const modulePath = require.resolve('../design-support');
+  delete require.cache[modulePath];
+
+  const originalLoad = Module._load;
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'vscode') {
+      return vscodeMock;
+    }
+
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    return require(modulePath);
+  } finally {
+    Module._load = originalLoad;
+  }
+}
+
+function createController() {
+  const vscodeMock = createVscodeMock();
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const updates = [];
+  const context = {
+    workspaceState: {
+      get: () => null,
+      update: async (key, value) => {
+        updates.push({ key, value });
+      }
+    }
+  };
+
+  const controller = new DesignSessionController({
+    context,
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+
+  return { controller, updates };
+}
+
+test('selectElement uses sourceElementId for live tree nodes', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+
+  controller.currentSession = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Preview.axaml',
+    elements: [{ id: '0', children: [] }]
+  };
+
+  await controller.selectElement(
+    {
+      id: 'live:0/0/0',
+      sourceElementId: '0/0/0',
+      sourceBuildUri: 'avares://tests/Preview.axaml'
+    },
+    { revealEditor: false });
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Preview.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+});
+
+test('revealSelectedElementInTreeAsync matches workspace selection by sourceElementId', async () => {
+  const { controller } = createController();
+  let revealedElement = null;
+
+  controller.workspace = {
+    selectedElementId: '0/0/0'
+  };
+
+  await controller.revealSelectedElementInTreeAsync(
+    {
+      async reveal(element) {
+        revealedElement = element;
+      }
+    },
+    {
+      elements: [
+        {
+          id: 'live:0',
+          sourceElementId: '0',
+          children: [
+            {
+              id: 'live:0/0',
+              sourceElementId: '0/0',
+              children: [
+                {
+                  id: 'live:0/0/0',
+                  sourceElementId: '0/0/0',
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+  assert.equal(revealedElement?.id, 'live:0/0/0');
+});
+
+test('disconnected transport detection includes disposed and peer reset messages', () => {
+  const { controller } = createController();
+
+  assert.equal(controller.isDisconnectedTransportMessage('Preview host was disposed.'), true);
+  assert.equal(controller.isDisconnectedTransportMessage('Connection reset by peer'), true);
+  assert.equal(controller.isDisconnectedTransportMessage('Some unrelated error'), false);
+});
+
+test('toolbox drag controller publishes custom and text payloads', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignToolboxDragAndDropController } = loadDesignSupport(vscodeMock);
+  const controller = new DesignToolboxDragAndDropController();
+  const values = new Map();
+
+  await controller.handleDrag([
+    {
+      name: 'Button',
+      displayName: 'Button',
+      xamlSnippet: '<Button Content="Button" />'
+    }
+  ], {
+    set(key, value) {
+      values.set(key, value);
+    }
+  });
+
+  assert.equal(await values.get(DESIGN_TOOLBOX_ITEM_MIME).asString(), JSON.stringify({
+    name: 'Button',
+    displayName: 'Button',
+    category: '',
+    xamlSnippet: '<Button Content="Button" />',
+    isProjectControl: false,
+    tags: []
+  }));
+  assert.equal(
+    await values.get(DESIGN_TOOLBOX_TEXT_MIME).asString(),
+    `${DESIGN_TOOLBOX_TEXT_PREFIX}{"name":"Button","displayName":"Button","category":"","xamlSnippet":"<Button Content=\\"Button\\" />","isProjectControl":false,"tags":[]}`);
+});
+
+test('document drop provider creates edit for toolbox text payload', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignToolboxDocumentDropProvider } = loadDesignSupport(vscodeMock);
+  const provider = new DesignToolboxDocumentDropProvider();
+  const edit = await provider.provideDocumentDropEdits(null, null, {
+    get(mimeType) {
+      if (mimeType !== DESIGN_TOOLBOX_TEXT_MIME) {
+        return undefined;
+      }
+
+      return new vscodeMock.DataTransferItem(
+        `${DESIGN_TOOLBOX_TEXT_PREFIX}{"name":"TextBlock","displayName":"TextBlock","category":"Text","xamlSnippet":"<TextBlock Text=\\"Text\\" />","isProjectControl":false,"tags":[]}`);
+    }
+  });
+
+  assert.equal(edit.insertText, '<TextBlock Text="Text" />');
+  assert.equal(edit.title, 'Insert TextBlock');
+});
+
+test('renderPropertiesViewHtml renders a property-grid layout with name filtering support', () => {
+  const vscodeMock = createVscodeMock();
+  const { renderPropertiesViewHtml } = loadDesignSupport(vscodeMock);
+  const html = renderPropertiesViewHtml(
+    { cspSource: 'vscode-test' },
+    {
+      displayName: 'TextBox',
+      typeName: 'TextBox',
+      xamlName: 'Editor'
+    },
+    [
+      {
+        name: 'Text',
+        value: 'Hello',
+        category: 'Common',
+        typeName: 'String',
+        source: 'Local',
+        ownerTypeName: 'TextBox',
+        editorKind: 'Text'
+      },
+      {
+        name: 'LongText',
+        value: 'x'.repeat(120),
+        category: 'Common',
+        typeName: 'String',
+        source: 'Local',
+        ownerTypeName: 'TextBox',
+        editorKind: 'Text'
+      }
+    ],
+    'Smart');
+
+  assert.match(html, /id="property-name-filter"/);
+  assert.match(html, /data-property-row/);
+  assert.match(html, /data-property-search="text"/);
+  assert.match(html, /id="property-summary">2 properties</);
+  assert.match(html, /class="group-table"/);
+  assert.match(html, /<textarea class="editor-textarea" data-property-input/);
+});

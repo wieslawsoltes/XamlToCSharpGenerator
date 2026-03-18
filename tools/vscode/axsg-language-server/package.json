@@ -2,7 +2,7 @@
   "name": "axsg-language-server",
   "displayName": "AXSG XAML Language Service",
   "description": "XAML/AXAML IntelliSense powered by XamlToCSharpGenerator.",
-  "version": "0.1.0-alpha.17",
+  "version": "0.1.0-alpha.18",
   "publisher": "xamltocsharpgenerator",
   "license": "MIT",
   "homepage": "https://github.com/wieslawsoltes/XamlToCSharpGenerator/tree/main/tools/vscode/axsg-language-server",
@@ -326,8 +326,8 @@
             "avalonia",
             "sourceGenerated"
           ],
-          "default": "sourceGenerated",
-          "description": "Selects the preview compiler. 'sourceGenerated' uses the AXSG source-generated loader and now supports live unsaved XAML updates, 'auto' prefers source-generated preview and falls back to Avalonia when AXSG runtime output is unavailable, and 'avalonia' uses Avalonia's XamlX previewer."
+          "default": "auto",
+          "description": "Selects the preview compiler. 'auto' smoothly prefers AXSG source-generated preview when its runtime output is available and falls back to Avalonia when needed, 'sourceGenerated' forces the AXSG source-generated loader, and 'avalonia' uses Avalonia's XamlX previewer."
         },
         "axsg.preview.targetFramework": {
           "type": "string",
@@ -352,6 +352,40 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "axsgDesign",
+          "title": "AXSG Inspector",
+          "icon": "media/design.svg"
+        }
+      ]
+    },
+    "views": {
+      "axsgDesign": [
+        {
+          "id": "axsgDesignDocumentsView",
+          "name": "Documents"
+        },
+        {
+          "id": "axsgDesignToolboxView",
+          "name": "Toolbox"
+        },
+        {
+          "id": "axsgDesignLogicalTreeView",
+          "name": "Logical Tree"
+        },
+        {
+          "id": "axsgDesignVisualTreeView",
+          "name": "Visual Tree"
+        },
+        {
+          "id": "axsgDesignPropertiesView",
+          "name": "Properties",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "axsg.languageServer.showInfo",
@@ -368,6 +402,30 @@
         "title": "AXSG: Open Avalonia Preview",
         "category": "AXSG",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "axsg.design.refresh",
+        "title": "AXSG Inspector: Refresh",
+        "category": "AXSG Inspector",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "axsg.design.focus",
+        "title": "AXSG Inspector: Show Inspector Panel",
+        "category": "AXSG Inspector",
+        "icon": "$(layout-sidebar-left)"
+      },
+      {
+        "command": "axsg.design.undo",
+        "title": "AXSG Inspector: Undo",
+        "category": "AXSG Inspector",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "axsg.design.redo",
+        "title": "AXSG Inspector: Redo",
+        "category": "AXSG Inspector",
+        "icon": "$(redo)"
       }
     ],
     "menus": {
@@ -380,6 +438,18 @@
         },
         {
           "command": "axsg.refactor.renameSymbol"
+        },
+        {
+          "command": "axsg.design.refresh"
+        },
+        {
+          "command": "axsg.design.focus"
+        },
+        {
+          "command": "axsg.design.undo"
+        },
+        {
+          "command": "axsg.design.redo"
         }
       ],
       "editor/context": [
@@ -419,6 +489,23 @@
           "command": "axsg.preview.open",
           "when": "resourceScheme == file && editorLangId == axaml",
           "group": "navigation@10"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "axsg.design.refresh",
+          "when": "view == axsgDesignDocumentsView || view == axsgDesignToolboxView || view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "axsg.design.undo",
+          "when": "view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "axsg.design.redo",
+          "when": "view == axsgDesignLogicalTreeView || view == axsgDesignVisualTreeView || view == axsgDesignPropertiesView",
+          "group": "navigation@3"
         }
       ]
     },
