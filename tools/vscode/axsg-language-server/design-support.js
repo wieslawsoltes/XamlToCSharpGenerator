@@ -229,6 +229,23 @@ class DesignSessionController {
       return;
     }
 
+    if (event.event === 'hostExited') {
+      const previousSession = this.currentSession;
+      this.currentSession = event.session;
+      if (previousSession && previousSession !== event.session) {
+        previousSession.setDesignState(null);
+      }
+
+      const exitCode = event.payload && event.payload.exitCode !== undefined
+        ? event.payload.exitCode
+        : 'null';
+      this.setUnavailableState(
+        event.session,
+        'hostExited',
+        `Preview host exited (${exitCode}). Restart the preview to repopulate the AXSG Inspector.`);
+      return;
+    }
+
     if (event.event === 'previewStarted' || event.event === 'updateResult' || event.event === 'panelActivated') {
       await this.refreshFromSession(event.session, event.event);
     }
@@ -584,17 +601,24 @@ class DesignSessionController {
       return;
     }
 
+    this.setUnavailableState(
+      session,
+      'transportDisconnected',
+      this.getTransportFailureMessage());
+  }
+
+  setUnavailableState(session, kind, message) {
     this.workspace = null;
     this.logicalTree = null;
     this.visualTree = null;
     this.overlay = null;
-    this.lastUnavailableKind = 'transportDisconnected';
-    this.lastUnavailableMessage = this.getTransportFailureMessage();
+    this.lastUnavailableKind = kind;
+    this.lastUnavailableMessage = message;
     this.refreshProviders();
     session.setDesignState({
       available: false,
-      reason: this.lastUnavailableKind,
-      message: this.lastUnavailableMessage
+      reason: kind,
+      message
     });
   }
 

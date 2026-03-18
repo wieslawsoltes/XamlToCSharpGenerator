@@ -237,6 +237,48 @@ test('handleSessionEvent refreshes panelActivated session when it is active', as
   ]);
 });
 
+test('handleSessionEvent clears stale inspector state when the preview host exits', async () => {
+  const { controller } = createController();
+  const designStates = [];
+  const previewSession = {
+    setDesignState(state) {
+      designStates.push(state);
+    }
+  };
+
+  controller.previewController.getActiveSession = () => previewSession;
+  controller.currentSession = previewSession;
+  controller.workspace = {
+    mode: 'Design',
+    hitTestMode: 'Visual',
+    activeBuildUri: 'avares://tests/MainView.axaml',
+    documents: [{ buildUri: 'avares://tests/MainView.axaml' }]
+  };
+  controller.logicalTree = { elements: [{ id: 'live:0', children: [] }] };
+  controller.visualTree = { elements: [{ id: 'live:0', children: [] }] };
+  controller.overlay = { highlightedElementId: 'live:0' };
+
+  await controller.handleSessionEvent({
+    session: previewSession,
+    event: 'hostExited',
+    payload: {
+      exitCode: 5
+    }
+  });
+
+  assert.equal(controller.workspace, null);
+  assert.equal(controller.logicalTree, null);
+  assert.equal(controller.visualTree, null);
+  assert.equal(controller.overlay, null);
+  assert.deepEqual(designStates, [
+    {
+      available: false,
+      reason: 'hostExited',
+      message: 'Preview host exited (5). Restart the preview to repopulate the AXSG Inspector.'
+    }
+  ]);
+});
+
 test('ensureSessionPreferencesAsync retries saved document selection when documents appear later', async () => {
   const { controller } = createController();
   const sentCommands = [];
