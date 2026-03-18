@@ -38,4 +38,35 @@ public sealed class PreviewSessionTests
             "Unhandled exception: Xaml parse failed.",
             attemptNumber: 1));
     }
+
+    [Fact]
+    public async Task CompleteInitialPreviewStartupAsync_Waits_For_Preview_Url_Before_Sending_Initial_Update()
+    {
+        var steps = new List<string>();
+        var previewUrlAvailable = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task<string> startupTask = PreviewSession.CompleteInitialPreviewStartupAsync(
+            cancellationToken =>
+            {
+                steps.Add("bootstrap");
+                return Task.CompletedTask;
+            },
+            cancellationToken =>
+            {
+                steps.Add("update");
+                return Task.CompletedTask;
+            },
+            previewUrlAvailable.Task,
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        Assert.Equal(["bootstrap"], steps);
+
+        previewUrlAvailable.SetResult("http://127.0.0.1:7000");
+
+        string previewUrl = await startupTask;
+
+        Assert.Equal("http://127.0.0.1:7000", previewUrl);
+        Assert.Equal(["bootstrap", "update"], steps);
+    }
 }

@@ -282,10 +282,47 @@ internal sealed class XamlSourceGenStudioRemoteDesignServer : IDisposable
                         continue;
                     }
 
-                    AxsgStudioRemoteResponseEnvelope response = await _commandRouter
-                        .HandleAsync(request, cancellationToken)
-                        .ConfigureAwait(false);
-                    await WriteResponseAsync(writer, response, cancellationToken).ConfigureAwait(false);
+                    AxsgStudioRemoteResponseEnvelope response;
+                    try
+                    {
+                        response = await _commandRouter
+                            .HandleAsync(request, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _lastError = ex.Message;
+                        PublishStatus(isListening: true, _lastError);
+                        response = AxsgStudioRemoteProtocol.CreateFailureResponse(
+                            request.Command,
+                            request.RequestId,
+                            ex.Message);
+                    }
+
+                    try
+                    {
+                        await WriteResponseAsync(writer, response, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _lastError = ex.Message;
+                        PublishStatus(isListening: true, _lastError);
+                        Console.WriteLine("[AXSG design] Failed to write response for command '" + request.Command + "': " + ex.Message);
+
+                        AxsgStudioRemoteResponseEnvelope fallbackResponse = AxsgStudioRemoteProtocol.CreateFailureResponse(
+                            request.Command,
+                            request.RequestId,
+                            "Remote design response failed: " + ex.Message);
+
+                        try
+                        {
+                            await WriteResponseAsync(writer, fallbackResponse, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         }

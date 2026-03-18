@@ -150,8 +150,13 @@ public static class XamlSourceGenHotDesignCoreTools
                 ? null
                 : ReadCurrentXamlText(selectedDocument, status.Options.MaxHistoryEntries);
 
+        XamlSourceGenHotDesignDocumentEditor.TryCreate(
+            currentText,
+            out var currentEditor,
+            out _);
         var elements = BuildElementTree(
             currentDocument,
+            currentEditor,
             currentSelectedElementId,
             search,
             currentActiveBuildUri,
@@ -352,13 +357,24 @@ public static class XamlSourceGenHotDesignCoreTools
         var status = XamlSourceGenHotDesignManager.GetStatus();
         var documents = XamlSourceGenHotDesignManager.GetRegisteredDocuments();
         var document = FindDocumentByBuildUri(documents, buildUri);
+        if (document is null)
+        {
+            return false;
+        }
+
+        var xamlText = ReadCurrentXamlText(document, status.Options.MaxHistoryEntries);
         if (!TryReadCurrentXamlDocument(document, status.Options.MaxHistoryEntries, out var xamlDocument, out _))
         {
             return false;
         }
 
+        XamlSourceGenHotDesignDocumentEditor.TryCreate(
+            xamlText,
+            out var editor,
+            out _);
         elements = BuildElementTree(
             xamlDocument,
+            editor,
             selectedElementId: null,
             search: null,
             buildUri,
@@ -533,6 +549,36 @@ public static class XamlSourceGenHotDesignCoreTools
             }
 
             SelectedElementId = string.IsNullOrWhiteSpace(elementId) ? null : elementId.Trim();
+        }
+    }
+
+    public static void SetCurrentDocumentText(string buildUri, string xamlText)
+    {
+        ThrowIfNullOrWhiteSpace(buildUri, nameof(buildUri));
+        ArgumentNullException.ThrowIfNull(xamlText);
+
+        var status = XamlSourceGenHotDesignManager.GetStatus();
+        var normalizedBuildUri = buildUri.Trim();
+        var normalizedMax = Math.Max(1, status.Options.MaxHistoryEntries);
+
+        lock (Sync)
+        {
+            if (!Histories.TryGetValue(normalizedBuildUri, out var history))
+            {
+                history = new DocumentHistoryState(normalizedBuildUri, xamlText)
+                {
+                    MaxEntries = normalizedMax
+                };
+                Histories[normalizedBuildUri] = history;
+            }
+            else
+            {
+                history.MaxEntries = normalizedMax;
+                history.CurrentXaml = xamlText;
+                history.RedoStack.Clear();
+            }
+
+            ActiveBuildUri = normalizedBuildUri;
         }
     }
 
@@ -1081,6 +1127,7 @@ public static class XamlSourceGenHotDesignCoreTools
 
     private static IReadOnlyList<SourceGenHotDesignElementNode> BuildElementTree(
         XDocument? xamlDocument,
+        XamlSourceGenHotDesignDocumentEditor? editor,
         string? selectedElementId,
         string? search,
         string? sourceBuildUri,
@@ -1095,6 +1142,7 @@ public static class XamlSourceGenHotDesignCoreTools
         var query = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var node = BuildElementNode(
             xamlDocument.Root,
+            editor,
             "0",
             0,
             selectedElementId,
@@ -1122,11 +1170,16 @@ public static class XamlSourceGenHotDesignCoreTools
             return Array.Empty<SourceGenHotDesignElementNode>();
         }
 
-        return BuildElementTree(xamlDocument, selectedElementId, search, sourceBuildUri, out selectionExists);
+        XamlSourceGenHotDesignDocumentEditor.TryCreate(
+            xamlText,
+            out var editor,
+            out _);
+        return BuildElementTree(xamlDocument, editor, selectedElementId, search, sourceBuildUri, out selectionExists);
     }
 
     private static SourceGenHotDesignElementNode? BuildElementNode(
         XElement element,
+        XamlSourceGenHotDesignDocumentEditor? editor,
         string elementId,
         int depth,
         string? selectedElementId,
@@ -1141,6 +1194,7 @@ public static class XamlSourceGenHotDesignCoreTools
             var childId = elementId + "/" + index;
             var childNode = BuildElementNode(
                 child,
+                editor,
                 childId,
                 depth + 1,
                 selectedElementId,
@@ -1166,6 +1220,12 @@ public static class XamlSourceGenHotDesignCoreTools
 
         var lineInfo = (IXmlLineInfo)element;
         var line = lineInfo.HasLineInfo() ? lineInfo.LineNumber : 0;
+        SourceGenHotDesignTextRange? sourceRange = null;
+        if (editor is not null)
+        {
+            editor.TryGetElementRange(elementId, out sourceRange);
+        }
+
         var displayName = xamlName is null
             ? "[" + typeName + "]"
             : "[" + typeName + "] " + xamlName;
@@ -1198,7 +1258,9 @@ public static class XamlSourceGenHotDesignCoreTools
                         children.Any(static child => child.IsSelected || child.IsExpanded),
             DescendantCount: CountDescendants(children),
             SourceBuildUri: sourceBuildUri,
-            SourceElementId: elementId);
+            SourceElementId: elementId,
+            IsLive: false,
+            SourceRange: sourceRange);
     }
 
     private static IReadOnlyList<SourceGenHotDesignPropertyEntry> BuildPropertyEntries(

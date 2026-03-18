@@ -153,6 +153,35 @@ public sealed class PreviewHostCommandRouterTests
         Assert.True(session.LastInputRequest.Modifiers!.Control);
     }
 
+    [Fact]
+    public async Task HandleCommandAsync_Design_Forwards_Request()
+    {
+        var session = new FakePreviewHostSession();
+        await using var router = new PreviewHostCommandRouter(() => session);
+
+        await router.HandleCommandAsync(
+            new AxsgPreviewHostCommandEnvelope(
+                AxsgPreviewHostProtocol.StartCommand,
+                "9",
+                CreatePayload(CreateStartRequest("xaml-1"))),
+            CancellationToken.None);
+
+        AxsgPreviewHostResponseEnvelope response = await router.HandleCommandAsync(
+            new AxsgPreviewHostCommandEnvelope(
+                AxsgPreviewHostProtocol.DesignCommand,
+                "10",
+                CreatePayload(new
+                {
+                    operation = "workspace.current",
+                    arguments = new { }
+                })),
+            CancellationToken.None);
+
+        Assert.True(response.Ok);
+        Assert.Equal("workspace.current", session.LastDesignRequest?.Operation);
+        Assert.Equal("/Pages/MainView.axaml", response.Payload?["activeBuildUri"]?.GetValue<string>());
+    }
+
     private static AxsgPreviewHostStartRequest CreateStartRequest(string xamlText)
     {
         return new AxsgPreviewHostStartRequest(
@@ -194,6 +223,8 @@ public sealed class PreviewHostCommandRouterTests
 
         public AxsgPreviewHostInputRequest? LastInputRequest { get; private set; }
 
+        public AxsgPreviewHostDesignRequest? LastDesignRequest { get; private set; }
+
         public Task<AxsgPreviewHostStartResponse> StartAsync(
             AxsgPreviewHostStartRequest request,
             CancellationToken cancellationToken)
@@ -230,6 +261,23 @@ public sealed class PreviewHostCommandRouterTests
         {
             LastInputRequest = request;
             return Task.CompletedTask;
+        }
+
+        public Task<JsonElement> ExecuteDesignAsync(AxsgPreviewHostDesignRequest request, CancellationToken cancellationToken)
+        {
+            LastDesignRequest = request;
+            return Task.FromResult(CreatePayload(new
+            {
+                ActiveBuildUri = "/Pages/MainView.axaml",
+                documents = new[]
+                {
+                    new
+                    {
+                        BuildUri = "/Pages/MainView.axaml",
+                        SourcePath = "/workspace/Pages/MainView.axaml"
+                    }
+                }
+            }));
         }
 
         public ValueTask DisposeAsync()

@@ -52,8 +52,9 @@ public sealed class AxsgPreviewHostProtocolTests
         Assert.Equal(expectedHostPath, request.HostAssemblyPath);
         Assert.Equal(Path.GetFullPath("artifacts/previewer.dll"), request.PreviewerToolPath);
         Assert.Equal(Path.GetFullPath("artifacts/source.dll"), request.SourceAssemblyPath);
-        Assert.Equal(Path.ChangeExtension(expectedHostPath, ".runtimeconfig.json"), request.RuntimeConfigPath);
-        Assert.Equal(Path.ChangeExtension(expectedHostPath, ".deps.json"), request.DepsFilePath);
+        var expectedPreviewerPath = Path.GetFullPath("artifacts/previewer.dll");
+        Assert.Equal(Path.ChangeExtension(expectedPreviewerPath, ".runtimeconfig.json"), request.RuntimeConfigPath);
+        Assert.Equal(Path.ChangeExtension(expectedPreviewerPath, ".deps.json"), request.DepsFilePath);
         Assert.Equal("avalonia", request.PreviewCompilerMode);
         Assert.Equal(string.Empty, request.XamlText);
     }

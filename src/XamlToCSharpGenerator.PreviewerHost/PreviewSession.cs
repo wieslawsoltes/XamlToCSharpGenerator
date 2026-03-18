@@ -3,7 +3,11 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 using XamlToCSharpGenerator.RemoteProtocol.Preview;
+using XamlToCSharpGenerator.RemoteProtocol.Studio;
 using XamlToCSharpGenerator.PreviewerHost.Protocol;
 
 namespace XamlToCSharpGenerator.PreviewerHost;
@@ -11,6 +15,7 @@ namespace XamlToCSharpGenerator.PreviewerHost;
 internal sealed class PreviewSession : IPreviewHostSession
 {
     private const int MaxStartupAttempts = 3;
+    private const string DefaultDesignHost = "127.0.0.1";
     private static readonly string[] PreviewPortBindFailureMarkers =
     [
         "address already in use",
@@ -29,6 +34,7 @@ internal sealed class PreviewSession : IPreviewHostSession
     private Task? _acceptLoopTask;
     private Task? _readLoopTask;
     private AvaloniaDesignerTransport? _transport;
+    private StudioRemoteDesignClient? _designClient;
     private string? _sourceAssemblyPath;
     private string? _xamlFileProjectPath;
     private double? _previewWidth;
@@ -73,23 +79,30 @@ internal sealed class PreviewSession : IPreviewHostSession
                 var designerSessionStarted = CreateCompletionSource<string>();
                 var hostDiagnostics = new StringBuilder();
                 TcpListener? previewPortReservation = null;
+                TcpListener? designPortReservation = null;
 
                 try
                 {
                     var transportPort = StartListener(clientAccepted);
                     previewPortReservation = ReserveTcpPort();
                     var previewPort = GetListenerPort(previewPortReservation);
+                    designPortReservation = ReserveTcpPort();
+                    var designPort = GetListenerPort(designPortReservation);
 
                     StartHostProcess(
                         request,
                         transportPort,
                         previewPort,
                         previewPortReservation,
+                        DefaultDesignHost,
+                        designPort,
+                        designPortReservation,
                         clientAccepted,
                         previewUrlAvailable,
                         designerSessionStarted,
                         hostDiagnostics);
                     previewPortReservation = null;
+                    designPortReservation = null;
 
                     var acceptedClient = await WaitWithTimeoutAsync(
                         clientAccepted.Task,
@@ -108,24 +121,26 @@ internal sealed class PreviewSession : IPreviewHostSession
                         linkedCancellationToken.Token,
                         "Timed out waiting for the Avalonia preview session to start.").ConfigureAwait(false);
 
-                    await _transport.SendInitialClientBootstrapAsync(
-                        _previewWidth,
-                        _previewHeight,
-                        _previewScale,
+                    _designClient = await StudioRemoteDesignClient.ConnectAsync(
+                        DefaultDesignHost,
+                        designPort,
+                        _startupTimeout,
                         linkedCancellationToken.Token).ConfigureAwait(false);
 
-                    _pendingUpdateResults.EnqueueFireAndForget();
-                    await _transport.SendUpdateXamlAsync(
-                        request.XamlText,
-                        _sourceAssemblyPath,
-                        _xamlFileProjectPath,
-                        linkedCancellationToken.Token).ConfigureAwait(false);
-
-                    var previewUrl = await WaitWithTimeoutAsync(
+                    var previewUrl = await CompleteInitialPreviewStartupAsync(
+                        cancellationToken => _transport.SendInitialClientBootstrapAsync(
+                            _previewWidth,
+                            _previewHeight,
+                            _previewScale,
+                            cancellationToken),
+                        cancellationToken =>
+                        {
+                            _pendingUpdateResults.EnqueueFireAndForget();
+                            return SendUpdateXamlAsync(request.XamlText, cancellationToken);
+                        },
                         previewUrlAvailable.Task,
                         _startupTimeout,
-                        linkedCancellationToken.Token,
-                        "Timed out waiting for the Avalonia preview URL.").ConfigureAwait(false);
+                        linkedCancellationToken.Token).ConfigureAwait(false);
 
                     _sessionStarted = true;
 
@@ -151,6 +166,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                 finally
                 {
                     previewPortReservation?.Stop();
+                    designPortReservation?.Stop();
                 }
             }
 
@@ -234,6 +250,28 @@ internal sealed class PreviewSession : IPreviewHostSession
         {
             await transport.SendKeyEventAsync(keyEventMessage, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<JsonElement> ExecuteDesignAsync(
+        AxsgPreviewHostDesignRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ThrowIfDisposed();
+        StudioRemoteDesignClient client = _designClient ?? throw new InvalidOperationException("Preview design server is not connected.");
+        string command = MapDesignOperation(request.Operation);
+        object? payload = request.Arguments.ValueKind == JsonValueKind.Undefined
+            ? new { }
+            : request.Arguments;
+        JsonElement response = await client.SendCommandAsync(command, payload, cancellationToken).ConfigureAwait(false);
+
+        return request.Operation switch
+        {
+            "documents.selected" => BuildSelectedDocumentPayload(response),
+            "element.selected" => BuildSelectedElementPayload(response),
+            _ => response
+        };
     }
 
     public async ValueTask DisposeAsync()
@@ -324,6 +362,9 @@ internal sealed class PreviewSession : IPreviewHostSession
         int transportPort,
         int previewPort,
         TcpListener previewPortReservation,
+        string designHost,
+        int designPort,
+        TcpListener designPortReservation,
         TaskCompletionSource<TcpClient> clientAccepted,
         TaskCompletionSource<string> previewUrlAvailable,
         TaskCompletionSource<string> designerSessionStarted,
@@ -380,6 +421,16 @@ internal sealed class PreviewSession : IPreviewHostSession
             process.StartInfo.ArgumentList.Add(request.SourceFilePath);
         }
 
+        process.StartInfo.ArgumentList.Add("--axsg-source-assembly");
+        process.StartInfo.ArgumentList.Add(request.SourceAssemblyPath);
+        process.StartInfo.ArgumentList.Add("--axsg-xaml-project-path");
+        process.StartInfo.ArgumentList.Add(request.XamlFileProjectPath);
+
+        process.StartInfo.ArgumentList.Add("--axsg-design-host");
+        process.StartInfo.ArgumentList.Add(designHost);
+        process.StartInfo.ArgumentList.Add("--axsg-design-port");
+        process.StartInfo.ArgumentList.Add(designPort.ToString(CultureInfo.InvariantCulture));
+
         process.StartInfo.ArgumentList.Add(request.HostAssemblyPath);
 
         process.OutputDataReceived += (_, args) =>
@@ -427,6 +478,7 @@ internal sealed class PreviewSession : IPreviewHostSession
         };
 
         previewPortReservation.Stop();
+        designPortReservation.Stop();
 
         if (!process.Start())
         {
@@ -528,10 +580,37 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
     }
 
+    internal static async Task<string> CompleteInitialPreviewStartupAsync(
+        Func<CancellationToken, Task> sendInitialClientBootstrapAsync,
+        Func<CancellationToken, Task> sendInitialUpdateAsync,
+        Task<string> previewUrlAvailable,
+        TimeSpan startupTimeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sendInitialClientBootstrapAsync);
+        ArgumentNullException.ThrowIfNull(sendInitialUpdateAsync);
+        ArgumentNullException.ThrowIfNull(previewUrlAvailable);
+
+        await sendInitialClientBootstrapAsync(cancellationToken).ConfigureAwait(false);
+        string previewUrl = await WaitWithTimeoutAsync(
+            previewUrlAvailable,
+            startupTimeout,
+            cancellationToken,
+            "Timed out waiting for the Avalonia preview URL.").ConfigureAwait(false);
+        await sendInitialUpdateAsync(cancellationToken).ConfigureAwait(false);
+        return previewUrl;
+    }
+
     private async Task CleanupStartupAttemptAsync()
     {
         _sessionStarted = false;
         PublishPendingHotReloadFailure("Preview session stopped before hot reload completed.");
+
+        if (_designClient is not null)
+        {
+            await _designClient.DisposeAsync().ConfigureAwait(false);
+            _designClient = null;
+        }
 
         if (_transport is not null)
         {
@@ -670,14 +749,129 @@ internal sealed class PreviewSession : IPreviewHostSession
     private async Task SendUpdateXamlAsync(string xamlText, CancellationToken cancellationToken)
     {
         var transport = _transport ?? throw new InvalidOperationException("Preview session is not connected.");
-        var sourceAssemblyPath = _sourceAssemblyPath ?? throw new InvalidOperationException("Source assembly path is unavailable.");
         var xamlFileProjectPath = _xamlFileProjectPath ?? throw new InvalidOperationException("XAML project path is unavailable.");
 
         await transport.SendUpdateXamlAsync(
             xamlText,
-            sourceAssemblyPath,
+            assemblyPath: null,
             xamlFileProjectPath,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string MapDesignOperation(string operation)
+    {
+        return operation switch
+        {
+            "workspace.current" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "workspace.byBuildUri" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "documents.selected" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "element.selected" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "tree.logical" => AxsgStudioRemoteProtocol.GetLogicalTreeCommand,
+            "tree.visual" => AxsgStudioRemoteProtocol.GetVisualTreeCommand,
+            "overlay.current" => AxsgStudioRemoteProtocol.GetOverlayCommand,
+            "selectDocument" => AxsgStudioRemoteProtocol.SelectDocumentCommand,
+            "selectElement" => AxsgStudioRemoteProtocol.SelectElementCommand,
+            "selectAtPoint" => AxsgStudioRemoteProtocol.SelectAtPointCommand,
+            "applyDocumentText" => AxsgStudioRemoteProtocol.ApplyDocumentTextCommand,
+            "applyPropertyUpdate" => AxsgStudioRemoteProtocol.ApplyPropertyUpdateCommand,
+            "insertElement" => AxsgStudioRemoteProtocol.InsertElementCommand,
+            "removeElement" => AxsgStudioRemoteProtocol.RemoveElementCommand,
+            "undo" => AxsgStudioRemoteProtocol.UndoCommand,
+            "redo" => AxsgStudioRemoteProtocol.RedoCommand,
+            "setWorkspaceMode" => AxsgStudioRemoteProtocol.SetWorkspaceModeCommand,
+            "setHitTestMode" => AxsgStudioRemoteProtocol.SetHitTestModeCommand,
+            "setPropertyFilterMode" => AxsgStudioRemoteProtocol.SetPropertyFilterModeCommand,
+            _ => throw new InvalidOperationException("Unsupported preview design operation '" + operation + "'.")
+        };
+    }
+
+    private static JsonElement BuildSelectedDocumentPayload(JsonElement workspacePayload)
+    {
+        string? activeBuildUri = TryGetStringProperty(workspacePayload, "activeBuildUri", "ActiveBuildUri");
+        JsonElement? selectedDocument = null;
+        if (workspacePayload.TryGetProperty("documents", out JsonElement documentsElement) &&
+            documentsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement document in documentsElement.EnumerateArray())
+            {
+                string? buildUri = TryGetStringProperty(document, "buildUri", "BuildUri");
+                if (string.Equals(buildUri, activeBuildUri, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedDocument = document;
+                    break;
+                }
+            }
+        }
+
+        JsonObject payload = new()
+        {
+            ["activeBuildUri"] = activeBuildUri,
+            ["document"] = selectedDocument.HasValue
+                ? JsonRpcNodeHelpers.CloneJsonElement(selectedDocument.Value)
+                : null
+        };
+        return JsonDocument.Parse(payload.ToJsonString()).RootElement.Clone();
+    }
+
+    private static JsonElement BuildSelectedElementPayload(JsonElement workspacePayload)
+    {
+        string? activeBuildUri = TryGetStringProperty(workspacePayload, "activeBuildUri", "ActiveBuildUri");
+        string? selectedElementId = TryGetStringProperty(workspacePayload, "selectedElementId", "SelectedElementId");
+        JsonElement? selectedElement = null;
+        if (workspacePayload.TryGetProperty("elements", out JsonElement elementsElement) &&
+            elementsElement.ValueKind == JsonValueKind.Array &&
+            !string.IsNullOrWhiteSpace(selectedElementId))
+        {
+            selectedElement = FindElementPayload(elementsElement, selectedElementId);
+        }
+
+        JsonObject payload = new()
+        {
+            ["activeBuildUri"] = activeBuildUri,
+            ["selectedElementId"] = selectedElementId,
+            ["element"] = selectedElement.HasValue
+                ? JsonRpcNodeHelpers.CloneJsonElement(selectedElement.Value)
+                : null
+        };
+        return JsonDocument.Parse(payload.ToJsonString()).RootElement.Clone();
+    }
+
+    private static JsonElement? FindElementPayload(JsonElement elements, string selectedElementId)
+    {
+        foreach (JsonElement element in elements.EnumerateArray())
+        {
+            string? elementId = TryGetStringProperty(element, "id", "Id");
+            if (string.Equals(elementId, selectedElementId, StringComparison.Ordinal))
+            {
+                return element;
+            }
+
+            if (element.TryGetProperty("children", out JsonElement childrenElement) &&
+                childrenElement.ValueKind == JsonValueKind.Array)
+            {
+                JsonElement? child = FindElementPayload(childrenElement, selectedElementId);
+                if (child.HasValue)
+                {
+                    return child;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, params string[] propertyNames)
+    {
+        for (int index = 0; index < propertyNames.Length; index++)
+        {
+            if (element.TryGetProperty(propertyNames[index], out JsonElement propertyElement) &&
+                propertyElement.ValueKind == JsonValueKind.String)
+            {
+                return propertyElement.GetString();
+            }
+        }
+
+        return null;
     }
 
     private AxsgPreviewHostHotReloadResponse CompletePendingHotReload(AxsgPreviewHostHotReloadResponse response)

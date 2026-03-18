@@ -10,4 +10,8 @@ internal sealed record PreviewHostOptions(
     PreviewCompilerMode CompilerMode,
     double? PreviewWidth,
     double? PreviewHeight,
-    string? SourceFilePath);
+    string? SourceAssemblyPath,
+    string? SourceFilePath,
+    string? XamlFileProjectPath,
+    string? DesignHost,
+    int? DesignPort);

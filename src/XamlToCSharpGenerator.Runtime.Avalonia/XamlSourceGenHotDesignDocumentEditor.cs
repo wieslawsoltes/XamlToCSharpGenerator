@@ -229,6 +229,36 @@ internal sealed class XamlSourceGenHotDesignDocumentEditor
         return true;
     }
 
+    public bool TryGetElementRange(
+        string elementId,
+        out SourceGenHotDesignTextRange? range)
+    {
+        range = null;
+
+        var element = TryFindElementById(_document.Root!, elementId);
+        if (element is null)
+        {
+            return false;
+        }
+
+        if (!TryGetExactElementBounds(element, out var startOffset, out var endOffsetExclusive))
+        {
+            return false;
+        }
+
+        var endOffset = Math.Max(startOffset, endOffsetExclusive - 1);
+        GetLinePosition(startOffset, out var startLine, out var startColumn);
+        GetLinePosition(endOffset, out var endLine, out var endColumn);
+        range = new SourceGenHotDesignTextRange(
+            StartLine: startLine,
+            StartColumn: startColumn,
+            EndLine: endLine,
+            EndColumn: endColumn,
+            StartOffset: startOffset,
+            EndOffset: endOffsetExclusive);
+        return true;
+    }
+
     private string? BuildInsertedMarkup(
         XElement parentElement,
         string? elementName,
@@ -861,6 +891,38 @@ internal sealed class XamlSourceGenHotDesignDocumentEditor
         }
 
         return Math.Min(_text.Length, offset + targetCharacter);
+    }
+
+    private void GetLinePosition(int offset, out int lineNumber, out int linePosition)
+    {
+        var normalizedOffset = Math.Max(0, Math.Min(offset, _text.Length));
+        lineNumber = 1;
+        linePosition = 1;
+
+        for (var index = 0; index < normalizedOffset; index++)
+        {
+            var current = _text[index];
+            if (current == '\n')
+            {
+                lineNumber++;
+                linePosition = 1;
+                continue;
+            }
+
+            if (current == '\r')
+            {
+                if (index + 1 < normalizedOffset && _text[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                lineNumber++;
+                linePosition = 1;
+                continue;
+            }
+
+            linePosition++;
+        }
     }
 
     private int FindTagEnd(int tagStart)

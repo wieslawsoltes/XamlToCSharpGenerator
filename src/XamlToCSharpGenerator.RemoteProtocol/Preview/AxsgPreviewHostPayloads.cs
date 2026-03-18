@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 
 namespace XamlToCSharpGenerator.RemoteProtocol.Preview;
 
@@ -69,6 +70,13 @@ public sealed record AxsgPreviewHostInputRequest
 
     public AxsgPreviewHostInputModifiers? Modifiers { get; init; }
 }
+
+/// <summary>
+/// Represents a preview design operation request for an active preview helper session.
+/// </summary>
+public sealed record AxsgPreviewHostDesignRequest(
+    string Operation,
+    JsonElement Arguments);
 
 /// <summary>
 /// Represents the payload returned for a successful preview helper ping.

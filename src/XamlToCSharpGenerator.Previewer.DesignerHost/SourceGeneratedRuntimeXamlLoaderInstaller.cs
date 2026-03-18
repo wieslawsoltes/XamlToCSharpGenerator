@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reflection;
 using global::Avalonia.Markup.Xaml;
 
@@ -26,9 +27,15 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         var proxy = RuntimeXamlLoaderProxyFactory.Create(
             loaderContractType,
             (document, configuration) =>
-                PreviewSizingRootDecorator.Apply(
-                    loadHandler(document, configuration),
-                    SourceGeneratedRuntimeXamlLoader.ReadXamlText(document)));
+            {
+                var xamlText = SourceGeneratedRuntimeXamlLoader.ReadXamlText(document);
+                var preparedDocument = PreparePreviewDocument(document, xamlText, configuration, out var preparedConfiguration);
+                var decorated = PreviewSizingRootDecorator.Apply(
+                    loadHandler(preparedDocument, preparedConfiguration),
+                    xamlText);
+                UpdatePreviewHotDesignDocument(decorated, xamlText, preparedConfiguration.LocalAssembly);
+                return decorated;
+            });
         var locatorType = Type.GetType("Avalonia.AvaloniaLocator, Avalonia.Base", throwOnError: true)
             ?? throw new InvalidOperationException("Avalonia locator type was not found.");
         var currentMutableProperty = locatorType.GetProperty(
@@ -54,5 +61,129 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
             ? toConstantMethod.MakeGenericMethod(proxy.GetType())
             : toConstantMethod;
         closedToConstantMethod.Invoke(binding, [proxy]);
+    }
+
+    internal static RuntimeXamlLoaderDocument PreparePreviewDocument(
+        RuntimeXamlLoaderDocument document,
+        string xamlText,
+        RuntimeXamlLoaderConfiguration configuration,
+        out RuntimeXamlLoaderConfiguration preparedConfiguration)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        Assembly? localAssembly = ResolvePreviewLocalAssembly(configuration.LocalAssembly);
+        preparedConfiguration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = localAssembly,
+            UseCompiledBindingsByDefault = ResolveUseCompiledBindingsByDefault(configuration.UseCompiledBindingsByDefault, localAssembly),
+            DesignMode = configuration.DesignMode,
+            CreateSourceInfo = configuration.CreateSourceInfo,
+            DiagnosticHandler = configuration.DiagnosticHandler
+        };
+
+        Uri? baseUri = document.BaseUri ?? BuildPreviewBaseUri(localAssembly, PreviewHostRuntimeState.Current.XamlFileProjectPath);
+        if (Equals(baseUri, document.BaseUri) && ReferenceEquals(preparedConfiguration.LocalAssembly, configuration.LocalAssembly))
+        {
+            return document;
+        }
+
+        return new RuntimeXamlLoaderDocument(baseUri, document.RootInstance, xamlText)
+        {
+            Document = document.Document,
+            ServiceProvider = document.ServiceProvider
+        };
+    }
+
+    internal static Assembly? ResolvePreviewLocalAssembly(Assembly? localAssembly)
+    {
+        if (localAssembly is not null)
+        {
+            return localAssembly;
+        }
+
+        string? sourceAssemblyPath = PreviewHostRuntimeState.Current.SourceAssemblyPath;
+        if (string.IsNullOrWhiteSpace(sourceAssemblyPath))
+        {
+            return Assembly.GetEntryAssembly();
+        }
+
+        string assemblyName = Path.GetFileNameWithoutExtension(sourceAssemblyPath);
+        if (!string.IsNullOrWhiteSpace(assemblyName))
+        {
+            foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    if (string.Equals(loadedAssembly.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return loadedAssembly;
+                    }
+                }
+                catch
+                {
+                    // Best effort match.
+                }
+            }
+        }
+
+        try
+        {
+            return Assembly.LoadFrom(Path.GetFullPath(sourceAssemblyPath));
+        }
+        catch
+        {
+            return Assembly.GetEntryAssembly();
+        }
+    }
+
+    internal static Uri? BuildPreviewBaseUri(Assembly? localAssembly, string? xamlFileProjectPath)
+    {
+        if (localAssembly is null || string.IsNullOrWhiteSpace(xamlFileProjectPath))
+        {
+            return null;
+        }
+
+        string assemblyName = localAssembly.GetName().Name ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(assemblyName))
+        {
+            return null;
+        }
+
+        string normalizedPath = xamlFileProjectPath.Replace('\\', '/').Trim();
+        if (!normalizedPath.StartsWith("/", StringComparison.Ordinal))
+        {
+            normalizedPath = "/" + normalizedPath;
+        }
+
+        return new Uri("avares://" + assemblyName + normalizedPath, UriKind.Absolute);
+    }
+
+    private static bool ResolveUseCompiledBindingsByDefault(bool configuredValue, Assembly? localAssembly)
+    {
+        if (localAssembly is null)
+        {
+            return configuredValue;
+        }
+
+        string? metadataValue = localAssembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => string.Equals(attribute.Key, "AvaloniaUseCompiledBindingsByDefault", StringComparison.Ordinal))
+            ?.Value;
+        return bool.TryParse(metadataValue, out bool parsedValue)
+            ? parsedValue
+            : configuredValue;
+    }
+
+    private static void UpdatePreviewHotDesignDocument(object? root, string xamlText, Assembly? localAssembly)
+    {
+        PreviewHostOptions options = PreviewHostRuntimeState.Current;
+        string? sourceFilePath = options.SourceFilePath;
+        string? buildUri = BuildPreviewBaseUri(localAssembly, options.XamlFileProjectPath)?.ToString();
+        global::XamlToCSharpGenerator.Runtime.AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+            root,
+            xamlText,
+            buildUri ?? sourceFilePath,
+            sourceFilePath);
     }
 }

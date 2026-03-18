@@ -104,6 +104,46 @@ public sealed class AxsgRuntimeQueryService
     }
 
     /// <summary>
+    /// Gets the current hot-design live logical tree projection for the active preview session.
+    /// </summary>
+    public SourceGenHotDesignLiveTreeSnapshot GetHotDesignLogicalTree(string? buildUri = null, string? search = null)
+    {
+        SourceGenHotDesignWorkspaceSnapshot workspace = GetHotDesignWorkspace(buildUri, search: null);
+        return AxsgPreviewHotDesignQuerySupport.GetLiveTree(
+            SourceGenHotDesignHitTestMode.Logical,
+            buildUri ?? workspace.ActiveBuildUri,
+            workspace.SelectedElementId,
+            search);
+    }
+
+    /// <summary>
+    /// Gets the current hot-design live visual tree projection for the active preview session.
+    /// </summary>
+    public SourceGenHotDesignLiveTreeSnapshot GetHotDesignVisualTree(string? buildUri = null, string? search = null)
+    {
+        SourceGenHotDesignWorkspaceSnapshot workspace = GetHotDesignWorkspace(buildUri, search: null);
+        return AxsgPreviewHotDesignQuerySupport.GetLiveTree(
+            SourceGenHotDesignHitTestMode.Visual,
+            buildUri ?? workspace.ActiveBuildUri,
+            workspace.SelectedElementId,
+            search);
+    }
+
+    /// <summary>
+    /// Gets the current preview overlay snapshot for the active hot-design selection and hover state.
+    /// </summary>
+    public SourceGenHotDesignOverlaySnapshot GetHotDesignOverlay(string? buildUri = null)
+    {
+        SourceGenHotDesignWorkspaceSnapshot workspace = GetHotDesignWorkspace(buildUri, search: null);
+        SourceGenHotDesignElementNode? selectedElement = FindElement(workspace.Elements, workspace.SelectedElementId);
+        return AxsgPreviewHotDesignQuerySupport.GetOverlaySnapshot(
+            GetHotDesignHitTestMode(),
+            buildUri ?? workspace.ActiveBuildUri,
+            workspace.SelectedElementId,
+            selectedElement);
+    }
+
+    /// <summary>
     /// Gets the current hot design hit-test mode.
     /// </summary>
     public SourceGenHotDesignHitTestMode GetHotDesignHitTestMode()
@@ -129,8 +169,13 @@ public sealed class AxsgRuntimeQueryService
 
     private static SourceGenHotDesignElementNode? FindElement(
         IReadOnlyList<SourceGenHotDesignElementNode> elements,
-        string selectedElementId)
+        string? selectedElementId)
     {
+        if (string.IsNullOrWhiteSpace(selectedElementId))
+        {
+            return null;
+        }
+
         for (int index = 0; index < elements.Count; index++)
         {
             SourceGenHotDesignElementNode element = elements[index];

@@ -22,12 +22,11 @@ internal sealed class AvaloniaDesignerTransport : IAsyncDisposable
 
     public async Task SendUpdateXamlAsync(
         string xamlText,
-        string assemblyPath,
+        string? assemblyPath,
         string xamlFileProjectPath,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(xamlText);
-        ArgumentException.ThrowIfNullOrEmpty(assemblyPath);
         ArgumentException.ThrowIfNullOrEmpty(xamlFileProjectPath);
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)

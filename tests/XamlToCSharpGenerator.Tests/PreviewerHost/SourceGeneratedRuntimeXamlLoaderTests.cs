@@ -14,6 +14,41 @@ namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 public sealed class SourceGeneratedRuntimeXamlLoaderTests
 {
     [AvaloniaFact]
+    public void PreparePreviewDocument_Rehydrates_LocalAssembly_And_BaseUri_When_Designer_Message_Omits_AssemblyPath()
+    {
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+        try
+        {
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location,
+                "/tmp/Preview.axaml",
+                "/Pages/Preview.axaml",
+                null,
+                null));
+            var document = new RuntimeXamlLoaderDocument("<UserControl />");
+            var configuration = new RuntimeXamlLoaderConfiguration();
+
+            RuntimeXamlLoaderDocument preparedDocument = SourceGeneratedRuntimeXamlLoaderInstaller.PreparePreviewDocument(
+                document,
+                "<UserControl />",
+                configuration,
+                out RuntimeXamlLoaderConfiguration preparedConfiguration);
+
+            Assert.Equal(typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly, preparedConfiguration.LocalAssembly);
+            Assert.Equal(
+                new Uri("avares://XamlToCSharpGenerator.Tests/Pages/Preview.axaml"),
+                preparedDocument.BaseUri);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+        }
+    }
+
+    [AvaloniaFact]
     public void LoadCore_Reuses_Initial_Baseline_For_Successful_Live_Overlay()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -96,6 +131,45 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
 
         var textBlock = Assert.IsType<TextBlock>(result.Content);
         Assert.Equal("Orange", textBlock.Text);
+    }
+
+    [AvaloniaFact]
+    public void TryApplyLiveOverlay_Uses_Fresh_ResourceDictionary_Instance_To_Preserve_DesignPreviewWith()
+    {
+        var method = typeof(SourceGeneratedRuntimeXamlLoader).GetMethod(
+            "TryApplyLiveOverlay",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TryApplyLiveOverlay method was not found.");
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <Design.PreviewWith>
+                <Border>
+                  <TextBlock Text="TextBox theme preview" />
+                </Border>
+              </Design.PreviewWith>
+              <Thickness x:Key="TextBoxPadding">8</Thickness>
+            </ResourceDictionary>
+            """;
+        var baseline = new ResourceDictionary();
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/TextBox.axaml"),
+            baseline,
+            xaml);
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly,
+            DesignMode = true
+        };
+        object?[] args = [document, configuration, baseline, xaml, null];
+
+        var success = Assert.IsType<bool>(method.Invoke(null, args));
+        var result = Assert.IsType<ResourceDictionary>(args[4]);
+
+        Assert.True(success);
+        Assert.NotSame(baseline, result);
+        var previewHost = Assert.IsType<Border>(PreviewSizingRootDecorator.Apply(result));
+        Assert.Equal("TextBox theme preview", Assert.IsType<TextBlock>(previewHost.Child).Text);
     }
 
     [AvaloniaFact]

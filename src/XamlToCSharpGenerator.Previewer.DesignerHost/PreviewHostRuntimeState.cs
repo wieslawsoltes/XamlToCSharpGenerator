@@ -3,7 +3,7 @@ namespace XamlToCSharpGenerator.Previewer.DesignerHost;
 internal static class PreviewHostRuntimeState
 {
     private static readonly object Sync = new();
-    private static PreviewHostOptions _options = new(PreviewCompilerMode.Avalonia, null, null, null);
+    private static PreviewHostOptions _options = new(PreviewCompilerMode.Avalonia, null, null, null, null, null, null, null);
 
     public static void Configure(PreviewHostOptions options)
     {
