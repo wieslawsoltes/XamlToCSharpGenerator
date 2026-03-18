@@ -389,12 +389,24 @@ internal sealed class PreviewHostMcpState
 
     private void PublishDesignResourceUpdates(bool listChanged)
     {
+        string[] scopedWorkspaceResourceUris;
+        lock (_gate)
+        {
+            scopedWorkspaceResourceUris = _designDocumentBuildUris
+                .Select(PreviewHostMcpServer.BuildWorkspaceByBuildUriResourceUri)
+                .ToArray();
+        }
+
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignWorkspaceCurrentResourceUri);
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignDocumentsSelectedResourceUri);
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignElementSelectedResourceUri);
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignLogicalTreeResourceUri);
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignVisualTreeResourceUri);
         ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignOverlayCurrentResourceUri);
+        for (int index = 0; index < scopedWorkspaceResourceUris.Length; index++)
+        {
+            ResourceUpdated?.Invoke(scopedWorkspaceResourceUris[index]);
+        }
 
         if (listChanged)
         {

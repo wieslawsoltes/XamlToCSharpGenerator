@@ -490,7 +490,7 @@ internal sealed class PreviewHostMcpServer : IAsyncDisposable
         }
     }
 
-    private static string BuildWorkspaceByBuildUriResourceUri(string buildUri)
+    internal static string BuildWorkspaceByBuildUriResourceUri(string buildUri)
     {
         return DesignWorkspaceByBuildUriResourcePrefix + Uri.EscapeDataString(buildUri);
     }

@@ -232,6 +232,58 @@ public sealed class PreviewHostMcpServerTests
     }
 
     [Fact]
+    public async Task DesignMutation_Updates_BuildUriScoped_Workspace_Resource()
+    {
+        await using var harness = await PreviewHostMcpHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(
+            24,
+            "tools/call",
+            new JsonObject
+            {
+                ["name"] = "axsg.preview.start",
+                ["arguments"] = CreateStartArguments()
+            });
+        using (JsonDocument startResponse = await harness.ReadResponseAsync(24))
+        {
+        }
+
+        const string scopedWorkspaceUri = "axsg://preview/design/workspace/by-build-uri/%2FPages%2FMainView.axaml";
+
+        await harness.SendRequestAsync(
+            25,
+            "resources/subscribe",
+            new JsonObject
+            {
+                ["uri"] = scopedWorkspaceUri
+            });
+        using (JsonDocument subscribeResponse = await harness.ReadResponseAsync(25))
+        {
+        }
+
+        await harness.SendRequestAsync(
+            26,
+            "tools/call",
+            new JsonObject
+            {
+                ["name"] = "axsg.preview.design.setWorkspaceMode",
+                ["arguments"] = new JsonObject
+                {
+                    ["mode"] = "Design"
+                }
+            });
+        using (JsonDocument toolResponse = await harness.ReadResponseAsync(26))
+        {
+        }
+
+        using JsonDocument notification = await harness.ReadResourceUpdatedNotificationAsync(scopedWorkspaceUri);
+        Assert.Equal(
+            scopedWorkspaceUri,
+            notification.RootElement.GetProperty("params").GetProperty("uri").GetString());
+    }
+
+    [Fact]
     public async Task HotReload_Tool_Waits_For_InProcess_Result_And_Updates_Status()
     {
         await using var harness = await PreviewHostMcpHarness.StartAsync();

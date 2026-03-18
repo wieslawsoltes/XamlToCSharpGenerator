@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 using XamlToCSharpGenerator.RemoteProtocol.Studio;
 using XamlToCSharpGenerator.Runtime;
@@ -96,6 +97,35 @@ public sealed class AxsgStudioRemoteCommandRouterTests
 
         Assert.False(response.Ok);
         Assert.Equal("xamlText is required.", response.Error);
+    }
+
+    [Fact]
+    public void BuildHotDesignMutationResponse_ForFailedApplyResult_KeepsPayloadEnvelopeSuccessful()
+    {
+        var router = new AxsgStudioRemoteCommandRouter(new AxsgRuntimeQueryService());
+        var request = new AxsgStudioRemoteRequestEnvelope(
+            AxsgStudioRemoteProtocol.RemoveElementCommand,
+            "m1",
+            CreatePayload(new { }));
+        var result = new SourceGenHotDesignApplyResult(
+            Succeeded: false,
+            Message: "Cannot remove the root element.",
+            BuildUri: "/Pages/MainView.axaml");
+
+        MethodInfo method = typeof(AxsgStudioRemoteCommandRouter).GetMethod(
+            "BuildHotDesignMutationResponse",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        var response = (AxsgStudioRemoteResponseEnvelope)method.Invoke(
+            router,
+            new object?[] { request, result, result.BuildUri })!;
+
+        Assert.True(response.Ok);
+        Assert.Null(response.Error);
+
+        JsonElement payload = JsonSerializer.SerializeToElement(response.Payload, JsonRpcSerializer.DefaultOptions);
+        Assert.False(payload.GetProperty("applyResult").GetProperty("succeeded").GetBoolean());
+        Assert.Equal("Cannot remove the root element.", payload.GetProperty("applyResult").GetProperty("message").GetString());
     }
 
     private static JsonElement CreatePayload<T>(T value)

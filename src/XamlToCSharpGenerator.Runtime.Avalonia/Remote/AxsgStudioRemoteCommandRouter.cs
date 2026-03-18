@@ -275,7 +275,7 @@ internal sealed class AxsgStudioRemoteCommandRouter
             BuildUri = payload.BuildUri,
             TargetTypeName = payload.TargetTypeName,
             ElementId = payload.ElementId,
-            PropertyName = payload.PropertyName,
+            PropertyName = payload.PropertyName ?? string.Empty,
             PropertyValue = payload.PropertyValue,
             RemoveProperty = payload.RemoveProperty ?? false,
             PersistChangesToSource = payload.PersistChangesToSource,
@@ -309,7 +309,7 @@ internal sealed class AxsgStudioRemoteCommandRouter
             BuildUri = payload.BuildUri,
             TargetTypeName = payload.TargetTypeName,
             ParentElementId = payload.ParentElementId,
-            ElementName = payload.ElementName,
+            ElementName = payload.ElementName ?? string.Empty,
             XamlFragment = payload.XamlFragment,
             PersistChangesToSource = payload.PersistChangesToSource,
             WaitForHotReload = payload.WaitForHotReload,
@@ -341,7 +341,7 @@ internal sealed class AxsgStudioRemoteCommandRouter
         {
             BuildUri = payload.BuildUri,
             TargetTypeName = payload.TargetTypeName,
-            ElementId = payload.ElementId,
+            ElementId = payload.ElementId ?? string.Empty,
             PersistChangesToSource = payload.PersistChangesToSource,
             WaitForHotReload = payload.WaitForHotReload,
             FallbackToRuntimeApplyOnTimeout = payload.FallbackToRuntimeApplyOnTimeout
@@ -470,10 +470,10 @@ internal sealed class AxsgStudioRemoteCommandRouter
         SourceGenHotDesignWorkspaceSnapshot workspace = _runtimeQueryService.GetHotDesignWorkspace(effectiveBuildUri, search: null);
         SourceGenHotDesignOverlaySnapshot overlay = _runtimeQueryService.GetHotDesignOverlay(effectiveBuildUri);
         return new AxsgStudioRemoteResponseEnvelope(
-            Ok: result.Succeeded,
+            Ok: true,
             Command: request.Command,
             RequestId: request.RequestId,
-            Error: result.Succeeded ? null : result.Message,
+            Error: null,
             Payload: new
             {
                 applyResult = AxsgRuntimePayloadBuilder.BuildHotDesignApplyResultPayload(result),
