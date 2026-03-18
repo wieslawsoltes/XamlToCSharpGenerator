@@ -1,0 +1,7 @@
+vscode:
+  - {path: readme.md, title: "Overview", self: true}
+  - {path: installation-and-setup.md, title: "Installation and Setup"}
+  - {path: configuration.md, title: "Configuration"}
+  - {path: editing-and-navigation.md, title: "Editing and Navigation"}
+  - {path: preview-and-inspector.md, title: "Preview and Inspector"}
+  - {path: troubleshooting.md, title: "Troubleshooting"}

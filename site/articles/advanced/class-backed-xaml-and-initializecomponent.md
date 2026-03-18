@@ -134,6 +134,10 @@ This is the safer default for reusable libraries.
 
 The problem is not the method itself. The problem is leaving a parameterless `InitializeComponent()` wrapper around it in the same class when AXSG is active, because that steals the constructor call from the generated AXSG method.
 
+If you need the build-property and compatibility matrix behind that rule, use:
+
+- [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
+
 ## Relationship to `.UseAvaloniaSourceGeneratedXaml()`
 
 These concerns operate at different layers:
@@ -176,6 +180,7 @@ Typical signs that the fallback is still intercepting AXSG:
 ## Related docs
 
 - [InitializeComponent and Loader Fallback](../getting-started/initializecomponent-and-loader-fallback/)
+- [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
 - [Installation](../getting-started/installation/)
 - [Quickstart](../getting-started/quickstart/)
 - [Package Selection and Integration](../guides/package-selection-and-integration/)

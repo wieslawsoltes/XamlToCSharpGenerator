@@ -57,6 +57,26 @@ The parser accepts JSON comments and trailing commas.
 
 `schemaVersion` is optional; when specified it must currently be `1` (otherwise warning `AXSG0917`).
 
+## Important Avalonia build switches outside `xaml-sourcegen.config.json`
+
+Some settings that users commonly look for are not part of the JSON configuration file model at all. They are project-level MSBuild properties or conditional compilation symbols.
+
+The most important Avalonia-facing switches are:
+
+| Switch | Kind | Meaning |
+|---|---|---|
+| `AvaloniaXamlCompilerBackend` | MSBuild property | Selects the active XAML compiler backend. Use `SourceGen` for AXSG and `XamlIl` for the classic Avalonia path. |
+| `AvaloniaSourceGenCompilerEnabled` | MSBuild property | Explicit AXSG enable switch. Usually implied by `AvaloniaXamlCompilerBackend=SourceGen`. |
+| `EnableAvaloniaXamlCompilation` | MSBuild property | Controls Avalonia's XamlIl compilation path. AXSG build integration disables it when SourceGen is active. |
+| `AvaloniaNameGeneratorIsEnabled` | MSBuild property | Controls Avalonia's legacy name generator path. This is not the AXSG-generated `InitializeComponent` switch. |
+| `AXAML_SOURCEGEN_BACKEND` | compilation symbol | Defined when AXSG is the active backend. Use it to guard fallback `AvaloniaXamlLoader.Load(this)` code. |
+
+For normal AXSG app configuration, do not try to express those as JSON config-file keys. Set them in the project file instead.
+
+For a full explanation of the name-generator and `InitializeComponent` compatibility matrix, see:
+
+- [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
+
 ## Top-level schema
 
 Top-level sections:

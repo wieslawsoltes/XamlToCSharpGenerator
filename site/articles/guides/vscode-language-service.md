@@ -6,6 +6,8 @@ title: "VS Code and Language Service"
 
 This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output.
 
+For the product-facing extension docs, including installation, configuration, preview, and the AXSG Inspector side panel, start with the dedicated [VS Code](../vscode/) section.
+
 ## Main components
 
 The editing stack is split into three parts:
@@ -119,6 +121,7 @@ The extension still uses its own bundled preview orchestration for the product p
 
 ## Related docs
 
+- [VS Code](../vscode/)
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
 - [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)

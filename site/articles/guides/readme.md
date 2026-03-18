@@ -17,6 +17,7 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 ### Language features and editor workflows
 
+- [VS Code](../vscode/)
 - [C# Expressions](csharp-expressions/)
 - [Inline C# Code](inline-csharp-code/)
 - [Navigation and Refactorings](navigation-and-refactorings/)
@@ -29,6 +30,7 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 ### Runtime and hot reload workflows
 
+- [Avalonia Name Generator and InitializeComponent Modes](avalonia-name-generator-and-initializecomponent-modes/)
 - [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 - [iOS Hot Reload](hot-reload-ios/)
 - [Runtime Loader and Fallback](runtime-loader-and-fallback/)
@@ -44,19 +46,21 @@ These guides are task-oriented. Start here when you know what you want to do but
 ### New application integration
 
 1. [Package Selection and Integration](package-selection-and-integration/)
-2. [C# Expressions](csharp-expressions/)
-3. [Inline C# Code](inline-csharp-code/)
-4. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
+2. [Avalonia Name Generator and InitializeComponent Modes](avalonia-name-generator-and-initializecomponent-modes/)
+3. [C# Expressions](csharp-expressions/)
+4. [Inline C# Code](inline-csharp-code/)
+5. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 
 ### Editor or tooling integration
 
-1. [VS Code and Language Service](vscode-language-service/)
-2. [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
-3. [Workspace MCP Language Tools](workspace-mcp-language-tools/)
-4. [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
-5. [Runtime MCP Studio Control](runtime-mcp-studio-control/)
-6. [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
-7. [Navigation and Refactorings](navigation-and-refactorings/)
+1. [VS Code](../vscode/)
+2. [VS Code and Language Service](vscode-language-service/)
+3. [MCP Servers and Live Tooling](mcp-servers-and-live-tooling/)
+4. [Workspace MCP Language Tools](workspace-mcp-language-tools/)
+5. [Runtime MCP Hot Design Control](runtime-mcp-hot-design-control/)
+6. [Runtime MCP Studio Control](runtime-mcp-studio-control/)
+7. [Preview MCP Host and Live Preview](preview-mcp-host-and-live-preview/)
+8. [Navigation and Refactorings](navigation-and-refactorings/)
 
 ### CI, release, and maintenance work
 

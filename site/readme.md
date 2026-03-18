@@ -51,6 +51,10 @@ og_type: website
     <span class="axsg-link-card-title"><i class="bi bi-journal-code" aria-hidden="true"></i> Guides</span>
     <p>Task-oriented walkthroughs for packaging, release, hot reload, runtime operation, and deployment.</p>
   </a>
+  <a class="axsg-link-card" href="articles/vscode">
+    <span class="axsg-link-card-title"><i class="bi bi-window-sidebar" aria-hidden="true"></i> VS Code</span>
+    <p>Extension setup, configuration, preview, AXSG Inspector panels, and editor-specific workflows for the packaged VS Code experience.</p>
+  </a>
   <a class="axsg-link-card" href="articles/xaml">
     <span class="axsg-link-card-title"><i class="bi bi-filetype-xml" aria-hidden="true"></i> XAML Usage</span>
     <p>Compiled bindings, shorthand expressions, inline C#, templates, styles, control themes, and theme resources.</p>
