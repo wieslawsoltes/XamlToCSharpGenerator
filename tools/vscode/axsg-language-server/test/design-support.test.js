@@ -211,6 +211,30 @@ test('handleSessionEvent refreshes previewStarted session when no active session
   ]);
 });
 
+test('handleSessionEvent refreshes panelActivated session when it is active', async () => {
+  const { controller } = createController();
+  const previewSession = { setDesignState() {} };
+  const refreshes = [];
+
+  controller.previewController.getActiveSession = () => previewSession;
+  controller.refreshFromSession = async (session, reason) => {
+    refreshes.push({ session, reason });
+  };
+
+  await controller.handleSessionEvent({
+    session: previewSession,
+    event: 'panelActivated',
+    payload: {}
+  });
+
+  assert.deepEqual(refreshes, [
+    {
+      session: previewSession,
+      reason: 'panelActivated'
+    }
+  ]);
+});
+
 test('toolbox drag controller publishes custom and text payloads', async () => {
   const vscodeMock = createVscodeMock();
   const { DesignToolboxDragAndDropController } = loadDesignSupport(vscodeMock);

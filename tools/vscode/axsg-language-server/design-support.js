@@ -221,7 +221,7 @@ class DesignSessionController {
       return;
     }
 
-    if (event.event === 'previewStarted' || event.event === 'updateResult') {
+    if (event.event === 'previewStarted' || event.event === 'updateResult' || event.event === 'panelActivated') {
       await this.refreshFromSession(event.session, event.event);
     }
   }

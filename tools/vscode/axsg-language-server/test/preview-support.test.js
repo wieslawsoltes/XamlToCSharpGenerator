@@ -57,7 +57,6 @@ test('getActiveSession returns the editor session when available', () => {
   const vscodeMock = createVscodeMock();
   const controller = createController(vscodeMock);
   const editorSession = { panel: { active: false } };
-  const previewPanelSession = { panel: { active: true } };
 
   vscodeMock.window.activeTextEditor = {
     document: {
@@ -68,7 +67,6 @@ test('getActiveSession returns the editor session when available', () => {
   };
 
   controller.sessions.set('file:///editor.axaml', editorSession);
-  controller.sessions.set('file:///preview.axaml', previewPanelSession);
 
   assert.equal(controller.getActiveSession(), editorSession);
 });
@@ -83,4 +81,24 @@ test('getActiveSession falls back to the active preview panel session', () => {
   controller.sessions.set('file:///active.axaml', activeSession);
 
   assert.equal(controller.getActiveSession(), activeSession);
+});
+
+test('getActiveSession prefers the active preview panel over a stale text editor session', () => {
+  const vscodeMock = createVscodeMock();
+  const controller = createController(vscodeMock);
+  const editorSession = { panel: { active: false } };
+  const activePreviewSession = { panel: { active: true } };
+
+  vscodeMock.window.activeTextEditor = {
+    document: {
+      uri: {
+        toString: () => 'file:///editor.axaml'
+      }
+    }
+  };
+
+  controller.sessions.set('file:///editor.axaml', editorSession);
+  controller.sessions.set('file:///preview.axaml', activePreviewSession);
+
+  assert.equal(controller.getActiveSession(), activePreviewSession);
 });

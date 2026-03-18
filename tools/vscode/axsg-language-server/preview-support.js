@@ -429,6 +429,11 @@ class AvaloniaPreviewSession {
         void this.dispose();
       }
     });
+    panel.onDidChangeViewState(event => {
+      if (!this.disposed && event && event.webviewPanel && event.webviewPanel.active) {
+        this.controller.notifySessionEvent(this, 'panelActivated', {});
+      }
+    });
 
     this.panel = panel;
     this.applyWebviewOptions();
@@ -972,17 +977,17 @@ class AvaloniaPreviewController {
   }
 
   getActiveSession() {
+    for (const session of this.sessions.values()) {
+      if (session && session.panel && session.panel.active) {
+        return session;
+      }
+    }
+
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       const editorSession = this.getSession(editor.document.uri.toString());
       if (editorSession) {
         return editorSession;
-      }
-    }
-
-    for (const session of this.sessions.values()) {
-      if (session && session.panel && session.panel.active) {
-        return session;
       }
     }
 
