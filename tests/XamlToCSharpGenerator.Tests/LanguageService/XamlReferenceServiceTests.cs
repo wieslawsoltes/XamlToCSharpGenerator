@@ -132,6 +132,42 @@ public class XamlReferenceServiceTests
     }
 
     [Fact]
+    public void ResolveProjectXamlFileByTargetPath_Expands_Wildcard_Link_Metadata_Tokens()
+    {
+        using var workspace = new ProjectResolutionWorkspace();
+        var projectDirectory = Path.Combine(workspace.RootPath, "src", "App");
+        var linkedDirectory = Path.Combine(workspace.RootPath, "shared", "nested");
+        Directory.CreateDirectory(projectDirectory);
+        Directory.CreateDirectory(linkedDirectory);
+
+        var projectFilePath = Path.Combine(projectDirectory, "App.csproj");
+        var currentFilePath = Path.Combine(projectDirectory, "Views", "MainView.axaml");
+        var linkedFilePath = Path.Combine(linkedDirectory, "SharedView.axaml");
+        Directory.CreateDirectory(Path.GetDirectoryName(currentFilePath)!);
+        File.WriteAllText(currentFilePath, "<UserControl />");
+        File.WriteAllText(linkedFilePath, "<UserControl />");
+        File.WriteAllText(
+            projectFilePath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <AvaloniaXaml Include="Views/MainView.axaml" />
+                <AvaloniaXaml Include="../../shared/**/*.axaml" Link="Views/%(RecursiveDir)%(Filename)%(Extension)" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var resolved = XamlProjectFileDiscoveryService.TryResolveProjectXamlFileByTargetPath(
+            projectFilePath,
+            currentFilePath,
+            "Views/nested/SharedView.axaml",
+            out var resolvedFilePath);
+
+        Assert.True(resolved);
+        Assert.Equal(Path.GetFullPath(linkedFilePath), resolvedFilePath);
+    }
+
+    [Fact]
     public void ResolveProjectXamlEntryByFilePath_Returns_TargetPath()
     {
         using var workspace = new ProjectResolutionWorkspace();
