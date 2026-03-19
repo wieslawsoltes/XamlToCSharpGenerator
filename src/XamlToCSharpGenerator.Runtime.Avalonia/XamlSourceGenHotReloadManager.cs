@@ -226,12 +226,13 @@ public static class XamlSourceGenHotReloadManager
                     "' (runtime type '" + instance.GetType().FullName + "').");
             }
 
-            if (!string.IsNullOrWhiteSpace(normalizedSourcePath))
+            if (!string.IsNullOrWhiteSpace(normalizedSourcePath) ||
+                !string.IsNullOrWhiteSpace(normalizedBuildUri))
             {
-                IdeSourcePathWatchers[trackingType] = SourcePathWatchState.Create(normalizedSourcePath);
+                IdeSourcePathWatchers[trackingType] = SourcePathWatchState.Create(normalizedSourcePath, normalizedBuildUri);
                 Trace(
                     "Registered source path watcher for tracking type '" + trackingType.FullName +
-                    "': " + normalizedSourcePath);
+                    "': " + IdeSourcePathWatchers[trackingType].DescribeWatchedPaths());
             }
 
             if (!string.IsNullOrWhiteSpace(normalizedBuildUri))
@@ -1462,6 +1463,49 @@ public static class XamlSourceGenHotReloadManager
         return !string.IsNullOrWhiteSpace(normalizedBuildUri);
     }
 
+    private static IReadOnlyList<string> CollectWatchedSourcePaths(string? primarySourcePath, string? buildUri)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(primarySourcePath))
+        {
+            paths.Add(primarySourcePath);
+        }
+
+        if (!string.IsNullOrWhiteSpace(buildUri))
+        {
+            var buildUris = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                buildUri
+            };
+
+            foreach (var edge in XamlIncludeGraphRegistry.GetTransitive(buildUri))
+            {
+                var includedUri = UriMapper.Normalize(edge.IncludedUri);
+                if (!string.IsNullOrWhiteSpace(includedUri))
+                {
+                    buildUris.Add(includedUri);
+                }
+            }
+
+            foreach (var watchedBuildUri in buildUris)
+            {
+                foreach (var sourceInfo in XamlSourceInfoRegistry.GetAll(watchedBuildUri))
+                {
+                    var normalizedPath = NormalizeSourcePath(sourceInfo.FilePath);
+                    if (!string.IsNullOrWhiteSpace(normalizedPath))
+                    {
+                        paths.Add(normalizedPath);
+                    }
+                }
+            }
+        }
+
+        return paths
+            .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static void TryRegisterHotDesignMirror(
         Type trackingType,
         object instance,
@@ -2269,16 +2313,22 @@ public static class XamlSourceGenHotReloadManager
         if (TryResolveRegisteredTypeKeyLocked(IdeSourcePathWatchers, type, out var sourcePathType) &&
             IdeSourcePathWatchers.TryGetValue(sourcePathType, out var state))
         {
-            sourcePath = state.SourcePath;
-            return true;
+            if (!string.IsNullOrWhiteSpace(state.SourcePath))
+            {
+                sourcePath = state.SourcePath;
+                return true;
+            }
         }
 
         if (TryResolveMappedTypeLocked(type, out var mappedType) &&
             TryResolveRegisteredTypeKeyLocked(IdeSourcePathWatchers, mappedType, out sourcePathType) &&
             IdeSourcePathWatchers.TryGetValue(sourcePathType, out state))
         {
-            sourcePath = state.SourcePath;
-            return true;
+            if (!string.IsNullOrWhiteSpace(state.SourcePath))
+            {
+                sourcePath = state.SourcePath;
+                return true;
+            }
         }
 
         sourcePath = string.Empty;
@@ -2654,31 +2704,70 @@ public static class XamlSourceGenHotReloadManager
 
     private sealed class SourcePathWatchState
     {
-        private readonly string _sourcePath;
-        private long _lastWriteTicks;
+        private readonly string? _sourcePath;
+        private readonly string? _buildUri;
+        private readonly Dictionary<string, long> _lastWriteTicksByPath;
         private int _remainingReloadAttempts;
 
-        private SourcePathWatchState(string sourcePath, long lastWriteTicks)
+        private SourcePathWatchState(string? sourcePath, string? buildUri, Dictionary<string, long> lastWriteTicksByPath)
         {
             _sourcePath = sourcePath;
-            _lastWriteTicks = lastWriteTicks;
+            _buildUri = buildUri;
+            _lastWriteTicksByPath = lastWriteTicksByPath;
         }
 
-        public static SourcePathWatchState Create(string sourcePath)
+        public static SourcePathWatchState Create(string? sourcePath, string? buildUri)
         {
-            return new SourcePathWatchState(sourcePath, ReadLastWriteTicks(sourcePath));
+            var normalizedSourcePath = NormalizeSourcePath(sourcePath);
+            var normalizedBuildUri = UriMapper.Normalize(buildUri);
+            var watchedPaths = CollectWatchedSourcePaths(normalizedSourcePath, normalizedBuildUri);
+            var lastWriteTicksByPath = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var watchedPath in watchedPaths)
+            {
+                lastWriteTicksByPath[watchedPath] = ReadLastWriteTicks(watchedPath);
+            }
+
+            return new SourcePathWatchState(normalizedSourcePath, normalizedBuildUri, lastWriteTicksByPath);
         }
 
-        public string SourcePath => _sourcePath;
+        public string? SourcePath => _sourcePath;
+
+        public string DescribeWatchedPaths()
+        {
+            return string.Join(", ", CollectWatchedSourcePaths(_sourcePath, _buildUri));
+        }
 
         public bool TryConsumeReloadSignal()
         {
-            var currentTicks = ReadLastWriteTicks(_sourcePath);
-            if (currentTicks > 0 && currentTicks != _lastWriteTicks)
+            var watchedPaths = CollectWatchedSourcePaths(_sourcePath, _buildUri);
+            foreach (var watchedPath in watchedPaths)
             {
-                _lastWriteTicks = currentTicks;
+                var currentTicks = ReadLastWriteTicks(watchedPath);
+                if (!_lastWriteTicksByPath.TryGetValue(watchedPath, out var previousTicks))
+                {
+                    _lastWriteTicksByPath[watchedPath] = currentTicks;
+                    previousTicks = currentTicks;
+                }
+
+                if (currentTicks <= 0 || currentTicks == previousTicks)
+                {
+                    continue;
+                }
+
+                _lastWriteTicksByPath[watchedPath] = currentTicks;
                 _remainingReloadAttempts = SourcePathReloadRetryCount;
-                Trace("Source change detected at '" + _sourcePath + "'. Scheduling " + SourcePathReloadRetryCount + " reload attempts.");
+                Trace("Source change detected at '" + watchedPath + "'. Scheduling " + SourcePathReloadRetryCount + " reload attempts.");
+            }
+
+            if (_lastWriteTicksByPath.Count != watchedPaths.Count)
+            {
+                var removedPaths = _lastWriteTicksByPath.Keys
+                    .Where(path => !watchedPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    .ToArray();
+                for (var index = 0; index < removedPaths.Length; index++)
+                {
+                    _lastWriteTicksByPath.Remove(removedPaths[index]);
+                }
             }
 
             if (_remainingReloadAttempts <= 0)

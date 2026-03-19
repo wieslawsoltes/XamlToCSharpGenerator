@@ -142,6 +142,12 @@ public static class XamlSourceGenHotDesignTool
         return XamlSourceGenHotDesignCoreTools.TryGetCurrentDocumentText(buildUri, out xamlText);
     }
 
+    public static void SetCurrentDocumentText(string buildUri, string xamlText)
+    {
+        XamlSourceGenHotDesignCoreTools.SetCurrentDocumentText(buildUri, xamlText);
+        PublishWorkspaceChanged();
+    }
+
     public static async ValueTask<SourceGenHotDesignApplyResult> ApplyDocumentTextAsync(
         string buildUri,
         string xamlText,

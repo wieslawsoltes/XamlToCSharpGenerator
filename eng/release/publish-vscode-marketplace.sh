@@ -43,7 +43,7 @@ if [[ $status -ne 0 ]]; then
   printf '%s\n' "${output}" >&2
   if [[ "${output}" == *"Failed request: (401)"* || "${output}" == *"TF400813"* || "${output}" == *"not authorized"* ]]; then
     echo "VS Code Marketplace authentication failed." >&2
-    echo "Rotate VSCE_PAT and ensure it has publisher access for 'xamltocsharpgenerator' with Marketplace Manage permissions." >&2
+    echo "Rotate VSCE_PAT and ensure it has publisher access for 'wieslawsoltes' with Marketplace Manage permissions." >&2
   fi
   exit $status
 fi

@@ -1,10 +1,15 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 using XamlToCSharpGenerator.Runtime;
 
 namespace XamlToCSharpGenerator.Tests.Runtime;
@@ -304,6 +309,410 @@ public class XamlSourceGenStudioRemoteDesignServerTests
         }
         finally
         {
+            server.Stop();
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Preview_Remote_Workspace_And_Live_Trees_Remain_Available_On_Same_Connection()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel x:Name=""RootPanel"">
+    <TextBox x:Name=""PreviewTextBox"" Text=""Hello"" />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/PreviewRemote.axaml";
+        var port = AllocateTcpPort();
+        var options = new SourceGenStudioOptions
+        {
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = port
+        };
+        var server = new XamlSourceGenStudioRemoteDesignServer(options);
+
+        var root = new UserControl
+        {
+            Width = 220,
+            Height = 120,
+            Content = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new TextBox
+                    {
+                        Name = "PreviewTextBox",
+                        Width = 120,
+                        Text = "Hello"
+                    }
+                }
+            }
+        };
+        var window = new Window
+        {
+            Width = 260,
+            Height = 180,
+            Content = root
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+            XamlSourceGenStudioManager.Enable(options);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+
+            server.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            JsonElement workspaceResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getWorkspace\"}");
+            Assert.True(workspaceResponse.GetProperty("ok").GetBoolean());
+            JsonElement workspacePayload = workspaceResponse.GetProperty("payload");
+            Assert.Equal(buildUri, workspacePayload.GetProperty("activeBuildUri").GetString());
+            Assert.True(workspacePayload.GetProperty("documents").EnumerateArray().Any());
+
+            JsonElement logicalTreeResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getLogicalTree\"}");
+            Assert.True(logicalTreeResponse.GetProperty("ok").GetBoolean());
+            string? elementId = FindElementIdByXamlName(logicalTreeResponse.GetProperty("payload").GetProperty("elements"), "PreviewTextBox");
+            Assert.False(string.IsNullOrWhiteSpace(elementId));
+
+            JsonElement overlayResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getOverlay\"}");
+            Assert.True(overlayResponse.GetProperty("ok").GetBoolean());
+            JsonElement overlayPayload = overlayResponse.GetProperty("payload");
+            Assert.Equal(buildUri, overlayPayload.GetProperty("activeBuildUri").GetString());
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            server.Stop();
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Preview_Remote_SelectElement_Accepts_Live_Tree_ElementId()
+    {
+        ResetRuntimeState();
+        var sourcePath = CreateTempFile(@"
+<UserControl xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <StackPanel x:Name=""RootPanel"">
+    <TextBox x:Name=""PreviewTextBox"" Text=""Hello"" />
+  </StackPanel>
+</UserControl>");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/PreviewSelectLiveNode.axaml";
+        var port = AllocateTcpPort();
+        var options = new SourceGenStudioOptions
+        {
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = port
+        };
+        var server = new XamlSourceGenStudioRemoteDesignServer(options);
+
+        var root = new UserControl
+        {
+            Width = 220,
+            Height = 120,
+            Content = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new TextBox
+                    {
+                        Name = "PreviewTextBox",
+                        Width = 120,
+                        Text = "Hello"
+                    }
+                }
+            }
+        };
+        var window = new Window
+        {
+            Width = 260,
+            Height = 180,
+            Content = root
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+            XamlSourceGenStudioManager.Enable(options);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+
+            server.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            JsonElement workspaceResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getWorkspace\"}");
+            Assert.True(workspaceResponse.GetProperty("ok").GetBoolean());
+            string? sourceElementId = FindElementIdByXamlName(
+                workspaceResponse.GetProperty("payload").GetProperty("elements"),
+                "PreviewTextBox");
+            Assert.False(string.IsNullOrWhiteSpace(sourceElementId));
+
+            JsonElement logicalTreeResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getLogicalTree\"}");
+            Assert.True(logicalTreeResponse.GetProperty("ok").GetBoolean());
+            string? liveElementId = FindElementIdByXamlName(
+                logicalTreeResponse.GetProperty("payload").GetProperty("elements"),
+                "PreviewTextBox");
+            Assert.False(string.IsNullOrWhiteSpace(liveElementId));
+            Assert.StartsWith("live:", liveElementId, StringComparison.Ordinal);
+
+            JsonElement selectElementResponse = await SendRequestAsync(
+                writer,
+                reader,
+                "{\"command\":\"selectElement\",\"payload\":{\"buildUri\":\"" + buildUri + "\",\"elementId\":\"" + liveElementId + "\"}}");
+            Assert.True(selectElementResponse.GetProperty("ok").GetBoolean());
+            Assert.Equal(
+                sourceElementId,
+                selectElementResponse.GetProperty("payload").GetProperty("selectedElementId").GetString());
+
+            JsonElement overlayResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getOverlay\"}");
+            Assert.True(overlayResponse.GetProperty("ok").GetBoolean());
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            server.Stop();
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Preview_Remote_GetWorkspace_Falls_Back_To_Preview_Bridge_When_Registrations_Are_Cleared()
+    {
+        ResetRuntimeState();
+        string sourcePath = CreateTempFile("""
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel x:Name="RootPanel">
+    <TextBox x:Name="PreviewTextBox" Text="Hello" />
+  </StackPanel>
+</UserControl>
+""");
+
+        string buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/PreviewWorkspaceFallback.axaml";
+        int port = AllocateTcpPort();
+        var options = new SourceGenStudioOptions
+        {
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = port
+        };
+        var server = new XamlSourceGenStudioRemoteDesignServer(options);
+
+        var root = new UserControl
+        {
+            Width = 220,
+            Height = 120,
+            Content = new StackPanel
+            {
+                Name = "RootPanel",
+                Children =
+                {
+                    new TextBox
+                    {
+                        Name = "PreviewTextBox",
+                        Width = 120,
+                        Text = "Hello"
+                    }
+                }
+            }
+        };
+        var window = new Window
+        {
+            Width = 260,
+            Height = 180,
+            Content = root
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+            XamlSourceGenStudioManager.Enable(options);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+            XamlSourceGenHotDesignManager.ClearRegistrations();
+
+            server.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            JsonElement workspaceResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getWorkspace\"}");
+            Assert.True(workspaceResponse.GetProperty("ok").GetBoolean());
+            JsonElement workspacePayload = workspaceResponse.GetProperty("payload");
+            Assert.Equal(buildUri, workspacePayload.GetProperty("activeBuildUri").GetString());
+            Assert.Single(workspacePayload.GetProperty("documents").EnumerateArray());
+
+            JsonElement logicalTreeResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getLogicalTree\"}");
+            Assert.True(logicalTreeResponse.GetProperty("ok").GetBoolean());
+            string? elementId = FindElementIdByXamlName(logicalTreeResponse.GetProperty("payload").GetProperty("elements"), "PreviewTextBox");
+            Assert.False(string.IsNullOrWhiteSpace(elementId));
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            server.Stop();
+            ResetRuntimeState();
+            TryDelete(sourcePath);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Preview_Remote_GetVisualTree_Succeeds_For_Deep_Live_Trees()
+    {
+        ResetRuntimeState();
+        const int depth = 40;
+        var sourcePath = CreateTempFile("""
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Border />
+</UserControl>
+""");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + "/DeepVisualTree.axaml";
+        var port = AllocateTcpPort();
+        var options = new SourceGenStudioOptions
+        {
+            EnableRemoteDesign = true,
+            RemoteHost = "127.0.0.1",
+            RemotePort = port
+        };
+        var server = new XamlSourceGenStudioRemoteDesignServer(options);
+        var root = BuildNestedBorderPreview(depth);
+        var window = new Window
+        {
+            Width = 320,
+            Height = 240,
+            Content = root
+        };
+
+        try
+        {
+            XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+            {
+                PersistChangesToSource = true,
+                WaitForHotReload = false
+            });
+            XamlSourceGenStudioManager.Enable(options);
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AxsgPreviewHotDesignSessionBridge.UpdateCurrentDocument(
+                root,
+                File.ReadAllText(sourcePath),
+                buildUri,
+                sourcePath);
+
+            server.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using var stream = client.GetStream();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            JsonElement visualTreeResponse = await SendRequestAsync(writer, reader, "{\"command\":\"getVisualTree\"}");
+            Assert.True(visualTreeResponse.GetProperty("ok").GetBoolean());
+
+            JsonElement elements = visualTreeResponse.GetProperty("payload").GetProperty("elements");
+            Assert.True(GetMaxElementDepth(elements) >= depth);
+        }
+        finally
+        {
+            if (window.IsVisible)
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+
             server.Stop();
             ResetRuntimeState();
             TryDelete(sourcePath);
@@ -763,7 +1172,23 @@ public class XamlSourceGenStudioRemoteDesignServerTests
         var responseLine = await reader.ReadLineAsync();
         Assert.False(string.IsNullOrWhiteSpace(responseLine));
 
-        using var responseJson = JsonDocument.Parse(responseLine!);
+        using var responseJson = JsonDocument.Parse(responseLine!, new JsonDocumentOptions
+        {
+            MaxDepth = JsonRpcSerializer.DefaultOptions.MaxDepth
+        });
+        return responseJson.RootElement.Clone();
+    }
+
+    private static async Task<JsonElement> SendRequestAsync(StreamWriter writer, StreamReader reader, string requestJson)
+    {
+        await writer.WriteLineAsync(requestJson);
+        var responseLine = await reader.ReadLineAsync();
+        Assert.False(string.IsNullOrWhiteSpace(responseLine));
+
+        using var responseJson = JsonDocument.Parse(responseLine!, new JsonDocumentOptions
+        {
+            MaxDepth = JsonRpcSerializer.DefaultOptions.MaxDepth
+        });
         return responseJson.RootElement.Clone();
     }
 
@@ -795,6 +1220,72 @@ public class XamlSourceGenStudioRemoteDesignServerTests
         }
 
         return null;
+    }
+
+    private static int GetMaxElementDepth(JsonElement elements)
+    {
+        if (elements.ValueKind != JsonValueKind.Array)
+        {
+            return -1;
+        }
+
+        var maxDepth = -1;
+        foreach (JsonElement element in elements.EnumerateArray())
+        {
+            maxDepth = Math.Max(maxDepth, GetMaxElementDepthForNode(element));
+        }
+
+        return maxDepth;
+    }
+
+    private static UserControl BuildNestedBorderPreview(int depth)
+    {
+        var root = new UserControl();
+        Border? current = null;
+        for (var index = depth - 1; index >= 0; index -= 1)
+        {
+            var next = new Border
+            {
+                Name = "Depth" + index
+            };
+
+            if (current is not null)
+            {
+                next.Child = current;
+            }
+            else
+            {
+                next.Child = new TextBlock
+                {
+                    Text = "Leaf"
+                };
+            }
+
+            current = next;
+        }
+
+        root.Content = current;
+        return root;
+    }
+
+    private static int GetMaxElementDepthForNode(JsonElement element)
+    {
+        int depth = element.TryGetProperty("depth", out JsonElement depthProperty)
+            ? depthProperty.GetInt32()
+            : -1;
+
+        if (!element.TryGetProperty("children", out JsonElement children) || children.ValueKind != JsonValueKind.Array)
+        {
+            return depth;
+        }
+
+        var maxDepth = depth;
+        foreach (JsonElement child in children.EnumerateArray())
+        {
+            maxDepth = Math.Max(maxDepth, GetMaxElementDepthForNode(child));
+        }
+
+        return maxDepth;
     }
 
     private static string EscapeJson(string value)
@@ -832,6 +1323,8 @@ public class XamlSourceGenStudioRemoteDesignServerTests
         XamlSourceGenHotDesignManager.ClearRegistrations();
         XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+        AxsgPreviewHotDesignSessionBridge.ClearCurrentDocument();
+        AxsgPreviewHotDesignSessionBridge.ClearHoverElement();
     }
 
     private static int AllocateTcpPort()

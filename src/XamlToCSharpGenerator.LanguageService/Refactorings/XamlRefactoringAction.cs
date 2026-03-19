@@ -4,4 +4,5 @@ public sealed record XamlRefactoringAction(
     string Title,
     string Kind,
     bool IsPreferred,
-    XamlRefactoringCommand Command);
+    XamlWorkspaceEdit? Edit = null,
+    XamlRefactoringCommand? Command = null);

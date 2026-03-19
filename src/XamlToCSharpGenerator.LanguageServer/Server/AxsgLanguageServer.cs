@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.LanguageService.Formatting;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Remote;
@@ -154,6 +155,10 @@ internal sealed class AxsgLanguageServer : IDisposable
                 await HandleDidCloseAsync(parameters, cancellationToken).ConfigureAwait(false);
                 break;
 
+            case "workspace/didChangeWatchedFiles":
+                HandleDidChangeWatchedFiles(parameters);
+                break;
+
             case "textDocument/completion":
                 if (hasId)
                 {
@@ -178,6 +183,78 @@ internal sealed class AxsgLanguageServer : IDisposable
                     var requestId = id.Clone();
                     var requestParameters = parameters.Clone();
                     QueueRequest(requestId, cancellationToken, token => HandleCodeActionAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/formatting":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleFormattingAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/foldingRange":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleFoldingRangesAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/selectionRange":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleSelectionRangesAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/linkedEditingRange":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleLinkedEditingRangeAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/documentHighlight":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleDocumentHighlightAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/documentLink":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleDocumentLinksAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "textDocument/signatureHelp":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleSignatureHelpAsync(requestId, requestParameters, token));
+                }
+                break;
+
+            case "workspace/symbol":
+                if (hasId)
+                {
+                    var requestId = id.Clone();
+                    var requestParameters = parameters.Clone();
+                    QueueRequest(requestId, cancellationToken, token => HandleWorkspaceSymbolsAsync(requestId, requestParameters, token));
                 }
                 break;
 
@@ -424,6 +501,49 @@ internal sealed class AxsgLanguageServer : IDisposable
 
         _engine.CloseDocument(uri);
         return PublishDiagnosticsAsync(uri, ImmutableArray<LanguageServiceDiagnostic>.Empty, cancellationToken);
+    }
+
+    private void HandleDidChangeWatchedFiles(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("changes", out JsonElement changesElement) ||
+            changesElement.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        List<string>? changedUris = null;
+        foreach (JsonElement change in changesElement.EnumerateArray())
+        {
+            if (!change.TryGetProperty("uri", out JsonElement uriElement) ||
+                uriElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            string uri = uriElement.GetString() ?? string.Empty;
+            if (!uri.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase) &&
+                !uri.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase) &&
+                !uri.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            changedUris ??= new List<string>();
+            changedUris.Add(uri);
+        }
+
+        if (changedUris is null || changedUris.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string openDocumentUri in _engine.HandleWatchedFileChanges(changedUris))
+        {
+            if (_openDocuments.TryGetValue(openDocumentUri, out var state))
+            {
+                QueueDiagnosticsUpdate(openDocumentUri, state.Version);
+            }
+        }
     }
 
     private void QueueDiagnosticsUpdate(string uri, int expectedVersion)
@@ -736,10 +856,244 @@ internal sealed class AxsgLanguageServer : IDisposable
         await SendResponseAsync(id, SerializeCodeActions(actions), cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task HandleFormattingAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var options = ParseFormattingOptions(parameters);
+        var edits = await _engine.FormatDocumentAsync(uri, options, cancellationToken).ConfigureAwait(false);
+        if (edits.IsDefaultOrEmpty)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var payload = new JsonArray();
+        foreach (var edit in edits)
+        {
+            payload.Add(new JsonObject
+            {
+                ["range"] = SerializeRange(edit.Range),
+                ["newText"] = edit.NewText
+            });
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleFoldingRangesAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var ranges = await _engine.GetFoldingRangesAsync(uri, cancellationToken).ConfigureAwait(false);
+        var payload = new JsonArray();
+        foreach (var range in ranges)
+        {
+            var foldingRange = new JsonObject
+            {
+                ["startLine"] = range.StartLine,
+                ["endLine"] = range.EndLine
+            };
+
+            if (!string.IsNullOrWhiteSpace(range.Kind))
+            {
+                foldingRange["kind"] = range.Kind;
+            }
+
+            payload.Add(foldingRange);
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleSelectionRangesAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPositions(parameters);
+        var ranges = await _engine.GetSelectionRangesAsync(
+            request.Uri,
+            request.Positions,
+            _options,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var range in ranges)
+        {
+            payload.Add(SerializeSelectionRange(range));
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleLinkedEditingRangeAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var linkedEditingRanges = await _engine.GetLinkedEditingRangesAsync(
+            request.Uri,
+            request.Position,
+            _options,
+            cancellationToken).ConfigureAwait(false);
+        if (linkedEditingRanges is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var ranges = new JsonArray();
+        foreach (var range in linkedEditingRanges.Ranges)
+        {
+            ranges.Add(SerializeRange(range));
+        }
+
+        var payload = new JsonObject
+        {
+            ["ranges"] = ranges
+        };
+
+        if (!string.IsNullOrWhiteSpace(linkedEditingRanges.WordPattern))
+        {
+            payload["wordPattern"] = linkedEditingRanges.WordPattern;
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleDocumentHighlightAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var highlights = await _engine.GetDocumentHighlightsAsync(
+            request.Uri,
+            request.Position,
+            _options,
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var highlight in highlights)
+        {
+            payload.Add(new JsonObject
+            {
+                ["range"] = SerializeRange(highlight.Range),
+                ["kind"] = (int)highlight.Kind
+            });
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
     private Task HandleDeclarationAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
     {
         // Declaration semantics are aligned with definition for XAML symbols.
         return HandleDefinitionAsync(id, parameters, cancellationToken);
+    }
+
+    private async Task HandleDocumentLinksAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var links = await _engine.GetDocumentLinksAsync(uri, _options, cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var link in links)
+        {
+            var linkObject = new JsonObject
+            {
+                ["range"] = SerializeRange(NormalizeTransportRange(link.Range)),
+                ["target"] = link.TargetUri
+            };
+
+            if (!string.IsNullOrWhiteSpace(link.Tooltip))
+            {
+                linkObject["tooltip"] = link.Tooltip;
+            }
+
+            payload.Add(linkObject);
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleWorkspaceSymbolsAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var query = parameters.TryGetProperty("query", out var queryElement) &&
+                    queryElement.ValueKind == JsonValueKind.String
+            ? queryElement.GetString() ?? string.Empty
+            : string.Empty;
+        var symbols = await _engine.GetWorkspaceSymbolsAsync(query, _options, cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonArray();
+        foreach (var symbol in symbols)
+        {
+            var symbolObject = new JsonObject
+            {
+                ["name"] = symbol.Name,
+                ["kind"] = (int)symbol.Kind,
+                ["location"] = new JsonObject
+                {
+                    ["uri"] = symbol.Uri,
+                    ["range"] = SerializeRange(NormalizeTransportRange(symbol.Range))
+                }
+            };
+
+            if (!string.IsNullOrWhiteSpace(symbol.ContainerName))
+            {
+                symbolObject["containerName"] = symbol.ContainerName;
+            }
+
+            payload.Add(symbolObject);
+        }
+
+        await SendResponseAsync(id, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleSignatureHelpAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var request = ParseTextDocumentPosition(parameters);
+        var signatureHelp = await _engine.GetSignatureHelpAsync(
+            request.Uri,
+            request.Position,
+            _options,
+            cancellationToken).ConfigureAwait(false);
+        if (signatureHelp is null)
+        {
+            await SendResponseAsync(id, value: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var signatures = new JsonArray();
+        foreach (var signature in signatureHelp.Signatures)
+        {
+            var parametersPayload = new JsonArray();
+            foreach (var parameter in signature.Parameters)
+            {
+                var parameterPayload = new JsonObject
+                {
+                    ["label"] = parameter.Label
+                };
+
+                if (!string.IsNullOrWhiteSpace(parameter.Documentation))
+                {
+                    parameterPayload["documentation"] = parameter.Documentation;
+                }
+
+                parametersPayload.Add(parameterPayload);
+            }
+
+            var signaturePayload = new JsonObject
+            {
+                ["label"] = signature.Label,
+                ["parameters"] = parametersPayload
+            };
+
+            if (!string.IsNullOrWhiteSpace(signature.Documentation))
+            {
+                signaturePayload["documentation"] = signature.Documentation;
+            }
+
+            signatures.Add(signaturePayload);
+        }
+
+        await SendResponseAsync(id, new JsonObject
+        {
+            ["signatures"] = signatures,
+            ["activeSignature"] = signatureHelp.ActiveSignature,
+            ["activeParameter"] = signatureHelp.ActiveParameter
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandlePrepareRenameAsync(JsonElement id, JsonElement parameters, CancellationToken cancellationToken)
@@ -1245,6 +1599,43 @@ internal sealed class AxsgLanguageServer : IDisposable
                     end.GetProperty("character").GetInt32())));
     }
 
+    private static TextDocumentPositionsRequest ParseTextDocumentPositions(JsonElement parameters)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString() ?? string.Empty;
+        var positionsElement = parameters.GetProperty("positions");
+        var positions = ImmutableArray.CreateBuilder<SourcePosition>(positionsElement.GetArrayLength());
+        foreach (var positionElement in positionsElement.EnumerateArray())
+        {
+            positions.Add(new SourcePosition(
+                positionElement.GetProperty("line").GetInt32(),
+                positionElement.GetProperty("character").GetInt32()));
+        }
+
+        return new TextDocumentPositionsRequest(uri, positions.MoveToImmutable());
+    }
+
+    private static XamlFormattingOptions ParseFormattingOptions(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("options", out var optionsElement) ||
+            optionsElement.ValueKind != JsonValueKind.Object)
+        {
+            return XamlFormattingOptions.Default;
+        }
+
+        var tabSize = optionsElement.TryGetProperty("tabSize", out var tabSizeElement) &&
+                      tabSizeElement.ValueKind == JsonValueKind.Number &&
+                      tabSizeElement.TryGetInt32(out var parsedTabSize)
+            ? parsedTabSize
+            : XamlFormattingOptions.Default.TabSize;
+
+        var insertSpaces = optionsElement.TryGetProperty("insertSpaces", out var insertSpacesElement) &&
+                           insertSpacesElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? insertSpacesElement.GetBoolean()
+            : XamlFormattingOptions.Default.InsertSpaces;
+
+        return new XamlFormattingOptions(tabSize, insertSpaces).Normalize();
+    }
+
     private static XamlInlayHintOptions ParseInlayHintOptions(JsonElement parameters)
     {
         if (!parameters.TryGetProperty("initializationOptions", out var initializationOptions) ||
@@ -1304,13 +1695,28 @@ internal sealed class AxsgLanguageServer : IDisposable
                 ["referencesProvider"] = true,
                 ["codeActionProvider"] = new JsonObject
                 {
-                    ["codeActionKinds"] = new JsonArray("refactor", "refactor.rename")
+                    ["codeActionKinds"] = new JsonArray("quickfix", "refactor", "refactor.rename", "refactor.rewrite")
                 },
                 ["renameProvider"] = new JsonObject
                 {
                     ["prepareProvider"] = true
                 },
+                ["documentHighlightProvider"] = true,
+                ["documentLinkProvider"] = new JsonObject
+                {
+                    ["resolveProvider"] = false
+                },
+                ["workspaceSymbolProvider"] = true,
+                ["signatureHelpProvider"] = new JsonObject
+                {
+                    ["triggerCharacters"] = new JsonArray("{", ",", "=", " "),
+                    ["retriggerCharacters"] = new JsonArray(",", "=", " ")
+                },
+                ["foldingRangeProvider"] = true,
+                ["selectionRangeProvider"] = true,
+                ["linkedEditingRangeProvider"] = true,
                 ["documentSymbolProvider"] = true,
+                ["documentFormattingProvider"] = true,
                 ["inlayHintProvider"] = true,
                 ["semanticTokensProvider"] = new JsonObject
                 {
@@ -1402,28 +1808,43 @@ internal sealed class AxsgLanguageServer : IDisposable
         var payload = new JsonArray();
         foreach (var action in actions)
         {
-            var commandArguments = new JsonArray
+            JsonArray? commandArguments = null;
+            if (action.Command is not null)
             {
-                new JsonObject
+                commandArguments = new JsonArray
                 {
-                    ["uri"] = action.Command.Uri,
-                    ["position"] = SerializePosition(action.Command.Position),
-                    ["refactoringId"] = action.Command.RefactoringId
-                }
-            };
+                    new JsonObject
+                    {
+                        ["uri"] = action.Command.Uri,
+                        ["position"] = SerializePosition(action.Command.Position),
+                        ["refactoringId"] = action.Command.RefactoringId
+                    }
+                };
+            }
 
-            payload.Add(new JsonObject
+            var actionPayload = new JsonObject
             {
                 ["title"] = action.Title,
                 ["kind"] = action.Kind,
-                ["isPreferred"] = action.IsPreferred,
-                ["command"] = new JsonObject
+                ["isPreferred"] = action.IsPreferred
+            };
+
+            if (action.Edit is not null && action.Edit.HasChanges)
+            {
+                actionPayload["edit"] = SerializeWorkspaceEdit(action.Edit);
+            }
+
+            if (action.Command is not null && commandArguments is not null)
+            {
+                actionPayload["command"] = new JsonObject
                 {
                     ["title"] = action.Title,
                     ["command"] = action.Command.Name,
                     ["arguments"] = commandArguments
-                }
-            });
+                };
+            }
+
+            payload.Add(actionPayload);
         }
 
         return payload;
@@ -1487,6 +1908,21 @@ internal sealed class AxsgLanguageServer : IDisposable
             ["selectionRange"] = SerializeRange(symbol.SelectionRange),
             ["children"] = children
         };
+    }
+
+    private static JsonObject SerializeSelectionRange(XamlSelectionRange range)
+    {
+        var payload = new JsonObject
+        {
+            ["range"] = SerializeRange(range.Range)
+        };
+
+        if (range.Parent is not null)
+        {
+            payload["parent"] = SerializeSelectionRange(range.Parent);
+        }
+
+        return payload;
     }
 
     private static int[] EncodeSemanticTokens(ImmutableArray<XamlSemanticToken> tokens)
@@ -1634,4 +2070,5 @@ internal sealed class AxsgLanguageServer : IDisposable
     private readonly record struct DocumentState(string Text, int Version);
     private sealed record TextDocumentPositionRequest(string Uri, SourcePosition Position);
     private sealed record TextDocumentRangeRequest(string Uri, SourceRange Range);
+    private sealed record TextDocumentPositionsRequest(string Uri, ImmutableArray<SourcePosition> Positions);
 }

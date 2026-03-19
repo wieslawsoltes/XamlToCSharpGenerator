@@ -3,6 +3,7 @@ const fs = require('fs');
 const vscode = require('vscode');
 const lc = require('vscode-languageclient/node');
 const { AvaloniaPreviewController } = require('./preview-support');
+const { DesignSessionController } = require('./design-support');
 
 let client;
 let clientStartPromise;
@@ -30,6 +31,7 @@ const VIRTUAL_LOADING_DOCUMENT_MIN_LINES = 256;
 const VIRTUAL_LOADING_DOCUMENT_MIN_COLUMNS = 256;
 let suppressCSharpRenameProvider = false;
 let previewController;
+let designController;
 let runtimeGeneration = 0;
 let shutdownPromise;
 
@@ -104,6 +106,7 @@ async function shutdownExtensionRuntime() {
   beginRuntimeGeneration();
 
   const existingPreviewController = previewController;
+  const existingDesignController = designController;
   const existingClient = client;
   const existingStatusBarItem = statusBarItem;
   const existingSourceLinkChangeEmitter = sourceLinkChangeEmitter;
@@ -112,6 +115,7 @@ async function shutdownExtensionRuntime() {
   const existingOutputChannel = outputChannel;
 
   previewController = undefined;
+  designController = undefined;
   client = undefined;
   clientStartPromise = undefined;
   statusBarItem = undefined;
@@ -130,6 +134,12 @@ async function shutdownExtensionRuntime() {
       } catch {
         // Best effort shutdown.
       }
+    }
+
+    try {
+      existingDesignController?.dispose?.();
+    } catch {
+      // Best effort shutdown.
     }
 
     if (existingClient) {
@@ -1159,7 +1169,10 @@ function resolveClientOptions(context) {
       { scheme: 'file', language: 'xaml' }
     ],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.{xaml,axaml}')
+      fileEvents: [
+        vscode.workspace.createFileSystemWatcher('**/*.{xaml,axaml}'),
+        vscode.workspace.createFileSystemWatcher('**/*.csproj')
+      ]
     },
     outputChannel,
     initializationOptions: {
@@ -1617,6 +1630,9 @@ async function activate(context) {
     async argument => {
       await executeCrossLanguageRenameCommand(argument);
     }));
+  context.subscriptions.push(vscode.commands.registerCommand('axsg.design.focus', async () => {
+    await vscode.commands.executeCommand('workbench.view.extension.axsgDesign');
+  }));
   previewController = new AvaloniaPreviewController({
     context,
     ensureClientStarted: tryEnsureClientStarted,
@@ -1625,6 +1641,13 @@ async function activate(context) {
     workspaceRoot: resolveWorkspaceRoot()
   });
   previewController.register(context);
+  designController = new DesignSessionController({
+    context,
+    previewController,
+    getOutputChannel,
+    isXamlDocument
+  });
+  designController.register(context);
   context.subscriptions.push(vscode.languages.registerCodeActionsProvider(
     [
       { scheme: 'file', language: 'csharp' }

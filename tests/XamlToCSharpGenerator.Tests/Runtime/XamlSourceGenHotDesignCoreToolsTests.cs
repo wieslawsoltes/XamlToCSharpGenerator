@@ -148,6 +148,49 @@ public class XamlSourceGenHotDesignCoreToolsTests
     }
 
     [Fact]
+    public void WorkspaceSnapshot_Uses_Prefixed_Snippet_For_Project_Control_Toolbox_Items()
+    {
+        ResetRuntimeState();
+        XamlSourceGenHotDesignManager.Enable(new SourceGenHotDesignOptions
+        {
+            PersistChangesToSource = true,
+            WaitForHotReload = false
+        });
+
+        var sourcePath = CreateTempFile(@"
+<local:HotDesignProjectControl xmlns=""https://github.com/avaloniaui""
+                               xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+                               xmlns:local=""clr-namespace:XamlToCSharpGenerator.Tests.Runtime;assembly=XamlToCSharpGenerator.Tests"" />");
+
+        var buildUri = "avares://tests/" + Guid.NewGuid().ToString("N") + ".axaml";
+        try
+        {
+            XamlSourceGenHotDesignManager.Register(
+                new HotDesignProjectControl(),
+                static _ => { },
+                new SourceGenHotDesignRegistrationOptions
+                {
+                    BuildUri = buildUri,
+                    SourcePath = sourcePath
+                });
+
+            var snapshot = XamlSourceGenHotDesignCoreTools.GetWorkspaceSnapshot(buildUri);
+            var projectCategory = Assert.Single(snapshot.Toolbox.Where(
+                category => string.Equals(category.Name, "Project", StringComparison.OrdinalIgnoreCase)));
+            var toolboxItem = Assert.Single(projectCategory.Items.Where(item => item.Name == nameof(HotDesignProjectControl)));
+            var expectedNamespace = "clr-namespace:" + typeof(HotDesignProjectControl).Namespace + ";assembly=" +
+                                    typeof(HotDesignProjectControl).Assembly.GetName().Name;
+
+            Assert.Contains("<project:" + nameof(HotDesignProjectControl), toolboxItem.XamlSnippet, StringComparison.Ordinal);
+            Assert.Contains("xmlns:project=\"" + expectedNamespace + "\"", toolboxItem.XamlSnippet, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+        }
+    }
+
+    [Fact]
     public void WorkspaceSnapshot_Uses_Resolved_Document_BuildUri_When_Requested_Uri_Is_Stale()
     {
         ResetRuntimeState();
@@ -829,4 +872,7 @@ public class XamlSourceGenHotDesignCoreToolsTests
     private sealed class HotDesignTargetView;
 
     private sealed class HotDesignTargetViewAlt;
+
 }
+
+public sealed class HotDesignProjectControl : Control;

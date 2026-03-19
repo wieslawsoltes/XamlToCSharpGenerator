@@ -342,6 +342,7 @@ public sealed class SourceGeneratedPreviewXamlPreprocessorTests
             var assembly = loadedAssemblies[index];
             if (assembly.IsDynamic ||
                 string.IsNullOrWhiteSpace(assembly.Location) ||
+                !File.Exists(assembly.Location) ||
                 !seenPaths.Add(assembly.Location))
             {
                 continue;

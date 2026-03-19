@@ -28,7 +28,7 @@ Use [Package and Assembly](package-and-assembly/) when you need the concrete map
 | `XamlToCSharpGenerator.LanguageServer.Tool` | `dotnet tool` LSP host | you want the standalone language server | [Guide](language-server-tool/) |
 | `XamlToCSharpGenerator.McpServer.Tool` | `dotnet tool` MCP host | you want the standalone workspace MCP server | [Guide](mcp-server-tool/) |
 | `XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based editor | you need an in-app AXAML editor control | [Guide](editor-avalonia/) |
-| `xamltocsharpgenerator.axsg-language-server` | VS Code extension | you want the bundled VS Code client/server experience | [Guide](vscode-extension/) |
+| `wieslawsoltes.axsg-language-server` | VS Code extension | you want the bundled VS Code client/server experience | [Guide](vscode-extension/) |
 
 Related:
 

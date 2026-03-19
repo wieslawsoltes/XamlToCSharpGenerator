@@ -79,14 +79,28 @@ public sealed class AxsgRuntimeHotDesignService
         RequireRegisteredBuildUri(resolvedBuildUri);
 
         SourceGenHotDesignWorkspaceSnapshot workspaceBeforeSelection = _runtimeQueryService.GetHotDesignWorkspace(resolvedBuildUri, search: null);
-        if (!ContainsElementId(workspaceBeforeSelection.Elements, elementId))
+        string resolvedElementId = ResolveElementSelectionId(
+            resolvedBuildUri,
+            elementId,
+            workspaceBeforeSelection,
+            out string selectionBuildUri);
+
+        if (!ContainsElementId(workspaceBeforeSelection.Elements, resolvedElementId))
         {
-            throw new InvalidOperationException(
-                "No element with id '" + elementId + "' exists in buildUri '" + resolvedBuildUri + "'.");
+            if (!string.Equals(selectionBuildUri, resolvedBuildUri, StringComparison.OrdinalIgnoreCase))
+            {
+                workspaceBeforeSelection = _runtimeQueryService.GetHotDesignWorkspace(selectionBuildUri, search: null);
+            }
+
+            if (!ContainsElementId(workspaceBeforeSelection.Elements, resolvedElementId))
+            {
+                throw new InvalidOperationException(
+                    "No element with id '" + elementId.Trim() + "' exists in buildUri '" + resolvedBuildUri + "'.");
+            }
         }
 
-        XamlSourceGenHotDesignTool.SelectElement(resolvedBuildUri, elementId);
-        return _runtimeQueryService.GetHotDesignWorkspace(resolvedBuildUri, search: null);
+        XamlSourceGenHotDesignTool.SelectElement(selectionBuildUri, resolvedElementId);
+        return _runtimeQueryService.GetHotDesignWorkspace(selectionBuildUri, search: null);
     }
 
     /// <summary>
@@ -175,6 +189,31 @@ public sealed class AxsgRuntimeHotDesignService
             .RedoAsync(buildUri, cancellationToken)
             .ConfigureAwait(false);
         return result;
+    }
+
+    /// <summary>
+    /// Resolves the hot-design element at a preview point and optionally updates the runtime selection.
+    /// </summary>
+    public SourceGenHotDesignHitTestResult SelectAtPoint(
+        double x,
+        double y,
+        string? buildUri = null,
+        bool updateSelection = true,
+        SourceGenHotDesignHitTestMode? mode = null)
+    {
+        SourceGenHotDesignHitTestMode resolvedMode = mode ?? _runtimeQueryService.GetHotDesignHitTestMode();
+        string? resolvedBuildUri = buildUri;
+        if (string.IsNullOrWhiteSpace(resolvedBuildUri))
+        {
+            resolvedBuildUri = _runtimeQueryService.GetHotDesignWorkspace().ActiveBuildUri;
+        }
+
+        return AxsgPreviewHotDesignQuerySupport.HitTestAtPoint(
+            x,
+            y,
+            resolvedBuildUri,
+            resolvedMode,
+            updateSelection);
     }
 
     /// <summary>
@@ -298,5 +337,102 @@ public sealed class AxsgRuntimeHotDesignService
         }
 
         return false;
+    }
+
+    private string ResolveElementSelectionId(
+        string resolvedBuildUri,
+        string requestedElementId,
+        SourceGenHotDesignWorkspaceSnapshot workspace,
+        out string selectionBuildUri)
+    {
+        string trimmedElementId = requestedElementId.Trim();
+        selectionBuildUri = resolvedBuildUri;
+
+        if (ContainsElementId(workspace.Elements, trimmedElementId))
+        {
+            return trimmedElementId;
+        }
+
+        if (TryResolveLiveElementSelection(
+                resolvedBuildUri,
+                trimmedElementId,
+                out string? resolvedLiveBuildUri,
+                out string? resolvedLiveElementId))
+        {
+            selectionBuildUri = string.IsNullOrWhiteSpace(resolvedLiveBuildUri)
+                ? resolvedBuildUri
+                : resolvedLiveBuildUri;
+            return resolvedLiveElementId!;
+        }
+
+        throw new InvalidOperationException(
+            "No element with id '" + trimmedElementId + "' exists in buildUri '" + resolvedBuildUri + "'.");
+    }
+
+    private static bool TryResolveLiveElementSelection(
+        string buildUri,
+        string requestedElementId,
+        out string? resolvedBuildUri,
+        out string? resolvedElementId)
+    {
+        resolvedBuildUri = null;
+        resolvedElementId = null;
+
+        if (!requestedElementId.StartsWith("live:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        SourceGenHotDesignElementNode? matched = FindLiveElement(
+            AxsgPreviewHotDesignQuerySupport.GetLiveTree(
+                SourceGenHotDesignHitTestMode.Logical,
+                buildUri,
+                selectedElementId: null,
+                search: null).Elements,
+            requestedElementId) ?? FindLiveElement(
+            AxsgPreviewHotDesignQuerySupport.GetLiveTree(
+                SourceGenHotDesignHitTestMode.Visual,
+                buildUri,
+                selectedElementId: null,
+                search: null).Elements,
+            requestedElementId);
+
+        if (matched is null || string.IsNullOrWhiteSpace(matched.SourceElementId))
+        {
+            return false;
+        }
+
+        resolvedBuildUri = string.IsNullOrWhiteSpace(matched.SourceBuildUri)
+            ? buildUri
+            : matched.SourceBuildUri;
+        resolvedElementId = matched.SourceElementId;
+        return true;
+    }
+
+    private static SourceGenHotDesignElementNode? FindLiveElement(
+        IReadOnlyList<SourceGenHotDesignElementNode> elements,
+        string requestedElementId)
+    {
+        if (elements.Count == 0)
+        {
+            return null;
+        }
+
+        for (int index = 0; index < elements.Count; index++)
+        {
+            SourceGenHotDesignElementNode element = elements[index];
+            if (string.Equals(element.Id, requestedElementId, StringComparison.Ordinal))
+            {
+                return element;
+            }
+
+            SourceGenHotDesignElementNode? child = FindLiveElement(element.Children, requestedElementId);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
     }
 }

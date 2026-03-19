@@ -3221,61 +3221,16 @@ public sealed class XamlReferenceService
         ImmutableArray<XamlReferenceLocation>.Builder builder)
     {
         var added = 0;
-
-        foreach (var resource in analysis.ParsedDocument!.Resources)
+        foreach (var range in XamlResourceDeclarationRangeService.FindDeclarationRanges(analysis, identifier))
         {
-            if (TryAddDeclaration(resource.Key, resource.Line, resource.Column, identifier, analysis.Document.FilePath, builder))
-            {
-                added++;
-            }
-        }
-
-        foreach (var template in analysis.ParsedDocument.Templates)
-        {
-            if (TryAddDeclaration(template.Key, template.Line, template.Column, identifier, analysis.Document.FilePath, builder))
-            {
-                added++;
-            }
-        }
-
-        foreach (var style in analysis.ParsedDocument.Styles)
-        {
-            if (TryAddDeclaration(style.Key, style.Line, style.Column, identifier, analysis.Document.FilePath, builder))
-            {
-                added++;
-            }
-        }
-
-        foreach (var controlTheme in analysis.ParsedDocument.ControlThemes)
-        {
-            if (TryAddDeclaration(controlTheme.Key, controlTheme.Line, controlTheme.Column, identifier, analysis.Document.FilePath, builder))
-            {
-                added++;
-            }
+            builder.Add(new XamlReferenceLocation(
+                UriPathHelper.ToDocumentUri(analysis.Document.FilePath),
+                range,
+                IsDeclaration: true));
+            added++;
         }
 
         return added;
-    }
-
-    private static bool TryAddDeclaration(
-        string? key,
-        int line,
-        int column,
-        string identifier,
-        string filePath,
-        ImmutableArray<XamlReferenceLocation>.Builder builder)
-    {
-        if (string.IsNullOrWhiteSpace(key) || !string.Equals(key, identifier, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var range = CreateRange(line, column, key.Length);
-        builder.Add(new XamlReferenceLocation(
-            UriPathHelper.ToDocumentUri(filePath),
-            range,
-            IsDeclaration: true));
-        return true;
     }
 
     private static SourceRange CreateRange(int line, int column, int length)

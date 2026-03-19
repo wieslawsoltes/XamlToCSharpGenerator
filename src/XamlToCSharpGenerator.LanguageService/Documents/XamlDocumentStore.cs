@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.IO;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -60,6 +61,22 @@ public sealed class XamlDocumentStore
 
         _filePathToUri.TryRemove(NormalizePath(document.FilePath), out _);
         return true;
+    }
+
+    public ImmutableArray<LanguageServiceDocument> GetOpenDocuments()
+    {
+        if (_documents.IsEmpty)
+        {
+            return ImmutableArray<LanguageServiceDocument>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<LanguageServiceDocument>(_documents.Count);
+        foreach (var document in _documents.Values)
+        {
+            builder.Add(document);
+        }
+
+        return builder.ToImmutable();
     }
 
     private static string NormalizePath(string path)

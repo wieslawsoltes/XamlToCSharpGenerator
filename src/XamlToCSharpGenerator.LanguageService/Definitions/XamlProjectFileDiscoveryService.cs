@@ -16,12 +16,19 @@ internal static class XamlProjectFileDiscoveryService
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
+    private static readonly Regex ItemMetadataPattern = new("%\\((?<name>[^)]+)\\)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly ConcurrentDictionary<string, CachedProjectFileList> ProjectFileListCache =
         new(PathComparer);
     private static readonly ConcurrentDictionary<string, CachedWorkspaceProjectList> WorkspaceProjectListCache =
         new(PathComparer);
 
     internal readonly record struct ProjectXamlFileEntry(string FilePath, string TargetPath);
+
+    public static void InvalidateCaches()
+    {
+        ProjectFileListCache.Clear();
+        WorkspaceProjectListCache.Clear();
+    }
 
     public static ImmutableArray<string> DiscoverProjectXamlFilePaths(
         string? projectPath,
@@ -44,6 +51,26 @@ internal static class XamlProjectFileDiscoveryService
         foreach (var includePath in GetCachedProjectXamlFileList(resolvedProjectPath))
         {
             AddCandidatePath(builder, seen, includePath);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    public static ImmutableArray<string> DiscoverWorkspaceXamlFilePaths(string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var seen = new HashSet<string>(PathComparer);
+        foreach (var projectPath in GetCachedWorkspaceProjectPaths(workspaceRoot))
+        {
+            foreach (var filePath in GetCachedProjectXamlFileList(projectPath))
+            {
+                AddCandidatePath(builder, seen, filePath);
+            }
         }
 
         return builder.ToImmutable();
@@ -107,6 +134,45 @@ internal static class XamlProjectFileDiscoveryService
 
         var normalizedFilePath = NormalizePath(filePath);
         foreach (var candidate in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        {
+            if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
+            {
+                continue;
+            }
+
+            entry = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool TryResolveExplicitProjectXamlEntryByFilePath(
+        string? projectPath,
+        string? currentFilePath,
+        string filePath,
+        out ProjectXamlFileEntry entry)
+    {
+        entry = default;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        var resolvedProjectPath = ResolveProjectPath(projectPath, currentFilePath);
+        if (resolvedProjectPath is null)
+        {
+            return false;
+        }
+
+        var projectDirectory = Path.GetDirectoryName(resolvedProjectPath);
+        if (string.IsNullOrWhiteSpace(projectDirectory) || !Directory.Exists(projectDirectory))
+        {
+            return false;
+        }
+
+        var normalizedFilePath = NormalizePath(filePath);
+        foreach (var candidate in EnumerateExplicitXamlIncludes(resolvedProjectPath, projectDirectory))
         {
             if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
             {
@@ -633,7 +699,7 @@ internal static class XamlProjectFileDiscoveryService
     {
         if (!string.IsNullOrWhiteSpace(targetPathMetadata))
         {
-            return NormalizeTargetPath(targetPathMetadata);
+            return NormalizeTargetPath(ExpandTargetPathMetadata(projectDirectory, includeValue, includePath, targetPathMetadata));
         }
 
         if (includeValue.IndexOfAny(['*', '?']) >= 0)
@@ -642,6 +708,99 @@ internal static class XamlProjectFileDiscoveryService
         }
 
         return NormalizeTargetPath(includeValue);
+    }
+
+    private static string ExpandTargetPathMetadata(
+        string projectDirectory,
+        string includeValue,
+        string includePath,
+        string targetPathMetadata)
+    {
+        if (targetPathMetadata.IndexOf("%(", StringComparison.Ordinal) < 0)
+        {
+            return targetPathMetadata;
+        }
+
+        var fullIncludePath = NormalizePath(includePath);
+        var relativePath = NormalizeTargetPath(Path.GetRelativePath(projectDirectory, fullIncludePath));
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Identity"] = includeValue.IndexOfAny(['*', '?']) >= 0 ? relativePath : NormalizeTargetPath(includeValue),
+            ["Filename"] = Path.GetFileNameWithoutExtension(fullIncludePath),
+            ["Extension"] = Path.GetExtension(fullIncludePath),
+            ["RecursiveDir"] = BuildRecursiveDirectory(projectDirectory, includeValue, fullIncludePath),
+            ["RelativeDir"] = BuildRelativeDirectory(projectDirectory, fullIncludePath),
+            ["Directory"] = BuildAbsoluteDirectory(fullIncludePath),
+            ["FullPath"] = fullIncludePath,
+            ["RootDir"] = Path.GetPathRoot(fullIncludePath) ?? string.Empty
+        };
+
+        return ItemMetadataPattern.Replace(targetPathMetadata, match =>
+        {
+            var metadataName = match.Groups["name"].Value;
+            return metadata.TryGetValue(metadataName, out var value)
+                ? value
+                : string.Empty;
+        });
+    }
+
+    private static string BuildRecursiveDirectory(
+        string projectDirectory,
+        string includeValue,
+        string includePath)
+    {
+        if (includeValue.IndexOfAny(['*', '?']) < 0)
+        {
+            return string.Empty;
+        }
+
+        var searchRoot = ResolveSearchRoot(projectDirectory, includeValue);
+        if (string.IsNullOrWhiteSpace(searchRoot))
+        {
+            return string.Empty;
+        }
+
+        var fileDirectory = Path.GetDirectoryName(includePath);
+        if (string.IsNullOrWhiteSpace(fileDirectory))
+        {
+            return string.Empty;
+        }
+
+        var relativeDirectory = NormalizeTargetPath(Path.GetRelativePath(searchRoot, fileDirectory));
+        return string.Equals(relativeDirectory, ".", StringComparison.Ordinal)
+            ? string.Empty
+            : AppendDirectorySeparator(relativeDirectory);
+    }
+
+    private static string BuildRelativeDirectory(string projectDirectory, string includePath)
+    {
+        var relativePath = NormalizeTargetPath(Path.GetRelativePath(projectDirectory, includePath));
+        var lastSeparatorIndex = relativePath.LastIndexOf('/');
+        return lastSeparatorIndex < 0
+            ? string.Empty
+            : AppendDirectorySeparator(relativePath.Substring(0, lastSeparatorIndex));
+    }
+
+    private static string BuildAbsoluteDirectory(string includePath)
+    {
+        var directory = Path.GetDirectoryName(includePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return string.Empty;
+        }
+
+        return AppendDirectorySeparator(directory.Replace('\\', '/'));
+    }
+
+    private static string AppendDirectorySeparator(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.EndsWith("/", StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        return value + "/";
     }
 
     private static void AddOrUpdateEntry(

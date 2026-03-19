@@ -39,6 +39,66 @@ public static class AxsgStudioRemoteProtocol
     public const string ApplyDocumentTextCommand = "applydocumenttext";
 
     /// <summary>
+    /// The logical live-tree query command name.
+    /// </summary>
+    public const string GetLogicalTreeCommand = "getlogicaltree";
+
+    /// <summary>
+    /// The visual live-tree query command name.
+    /// </summary>
+    public const string GetVisualTreeCommand = "getvisualtree";
+
+    /// <summary>
+    /// The overlay snapshot query command name.
+    /// </summary>
+    public const string GetOverlayCommand = "getoverlay";
+
+    /// <summary>
+    /// The point hit-test command name.
+    /// </summary>
+    public const string SelectAtPointCommand = "selectatpoint";
+
+    /// <summary>
+    /// The apply-property-update command name.
+    /// </summary>
+    public const string ApplyPropertyUpdateCommand = "applypropertyupdate";
+
+    /// <summary>
+    /// The insert-element command name.
+    /// </summary>
+    public const string InsertElementCommand = "insertelement";
+
+    /// <summary>
+    /// The remove-element command name.
+    /// </summary>
+    public const string RemoveElementCommand = "removeelement";
+
+    /// <summary>
+    /// The undo command name.
+    /// </summary>
+    public const string UndoCommand = "undo";
+
+    /// <summary>
+    /// The redo command name.
+    /// </summary>
+    public const string RedoCommand = "redo";
+
+    /// <summary>
+    /// The set-workspace-mode command name.
+    /// </summary>
+    public const string SetWorkspaceModeCommand = "setworkspacemode";
+
+    /// <summary>
+    /// The set-hit-test-mode command name.
+    /// </summary>
+    public const string SetHitTestModeCommand = "sethittestmode";
+
+    /// <summary>
+    /// The set-property-filter-mode command name.
+    /// </summary>
+    public const string SetPropertyFilterModeCommand = "setpropertyfiltermode";
+
+    /// <summary>
     /// Parses a single line-delimited studio remote-design request.
     /// </summary>
     public static AxsgStudioRemoteRequestEnvelope ParseRequestLine(string json)
@@ -106,6 +166,71 @@ public static class AxsgStudioRemoteProtocol
             TryGetString(payload, "xamlText"));
     }
 
+    public static AxsgStudioLiveTreeQueryRequest ParseLiveTreeQueryRequest(JsonElement payload)
+    {
+        return new AxsgStudioLiveTreeQueryRequest(
+            NormalizeOptionalText(TryGetString(payload, "buildUri")),
+            NormalizeOptionalText(TryGetString(payload, "search")));
+    }
+
+    public static AxsgStudioSelectAtPointRequest ParseSelectAtPointRequest(JsonElement payload)
+    {
+        return new AxsgStudioSelectAtPointRequest(
+            NormalizeOptionalText(TryGetString(payload, "buildUri")),
+            TryGetDouble(payload, "x"),
+            TryGetDouble(payload, "y"),
+            TryGetBoolean(payload, "updateSelection"),
+            NormalizeOptionalText(TryGetString(payload, "hitTestMode")));
+    }
+
+    public static AxsgStudioApplyPropertyUpdateRequest ParseApplyPropertyUpdateRequest(JsonElement payload)
+    {
+        return new AxsgStudioApplyPropertyUpdateRequest(
+            NormalizeOptionalText(TryGetString(payload, "buildUri")),
+            NormalizeOptionalText(TryGetString(payload, "targetTypeName")),
+            NormalizeOptionalText(TryGetString(payload, "elementId")),
+            NormalizeOptionalText(TryGetString(payload, "propertyName")),
+            NormalizeOptionalText(TryGetString(payload, "propertyValue")),
+            TryGetBoolean(payload, "removeProperty"),
+            TryGetBoolean(payload, "persistChangesToSource"),
+            TryGetBoolean(payload, "waitForHotReload"),
+            TryGetBoolean(payload, "fallbackToRuntimeApplyOnTimeout"));
+    }
+
+    public static AxsgStudioInsertElementRequest ParseInsertElementRequest(JsonElement payload)
+    {
+        return new AxsgStudioInsertElementRequest(
+            NormalizeOptionalText(TryGetString(payload, "buildUri")),
+            NormalizeOptionalText(TryGetString(payload, "targetTypeName")),
+            NormalizeOptionalText(TryGetString(payload, "parentElementId")),
+            NormalizeOptionalText(TryGetString(payload, "elementName")),
+            NormalizeOptionalText(TryGetString(payload, "xamlFragment")),
+            TryGetBoolean(payload, "persistChangesToSource"),
+            TryGetBoolean(payload, "waitForHotReload"),
+            TryGetBoolean(payload, "fallbackToRuntimeApplyOnTimeout"));
+    }
+
+    public static AxsgStudioRemoveElementRequest ParseRemoveElementRequest(JsonElement payload)
+    {
+        return new AxsgStudioRemoveElementRequest(
+            NormalizeOptionalText(TryGetString(payload, "buildUri")),
+            NormalizeOptionalText(TryGetString(payload, "targetTypeName")),
+            NormalizeOptionalText(TryGetString(payload, "elementId")),
+            TryGetBoolean(payload, "persistChangesToSource"),
+            TryGetBoolean(payload, "waitForHotReload"),
+            TryGetBoolean(payload, "fallbackToRuntimeApplyOnTimeout"));
+    }
+
+    public static AxsgStudioBuildUriRequest ParseBuildUriRequest(JsonElement payload)
+    {
+        return new AxsgStudioBuildUriRequest(NormalizeOptionalText(TryGetString(payload, "buildUri")));
+    }
+
+    public static AxsgStudioModeRequest ParseModeRequest(JsonElement payload, string propertyName = "mode")
+    {
+        return new AxsgStudioModeRequest(NormalizeOptionalText(TryGetString(payload, propertyName)));
+    }
+
     /// <summary>
     /// Creates a successful studio remote response envelope.
     /// </summary>
@@ -152,6 +277,37 @@ public static class AxsgStudioRemoteProtocol
         }
 
         return property.GetString();
+    }
+
+    private static double? TryGetDouble(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Number when property.TryGetDouble(out double numberValue) => numberValue,
+            _ => null
+        };
+    }
+
+    private static bool? TryGetBoolean(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
     }
 
     private static string? NormalizeOptionalText(string? value)
@@ -204,3 +360,66 @@ public sealed record AxsgStudioSelectElementRequest(string? BuildUri, string? El
 /// Represents an apply-document-text request payload.
 /// </summary>
 public sealed record AxsgStudioApplyDocumentTextRequest(string? BuildUri, string? XamlText);
+
+/// <summary>
+/// Represents a live-tree query request payload.
+/// </summary>
+public sealed record AxsgStudioLiveTreeQueryRequest(string? BuildUri, string? Search);
+
+/// <summary>
+/// Represents a point hit-test request payload.
+/// </summary>
+public sealed record AxsgStudioSelectAtPointRequest(
+    string? BuildUri,
+    double? X,
+    double? Y,
+    bool? UpdateSelection,
+    string? HitTestMode);
+
+/// <summary>
+/// Represents an apply-property-update request payload.
+/// </summary>
+public sealed record AxsgStudioApplyPropertyUpdateRequest(
+    string? BuildUri,
+    string? TargetTypeName,
+    string? ElementId,
+    string? PropertyName,
+    string? PropertyValue,
+    bool? RemoveProperty,
+    bool? PersistChangesToSource,
+    bool? WaitForHotReload,
+    bool? FallbackToRuntimeApplyOnTimeout);
+
+/// <summary>
+/// Represents an insert-element request payload.
+/// </summary>
+public sealed record AxsgStudioInsertElementRequest(
+    string? BuildUri,
+    string? TargetTypeName,
+    string? ParentElementId,
+    string? ElementName,
+    string? XamlFragment,
+    bool? PersistChangesToSource,
+    bool? WaitForHotReload,
+    bool? FallbackToRuntimeApplyOnTimeout);
+
+/// <summary>
+/// Represents a remove-element request payload.
+/// </summary>
+public sealed record AxsgStudioRemoveElementRequest(
+    string? BuildUri,
+    string? TargetTypeName,
+    string? ElementId,
+    bool? PersistChangesToSource,
+    bool? WaitForHotReload,
+    bool? FallbackToRuntimeApplyOnTimeout);
+
+/// <summary>
+/// Represents a build-uri-only request payload.
+/// </summary>
+public sealed record AxsgStudioBuildUriRequest(string? BuildUri);
+
+/// <summary>
+/// Represents a mode mutation request payload.
+/// </summary>
+public sealed record AxsgStudioModeRequest(string? Mode);

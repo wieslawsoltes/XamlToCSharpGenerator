@@ -92,6 +92,30 @@ public sealed class AvaloniaDesignerTransportTests
     }
 
     [Fact]
+    public async Task SendUpdateXamlAsync_Allows_Null_Assembly_Path()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        using var client = new TcpClient();
+        var connectTask = client.ConnectAsync(IPAddress.Loopback, port);
+        using var server = await listener.AcceptTcpClientAsync();
+        await connectTask;
+
+        await using var transport = new AvaloniaDesignerTransport(server.GetStream());
+        await transport.SendUpdateXamlAsync("<UserControl />", null, "/Pages/Test.axaml", CancellationToken.None);
+
+        using var clientStream = client.GetStream();
+        (Guid messageType, IReadOnlyDictionary<string, object?> document) = await ReadMessageAsync(clientStream);
+
+        Assert.Equal(AvaloniaDesignerMessageGuids.UpdateXaml, messageType);
+        Assert.Equal("<UserControl />", Assert.IsType<string>(document["Xaml"]));
+        Assert.Null(document["AssemblyPath"]);
+        Assert.Equal("/Pages/Test.axaml", Assert.IsType<string>(document["XamlFileProjectPath"]));
+    }
+
+    [Fact]
     public async Task SendKeyEventAsync_Sends_Avalonia_Remote_Key_Message()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

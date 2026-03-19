@@ -10,7 +10,8 @@ public static class JsonRpcSerializer
     {
         return new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            MaxDepth = 256
         };
     }
 }

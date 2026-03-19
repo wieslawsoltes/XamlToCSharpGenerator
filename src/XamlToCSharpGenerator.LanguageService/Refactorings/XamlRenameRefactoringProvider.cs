@@ -36,6 +36,7 @@ internal sealed class XamlRenameRefactoringProvider : IXamlRefactoringProvider, 
                 Title: "AXSG: Rename Symbol Across C# and XAML",
                 Kind: "refactor.rename",
                 IsPreferred: true,
+                Edit: null,
                 Command: new XamlRefactoringCommand(
                     Name: "axsg.refactor.renameSymbol",
                     Uri: context.Uri,

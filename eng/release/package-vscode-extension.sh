@@ -20,6 +20,7 @@ extension_dir="${repo_root}/tools/vscode/axsg-language-server"
 package_json="${extension_dir}/package.json"
 vscode_version="$(node "${repo_root}/eng/release/resolve-vscode-extension-version.mjs" "${version}")"
 backup_file="$(mktemp)"
+prerelease_mode="${AXSG_VSCODE_PRERELEASE:-auto}"
 
 cp "${package_json}" "${backup_file}"
 restore_package_json() {
@@ -52,8 +53,15 @@ vsce_args=(
   "${output_vsix}"
 )
 
-if [[ "${version}" == *-* ]]; then
+if [[ "${prerelease_mode}" == "auto" ]]; then
+  if [[ "${version}" == *-* ]]; then
+    vsce_args+=(--pre-release)
+  fi
+elif [[ "${prerelease_mode}" == "true" ]]; then
   vsce_args+=(--pre-release)
+elif [[ "${prerelease_mode}" != "false" ]]; then
+  echo "Unsupported AXSG_VSCODE_PRERELEASE value: ${prerelease_mode}" >&2
+  exit 1
 fi
 
 npx "${vsce_args[@]}"

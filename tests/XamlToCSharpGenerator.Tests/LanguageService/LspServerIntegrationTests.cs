@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Pipelines;
 using System.Text;
@@ -43,11 +44,754 @@ public sealed class LspServerIntegrationTests
         Assert.True(capabilities.GetProperty("definitionProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("declarationProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("referencesProvider").GetBoolean());
-        Assert.True(capabilities.GetProperty("codeActionProvider").GetProperty("codeActionKinds").GetArrayLength() > 0);
+        var codeActionKinds = capabilities.GetProperty("codeActionProvider").GetProperty("codeActionKinds");
+        Assert.True(codeActionKinds.GetArrayLength() > 0);
+        Assert.Contains(codeActionKinds.EnumerateArray(), static item => item.GetString() == "quickfix");
+        Assert.Contains(codeActionKinds.EnumerateArray(), static item => item.GetString() == "refactor.rewrite");
+        Assert.True(capabilities.GetProperty("documentHighlightProvider").GetBoolean());
+        Assert.False(capabilities.GetProperty("documentLinkProvider").GetProperty("resolveProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("workspaceSymbolProvider").GetBoolean());
+        Assert.Equal(4, capabilities.GetProperty("signatureHelpProvider").GetProperty("triggerCharacters").GetArrayLength());
+        Assert.True(capabilities.GetProperty("foldingRangeProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("selectionRangeProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("linkedEditingRangeProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("documentSymbolProvider").GetBoolean());
+        Assert.True(capabilities.GetProperty("documentFormattingProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("inlayHintProvider").GetBoolean());
         Assert.True(capabilities.GetProperty("semanticTokensProvider").GetProperty("full").GetBoolean());
         Assert.Equal(2, capabilities.GetProperty("textDocumentSync").GetProperty("change").GetInt32());
+    }
+
+    [Fact]
+    public async Task Formatting_Request_ReturnsFullDocumentEdit()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/FormattingView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(11, "textDocument/formatting", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["options"] = new JsonObject
+            {
+                ["tabSize"] = 2,
+                ["insertSpaces"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(11);
+        var edits = response.RootElement.GetProperty("result");
+        Assert.Equal(JsonValueKind.Array, edits.ValueKind);
+        Assert.Equal(1, edits.GetArrayLength());
+
+        var edit = edits[0];
+        Assert.Equal(0, edit.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32());
+        Assert.Equal(0, edit.GetProperty("range").GetProperty("start").GetProperty("character").GetInt32());
+        Assert.Equal(0, edit.GetProperty("range").GetProperty("end").GetProperty("line").GetInt32());
+        Assert.Equal(xaml.Length, edit.GetProperty("range").GetProperty("end").GetProperty("character").GetInt32());
+        Assert.Equal(
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>",
+            edit.GetProperty("newText").GetString());
+    }
+
+    [Fact]
+    public async Task Formatting_Request_PreservesXmlDeclarationEncoding()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/FormattingWithDeclaration.axaml";
+        const string xaml =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(111, "textDocument/formatting", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["options"] = new JsonObject
+            {
+                ["tabSize"] = 2,
+                ["insertSpaces"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(111);
+        var edits = response.RootElement.GetProperty("result");
+        var edit = edits[0];
+        var newText = edit.GetProperty("newText").GetString();
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n", newText, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"Hello\" />", newText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FoldingRange_Request_ReturnsElementAndCommentRegions()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/FoldingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <!--\n" +
+            "    comment\n" +
+            "  -->\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(12, "textDocument/foldingRange", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(12);
+        var ranges = response.RootElement.GetProperty("result");
+        Assert.Equal(JsonValueKind.Array, ranges.ValueKind);
+
+        Assert.Contains(ranges.EnumerateArray(), static range =>
+            range.GetProperty("startLine").GetInt32() == 0 &&
+            range.GetProperty("endLine").GetInt32() == 7 &&
+            string.Equals(range.GetProperty("kind").GetString(), "region", StringComparison.Ordinal));
+
+        Assert.Contains(ranges.EnumerateArray(), static range =>
+            range.GetProperty("startLine").GetInt32() == 1 &&
+            range.GetProperty("endLine").GetInt32() == 3 &&
+            string.Equals(range.GetProperty("kind").GetString(), "comment", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectionRange_Request_ReturnsRecursiveParentChain()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/SelectionView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Hello", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(13, "textDocument/selectionRange", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["positions"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["line"] = position.Line,
+                    ["character"] = position.Character
+                }
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(13);
+        var ranges = response.RootElement.GetProperty("result");
+        Assert.Equal(1, ranges.GetArrayLength());
+
+        var enumerator = ranges.EnumerateArray();
+        Assert.True(enumerator.MoveNext());
+        var selection = enumerator.Current;
+        Assert.Equal("Hello", GetRangeText(xaml, selection.GetProperty("range")));
+
+        var attributeSelection = selection.GetProperty("parent");
+        Assert.Equal("Text=\"Hello\"", GetRangeText(xaml, attributeSelection.GetProperty("range")));
+
+        var elementSelection = attributeSelection.GetProperty("parent");
+        Assert.Equal("<TextBlock Text=\"Hello\" />", GetRangeText(xaml, elementSelection.GetProperty("range")));
+
+        var stackPanelSelection = elementSelection.GetProperty("parent");
+        Assert.Equal(
+            "<StackPanel>\n    <TextBlock Text=\"Hello\" />\n  </StackPanel>",
+            GetRangeText(xaml, stackPanelSelection.GetProperty("range")));
+    }
+
+    [Fact]
+    public async Task LinkedEditingRange_Request_ReturnsStartAndEndTagNameRanges()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/LinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("TextBlock", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(14, "textDocument/linkedEditingRange", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(14);
+        var result = response.RootElement.GetProperty("result");
+        var ranges = result.GetProperty("ranges");
+        Assert.Equal(2, ranges.GetArrayLength());
+
+        var enumerator = ranges.EnumerateArray();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("TextBlock", GetRangeText(xaml, enumerator.Current));
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("TextBlock", GetRangeText(xaml, enumerator.Current));
+        Assert.Equal(@"[-.\w:]+", result.GetProperty("wordPattern").GetString());
+    }
+
+    [Fact]
+    public async Task LinkedEditingRange_Request_UsesMatchingClosingTagForNestedElements()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NestedLinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </Grid>\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Grid", StringComparison.Ordinal) + 1);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(114, "textDocument/linkedEditingRange", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(114);
+        var result = response.RootElement.GetProperty("result");
+        var ranges = result.GetProperty("ranges");
+        Assert.Equal(2, ranges.GetArrayLength());
+
+        var enumerator = ranges.EnumerateArray();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("Grid", GetRangeText(xaml, enumerator.Current));
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("Grid", GetRangeText(xaml, enumerator.Current));
+    }
+
+    [Fact]
+    public async Task DocumentHighlight_Request_ReturnsDeclarationAndUsage()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/DocumentHighlights.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+            "  <UserControl.Resources>\n" +
+            "    <SolidColorBrush x:Key=\"AccentBrush\" />\n" +
+            "  </UserControl.Resources>\n" +
+            "  <Border Background=\"{StaticResource AccentBrush}\" />\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.LastIndexOf("AccentBrush", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(15, "textDocument/documentHighlight", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(15);
+        var highlights = response.RootElement.GetProperty("result");
+        Assert.Equal(2, highlights.GetArrayLength());
+
+        Assert.Contains(highlights.EnumerateArray(), highlight =>
+            highlight.GetProperty("kind").GetInt32() == (int)XamlDocumentHighlightKind.Write &&
+            string.Equals(GetRangeText(xaml, highlight.GetProperty("range")), "AccentBrush", StringComparison.Ordinal));
+        Assert.Contains(highlights.EnumerateArray(), highlight =>
+            highlight.GetProperty("kind").GetInt32() == (int)XamlDocumentHighlightKind.Read &&
+            string.Equals(GetRangeText(xaml, highlight.GetProperty("range")), "AccentBrush", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Definition_Request_ForStaticResource_ReturnsResourceKeyRange()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/ResourceDefinitionView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+            "  <UserControl.Resources>\n" +
+            "    <SolidColorBrush x:Key=\"AccentBrush\" Color=\"Red\" />\n" +
+            "  </UserControl.Resources>\n" +
+            "  <Border Background=\"{StaticResource AccentBrush}\" />\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.LastIndexOf("AccentBrush", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(16, "textDocument/definition", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(16);
+        var definitions = response.RootElement.GetProperty("result");
+        Assert.Equal(1, definitions.GetArrayLength());
+        Assert.Equal(
+            "AccentBrush",
+            GetRangeText(xaml, definitions[0].GetProperty("range")));
+    }
+
+    [Fact]
+    public async Task DocumentLink_Request_ReturnsResolvedIncludeTarget()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        var temporaryDirectory = Path.Combine(Path.GetTempPath(), "axsg-doc-links-lsp-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporaryDirectory);
+
+        try
+        {
+            var includedFilePath = Path.Combine(temporaryDirectory, "SharedStyles.axaml");
+            await File.WriteAllTextAsync(
+                includedFilePath,
+                "<Styles xmlns=\"https://github.com/avaloniaui\" />",
+                CancellationToken.None);
+            var includedUri = new Uri(includedFilePath).AbsoluteUri;
+
+            var hostFilePath = Path.Combine(temporaryDirectory, "Host.axaml");
+            var hostUri = new Uri(hostFilePath).AbsoluteUri;
+            var xaml =
+                "<Styles xmlns=\"https://github.com/avaloniaui\">\n" +
+                $"  <StyleInclude Source=\"{includedUri}\" />\n" +
+                "</Styles>";
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = hostUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = xaml
+                }
+            });
+
+            await harness.SendRequestAsync(17, "textDocument/documentLink", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = hostUri
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(17);
+            var links = response.RootElement.GetProperty("result");
+            Assert.Equal(1, links.GetArrayLength());
+            Assert.Equal(includedUri, links[0].GetProperty("target").GetString());
+            Assert.Equal(includedUri, GetRangeText(xaml, links[0].GetProperty("range")));
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WorkspaceSymbol_Request_ReturnsMatchingOpenDocumentSymbols()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string firstUri = "file:///tmp/WorkspaceSymbolOne.axaml";
+        const string secondUri = "file:///tmp/WorkspaceSymbolTwo.axaml";
+        const string firstXaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid x:Name=\"LayoutRoot\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" />\n" +
+            "</UserControl>";
+        const string secondXaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel />\n" +
+            "</UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = firstUri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = firstXaml
+            }
+        });
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = secondUri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = secondXaml
+            }
+        });
+
+        await harness.SendRequestAsync(18, "workspace/symbol", new JsonObject
+        {
+            ["query"] = "LayoutRoot"
+        });
+
+        using var response = await harness.ReadResponseAsync(18);
+        var symbols = response.RootElement.GetProperty("result");
+        Assert.Equal(1, symbols.GetArrayLength());
+        Assert.Equal(firstUri, symbols[0].GetProperty("location").GetProperty("uri").GetString());
+        Assert.Contains("LayoutRoot", symbols[0].GetProperty("name").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WorkspaceSymbol_Request_RefreshesDiscovery_After_Watched_File_Changes()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-lsp-watch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var projectPath = Path.Combine(tempRoot, "TestApp.csproj");
+        var rootViewPath = Path.Combine(tempRoot, "MainView.axaml");
+        var addedViewPath = Path.Combine(tempRoot, "FreshView.axaml");
+        const string freshSymbolName = "FreshNode";
+
+        await File.WriteAllTextAsync(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        await File.WriteAllTextAsync(
+            rootViewPath,
+            "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: tempRoot);
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(181, "workspace/symbol", new JsonObject
+            {
+                ["query"] = freshSymbolName
+            });
+
+            using (var initialResponse = await harness.ReadResponseAsync(181))
+            {
+                Assert.Equal(0, initialResponse.RootElement.GetProperty("result").GetArrayLength());
+            }
+
+            await File.WriteAllTextAsync(
+                addedViewPath,
+                """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Grid x:Name="FreshNode" />
+                </UserControl>
+                """);
+
+            await harness.SendNotificationAsync("workspace/didChangeWatchedFiles", new JsonObject
+            {
+                ["changes"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["uri"] = new Uri(addedViewPath).AbsoluteUri,
+                        ["type"] = 1
+                    }
+                }
+            });
+
+            await harness.SendRequestAsync(182, "workspace/symbol", new JsonObject
+            {
+                ["query"] = freshSymbolName
+            });
+
+            using var updatedResponse = await harness.ReadResponseAsync(182);
+            JsonElement symbols = updatedResponse.RootElement.GetProperty("result");
+            Assert.Equal(1, symbols.GetArrayLength());
+            Assert.Equal(new Uri(addedViewPath).AbsoluteUri, symbols[0].GetProperty("location").GetProperty("uri").GetString());
+            Assert.Contains(freshSymbolName, symbols[0].GetProperty("name").GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WatchedFileChanges_RefreshDiagnostics_ForOpenXamlDocuments()
+    {
+        const string xamlUri = "file:///tmp/MainView.axaml";
+        const string projectUri = "file:///tmp/TestApp.csproj";
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.MainView\" />\n";
+
+        var provider = new TogglingCompilationProvider(
+            CreateAdHocCompilation(
+                """
+                using System;
+
+                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
+                namespace Avalonia.Metadata
+                {
+                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                    public sealed class XmlnsDefinitionAttribute : Attribute
+                    {
+                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                    }
+                }
+
+                namespace TestApp.Controls
+                {
+                    public class UserControl { }
+                }
+
+                namespace TestApp
+                {
+                    public class MainView : TestApp.Controls.UserControl { }
+                }
+                """,
+                assemblyName: "WatchedFileInitial",
+                filePath: "/tmp/WatchedFileInitial.cs"),
+            CreateAdHocCompilation(
+                """
+                using System;
+
+                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
+                namespace Avalonia.Metadata
+                {
+                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                    public sealed class XmlnsDefinitionAttribute : Attribute
+                    {
+                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                    }
+                }
+
+                namespace TestApp.Controls
+                {
+                    public class UserControl { }
+                }
+
+                namespace TestApp
+                {
+                    public partial class MainView : TestApp.Controls.UserControl { }
+                }
+                """,
+                assemblyName: "WatchedFileUpdated",
+                filePath: "/tmp/WatchedFileUpdated.cs"));
+
+        await using var harness = await LspServerHarness.StartAsync(provider);
+        await harness.InitializeAsync();
+        await harness.OpenDocumentAsync(xamlUri, xamlText);
+
+        using var initialPublish = await harness.ReadNotificationAsync("textDocument/publishDiagnostics");
+        JsonElement initialParams = initialPublish.RootElement.GetProperty("params");
+        Assert.Equal(xamlUri, initialParams.GetProperty("uri").GetString());
+        JsonElement initialDiagnostics = initialParams.GetProperty("diagnostics");
+        Assert.Contains(
+            initialDiagnostics.EnumerateArray(),
+            diagnostic => string.Equals(diagnostic.GetProperty("code").GetString(), "AXSG0109", StringComparison.Ordinal));
+
+        await harness.SendNotificationAsync("workspace/didChangeWatchedFiles", new JsonObject
+        {
+            ["changes"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["uri"] = projectUri,
+                    ["type"] = 1
+                }
+            }
+        });
+
+        using var updatedPublish = await harness.ReadNotificationAsync("textDocument/publishDiagnostics");
+        JsonElement updatedParams = updatedPublish.RootElement.GetProperty("params");
+        Assert.Equal(xamlUri, updatedParams.GetProperty("uri").GetString());
+        Assert.Equal(0, updatedParams.GetProperty("diagnostics").GetArrayLength());
+        Assert.Equal(1, provider.InvalidateCalls);
+    }
+
+    [Fact]
+    public async Task SignatureHelp_Request_ReturnsBindingSignature()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/SignatureHelpView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <TextBlock Text=\"{Binding Name, Mode=TwoWay}\" />\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Mode", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(19, "textDocument/signatureHelp", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(19);
+        var result = response.RootElement.GetProperty("result");
+        Assert.Equal(0, result.GetProperty("activeSignature").GetInt32());
+        Assert.Equal(1, result.GetProperty("activeParameter").GetInt32());
+        var signatures = result.GetProperty("signatures");
+        Assert.Equal(1, signatures.GetArrayLength());
+        Assert.Equal(
+            "Binding(path, Mode, Source, RelativeSource, ElementName, Converter, ConverterParameter, StringFormat, FallbackValue, TargetNullValue)",
+            signatures[0].GetProperty("label").GetString());
     }
 
     [Fact]
@@ -1355,6 +2099,1113 @@ public sealed class LspServerIntegrationTests
         {
             Directory.Delete(project.RootPath, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForBindingMarkup_ReturnsRewriteEdit()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/BindingConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+                            "             xmlns:vm=\"using:TestApp.Controls\"\n" +
+                            "             x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{Binding Name}\" />\n" +
+                            "</UserControl>";
+        var bindingCharacter = xaml.IndexOf("Binding", StringComparison.Ordinal) + 2;
+        var bindingPosition = GetPosition(xaml, bindingCharacter);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(214, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(214);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement rewriteAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Convert to CompiledBinding")
+            {
+                continue;
+            }
+
+            rewriteAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(
+            found,
+            "Expected invalid compiled binding quick fix. Titles: " +
+            string.Join(", ", actions.EnumerateArray().Select(static item => item.GetProperty("title").GetString())));
+        Assert.Equal("refactor.rewrite", rewriteAction.GetProperty("kind").GetString());
+        var edits = rewriteAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Equal("CompiledBinding", edits[0].GetProperty("newText").GetString());
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForPropertyAttribute_ReturnsPropertyElementRewrite()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/PropertyElementConvertView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <TextBlock Text=\"Hello\" />\n" +
+                            "</UserControl>";
+        var attributePosition = GetPosition(xaml, xaml.IndexOf("Text=", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(216, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = attributePosition.Line,
+                    ["character"] = attributePosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = attributePosition.Line,
+                    ["character"] = attributePosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(216);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement rewriteAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Convert attribute to property element")
+            {
+                continue;
+            }
+
+            rewriteAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("refactor.rewrite", rewriteAction.GetProperty("kind").GetString());
+        var edits = rewriteAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains("<TextBlock.Text>Hello</TextBlock.Text>", edits[0].GetProperty("newText").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForCompiledBindingWithoutDataType_ReturnsQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/CompiledBindingWithoutDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Name}\" />\n" +
+                            "</UserControl>";
+        var bindingPosition = GetPosition(xaml, xaml.IndexOf("CompiledBinding", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(217, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(217);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Fix missing x:DataType by converting to Binding")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Equal("Binding", edits[0].GetProperty("newText").GetString());
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForCompiledBindingWithInvalidPath_ReturnsQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/CompiledBindingInvalidPathView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+                            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+                            "             xmlns:vm=\"using:TestApp.Controls\"\n" +
+                            "             x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding MissingName}\" />\n" +
+                            "</UserControl>";
+        var bindingPosition = GetPosition(xaml, xaml.IndexOf("CompiledBinding", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(217, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = bindingPosition.Line,
+                    ["character"] = bindingPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(217);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Fix invalid compiled binding path by converting to Binding")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Equal("Binding", edits[0].GetProperty("newText").GetString());
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForXClassWithoutPartial_ReturnsQuickFix()
+    {
+        var project = await CreateXClassPartialProjectFixtureAsync(isPartial: false);
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = project.XamlText
+                }
+            });
+
+            await harness.SendRequestAsync(218, "textDocument/codeAction", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject
+                    {
+                        ["line"] = project.XamlClassPosition.Line,
+                        ["character"] = project.XamlClassPosition.Character
+                    },
+                    ["end"] = new JsonObject
+                    {
+                        ["line"] = project.XamlClassPosition.Line,
+                        ["character"] = project.XamlClassPosition.Character
+                    }
+                },
+                ["context"] = new JsonObject
+                {
+                    ["diagnostics"] = new JsonArray()
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(218);
+            var actions = response.RootElement.GetProperty("result");
+            JsonElement quickFixAction = default;
+            var found = false;
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.GetProperty("title").GetString() != "AXSG: Fix x:Class companion type by adding partial")
+                {
+                    continue;
+                }
+
+                quickFixAction = action;
+                found = true;
+                break;
+            }
+
+            Assert.True(found);
+            Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+            Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+
+            var changes = quickFixAction.GetProperty("edit").GetProperty("changes");
+            Assert.True(changes.TryGetProperty(project.CodeUri, out var edits));
+            Assert.Equal("partial ", edits[0].GetProperty("newText").GetString());
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForInvalidXClassModifier_ReturnsQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/InvalidXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"friend\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(219, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = 0,
+                    ["character"] = 0
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = 0,
+                    ["character"] = 0
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(219);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Set x:ClassModifier to public")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "public", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForMismatchedXClassModifier_ReturnsQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/MismatchedXClassModifier.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.Controls.MainView\" x:ClassModifier=\"internal\" />";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(220, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = 0,
+                    ["character"] = 0
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = 0,
+                    ["character"] = 0
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(220);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Set x:ClassModifier to public")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "public", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForMissingEventHandler_ReturnsQuickFix()
+    {
+        var project = await CreateEventHandlerProjectFixtureAsync(withIncompatibleHandler: false);
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = project.XamlText
+                }
+            });
+
+            await harness.SendRequestAsync(2201, "textDocument/codeAction", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject
+                    {
+                        ["line"] = project.EventHandlerPosition.Line,
+                        ["character"] = project.EventHandlerPosition.Character
+                    },
+                    ["end"] = new JsonObject
+                    {
+                        ["line"] = project.EventHandlerPosition.Line,
+                        ["character"] = project.EventHandlerPosition.Character
+                    }
+                },
+                ["context"] = new JsonObject
+                {
+                    ["diagnostics"] = new JsonArray()
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(2201);
+            var actions = response.RootElement.GetProperty("result");
+            JsonElement quickFixAction = default;
+            var found = false;
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.GetProperty("title").GetString() != "AXSG: Add event handler 'OnClick'")
+                {
+                    continue;
+                }
+
+                quickFixAction = action;
+                found = true;
+                break;
+            }
+
+            Assert.True(found);
+            Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+            Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+            var changes = quickFixAction.GetProperty("edit").GetProperty("changes");
+            Assert.True(changes.TryGetProperty(project.CodeUri, out var edits));
+            Assert.Contains(edits.EnumerateArray(), edit =>
+                edit.GetProperty("newText").GetString()!.Contains("private void OnClick(", StringComparison.Ordinal) &&
+                edit.GetProperty("newText").GetString()!.Contains("global::System.EventArgs e", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForMissingIncludeTarget_ReturnsQuickFix()
+    {
+        var project = await CreateMissingIncludeProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = project.XamlText
+                }
+            });
+
+            await harness.SendRequestAsync(2202, "textDocument/codeAction", new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = project.XamlUri
+                },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject
+                    {
+                        ["line"] = project.IncludePosition.Line,
+                        ["character"] = project.IncludePosition.Character
+                    },
+                    ["end"] = new JsonObject
+                    {
+                        ["line"] = project.IncludePosition.Line,
+                        ["character"] = project.IncludePosition.Character
+                    }
+                },
+                ["context"] = new JsonObject
+                {
+                    ["diagnostics"] = new JsonArray()
+                }
+            });
+
+            using var response = await harness.ReadResponseAsync(2202);
+            var actions = response.RootElement.GetProperty("result");
+            JsonElement quickFixAction = default;
+            var found = false;
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.GetProperty("title").GetString() != "AXSG: Add included XAML file to project")
+                {
+                    continue;
+                }
+
+                quickFixAction = action;
+                found = true;
+                break;
+            }
+
+            Assert.True(found);
+            Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+            Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+            var changes = quickFixAction.GetProperty("edit").GetProperty("changes");
+            Assert.True(changes.TryGetProperty(project.ProjectUri, out var edits));
+            Assert.Contains(edits.EnumerateArray(), edit =>
+                edit.GetProperty("newText").GetString()!.Contains("<AvaloniaXaml Include=\"Themes/Shared.axaml\" />", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForInvalidInclude_ReturnsQuickFix()
+    {
+        var project = await CreateInvalidIncludeProjectFixtureAsync();
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(new MsBuildCompilationProvider(), project.RootPath);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync(
+                "textDocument/didOpen",
+                new JsonObject
+                {
+                    ["textDocument"] = new JsonObject
+                    {
+                        ["uri"] = project.XamlUri,
+                        ["languageId"] = "axaml",
+                        ["version"] = 1,
+                        ["text"] = project.XamlText
+                    }
+                });
+
+            await harness.SendRequestAsync(2203, "textDocument/codeAction",
+                new JsonObject
+                {
+                    ["textDocument"] = new JsonObject
+                    {
+                        ["uri"] = project.XamlUri
+                    },
+                    ["range"] = new JsonObject
+                    {
+                        ["start"] = new JsonObject
+                        {
+                            ["line"] = project.IncludePosition.Line,
+                            ["character"] = project.IncludePosition.Character
+                        },
+                        ["end"] = new JsonObject
+                        {
+                            ["line"] = project.IncludePosition.Line,
+                            ["character"] = project.IncludePosition.Character
+                        }
+                    },
+                    ["context"] = new JsonObject
+                    {
+                        ["diagnostics"] = new JsonArray()
+                    }
+                });
+
+            using var response = await harness.ReadResponseAsync(2203);
+            var actions = response.RootElement.GetProperty("result");
+            JsonElement quickFixAction = default;
+            var found = false;
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.GetProperty("title").GetString() != "AXSG: Remove invalid include")
+                {
+                    continue;
+                }
+
+                quickFixAction = action;
+                found = true;
+                break;
+            }
+
+            Assert.True(found);
+            Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+            Assert.True(quickFixAction.TryGetProperty("edit", out _));
+        }
+        finally
+        {
+            Directory.Delete(project.RootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForUnresolvedElementType_ReturnsNamespaceImportQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NamespaceImportView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <ThemeDoodad />\n" +
+                            "</UserControl>";
+        var elementPosition = GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(219, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = elementPosition.Line,
+                    ["character"] = elementPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = elementPosition.Line,
+                    ["character"] = elementPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(219);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Import namespace for local:ThemeDoodad")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "local:ThemeDoodad", StringComparison.Ordinal));
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString()?.Trim(), "xmlns:local=\"using:Demo.Controls\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForUnresolvedAttachedPropertyOwner_ReturnsNamespaceImportQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NamespaceImportAttachedPropertyView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <UserControl ThemeDoodad.Accent=\"True\" />\n" +
+                            "</UserControl>";
+        var propertyPosition = GetPosition(xaml, xaml.IndexOf("ThemeDoodad.Accent", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(220, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = propertyPosition.Line,
+                    ["character"] = propertyPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = propertyPosition.Line,
+                    ["character"] = propertyPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(220);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Import namespace for local:ThemeDoodad")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "local:ThemeDoodad.Accent", StringComparison.Ordinal));
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), " xmlns:local=\"using:Demo.Controls\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForUnresolvedSetterPropertyOwner_ReturnsNamespaceImportQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NamespaceImportSetterPropertyView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\">\n" +
+                            "  <UserControl.Styles>\n" +
+                            "    <Style Selector=\"UserControl\">\n" +
+                            "      <Setter Property=\"ThemeDoodad.Accent\" Value=\"True\" />\n" +
+                            "    </Style>\n" +
+                            "  </UserControl.Styles>\n" +
+                            "</UserControl>";
+        var propertyPosition = GetPosition(xaml, xaml.IndexOf("ThemeDoodad.Accent", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(221, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = propertyPosition.Line,
+                    ["character"] = propertyPosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = propertyPosition.Line,
+                    ["character"] = propertyPosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(221);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Import namespace for local:ThemeDoodad")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "local:ThemeDoodad.Accent", StringComparison.Ordinal));
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), " xmlns:local=\"using:Demo.Controls\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForUnresolvedXDataTypeValue_ReturnsNamespaceImportQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NamespaceImportXDataTypeView.axaml";
+        const string xaml = "<UserControl xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:DataType=\"ThemeDoodad\" />";
+        var typePosition = GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(222, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = typePosition.Line,
+                    ["character"] = typePosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = typePosition.Line,
+                    ["character"] = typePosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(222);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Import namespace for local:ThemeDoodad")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "local:ThemeDoodad", StringComparison.Ordinal));
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString()?.Trim(), "xmlns:local=\"using:Demo.Controls\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CodeAction_Request_ForUnresolvedControlThemeTargetType_ReturnsNamespaceImportQuickFix()
+    {
+        await using var harness = await LspServerHarness.StartAsync(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateNamespaceImportCompilation()));
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NamespaceImportControlThemeTargetType.axaml";
+        const string xaml = "<ControlTheme xmlns=\"using:Host.Controls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" TargetType=\"{x:Type ThemeDoodad}\" />";
+        var typePosition = GetPosition(xaml, xaml.IndexOf("ThemeDoodad", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(223, "textDocument/codeAction", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject
+                {
+                    ["line"] = typePosition.Line,
+                    ["character"] = typePosition.Character
+                },
+                ["end"] = new JsonObject
+                {
+                    ["line"] = typePosition.Line,
+                    ["character"] = typePosition.Character
+                }
+            },
+            ["context"] = new JsonObject
+            {
+                ["diagnostics"] = new JsonArray()
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(223);
+        var actions = response.RootElement.GetProperty("result");
+        JsonElement quickFixAction = default;
+        var found = false;
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.GetProperty("title").GetString() != "AXSG: Import namespace for local:ThemeDoodad")
+            {
+                continue;
+            }
+
+            quickFixAction = action;
+            found = true;
+            break;
+        }
+
+        Assert.True(found);
+        Assert.Equal("quickfix", quickFixAction.GetProperty("kind").GetString());
+        Assert.True(quickFixAction.GetProperty("isPreferred").GetBoolean());
+        var edits = quickFixAction.GetProperty("edit").GetProperty("changes").GetProperty(uri);
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString(), "{x:Type local:ThemeDoodad}", StringComparison.Ordinal));
+        Assert.Contains(edits.EnumerateArray(), edit =>
+            string.Equals(edit.GetProperty("newText").GetString()?.Trim(), "xmlns:local=\"using:Demo.Controls\"", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -3375,6 +5226,62 @@ public sealed class LspServerIntegrationTests
         return count;
     }
 
+    private static Compilation CreateAdHocCompilation(string source, string assemblyName, string filePath)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: filePath);
+        MetadataReference[] references =
+        [
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
+        ];
+
+        return CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private sealed class TogglingCompilationProvider : ICompilationProvider
+    {
+        private readonly Compilation _initialCompilation;
+        private readonly Compilation _updatedCompilation;
+        private int _invalidated;
+
+        public TogglingCompilationProvider(Compilation initialCompilation, Compilation updatedCompilation)
+        {
+            _initialCompilation = initialCompilation;
+            _updatedCompilation = updatedCompilation;
+        }
+
+        public int InvalidateCalls => _invalidated;
+
+        public Task<CompilationSnapshot> GetCompilationAsync(
+            string filePath,
+            string? workspaceRoot,
+            CancellationToken cancellationToken)
+        {
+            var compilation = Volatile.Read(ref _invalidated) > 0
+                ? _updatedCompilation
+                : _initialCompilation;
+
+            return Task.FromResult(new CompilationSnapshot(
+                ProjectPath: workspaceRoot,
+                Project: null,
+                Compilation: compilation,
+                Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
+        }
+
+        public void Invalidate(string filePath)
+        {
+            Interlocked.Increment(ref _invalidated);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class LspServerHarness : IAsyncDisposable
     {
         private readonly Pipe _clientToServer = new();
@@ -3897,6 +5804,253 @@ public sealed class LspServerIntegrationTests
             GetPosition(xamlText, xamlText.IndexOf("Name", StringComparison.Ordinal) + 2));
     }
 
+    private static async Task<XClassPartialProjectFixture> CreateXClassPartialProjectFixtureAsync(bool isPartial)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-xclass-partial-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        string classDeclaration = isPartial
+            ? "    public partial class MainView : TestApp.Controls.UserControl { }\n"
+            : "    public class MainView : TestApp.Controls.UserControl { }\n";
+
+        string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"using:TestApp\", \"TestApp\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "}\n\n" +
+            "namespace TestApp\n" +
+            "{\n" +
+            classDeclaration +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+            "             x:Class=\"TestApp.MainView\" />\n";
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new XClassPartialProjectFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("MainView", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<EventHandlerProjectFixture> CreateEventHandlerProjectFixtureAsync(bool withIncompatibleHandler)
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-event-handler-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "MainView.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        string handlerDeclaration = withIncompatibleHandler
+            ? "\n    private void OnClick() { }\n"
+            : "\n";
+
+        string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"using:TestApp\", \"TestApp\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n\n" +
+            "    public class Button\n" +
+            "    {\n" +
+            "        public event EventHandler? Click;\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp\n" +
+            "{\n" +
+            "    public partial class MainView : TestApp.Controls.UserControl\n" +
+            "    {" +
+            handlerDeclaration +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+            "             x:Class=\"TestApp.MainView\">\n" +
+            "  <Button Click=\"OnClick\" />\n" +
+            "</UserControl>\n";
+
+        await File.WriteAllTextAsync(projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>");
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new EventHandlerProjectFixture(
+            rootPath,
+            new Uri(codePath).AbsoluteUri,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("Click", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<MissingIncludeProjectFixture> CreateMissingIncludeProjectFixtureAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-missing-include-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+        Directory.CreateDirectory(Path.Combine(rootPath, "Themes"));
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "Types.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+        var includedPath = Path.Combine(rootPath, "Themes", "Shared.axaml");
+
+        const string projectText =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>";
+
+        const string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "    public class Styles { }\n" +
+            "    public class StyleInclude\n" +
+            "    {\n" +
+            "        public string Source { get; set; } = string.Empty;\n" +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <UserControl.Styles>\n" +
+            "    <StyleInclude Source=\"/Themes/Shared.axaml\" />\n" +
+            "  </UserControl.Styles>\n" +
+            "</UserControl>\n";
+
+        await File.WriteAllTextAsync(projectPath, projectText);
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+        await File.WriteAllTextAsync(includedPath, "<Styles xmlns=\"https://github.com/avaloniaui\" />\n");
+
+        return new MissingIncludeProjectFixture(
+            rootPath,
+            new Uri(projectPath).AbsoluteUri,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("StyleInclude", StringComparison.Ordinal) + 2));
+    }
+
+    private static async Task<InvalidIncludeProjectFixture> CreateInvalidIncludeProjectFixtureAsync()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "axsg-lsp-invalid-include-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        var projectPath = Path.Combine(rootPath, "TestApp.csproj");
+        var codePath = Path.Combine(rootPath, "Types.cs");
+        var xamlPath = Path.Combine(rootPath, "MainView.axaml");
+
+        const string projectText =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup>\n" +
+            "    <TargetFramework>net10.0</TargetFramework>\n" +
+            "  </PropertyGroup>\n" +
+            "  <ItemGroup>\n" +
+            "    <AvaloniaXaml Include=\"MainView.axaml\" />\n" +
+            "  </ItemGroup>\n" +
+            "</Project>";
+
+        const string codeText =
+            "using System;\n\n" +
+            "[assembly: Avalonia.Metadata.XmlnsDefinitionAttribute(\"https://github.com/avaloniaui\", \"TestApp.Controls\")]\n\n" +
+            "namespace Avalonia.Metadata\n" +
+            "{\n" +
+            "    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]\n" +
+            "    public sealed class XmlnsDefinitionAttribute : Attribute\n" +
+            "    {\n" +
+            "        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }\n" +
+            "    }\n" +
+            "}\n\n" +
+            "namespace TestApp.Controls\n" +
+            "{\n" +
+            "    public class UserControl { }\n" +
+            "    public class Styles { }\n" +
+            "    public class StyleInclude\n" +
+            "    {\n" +
+            "        public string Source { get; set; } = string.Empty;\n" +
+            "    }\n" +
+            "}\n";
+
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <UserControl.Styles>\n" +
+            "    <StyleInclude />\n" +
+            "  </UserControl.Styles>\n" +
+            "</UserControl>\n";
+
+        await File.WriteAllTextAsync(projectPath, projectText);
+        await File.WriteAllTextAsync(codePath, codeText);
+        await File.WriteAllTextAsync(xamlPath, xamlText);
+
+        return new InvalidIncludeProjectFixture(
+            rootPath,
+            new Uri(xamlPath).AbsoluteUri,
+            xamlText,
+            GetPosition(xamlText, xamlText.IndexOf("StyleInclude", StringComparison.Ordinal) + 2));
+    }
+
     private static SourcePosition GetPosition(string text, int offset)
     {
         var line = 0;
@@ -3917,6 +6071,20 @@ public sealed class LspServerIntegrationTests
         return new SourcePosition(line, character);
     }
 
+    private static string GetRangeText(string text, JsonElement range)
+    {
+        var sourceText = SourceText.From(text);
+        var start = range.GetProperty("start");
+        var end = range.GetProperty("end");
+        var startOffset = sourceText.Lines.GetPosition(new LinePosition(
+            start.GetProperty("line").GetInt32(),
+            start.GetProperty("character").GetInt32()));
+        var endOffset = sourceText.Lines.GetPosition(new LinePosition(
+            end.GetProperty("line").GetInt32(),
+            end.GetProperty("character").GetInt32()));
+        return text.Substring(startOffset, endOffset - startOffset);
+    }
+
     private sealed record RenameProjectFixture(
         string RootPath,
         string CodeUri,
@@ -3927,6 +6095,33 @@ public sealed class LspServerIntegrationTests
         string XamlUri,
         string XamlText,
         SourcePosition XamlNamePosition);
+
+    private sealed record XClassPartialProjectFixture(
+        string RootPath,
+        string CodeUri,
+        string XamlUri,
+        string XamlText,
+        SourcePosition XamlClassPosition);
+
+    private sealed record EventHandlerProjectFixture(
+        string RootPath,
+        string CodeUri,
+        string XamlUri,
+        string XamlText,
+        SourcePosition EventHandlerPosition);
+
+    private sealed record MissingIncludeProjectFixture(
+        string RootPath,
+        string ProjectUri,
+        string XamlUri,
+        string XamlText,
+        SourcePosition IncludePosition);
+
+    private sealed record InvalidIncludeProjectFixture(
+        string RootPath,
+        string XamlUri,
+        string XamlText,
+        SourcePosition IncludePosition);
 
     private sealed record CrossLanguageNavigationFixture(
         string RootPath,

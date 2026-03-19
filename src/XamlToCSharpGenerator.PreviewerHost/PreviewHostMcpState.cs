@@ -1,3 +1,4 @@
+using System.Linq;
 using XamlToCSharpGenerator.RemoteProtocol.Preview;
 
 namespace XamlToCSharpGenerator.PreviewerHost;
@@ -8,6 +9,7 @@ internal sealed class PreviewHostMcpState
 
     private readonly object _gate = new();
     private readonly List<PreviewHostMcpEventEntry> _events = new();
+    private string[] _designDocumentBuildUris = Array.Empty<string>();
     private long _nextSequence;
     private PreviewHostMcpStatusSnapshot _status = PreviewHostMcpStatusSnapshot.CreateInitial();
 
@@ -59,6 +61,14 @@ internal sealed class PreviewHostMcpState
                     _status.XamlFileProjectPath,
                     _status.UpdatedAtUtc)
                 : null;
+        }
+    }
+
+    public IReadOnlyList<string> GetDesignDocumentBuildUris()
+    {
+        lock (_gate)
+        {
+            return _designDocumentBuildUris.ToArray();
         }
     }
 
@@ -324,6 +334,39 @@ internal sealed class PreviewHostMcpState
         ResourceUpdated?.Invoke(PreviewHostMcpServer.EventsResourceUri);
     }
 
+    public void UpdateDesignDocuments(IEnumerable<string?> buildUris)
+    {
+        ArgumentNullException.ThrowIfNull(buildUris);
+
+        string[] normalizedBuildUris = buildUris
+            .Where(static buildUri => !string.IsNullOrWhiteSpace(buildUri))
+            .Select(static buildUri => buildUri!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static buildUri => buildUri, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        bool listChanged;
+        lock (_gate)
+        {
+            listChanged = !_designDocumentBuildUris.SequenceEqual(normalizedBuildUris, StringComparer.OrdinalIgnoreCase);
+            _designDocumentBuildUris = normalizedBuildUris;
+        }
+
+        PublishDesignResourceUpdates(listChanged);
+    }
+
+    public void ClearDesignDocuments()
+    {
+        bool listChanged;
+        lock (_gate)
+        {
+            listChanged = _designDocumentBuildUris.Length > 0;
+            _designDocumentBuildUris = Array.Empty<string>();
+        }
+
+        PublishDesignResourceUpdates(listChanged);
+    }
+
     private void PublishStateChanged(bool includeCurrent, bool toolsChanged, bool resourcesChanged)
     {
         ResourceUpdated?.Invoke(PreviewHostMcpServer.StatusResourceUri);
@@ -339,6 +382,33 @@ internal sealed class PreviewHostMcpState
         }
 
         if (resourcesChanged)
+        {
+            ResourcesListChanged?.Invoke();
+        }
+    }
+
+    private void PublishDesignResourceUpdates(bool listChanged)
+    {
+        string[] scopedWorkspaceResourceUris;
+        lock (_gate)
+        {
+            scopedWorkspaceResourceUris = _designDocumentBuildUris
+                .Select(PreviewHostMcpServer.BuildWorkspaceByBuildUriResourceUri)
+                .ToArray();
+        }
+
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignWorkspaceCurrentResourceUri);
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignDocumentsSelectedResourceUri);
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignElementSelectedResourceUri);
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignLogicalTreeResourceUri);
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignVisualTreeResourceUri);
+        ResourceUpdated?.Invoke(PreviewHostMcpServer.DesignOverlayCurrentResourceUri);
+        for (int index = 0; index < scopedWorkspaceResourceUris.Length; index++)
+        {
+            ResourceUpdated?.Invoke(scopedWorkspaceResourceUris[index]);
+        }
+
+        if (listChanged)
         {
             ResourcesListChanged?.Invoke();
         }

@@ -279,12 +279,19 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
         try
         {
             var localAssembly = configuration.LocalAssembly ?? baselineRoot.GetType().Assembly;
-            PrepareBaselineForOverlay(baselineRoot, xamlText);
+            object? overlayRootInstance = ShouldUseFreshOverlayInstance(baselineRoot)
+                ? null
+                : baselineRoot;
+            if (overlayRootInstance is not null)
+            {
+                PrepareBaselineForOverlay(baselineRoot, xamlText);
+            }
+
             var rewrittenXaml = SourceGeneratedPreviewMarkupRuntimeInstaller.IsInstalled
                 ? SourceGeneratedPreviewXamlPreprocessor.Rewrite(xamlText, localAssembly)
                 : xamlText;
             result = AvaloniaRuntimeXamlLoader.Load(
-                CloneDocument(document, baselineRoot, rewrittenXaml),
+                CloneDocument(document, overlayRootInstance, rewrittenXaml),
                 CreatePreviewConfiguration(configuration));
             return true;
         }
@@ -294,6 +301,11 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
             result = baselineRoot;
             return false;
         }
+    }
+
+    private static bool ShouldUseFreshOverlayInstance(object baselineRoot)
+    {
+        return baselineRoot is ResourceDictionary or IStyle or IDataTemplate;
     }
 
     private static void PrepareBaselineForOverlay(object baselineRoot, string xamlText)

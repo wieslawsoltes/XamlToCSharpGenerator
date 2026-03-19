@@ -9,10 +9,13 @@ const {
   createCommandFailureMessage,
   createPreviewBuildPlan,
   createPreviewStartPlan,
+  enumeratePreviewAssemblyArtifacts,
   extractPreviewSecurityCookie,
   hasPendingPreviewText,
   getPreviewViewportMetricsKey,
   resolveAvaloniaPreviewerToolPaths,
+  resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
@@ -26,6 +29,8 @@ const {
   resolveLoopbackPreviewWebviewTarget,
   resolveConfiguredProjectPath,
   resolvePreviewDocumentText,
+  resolveEffectivePreviewMode,
+  resolvePreviewBuildMode,
   resolvePreviewCompilerMode,
   PREVIEW_COMPILER_MODE_AUTO,
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
@@ -294,13 +299,17 @@ test('resolvePreviewCompilerMode prefers source-generated preview in auto mode w
   try {
     const targetPath = path.join(tempRoot, 'Demo.dll');
     fs.writeFileSync(targetPath, '', 'utf8');
-    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), '', 'utf8');
+    fs.writeFileSync(
+      path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'),
+      '...SourceGenPreviewMarkupRuntime...',
+      'utf8');
 
     const actual = resolvePreviewCompilerMode('auto', { targetPath });
     assert.deepEqual(actual, {
       requestedMode: PREVIEW_COMPILER_MODE_AUTO,
       preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-      sourceGeneratedSupported: true
+      sourceGeneratedSupported: true,
+      sourceGeneratedLivePreviewSupported: true
     });
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -312,8 +321,50 @@ test('resolvePreviewCompilerMode falls back to Avalonia mode when source-generat
   assert.deepEqual(actual, {
     requestedMode: PREVIEW_COMPILER_MODE_AUTO,
     preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
-    sourceGeneratedSupported: false
+    sourceGeneratedSupported: false,
+    sourceGeneratedLivePreviewSupported: false
   });
+});
+
+test('resolvePreviewCompilerMode falls back to Avalonia mode when AXSG live preview support is missing', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), 'stale-runtime', 'utf8');
+
+    const actual = resolvePreviewCompilerMode('auto', { targetPath });
+    assert.deepEqual(actual, {
+      requestedMode: PREVIEW_COMPILER_MODE_AUTO,
+      preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      sourceGeneratedSupported: true,
+      sourceGeneratedLivePreviewSupported: false
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('resolvePreviewBuildMode keeps source-generated builds enabled in auto mode when AXSG runtime output exists', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const targetPath = path.join(tempRoot, 'Demo.dll');
+    fs.writeFileSync(targetPath, '', 'utf8');
+    fs.writeFileSync(path.join(tempRoot, 'XamlToCSharpGenerator.Runtime.Avalonia.dll'), 'stale-runtime', 'utf8');
+
+    assert.equal(resolvePreviewBuildMode('auto', { targetPath }), PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('resolveEffectivePreviewMode prefers the resolved runtime mode over the preferred launch mode', () => {
+  assert.equal(
+    resolveEffectivePreviewMode({
+      preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
+      resolvedMode: PREVIEW_COMPILER_MODE_AVALONIA
+    }),
+    PREVIEW_COMPILER_MODE_AVALONIA);
 });
 
 test('resolvePreviewDocumentText uses persisted text for dirty source-generated startup', () => {
@@ -459,6 +510,80 @@ test('resolveAvaloniaPreviewerToolPaths de-duplicates identical host paths', () 
     ]);
 });
 
+test('resolvePreviewDesignAssemblyPath aligns a referenced source assembly to the host output directory', () => {
+  assert.equal(
+    resolvePreviewDesignAssemblyPath(
+      '/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll',
+      '/repo/samples/ControlCatalog.Desktop/bin/Debug/net10.0/ControlCatalog.Desktop.dll',
+      true),
+    path.normalize('/repo/samples/ControlCatalog.Desktop/bin/Debug/net10.0/ControlCatalog.dll'));
+});
+
+test('resolvePreviewDesignAssemblyPath keeps the source output when the host does not reference it', () => {
+  assert.equal(
+    resolvePreviewDesignAssemblyPath(
+      '/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll',
+      '/repo/samples/StandaloneHost/bin/Debug/net10.0/StandaloneHost.dll',
+      false),
+    path.normalize('/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll'));
+});
+
+test('resolvePreviewHostRuntimePaths uses the previewer tool sidecars by default', () => {
+  assert.deepEqual(
+    resolvePreviewHostRuntimePaths(
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/app/App.dll',
+      false),
+    {
+      runtimeConfigPath: path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.runtimeconfig.json'),
+      depsFilePath: path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.deps.json')
+    });
+});
+
+test('resolvePreviewHostRuntimePaths switches to the host assembly sidecars for project-host fallback', () => {
+  assert.deepEqual(
+    resolvePreviewHostRuntimePaths(
+      '/tmp/project/Avalonia.Designer.HostApp.dll',
+      '/tmp/app/App.dll',
+      true),
+    {
+      runtimeConfigPath: path.normalize('/tmp/app/App.runtimeconfig.json'),
+      depsFilePath: path.normalize('/tmp/app/App.deps.json')
+    });
+});
+
+test('enumeratePreviewAssemblyArtifacts includes deps and pdb sidecars for aligned previews', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-artifacts-'));
+  try {
+    const sourceDirectory = path.join(tempRoot, 'source');
+    const previewDirectory = path.join(tempRoot, 'preview');
+    fs.mkdirSync(sourceDirectory, { recursive: true });
+    fs.mkdirSync(previewDirectory, { recursive: true });
+
+    const sourceAssemblyPath = path.join(sourceDirectory, 'ControlCatalog.dll');
+    fs.writeFileSync(sourceAssemblyPath, 'assembly', 'utf8');
+    fs.writeFileSync(path.join(sourceDirectory, 'ControlCatalog.pdb'), 'symbols', 'utf8');
+    fs.writeFileSync(path.join(sourceDirectory, 'ControlCatalog.deps.json'), '{}', 'utf8');
+
+    const artifacts = enumeratePreviewAssemblyArtifacts(
+      sourceAssemblyPath,
+      path.join(previewDirectory, 'ControlCatalog.dll'));
+
+    assert.deepEqual(
+      artifacts.map(entry => ({
+        source: path.basename(entry.sourcePath),
+        target: path.basename(entry.targetPath)
+      })),
+      [
+        { source: 'ControlCatalog.dll', target: 'ControlCatalog.dll' },
+        { source: 'ControlCatalog.pdb', target: 'ControlCatalog.pdb' },
+        { source: 'ControlCatalog.deps.json', target: 'ControlCatalog.deps.json' }
+      ]);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('createPreviewStartPlan requires the bundled designer host when source-generated mode is forced', () => {
   const actual = createPreviewStartPlan({
     requestedMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
@@ -544,6 +669,38 @@ test('createPreviewBuildPlan skips launch builds when Avalonia preview outputs a
 
     assert.deepEqual(actual, {
       buildHost: false,
+      buildSource: false,
+      hostBuildIncludesSource: true
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('createPreviewBuildPlan rebuilds the host for Avalonia launch when a referenced library document is newer than the assembly', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const documentPath = path.join(tempRoot, 'View.axaml');
+    const sourceTargetPath = path.join(tempRoot, 'Library.dll');
+    const hostTargetPath = path.join(tempRoot, 'App.dll');
+    fs.writeFileSync(sourceTargetPath, '', 'utf8');
+    fs.writeFileSync(hostTargetPath, '', 'utf8');
+    await new Promise(resolve => setTimeout(resolve, 15));
+    fs.writeFileSync(documentPath, '', 'utf8');
+
+    const actual = createPreviewBuildPlan({
+      buildReason: 'launch',
+      previewMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      documentFilePath: documentPath,
+      sourceProjectPath: path.join(tempRoot, 'Library.csproj'),
+      sourceTargetPath,
+      hostProjectPath: path.join(tempRoot, 'App.csproj'),
+      hostTargetPath,
+      hostBuildIncludesSource: true
+    });
+
+    assert.deepEqual(actual, {
+      buildHost: true,
       buildSource: false,
       hostBuildIncludesSource: true
     });

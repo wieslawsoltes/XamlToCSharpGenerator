@@ -1,0 +1,113 @@
+{
+  "Avalonia UserControl": {
+    "prefix": [
+      "axsg-usercontrol",
+      "avalonia-usercontrol",
+      "usercontrol"
+    ],
+    "body": [
+      "<UserControl xmlns=\"https://github.com/avaloniaui\"",
+      "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">",
+      "  $0",
+      "</UserControl>"
+    ],
+    "description": "Avalonia UserControl root with default namespace declarations."
+  },
+  "Avalonia Window": {
+    "prefix": [
+      "axsg-window",
+      "avalonia-window",
+      "window"
+    ],
+    "body": [
+      "<Window xmlns=\"https://github.com/avaloniaui\"",
+      "        xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"",
+      "        x:Class=\"$1\">",
+      "  $0",
+      "</Window>"
+    ],
+    "description": "Avalonia Window root with x:Class."
+  },
+  "ResourceDictionary": {
+    "prefix": [
+      "axsg-resources",
+      "resourcedictionary",
+      "resources"
+    ],
+    "body": [
+      "<ResourceDictionary xmlns=\"https://github.com/avaloniaui\"",
+      "                    xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">",
+      "  $0",
+      "</ResourceDictionary>"
+    ],
+    "description": "Avalonia ResourceDictionary root."
+  },
+  "Style": {
+    "prefix": [
+      "axsg-style",
+      "style"
+    ],
+    "body": [
+      "<Style Selector=\"$1\">",
+      "  <Setter Property=\"$2\" Value=\"$0\" />",
+      "</Style>"
+    ],
+    "description": "Avalonia style with selector and setter."
+  },
+  "DataTemplate": {
+    "prefix": [
+      "axsg-datatemplate",
+      "datatemplate"
+    ],
+    "body": [
+      "<DataTemplate x:DataType=\"$1\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">",
+      "  $0",
+      "</DataTemplate>"
+    ],
+    "description": "DataTemplate with explicit x:DataType for compiled bindings."
+  },
+  "ControlTheme": {
+    "prefix": [
+      "axsg-controltheme",
+      "controltheme"
+    ],
+    "body": [
+      "<ControlTheme x:Key=\"$1\" TargetType=\"$2\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">",
+      "  <Setter Property=\"$3\" Value=\"$0\" />",
+      "</ControlTheme>"
+    ],
+    "description": "Avalonia ControlTheme with key, target type, and setter."
+  },
+  "Binding": {
+    "prefix": [
+      "axsg-binding",
+      "binding"
+    ],
+    "body": "{Binding $0}",
+    "description": "Reflection binding markup extension."
+  },
+  "CompiledBinding": {
+    "prefix": [
+      "axsg-compiledbinding",
+      "compiledbinding"
+    ],
+    "body": "{CompiledBinding $0}",
+    "description": "Compiled binding markup extension."
+  },
+  "StaticResource": {
+    "prefix": [
+      "axsg-staticresource",
+      "staticresource"
+    ],
+    "body": "{StaticResource $0}",
+    "description": "StaticResource markup extension."
+  },
+  "DynamicResource": {
+    "prefix": [
+      "axsg-dynamicresource",
+      "dynamicresource"
+    ],
+    "body": "{DynamicResource $0}",
+    "description": "DynamicResource markup extension."
+  }
+}

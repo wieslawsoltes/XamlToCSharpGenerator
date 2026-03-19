@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 
 namespace XamlToCSharpGenerator.RemoteProtocol.Preview;
 
@@ -71,6 +72,13 @@ public sealed record AxsgPreviewHostInputRequest
 }
 
 /// <summary>
+/// Represents a preview design operation request for an active preview helper session.
+/// </summary>
+public sealed record AxsgPreviewHostDesignRequest(
+    string Operation,
+    JsonElement Arguments);
+
+/// <summary>
 /// Represents the payload returned for a successful preview helper ping.
 /// </summary>
 public sealed record AxsgPreviewHostPingResponse(bool Pong);
@@ -114,4 +122,4 @@ public sealed record AxsgPreviewHostHotReloadResponse(
 /// <summary>
 /// Represents the event payload raised when the preview host process exits.
 /// </summary>
-public sealed record AxsgPreviewHostHostExitedEventPayload(int? ExitCode);
+public sealed record AxsgPreviewHostHostExitedEventPayload(int? ExitCode, string? Error);

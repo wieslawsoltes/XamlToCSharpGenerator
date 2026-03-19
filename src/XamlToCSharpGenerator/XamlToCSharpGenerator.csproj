@@ -22,6 +22,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.MiniLanguageParsing.dll"
+          Pack="true"
+          PackagePath="lib/net6.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.MiniLanguageParsing.dll"
+          Pack="true"
+          PackagePath="lib/net8.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.MiniLanguageParsing.dll"
+          Pack="true"
+          PackagePath="lib/net10.0"
+          Visible="false" />
+
     <None Include="..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\net6.0\XamlToCSharpGenerator.Runtime.Core.dll"
           Pack="true"
           PackagePath="lib/net6.0"
@@ -31,6 +44,19 @@
           PackagePath="lib/net8.0"
           Visible="false" />
     <None Include="..\XamlToCSharpGenerator.Runtime.Core\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.Runtime.Core.dll"
+          Pack="true"
+          PackagePath="lib/net10.0"
+          Visible="false" />
+
+    <None Include="..\XamlToCSharpGenerator.RemoteProtocol\bin\$(Configuration)\net6.0\XamlToCSharpGenerator.RemoteProtocol.dll"
+          Pack="true"
+          PackagePath="lib/net6.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.RemoteProtocol\bin\$(Configuration)\net8.0\XamlToCSharpGenerator.RemoteProtocol.dll"
+          Pack="true"
+          PackagePath="lib/net8.0"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.RemoteProtocol\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.RemoteProtocol.dll"
           Pack="true"
           PackagePath="lib/net10.0"
           Visible="false" />
@@ -123,6 +149,9 @@
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS1036" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Runtime.Core\XamlToCSharpGenerator.Runtime.Core.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591" />
+    <MSBuild Projects="..\XamlToCSharpGenerator.RemoteProtocol\XamlToCSharpGenerator.RemoteProtocol.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Runtime.Avalonia\XamlToCSharpGenerator.Runtime.Avalonia.csproj"

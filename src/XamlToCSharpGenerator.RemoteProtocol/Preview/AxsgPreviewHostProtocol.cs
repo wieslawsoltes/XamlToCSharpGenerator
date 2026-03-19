@@ -37,6 +37,11 @@ public static class AxsgPreviewHostProtocol
     public const string InputCommand = "input";
 
     /// <summary>
+    /// The preview design command name.
+    /// </summary>
+    public const string DesignCommand = "design";
+
+    /// <summary>
     /// The preview stop command name.
     /// </summary>
     public const string StopCommand = "stop";
@@ -116,10 +121,10 @@ public static class AxsgPreviewHostProtocol
         string xamlText = GetRequiredValue(request.XamlText, "xamlText");
         string dotNetCommand = string.IsNullOrWhiteSpace(request.DotNetCommand) ? "dotnet" : request.DotNetCommand;
         string runtimeConfigPath = string.IsNullOrWhiteSpace(request.RuntimeConfigPath)
-            ? Path.ChangeExtension(hostAssemblyPath, ".runtimeconfig.json")!
+            ? Path.ChangeExtension(previewerToolPath, ".runtimeconfig.json")!
             : request.RuntimeConfigPath;
         string depsFilePath = string.IsNullOrWhiteSpace(request.DepsFilePath)
-            ? Path.ChangeExtension(hostAssemblyPath, ".deps.json")!
+            ? Path.ChangeExtension(previewerToolPath, ".deps.json")!
             : request.DepsFilePath;
         string previewCompilerMode = string.IsNullOrWhiteSpace(request.PreviewCompilerMode)
             ? "avalonia"
@@ -245,6 +250,23 @@ public static class AxsgPreviewHostProtocol
     }
 
     /// <summary>
+    /// Parses and validates a preview design operation request payload.
+    /// </summary>
+    public static AxsgPreviewHostDesignRequest ParseDesignRequest(JsonElement payload)
+    {
+        EnsureObjectPayload(payload, "Design payload");
+        string operation = GetRequiredString(
+            payload.TryGetProperty("operation", out JsonElement operationElement) && operationElement.ValueKind == JsonValueKind.String
+                ? operationElement.GetString()
+                : null,
+            "operation");
+        JsonElement arguments = payload.TryGetProperty("arguments", out JsonElement argumentsElement)
+            ? argumentsElement.Clone()
+            : default;
+        return new AxsgPreviewHostDesignRequest(operation, arguments);
+    }
+
+    /// <summary>
     /// Creates a successful preview helper response envelope.
     /// </summary>
     public static AxsgPreviewHostResponseEnvelope CreateSuccessResponse(string? requestId, object? payload = null)
@@ -322,6 +344,11 @@ public static class AxsgPreviewHostProtocol
         if (string.Equals(normalized, InputCommand, StringComparison.OrdinalIgnoreCase))
         {
             return InputCommand;
+        }
+
+        if (string.Equals(normalized, DesignCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return DesignCommand;
         }
 
         if (string.Equals(normalized, StopCommand, StringComparison.OrdinalIgnoreCase))

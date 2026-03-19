@@ -28,6 +28,72 @@ internal static class LanguageServiceTestCompilationFactory
         return CachedCompilation.Value;
     }
 
+    public static Compilation CreateNamespaceImportCompilation()
+    {
+        const string source = """
+                              using System;
+
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:Host.Controls", "Host.Controls")]
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("using:Demo.Controls", "Demo.Controls")]
+                              [assembly: Avalonia.Metadata.XmlnsPrefixAttribute("using:Demo.Controls", "local")]
+
+                              namespace Avalonia.Metadata
+                              {
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsDefinitionAttribute : Attribute
+                                  {
+                                      public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                  }
+
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsPrefixAttribute : Attribute
+                                  {
+                                      public XmlnsPrefixAttribute(string xmlNamespace, string prefix) { }
+                                  }
+                              }
+
+                              namespace Host.Controls
+                              {
+                                  public class UserControl { }
+
+                                  public class ControlTheme
+                                  {
+                                      public object? TargetType { get; set; }
+                                  }
+
+                                  public class DataTemplate
+                                  {
+                                      public object? DataType { get; set; }
+                                  }
+
+                                  public class Style
+                                  {
+                                      public string Selector { get; set; } = string.Empty;
+                                  }
+
+                                  public class Setter
+                                  {
+                                      public string Property { get; set; } = string.Empty;
+                                      public object? Value { get; set; }
+                                  }
+                              }
+
+                              namespace Demo.Controls
+                              {
+                                  public class ThemeDoodad
+                                  {
+                                      public static object AccentProperty = new object();
+                                      public string Title { get; set; } = string.Empty;
+                                  }
+                              }
+                              """;
+
+        return CreateAdHocCompilation(
+            source,
+            assemblyName: "NamespaceImportTests",
+            filePath: "/tmp/NamespaceImportTests.cs");
+    }
+
     public static ICompilationProvider CreateSharedMsBuildCompilationProvider()
     {
         return new NonDisposingCompilationProvider(SharedMsBuildCompilationProvider.Value);
@@ -205,6 +271,22 @@ internal static class LanguageServiceTestCompilationFactory
 
         return CSharpCompilation.Create(
             "InMemoryLanguageServiceTests",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static Compilation CreateAdHocCompilation(string source, string assemblyName, string filePath)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: filePath);
+        var references = new[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
+        };
+
+        return CSharpCompilation.Create(
+            assemblyName,
             new[] { syntaxTree },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

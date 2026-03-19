@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
@@ -79,6 +82,13 @@ public sealed class XamlCompilerAnalysisService
             if (options.IncludeSemanticDiagnostics)
             {
                 diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(semanticDiagnostics, source: "AXSG.Semantic"));
+
+                if (TryCreateNonPartialClassDiagnostic(parsedDocument, snapshot.Compilation, out var partialClassDiagnostic))
+                {
+                    diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(
+                        ImmutableArray.Create(partialClassDiagnostic),
+                        source: "AXSG.Semantic"));
+                }
             }
         }
 
@@ -122,6 +132,60 @@ public sealed class XamlCompilerAnalysisService
             settings.AllowImplicitDefaultXmlns,
             settings.ImplicitDefaultXmlns,
             _frameworkProfile.CreateDocumentEnrichers());
+    }
+
+    private static bool TryCreateNonPartialClassDiagnostic(
+        XamlDocumentModel document,
+        Compilation compilation,
+        out DiagnosticInfo diagnostic)
+    {
+        diagnostic = null!;
+        if (!document.IsClassBacked ||
+            string.IsNullOrWhiteSpace(document.ClassFullName))
+        {
+            return false;
+        }
+
+        if (ResolveTypeSymbol(compilation, document.ClassFullName!) is not INamedTypeSymbol classSymbol ||
+            HasOnlyPartialSourceDeclarations(classSymbol))
+        {
+            return false;
+        }
+
+        diagnostic = new DiagnosticInfo(
+            "AXSG0109",
+            $"Type '{document.ClassFullName}' must be declared partial to use the SourceGen XAML backend.",
+            document.FilePath,
+            document.RootObject.Line,
+            document.RootObject.Column,
+            IsError: false);
+        return true;
+    }
+
+    private static ISymbol? ResolveTypeSymbol(Compilation compilation, string fullTypeName)
+    {
+        return compilation.GetTypeByMetadataName(fullTypeName)
+               ?? compilation.GetTypeByMetadataName(fullTypeName.Replace('.', '+'));
+    }
+
+    private static bool HasOnlyPartialSourceDeclarations(INamedTypeSymbol typeSymbol)
+    {
+        var sawSourceDeclaration = false;
+        foreach (var syntaxReference in typeSymbol.DeclaringSyntaxReferences)
+        {
+            if (syntaxReference.GetSyntax() is not TypeDeclarationSyntax typeDeclaration)
+            {
+                continue;
+            }
+
+            sawSourceDeclaration = true;
+            if (!typeDeclaration.Modifiers.Any(static modifier => modifier.IsKind(SyntaxKind.PartialKeyword)))
+            {
+                return false;
+            }
+        }
+
+        return sawSourceDeclaration;
     }
 
     private static class CSharpCompilationFactory

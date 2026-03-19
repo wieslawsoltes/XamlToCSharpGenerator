@@ -13,6 +13,7 @@ const VALID_PREVIEW_COMPILER_MODES = new Set([
 const SOURCE_GENERATED_RUNTIME_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia.dll';
 const SOURCE_GENERATED_RUNTIME_LIBRARY_NAME = 'XamlToCSharpGenerator.Runtime.Avalonia';
 const SOURCE_GENERATED_LIVE_PREVIEW_MARKER = 'SourceGenPreviewMarkupRuntime';
+const PREVIEW_ASSEMBLY_SIDECAR_EXTENSIONS = ['.pdb', '.deps.json', '.runtimeconfig.json'];
 const MOBILE_TARGET_FRAMEWORK_MARKERS = [
   '-android',
   '-ios',
@@ -185,12 +186,14 @@ function supportsSourceGeneratedLivePreview(projectInfo) {
 function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
   const requestedMode = normalizePreviewCompilerMode(configuredMode);
   const sourceGeneratedSupported = supportsSourceGeneratedPreview(sourceProjectInfo);
+  const sourceGeneratedLivePreviewSupported = supportsSourceGeneratedLivePreview(sourceProjectInfo);
 
   if (requestedMode === PREVIEW_COMPILER_MODE_AVALONIA) {
     return {
       requestedMode,
       preferredMode: PREVIEW_COMPILER_MODE_AVALONIA,
-      sourceGeneratedSupported
+      sourceGeneratedSupported,
+      sourceGeneratedLivePreviewSupported
     };
   }
 
@@ -198,17 +201,42 @@ function resolvePreviewCompilerMode(configuredMode, sourceProjectInfo) {
     return {
       requestedMode,
       preferredMode: PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
-      sourceGeneratedSupported
+      sourceGeneratedSupported,
+      sourceGeneratedLivePreviewSupported
     };
   }
 
   return {
     requestedMode,
-    preferredMode: sourceGeneratedSupported
+    preferredMode: sourceGeneratedLivePreviewSupported
       ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
       : PREVIEW_COMPILER_MODE_AVALONIA,
-    sourceGeneratedSupported
+    sourceGeneratedSupported,
+    sourceGeneratedLivePreviewSupported
   };
+}
+
+function resolvePreviewBuildMode(configuredMode, sourceProjectInfo) {
+  const requestedMode = normalizePreviewCompilerMode(configuredMode);
+  if (requestedMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+    return PREVIEW_COMPILER_MODE_SOURCE_GENERATED;
+  }
+
+  if (requestedMode === PREVIEW_COMPILER_MODE_AVALONIA) {
+    return PREVIEW_COMPILER_MODE_AVALONIA;
+  }
+
+  return supportsSourceGeneratedPreview(sourceProjectInfo)
+    ? PREVIEW_COMPILER_MODE_SOURCE_GENERATED
+    : PREVIEW_COMPILER_MODE_AVALONIA;
+}
+
+function resolveEffectivePreviewMode(previewPlan) {
+  if (!previewPlan || typeof previewPlan !== 'object') {
+    return PREVIEW_COMPILER_MODE_AVALONIA;
+  }
+
+  return previewPlan.resolvedMode || previewPlan.preferredMode || PREVIEW_COMPILER_MODE_AVALONIA;
 }
 
 function resolvePreviewDocumentText(documentText, persistedText, isDirty, previewMode) {
@@ -317,6 +345,49 @@ function resolveAvaloniaPreviewerToolPaths(hasBundledDesignerHost, bundledDesign
 
   tryAdd(projectPreviewerToolPath);
   return orderedPaths;
+}
+
+function resolvePreviewDesignAssemblyPath(sourceTargetPath, hostTargetPath, hostReferencesSource) {
+  const normalizedSourceTargetPath = normalizeMaybeEmptyPath(sourceTargetPath);
+  if (!normalizedSourceTargetPath) {
+    return '';
+  }
+
+  const normalizedHostTargetPath = normalizeMaybeEmptyPath(hostTargetPath);
+  if (!hostReferencesSource || !normalizedHostTargetPath || samePath(normalizedSourceTargetPath, normalizedHostTargetPath)) {
+    return normalizedSourceTargetPath;
+  }
+
+  return normalizeFilePath(path.join(
+    path.dirname(normalizedHostTargetPath),
+    path.basename(normalizedSourceTargetPath)));
+}
+
+function enumeratePreviewAssemblyArtifacts(sourceAssemblyPath, previewAssemblyPath) {
+  const normalizedSourceAssemblyPath = normalizeMaybeEmptyPath(sourceAssemblyPath);
+  const normalizedPreviewAssemblyPath = normalizeMaybeEmptyPath(previewAssemblyPath);
+  if (!normalizedSourceAssemblyPath || !normalizedPreviewAssemblyPath || !fs.existsSync(normalizedSourceAssemblyPath)) {
+    return [];
+  }
+
+  const artifacts = [{
+    sourcePath: normalizedSourceAssemblyPath,
+    targetPath: normalizedPreviewAssemblyPath
+  }];
+
+  for (const extension of PREVIEW_ASSEMBLY_SIDECAR_EXTENSIONS) {
+    const sourceSidecarPath = replaceFileExtension(normalizedSourceAssemblyPath, extension);
+    if (!fs.existsSync(sourceSidecarPath)) {
+      continue;
+    }
+
+    artifacts.push({
+      sourcePath: sourceSidecarPath,
+      targetPath: replaceFileExtension(normalizedPreviewAssemblyPath, extension)
+    });
+  }
+
+  return artifacts;
 }
 
 function createPreviewStartPlan(options) {
@@ -527,6 +598,7 @@ function createPreviewBuildPlan(options) {
   const sourceOutputMissing = !sourceTargetPath || !fs.existsSync(sourceTargetPath);
   const hostOutputMissing = !hostTargetPath || !fs.existsSync(hostTargetPath);
   const documentChangedSinceBuild = isInputNewerThanOutput(options.documentFilePath, sourceTargetPath);
+  const sourceBuildRequired = sourceOutputMissing || documentChangedSinceBuild;
 
   if (previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
     if (buildReason === 'save') {
@@ -553,7 +625,7 @@ function createPreviewBuildPlan(options) {
       };
     }
 
-    const buildSource = sourceOutputMissing || documentChangedSinceBuild || requiresSourceGeneratedCapabilityRefresh;
+    const buildSource = sourceBuildRequired || requiresSourceGeneratedCapabilityRefresh;
     const buildHost = hostOutputMissing || (sameProject && buildSource);
     return {
       buildHost,
@@ -564,16 +636,16 @@ function createPreviewBuildPlan(options) {
 
   if (sameProject) {
     return {
-      buildHost: hostOutputMissing,
+      buildHost: hostOutputMissing || sourceBuildRequired,
       buildSource: false,
       hostBuildIncludesSource: true
     };
   }
 
-  const buildHost = hostOutputMissing;
+  const buildHost = hostOutputMissing || (hostBuildIncludesSource && sourceBuildRequired);
   return {
     buildHost,
-    buildSource: sourceOutputMissing && !(buildHost && hostBuildIncludesSource),
+    buildSource: sourceBuildRequired && !(buildHost && hostBuildIncludesSource),
     hostBuildIncludesSource
   };
 }
@@ -583,11 +655,36 @@ function isUnderBuildOutput(filePath) {
   return normalized.includes('/bin/') || normalized.includes('/obj/');
 }
 
+function replaceFileExtension(filePath, nextExtension) {
+  const parsedPath = path.parse(filePath);
+  return path.join(parsedPath.dir, parsedPath.name + nextExtension);
+}
+
+function resolvePreviewHostRuntimePaths(previewerToolPath, hostAssemblyPath, useHostAssemblyRuntime = false) {
+  const runtimeBasePath = normalizeMaybeEmptyPath(useHostAssemblyRuntime
+    ? hostAssemblyPath
+    : previewerToolPath);
+  if (!runtimeBasePath) {
+    return {
+      runtimeConfigPath: '',
+      depsFilePath: ''
+    };
+  }
+
+  return {
+    runtimeConfigPath: replaceFileExtension(runtimeBasePath, '.runtimeconfig.json'),
+    depsFilePath: replaceFileExtension(runtimeBasePath, '.deps.json')
+  };
+}
+
 module.exports = {
   createCommandFailureMessage,
   buildArguments,
   createPreviewBuildPlan,
+  enumeratePreviewAssemblyArtifacts,
   resolveAvaloniaPreviewerToolPaths,
+  resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
   getPreviewViewportMetricsKey,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
@@ -611,6 +708,8 @@ module.exports = {
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   projectReferencesProject,
   resolveConfiguredProjectPath,
+  resolveEffectivePreviewMode,
+  resolvePreviewBuildMode,
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,

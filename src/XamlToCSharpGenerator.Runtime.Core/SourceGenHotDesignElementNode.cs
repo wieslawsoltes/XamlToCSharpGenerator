@@ -16,4 +16,5 @@ public sealed record SourceGenHotDesignElementNode(
     int DescendantCount = 0,
     string? SourceBuildUri = null,
     string? SourceElementId = null,
-    bool IsLive = false);
+    bool IsLive = false,
+    SourceGenHotDesignTextRange? SourceRange = null);

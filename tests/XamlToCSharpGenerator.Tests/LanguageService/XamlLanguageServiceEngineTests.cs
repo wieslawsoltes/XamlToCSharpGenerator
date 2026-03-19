@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService;
+using XamlToCSharpGenerator.LanguageService.Formatting;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -20,6 +21,302 @@ public sealed class XamlLanguageServiceEngineTests
 {
     private static readonly Lazy<Compilation> CachedExternalControlsCompilation =
         new(CreateCompilationWithExternalControlsCore, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    [Fact]
+    public async Task FormatDocumentAsync_ReturnsSingleFullDocumentEdit()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/FormattingView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var edits = await engine.FormatDocumentAsync(uri, new XamlFormattingOptions(2, InsertSpaces: true), CancellationToken.None);
+
+        var edit = Assert.Single(edits);
+        Assert.Equal(new SourceRange(new SourcePosition(0, 0), new SourcePosition(0, xaml.Length)), edit.Range);
+        Assert.Equal(
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>",
+            edit.NewText);
+    }
+
+    [Fact]
+    public async Task FormatDocumentAsync_PreservesXmlDeclarationEncoding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/FormattingWithDeclaration.axaml";
+        const string xaml =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var edits = await engine.FormatDocumentAsync(uri, new XamlFormattingOptions(2, InsertSpaces: true), CancellationToken.None);
+
+        var edit = Assert.Single(edits);
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n", edit.NewText, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"Hello\" />", edit.NewText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FormatDocumentAsync_InvalidXaml_ReturnsNoEdits()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BrokenFormattingView.axaml";
+        const string xaml = "<UserControl><StackPanel></UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var edits = await engine.FormatDocumentAsync(uri, XamlFormattingOptions.Default, CancellationToken.None);
+
+        Assert.Empty(edits);
+    }
+
+    [Fact]
+    public async Task GetFoldingRangesAsync_ReturnsElementAndCommentRanges()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/FoldingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <!--\n" +
+            "    comment\n" +
+            "  -->\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var ranges = await engine.GetFoldingRangesAsync(uri, CancellationToken.None);
+
+        Assert.Contains(new XamlFoldingRange(0, 7, "region"), ranges);
+        Assert.Contains(new XamlFoldingRange(1, 3, "comment"), ranges);
+        Assert.Contains(new XamlFoldingRange(4, 6, "region"), ranges);
+    }
+
+    [Fact]
+    public async Task GetSelectionRangesAsync_ReturnsNestedAttributeAndElementChain()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SelectionView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock Text=\"Hello\" />\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("Hello", StringComparison.Ordinal) + 2);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var ranges = await engine.GetSelectionRangesAsync(
+            uri,
+            [position],
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        var selection = Assert.Single(ranges);
+        Assert.Equal("Hello", GetRangeText(xaml, selection.Range));
+        Assert.NotNull(selection.Parent);
+        Assert.Equal("Text=\"Hello\"", GetRangeText(xaml, selection.Parent!.Range));
+        Assert.NotNull(selection.Parent.Parent);
+        Assert.Equal("<TextBlock Text=\"Hello\" />", GetRangeText(xaml, selection.Parent.Parent!.Range));
+        Assert.NotNull(selection.Parent.Parent.Parent);
+        Assert.Equal(
+            "<StackPanel>\n    <TextBlock Text=\"Hello\" />\n  </StackPanel>",
+            GetRangeText(xaml, selection.Parent.Parent.Parent!.Range));
+        Assert.NotNull(selection.Parent.Parent.Parent.Parent);
+        Assert.Equal(xaml, GetRangeText(xaml, selection.Parent.Parent.Parent.Parent!.Range));
+        Assert.Null(selection.Parent.Parent.Parent.Parent.Parent);
+    }
+
+    [Fact]
+    public async Task GetLinkedEditingRangesAsync_ReturnsMatchingStartAndEndTagRanges()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/LinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </StackPanel>\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("TextBlock", StringComparison.Ordinal) + 2);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var linkedEditingRanges = await engine.GetLinkedEditingRangesAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.NotNull(linkedEditingRanges);
+        Assert.Equal(2, linkedEditingRanges!.Ranges.Length);
+        Assert.Equal("TextBlock", GetRangeText(xaml, linkedEditingRanges.Ranges[0]));
+        Assert.Equal("TextBlock", GetRangeText(xaml, linkedEditingRanges.Ranges[1]));
+        Assert.Equal(@"[-.\w:]+", linkedEditingRanges.WordPattern);
+    }
+
+    [Fact]
+    public async Task GetLinkedEditingRangesAsync_UsesMatchingClosingTagForNestedElements()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/NestedLinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </Grid>\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("Grid", StringComparison.Ordinal) + 1);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var linkedEditingRanges = await engine.GetLinkedEditingRangesAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.NotNull(linkedEditingRanges);
+        Assert.Equal(2, linkedEditingRanges!.Ranges.Length);
+        Assert.Equal("Grid", GetRangeText(xaml, linkedEditingRanges.Ranges[0]));
+        Assert.Equal("Grid", GetRangeText(xaml, linkedEditingRanges.Ranges[1]));
+    }
+
+    [Fact]
+    public async Task GetDocumentHighlightsAsync_ReturnsDeclarationAndUsageInCurrentDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/DocumentHighlights.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"\n" +
+            "             xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n" +
+            "  <UserControl.Resources>\n" +
+            "    <SolidColorBrush x:Key=\"AccentBrush\" />\n" +
+            "  </UserControl.Resources>\n" +
+            "  <Border Background=\"{StaticResource AccentBrush}\" />\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.LastIndexOf("AccentBrush", StringComparison.Ordinal) + 2);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var highlights = await engine.GetDocumentHighlightsAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.Equal(2, highlights.Length);
+        Assert.Contains(highlights, highlight =>
+            highlight.Kind == XamlDocumentHighlightKind.Write &&
+            GetRangeText(xaml, highlight.Range) == "AccentBrush");
+        Assert.Contains(highlights, highlight =>
+            highlight.Kind == XamlDocumentHighlightKind.Read &&
+            GetRangeText(xaml, highlight.Range) == "AccentBrush");
+    }
+
+    [Fact]
+    public async Task GetDocumentLinksAsync_ReturnsResolvedIncludeTarget()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        var temporaryDirectory = Path.Combine(Path.GetTempPath(), "axsg-doc-links-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporaryDirectory);
+
+        try
+        {
+            var includedFilePath = Path.Combine(temporaryDirectory, "SharedStyles.axaml");
+            await File.WriteAllTextAsync(
+                includedFilePath,
+                "<Styles xmlns=\"https://github.com/avaloniaui\" />",
+                CancellationToken.None);
+            var includedUri = new Uri(includedFilePath).AbsoluteUri;
+
+            var hostFilePath = Path.Combine(temporaryDirectory, "Host.axaml");
+            var hostUri = new Uri(hostFilePath).AbsoluteUri;
+            var xaml =
+                "<Styles xmlns=\"https://github.com/avaloniaui\">\n" +
+                $"  <StyleInclude Source=\"{includedUri}\" />\n" +
+                "</Styles>";
+
+            await engine.OpenDocumentAsync(hostUri, xaml, version: 1, new XamlLanguageServiceOptions(temporaryDirectory), CancellationToken.None);
+            var links = await engine.GetDocumentLinksAsync(
+                hostUri,
+                new XamlLanguageServiceOptions(temporaryDirectory),
+                CancellationToken.None);
+
+            var link = Assert.Single(links);
+            Assert.Equal(includedUri, link.TargetUri);
+            Assert.Equal(includedUri, GetRangeText(xaml, link.Range));
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetWorkspaceSymbolsAsync_ReturnsMatchingSymbolsAcrossOpenDocuments()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string firstUri = "file:///tmp/WorkspaceSymbolOne.axaml";
+        const string secondUri = "file:///tmp/WorkspaceSymbolTwo.axaml";
+        const string firstXaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid x:Name=\"LayoutRoot\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" />\n" +
+            "</UserControl>";
+        const string secondXaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <StackPanel />\n" +
+            "</UserControl>";
+
+        await engine.OpenDocumentAsync(firstUri, firstXaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        await engine.OpenDocumentAsync(secondUri, secondXaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+
+        var symbols = await engine.GetWorkspaceSymbolsAsync(
+            "LayoutRoot",
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        var symbol = Assert.Single(symbols);
+        Assert.Equal(firstUri, symbol.Uri);
+        Assert.Contains("LayoutRoot", symbol.Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetSignatureHelpAsync_ReturnsMarkupExtensionSignatureAndActiveParameter()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/SignatureHelpView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <TextBlock Text=\"{Binding Name, Mode=TwoWay}\" />\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("Mode", StringComparison.Ordinal) + 2);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var signatureHelp = await engine.GetSignatureHelpAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.NotNull(signatureHelp);
+        Assert.Equal(0, signatureHelp!.ActiveSignature);
+        Assert.Equal(1, signatureHelp.ActiveParameter);
+        var signature = Assert.Single(signatureHelp.Signatures);
+        Assert.Equal("Binding(path, Mode, Source, RelativeSource, ElementName, Converter, ConverterParameter, StringFormat, FallbackValue, TargetNullValue)", signature.Label);
+    }
 
     [Fact]
     public async Task Completion_InElementContext_ReturnsKnownTypes()
@@ -783,6 +1080,35 @@ public sealed class XamlLanguageServiceEngineTests
         engine.CloseDocument("file:///tmp/FileB.axaml");
 
         Assert.Equal(0, countingProvider.InvalidateCalls);
+    }
+
+    [Fact]
+    public async Task HandleWatchedFileChanges_InvalidatesOpenDocumentAnalyses()
+    {
+        var countingProvider = new CountingCompilationProvider(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        using var engine = new XamlLanguageServiceEngine(countingProvider);
+        const string uri = "file:///tmp/MainView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" />";
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeCompilationDiagnostics: true, IncludeSemanticDiagnostics: true);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+
+        Assert.Equal(1, countingProvider.GetCompilationCalls);
+
+        var invalidatedUris = engine.HandleWatchedFileChanges(new[]
+        {
+            "file:///tmp/Themes/Shared.axaml"
+        });
+
+        Assert.Equal(1, countingProvider.InvalidateCalls);
+        Assert.Contains(uri, invalidatedUris);
+
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+
+        Assert.Equal(2, countingProvider.GetCompilationCalls);
     }
 
     [Fact]
@@ -1806,6 +2132,7 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.NotEmpty(definitions);
         Assert.Equal(uri, definitions[0].Uri);
         Assert.Equal(2, definitions[0].Range.Start.Line);
+        Assert.Equal("AccentBrush", GetRangeText(xaml, definitions[0].Range));
     }
 
     [Fact]

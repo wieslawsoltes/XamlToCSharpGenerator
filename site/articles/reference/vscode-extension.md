@@ -4,6 +4,8 @@ title: "Artifact: VS Code Extension"
 
 # VS Code Extension
 
+For end-user setup, configuration, preview, and inspector workflows, use the dedicated [VS Code](../vscode/) section. This page stays package/artifact-oriented.
+
 ## Role
 
 The packaged VS Code extension bundles the AXSG language client, launches the server, and integrates XAML plus inline-C# editing features into VS Code.
@@ -37,6 +39,7 @@ The preview MCP host behind that helper now supports explicit in-process preview
 
 ## Related docs
 
+- [VS Code](../vscode/)
 - [Language Service and VS Code](../architecture/language-service-and-vscode/)
 - [VS Code and Language Service](../guides/vscode-language-service/)
 - [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/)

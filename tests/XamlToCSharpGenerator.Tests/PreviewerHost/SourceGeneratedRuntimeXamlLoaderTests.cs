@@ -14,6 +14,42 @@ namespace XamlToCSharpGenerator.Tests.PreviewerHost;
 public sealed class SourceGeneratedRuntimeXamlLoaderTests
 {
     [AvaloniaFact]
+    public void PreparePreviewDocument_Rehydrates_LocalAssembly_And_BaseUri_When_Designer_Message_Omits_AssemblyPath()
+    {
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+        try
+        {
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location,
+                "/tmp/Preview.axaml",
+                "/Pages/Preview.axaml",
+                null,
+                null,
+                typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location));
+            var document = new RuntimeXamlLoaderDocument("<UserControl />");
+            var configuration = new RuntimeXamlLoaderConfiguration();
+
+            RuntimeXamlLoaderDocument preparedDocument = SourceGeneratedRuntimeXamlLoaderInstaller.PreparePreviewDocument(
+                document,
+                "<UserControl />",
+                configuration,
+                out RuntimeXamlLoaderConfiguration preparedConfiguration);
+
+            Assert.Equal(typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly, preparedConfiguration.LocalAssembly);
+            Assert.Equal(
+                new Uri("avares://XamlToCSharpGenerator.Tests/Pages/Preview.axaml"),
+                preparedDocument.BaseUri);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+        }
+    }
+
+    [AvaloniaFact]
     public void LoadCore_Reuses_Initial_Baseline_For_Successful_Live_Overlay()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -96,6 +132,45 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
 
         var textBlock = Assert.IsType<TextBlock>(result.Content);
         Assert.Equal("Orange", textBlock.Text);
+    }
+
+    [AvaloniaFact]
+    public void TryApplyLiveOverlay_Uses_Fresh_ResourceDictionary_Instance_To_Preserve_DesignPreviewWith()
+    {
+        var method = typeof(SourceGeneratedRuntimeXamlLoader).GetMethod(
+            "TryApplyLiveOverlay",
+            BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TryApplyLiveOverlay method was not found.");
+        const string xaml = """
+            <ResourceDictionary xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <Design.PreviewWith>
+                <Border>
+                  <TextBlock Text="TextBox theme preview" />
+                </Border>
+              </Design.PreviewWith>
+              <Thickness x:Key="TextBoxPadding">8</Thickness>
+            </ResourceDictionary>
+            """;
+        var baseline = new ResourceDictionary();
+        var document = new RuntimeXamlLoaderDocument(
+            new Uri("avares://XamlToCSharpGenerator.Tests/TextBox.axaml"),
+            baseline,
+            xaml);
+        var configuration = new RuntimeXamlLoaderConfiguration
+        {
+            LocalAssembly = typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly,
+            DesignMode = true
+        };
+        object?[] args = [document, configuration, baseline, xaml, null];
+
+        var success = Assert.IsType<bool>(method.Invoke(null, args));
+        var result = Assert.IsType<ResourceDictionary>(args[4]);
+
+        Assert.True(success);
+        Assert.NotSame(baseline, result);
+        var previewHost = Assert.IsType<Border>(PreviewSizingRootDecorator.Apply(result));
+        Assert.Equal("TextBox theme preview", Assert.IsType<TextBlock>(previewHost.Child).Text);
     }
 
     [AvaloniaFact]
@@ -203,6 +278,146 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         Assert.NotNull(root.DataContext);
         Assert.Equal("ExternalPreviewHydration.ExternalPreviewHydratedViewModel", root.DataContext!.GetType().FullName);
         Assert.Equal(assemblyName, root.DataContext.GetType().Assembly.GetName().Name);
+    }
+
+    [AvaloniaFact]
+    public void PreviewHostAssemblyResolver_Resolves_External_Control_Assembly_From_Source_Output_Directory()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+        try
+        {
+            var sourceAssemblyName = "AxsgPreviewSource_" + Guid.NewGuid().ToString("N");
+            var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
+            var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+            var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
+
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                namespace ExternalPreviewControls;
+
+                public sealed class ReportDesignerControl : global::Avalonia.Controls.Border
+                {
+                }
+                """,
+                dependencyAssemblyPath);
+            EmitAssemblyToFile(
+                sourceAssemblyName,
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                sourceAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null,
+                null));
+            PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
+
+            Assembly localAssembly = SourceGeneratedRuntimeXamlLoaderInstaller.ResolvePreviewLocalAssembly(localAssembly: null)
+                ?? throw new InvalidOperationException("Local preview assembly was not resolved.");
+            string xaml = $$"""
+                            <local:ReportDesignerControl xmlns="https://github.com/avaloniaui"
+                                                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                                         xmlns:local="clr-namespace:ExternalPreviewControls;assembly={{dependencyAssemblyName}}" />
+                            """;
+            var document = new RuntimeXamlLoaderDocument(
+                new Uri("avares://" + sourceAssemblyName + "/Views/View.axaml"),
+                rootInstance: null,
+                xaml);
+            var configuration = new RuntimeXamlLoaderConfiguration
+            {
+                LocalAssembly = localAssembly,
+                DesignMode = true
+            };
+
+            var result = AvaloniaRuntimeXamlLoader.Load(document, configuration);
+
+            Assert.Equal("ExternalPreviewControls.ReportDesignerControl", result.GetType().FullName);
+            Assert.Equal(dependencyAssemblyName, result.GetType().Assembly.GetName().Name);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PreviewHostAssemblyResolver_Resolves_Dependencies_From_Host_Output_Directory()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var sourceDirectory = Path.Combine(tempRoot, "source");
+            var hostDirectory = Path.Combine(tempRoot, "host");
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(hostDirectory);
+
+            var sourceAssemblyPath = Path.Combine(sourceDirectory, "PreviewSource.dll");
+            var hostAssemblyPath = Path.Combine(hostDirectory, "PreviewHost.dll");
+            var dependencyAssemblyName = "Avalonia.Controls.ColorPicker";
+            var dependencyAssemblyPath = Path.Combine(hostDirectory, dependencyAssemblyName + ".dll");
+
+            EmitAssemblyToFile(
+                "PreviewSource",
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+            EmitAssemblyToFile(
+                "PreviewHost",
+                """
+                namespace PreviewHost;
+
+                public sealed class HostShell
+                {
+                }
+                """,
+                hostAssemblyPath);
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                namespace Avalonia.Controls.ColorPicker;
+
+                public sealed class ColorPickerHost
+                {
+                }
+                """,
+                dependencyAssemblyPath);
+
+            var resolver = new PreviewHostAssemblyResolver(sourceAssemblyPath, hostAssemblyPath);
+
+            string? resolvedPath = resolver.ResolveAssemblyPath(new AssemblyName(dependencyAssemblyName));
+
+            Assert.NotNull(resolvedPath);
+            Assert.Equal(dependencyAssemblyName + ".dll", Path.GetFileName(resolvedPath));
+            Assert.Contains(
+                $"{Path.DirectorySeparatorChar}host{Path.DirectorySeparatorChar}",
+                resolvedPath,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     [AvaloniaFact]
@@ -542,6 +757,23 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         return stream.ToArray();
     }
 
+    private static void EmitAssemblyToFile(string assemblyName, string source, string outputPath)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: assemblyName + ".cs");
+        IReadOnlyList<MetadataReference> references = CreateLoadedAssemblyMetadataReferences();
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var emitResult = compilation.Emit(outputPath);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit test assembly '" + assemblyName + "': " +
+            string.Join(Environment.NewLine, emitResult.Diagnostics));
+    }
+
     private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()
     {
         var references = new List<MetadataReference>();
@@ -552,6 +784,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
             var assembly = loadedAssemblies[index];
             if (assembly.IsDynamic ||
                 string.IsNullOrWhiteSpace(assembly.Location) ||
+                !File.Exists(assembly.Location) ||
                 !seenPaths.Add(assembly.Location))
             {
                 continue;

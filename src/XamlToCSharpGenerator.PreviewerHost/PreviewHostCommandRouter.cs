@@ -1,3 +1,4 @@
+using System.Text.Json;
 using XamlToCSharpGenerator.RemoteProtocol.Preview;
 
 namespace XamlToCSharpGenerator.PreviewerHost;
@@ -10,7 +11,7 @@ internal interface IPreviewHostSession : IAsyncDisposable
 
     event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-    event Action<int?>? HostExited;
+    event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
     Task<AxsgPreviewHostStartResponse> StartAsync(AxsgPreviewHostStartRequest request, CancellationToken cancellationToken);
 
@@ -22,6 +23,8 @@ internal interface IPreviewHostSession : IAsyncDisposable
         CancellationToken cancellationToken);
 
     Task SendInputAsync(AxsgPreviewHostInputRequest request, CancellationToken cancellationToken);
+
+    Task<JsonElement> ExecuteDesignAsync(AxsgPreviewHostDesignRequest request, CancellationToken cancellationToken);
 }
 
 internal sealed class PreviewHostCommandRouter : IAsyncDisposable
@@ -58,6 +61,7 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
                 AxsgPreviewHostProtocol.UpdateCommand => await HandleUpdateAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.HotReloadCommand => await HandleHotReloadAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.InputCommand => await HandleInputAsync(command, cancellationToken).ConfigureAwait(false),
+                AxsgPreviewHostProtocol.DesignCommand => await HandleDesignAsync(command, cancellationToken).ConfigureAwait(false),
                 AxsgPreviewHostProtocol.StopCommand => await HandleStopAsync(command).ConfigureAwait(false),
                 _ => AxsgPreviewHostProtocol.CreateFailureResponse(
                     command.RequestId,
@@ -140,6 +144,16 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
         return AxsgPreviewHostProtocol.CreateSuccessResponse(command.RequestId, result);
     }
 
+    private async Task<AxsgPreviewHostResponseEnvelope> HandleDesignAsync(
+        AxsgPreviewHostCommandEnvelope command,
+        CancellationToken cancellationToken)
+    {
+        IPreviewHostSession session = _session ?? throw new InvalidOperationException("Preview session has not been started.");
+        AxsgPreviewHostDesignRequest request = AxsgPreviewHostProtocol.ParseDesignRequest(command.Payload);
+        JsonElement result = await session.ExecuteDesignAsync(request, cancellationToken).ConfigureAwait(false);
+        return AxsgPreviewHostProtocol.CreateSuccessResponse(command.RequestId, result);
+    }
+
     private void AttachSession(IPreviewHostSession session)
     {
         session.Log += HandleSessionLog;
@@ -193,11 +207,11 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
                 result));
     }
 
-    private void HandleHostExited(int? exitCode)
+    private void HandleHostExited(AxsgPreviewHostHostExitedEventPayload payload)
     {
         EventPublished?.Invoke(
             AxsgPreviewHostProtocol.CreateEvent(
                 AxsgPreviewHostProtocol.HostExitedEvent,
-                new AxsgPreviewHostHostExitedEventPayload(exitCode)));
+                payload));
     }
 }

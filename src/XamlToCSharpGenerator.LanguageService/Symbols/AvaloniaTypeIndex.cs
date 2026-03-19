@@ -101,6 +101,34 @@ public sealed class AvaloniaTypeIndex
         return _typesByFullTypeName.TryGetValue(fullTypeName, out typeInfo);
     }
 
+    public ImmutableArray<AvaloniaTypeInfo> FindTypesByXmlTypeName(string xmlTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(xmlTypeName))
+        {
+            return ImmutableArray<AvaloniaTypeInfo>.Empty;
+        }
+
+        var matches = ImmutableArray.CreateBuilder<AvaloniaTypeInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var byName in _typesByXmlNamespace.Values)
+        {
+            if (!byName.TryGetValue(xmlTypeName, out var typeInfo) ||
+                typeInfo is null)
+            {
+                continue;
+            }
+
+            var key = typeInfo.FullTypeName + "\0" + typeInfo.XmlNamespace;
+            if (seen.Add(key))
+            {
+                matches.Add(typeInfo);
+            }
+        }
+
+        return matches.ToImmutable();
+    }
+
     private static AvaloniaTypeIndex BuildIndex(Compilation compilation)
     {
         var map = BuildXmlNamespaceToClrNamespaceMap(compilation);

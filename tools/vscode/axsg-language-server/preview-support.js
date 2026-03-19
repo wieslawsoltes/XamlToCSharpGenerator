@@ -14,6 +14,7 @@ const {
   createCommandFailureMessage,
   createPreviewBuildPlan,
   createPreviewStartPlan,
+  enumeratePreviewAssemblyArtifacts,
   extractPreviewSecurityCookie,
   hasPendingPreviewText,
   PREVIEW_COMPILER_MODE_AUTO,
@@ -32,6 +33,10 @@ const {
   projectReferencesProject,
   resolveConfiguredProjectPath,
   resolveAvaloniaPreviewerToolPaths,
+  resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
+  resolveEffectivePreviewMode,
+  resolvePreviewBuildMode,
   resolveLoopbackPreviewWebviewTarget,
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
@@ -50,10 +55,16 @@ const {
   formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
+  mapPreviewClientPointToDesignPoint,
   mapPreviewClientPointToRemotePoint,
   normalizePreviewRenderScale,
+  projectPreviewOverlayBounds,
   stepPreviewZoom
 } = require('./preview-webview-helpers');
+const {
+  DESIGN_TOOLBOX_ITEM_MIME,
+  DESIGN_TOOLBOX_TEXT_PREFIX
+} = require('./design-toolbox-dnd');
 
 const PROJECT_INFO_PROPERTIES = [
   'TargetPath',
@@ -226,6 +237,7 @@ class AvaloniaPreviewSession {
     this.pendingUpdateText = null;
     this.updateTimer = null;
     this.updateChain = Promise.resolve();
+    this.updateInFlight = false;
     this.disposed = false;
     this.startPromise = null;
     this.activeCompilerMode = null;
@@ -234,6 +246,7 @@ class AvaloniaPreviewSession {
     this.previewSize = null;
     this.previewSizeReady = createDeferred();
     this.previewSizeReadyResolved = false;
+    this.designState = null;
   }
 
   reveal() {
@@ -264,7 +277,7 @@ class AvaloniaPreviewSession {
     return this.isSourceGeneratedPreviewActive() ||
       (!this.activeCompilerMode &&
         this.launchInfo.previewPlan &&
-        this.launchInfo.previewPlan.preferredMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
+        resolveEffectivePreviewMode(this.launchInfo.previewPlan) === PREVIEW_COMPILER_MODE_SOURCE_GENERATED);
   }
 
   handleDocumentChanged(document) {
@@ -292,12 +305,40 @@ class AvaloniaPreviewSession {
     this.scheduleLiveUpdate(document);
   }
 
+  async flushPendingPreviewUpdateAsync() {
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
+
+    const updateResult = hasPendingPreviewText(this.pendingUpdateText)
+      ? await this.flushPendingUpdate()
+      : await this.updateChain;
+
+    if (updateResult === false) {
+      throw new Error('Preview update failed; retry the inspector action after the preview is in sync.');
+    }
+  }
+
+  hasPendingPreviewUpdate() {
+    return this.updateInFlight ||
+      this.updateTimer !== null ||
+      hasPendingPreviewText(this.pendingUpdateText);
+  }
+
   scheduleLiveUpdate(document) {
     if (this.disposed) {
       return;
     }
 
     this.pendingUpdateText = document.getText();
+    if (this.launchInfo) {
+      this.launchInfo.documentText = this.pendingUpdateText;
+    }
     this.setStatus('Preview update queued...');
 
     if (this.updateTimer) {
@@ -384,7 +425,12 @@ class AvaloniaPreviewSession {
         },
         createPreviewWebviewOptions()));
 
-    panel.webview.html = createPreviewWebviewHtml(panel.webview, this.fileName, this.currentPreviewUrl, this.currentStatus);
+    panel.webview.html = createPreviewWebviewHtml(
+      panel.webview,
+      this.fileName,
+      this.currentPreviewUrl,
+      this.currentStatus,
+      this.activeCompilerMode);
     panel.webview.onDidReceiveMessage(message => {
       if (!message || !message.type) {
         return;
@@ -402,12 +448,22 @@ class AvaloniaPreviewSession {
 
       if (message.type === 'transportLog' && message.message) {
         this.controller.getOutputChannel().appendLine(`[preview-webview] ${message.message}`);
+        return;
+      }
+
+      if (this.controller.handleSessionWebviewMessage(this, message)) {
+        return;
       }
     });
     panel.onDidDispose(() => {
       if (!this.disposed) {
         this.controller.removeSession(this.documentUri);
         void this.dispose();
+      }
+    });
+    panel.onDidChangeViewState(event => {
+      if (!this.disposed && event && event.webviewPanel && event.webviewPanel.active) {
+        this.controller.notifySessionEvent(this, 'panelActivated', {});
       }
     });
 
@@ -430,29 +486,43 @@ class AvaloniaPreviewSession {
       throw new Error('No preview start strategy is available for the selected project.');
     }
 
+    const requestedMode = this.launchInfo.previewPlan && this.launchInfo.previewPlan.requestedMode
+      ? this.launchInfo.previewPlan.requestedMode
+      : PREVIEW_COMPILER_MODE_AUTO;
     let lastError = null;
 
     for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
       const attempt = attempts[attemptIndex];
+      const nextAttempt = attemptIndex < attempts.length - 1
+        ? attempts[attemptIndex + 1]
+        : null;
       try {
         this.setStatus(`Starting ${attempt.label} preview...`);
         await this.startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt);
         this.activeCompilerMode = attempt.mode;
+        if (this.launchInfo && this.launchInfo.previewPlan) {
+          this.launchInfo.previewPlan.resolvedMode = attempt.mode;
+        }
         this.setStatus(getPreviewReadyStatus(this.fileName, attempt.mode));
         this.updatePanel();
         return;
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
-        outputChannel.appendLine(`[preview] ${attempt.label} preview start failed: ${message}`);
+        if (requestedMode === PREVIEW_COMPILER_MODE_AUTO && nextAttempt) {
+          outputChannel.appendLine(
+            `[preview] ${attempt.label} preview was unavailable: ${message}. Falling back to ${nextAttempt.label}.`);
+        } else {
+          outputChannel.appendLine(`[preview] ${attempt.label} preview start failed: ${message}`);
+        }
 
         const helper = this.helper;
         if (helper) {
           await this.resetHelperAsync(helper);
         }
 
-        if (attemptIndex < attempts.length - 1) {
-          this.setStatus(`Falling back to ${attempts[attemptIndex + 1].label} preview...`);
+        if (nextAttempt) {
+          this.setStatus(`Falling back to ${nextAttempt.label} preview...`);
         }
       }
     }
@@ -482,7 +552,9 @@ class AvaloniaPreviewSession {
       dotNetCommand,
       hostAssemblyPath: this.launchInfo.hostProject.targetPath,
       previewerToolPath: attempt.previewerToolPath,
-      sourceAssemblyPath: this.launchInfo.sourceProject.targetPath,
+      runtimeConfigPath: attempt.runtimeConfigPath,
+      depsFilePath: attempt.depsFilePath,
+      sourceAssemblyPath: this.launchInfo.previewSourceAssemblyPath || this.launchInfo.sourceProject.targetPath,
       sourceFilePath: this.launchInfo.projectContext.filePath || '',
       xamlFileProjectPath: normalizePreviewTargetPath(this.launchInfo.projectContext.targetPath),
       xamlText: this.launchInfo.documentText,
@@ -505,11 +577,14 @@ class AvaloniaPreviewSession {
 
   async flushPendingUpdate() {
     if (this.disposed || !hasPendingPreviewText(this.pendingUpdateText)) {
-      return;
+      return true;
     }
 
     const updateText = this.pendingUpdateText;
     this.pendingUpdateText = null;
+    if (this.launchInfo) {
+      this.launchInfo.documentText = updateText;
+    }
     this.setStatus('Applying XAML update...');
 
     this.updateChain = this.updateChain
@@ -519,15 +594,23 @@ class AvaloniaPreviewSession {
           throw new Error('Preview host is not available.');
         }
 
-        await this.helper.sendCommand('update', { xamlText: updateText });
+        this.updateInFlight = true;
+        try {
+          await this.helper.sendCommand('update', { xamlText: updateText });
+          return true;
+        } finally {
+          this.updateInFlight = false;
+        }
       })
       .catch(error => {
+        this.updateInFlight = false;
         const message = error instanceof Error ? error.message : String(error);
         this.setStatus(`Preview update failed: ${message}`);
         void vscode.window.showWarningMessage(`AXSG preview update failed for ${this.fileName}: ${message}`);
+        return false;
       });
 
-    await this.updateChain;
+    return await this.updateChain;
   }
 
   handleHelperEvent(message) {
@@ -537,6 +620,7 @@ class AvaloniaPreviewSession {
       void this.updatePreviewUrlAsync(payload.previewUrl);
       this.setStatus(getPreviewReadyStatus(this.fileName, this.activeCompilerMode));
       this.updatePanel();
+      this.controller.notifySessionEvent(this, 'previewStarted', payload);
       return;
     }
 
@@ -549,11 +633,12 @@ class AvaloniaPreviewSession {
           : '';
         this.setStatus(`Preview error: ${payload.error || 'Unknown error.'}${exceptionText}`);
       }
+      this.controller.notifySessionEvent(this, 'updateResult', payload);
       return;
     }
 
     if (eventName === 'hostExited') {
-      const exitText = `Preview host exited (${payload.exitCode ?? 'null'}).`;
+      const exitText = buildPreviewHostExitStatus(payload);
       const helper = this.helper;
       if (!helper) {
         this.currentPreviewUrl = '';
@@ -562,6 +647,7 @@ class AvaloniaPreviewSession {
       }
 
       void this.handleHostUnavailableAsync(helper, exitText, true);
+      this.controller.notifySessionEvent(this, 'hostExited', payload);
       return;
     }
 
@@ -617,7 +703,9 @@ class AvaloniaPreviewSession {
       type: 'update',
       previewUrl: this.currentPreviewUrl,
       loopbackPreview: this.currentLoopbackPreview,
-      status: this.currentStatus
+      status: this.currentStatus,
+      compilerMode: this.activeCompilerMode,
+      designState: this.designState
     });
   }
 
@@ -693,6 +781,27 @@ class AvaloniaPreviewSession {
       this.controller.getOutputChannel().appendLine(
         `[preview] failed to forward keyboard input for ${this.fileName}: ${error}`);
     });
+  }
+
+  async sendDesignCommand(operation, argumentsPayload = {}) {
+    if (this.disposed) {
+      throw new Error('Preview session is not available.');
+    }
+
+    await this.start();
+    if (!this.helper) {
+      throw new Error('Preview host is not available.');
+    }
+
+    return this.helper.sendCommand('design', {
+      operation,
+      arguments: argumentsPayload || {}
+    });
+  }
+
+  setDesignState(nextState) {
+    this.designState = nextState || null;
+    this.updatePanel();
   }
 
   async waitForInitialPreviewSizeAsync() {
@@ -774,6 +883,7 @@ class AvaloniaPreviewSession {
 
 class AvaloniaPreviewController {
   constructor(options) {
+    this.eventEmitter = new EventEmitter();
     this.context = options.context;
     this.extensionPath = options.context.extensionPath;
     this.ensureClientStarted = options.ensureClientStarted;
@@ -781,8 +891,10 @@ class AvaloniaPreviewController {
     this.isXamlDocument = options.isXamlDocument;
     this.workspaceRoot = options.workspaceRoot;
     this.sessions = new Map();
+    this.sessionDocumentUris = new Map();
     this.projectInfoCache = new Map();
     this.projectReferenceCache = new Map();
+    this.designController = null;
   }
 
   register(context) {
@@ -807,26 +919,58 @@ class AvaloniaPreviewController {
       }
     }));
     context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      if (this.isProjectDocument(document)) {
+        this.invalidateProjectEvaluationCaches(document.uri);
+        return;
+      }
+
       const session = this.sessions.get(document.uri.toString());
       if (session) {
         void session.handleDocumentSaved(document);
       }
     }));
+    if (typeof vscode.workspace.createFileSystemWatcher === 'function') {
+      const projectFileWatcher = vscode.workspace.createFileSystemWatcher('**/*.csproj');
+      const invalidateProjectCaches = uri => this.invalidateProjectEvaluationCaches(uri);
+      context.subscriptions.push(projectFileWatcher);
+      context.subscriptions.push(projectFileWatcher.onDidChange(invalidateProjectCaches));
+      context.subscriptions.push(projectFileWatcher.onDidCreate(invalidateProjectCaches));
+      context.subscriptions.push(projectFileWatcher.onDidDelete(invalidateProjectCaches));
+    }
     context.subscriptions.push({
       dispose: () => {
-        for (const session of this.sessions.values()) {
+        for (const session of new Set(this.sessions.values())) {
           void session.dispose();
         }
         this.sessions.clear();
+        this.sessionDocumentUris.clear();
       }
     });
   }
 
   async dispose() {
-    const sessions = Array.from(this.sessions.values());
+    const sessions = Array.from(new Set(this.sessions.values()));
     this.sessions.clear();
+    this.sessionDocumentUris.clear();
     for (const session of sessions) {
       await session.dispose();
+    }
+  }
+
+  isProjectDocument(document) {
+    const fsPath = document && document.uri && typeof document.uri.fsPath === 'string'
+      ? document.uri.fsPath
+      : '';
+    return isProjectFilePath(fsPath);
+  }
+
+  invalidateProjectEvaluationCaches(changedProjectUri) {
+    this.projectInfoCache.clear();
+    this.projectReferenceCache.clear();
+
+    const normalizedPath = normalizeProjectFilePath(changedProjectUri);
+    if (normalizedPath) {
+      this.getOutputChannel().appendLine(`[preview] invalidated cached project evaluation for ${normalizedPath}`);
     }
   }
 
@@ -855,7 +999,7 @@ class AvaloniaPreviewController {
         const launchInfo = await this.resolveLaunchInfo(document, progress);
         progress.report({ message: 'Starting preview host...' });
         const createdSession = new AvaloniaPreviewSession(this, document, launchInfo);
-        this.sessions.set(document.uri.toString(), createdSession);
+        this.registerSessionDocumentUris(createdSession, [document.uri.toString()]);
         try {
           await createdSession.start();
           return;
@@ -868,11 +1012,103 @@ class AvaloniaPreviewController {
   }
 
   removeSession(documentUri) {
-    this.sessions.delete(documentUri);
+    const existing = this.getSession(documentUri);
+    if (existing) {
+      this.unregisterSession(existing);
+      this.notifySessionEvent(existing, 'disposed', {});
+    }
   }
 
   getConfiguration() {
     return vscode.workspace.getConfiguration('axsg');
+  }
+
+  onSessionEvent(listener) {
+    this.eventEmitter.on('sessionEvent', listener);
+    return new vscode.Disposable(() => this.eventEmitter.off('sessionEvent', listener));
+  }
+
+  notifySessionEvent(session, event, payload) {
+    const descriptor = { session, event, payload: payload || {} };
+    this.eventEmitter.emit('sessionEvent', descriptor);
+    if (this.designController && typeof this.designController.handleSessionEvent === 'function') {
+      void this.designController.handleSessionEvent(descriptor);
+    }
+  }
+
+  handleSessionWebviewMessage(session, message) {
+    if (!this.designController || typeof this.designController.handleSessionWebviewMessage !== 'function') {
+      return false;
+    }
+
+    return this.designController.handleSessionWebviewMessage(session, message);
+  }
+
+  setDesignController(designController) {
+    this.designController = designController || null;
+  }
+
+  getSession(documentUri) {
+    return this.sessions.get(typeof documentUri === 'string' ? documentUri : documentUri.toString()) || null;
+  }
+
+  getActiveSession() {
+    for (const session of this.sessions.values()) {
+      if (session && session.panel && session.panel.active) {
+        return session;
+      }
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      const editorSession = this.getSession(editor.document.uri.toString());
+      if (editorSession) {
+        return editorSession;
+      }
+    }
+
+    return null;
+  }
+
+  registerSessionDocumentUris(session, documentUris) {
+    if (!session) {
+      return;
+    }
+
+    this.unregisterSession(session);
+
+    const normalizedUris = [];
+    const seen = new Set();
+    for (const candidate of Array.isArray(documentUris) ? documentUris : []) {
+      if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+        continue;
+      }
+
+      if (seen.has(candidate)) {
+        continue;
+      }
+
+      seen.add(candidate);
+      normalizedUris.push(candidate);
+      this.sessions.set(candidate, session);
+    }
+
+    this.sessionDocumentUris.set(session, normalizedUris);
+  }
+
+  unregisterSession(session) {
+    const documentUris = this.sessionDocumentUris.get(session);
+    if (!Array.isArray(documentUris)) {
+      return;
+    }
+
+    for (const documentUri of documentUris) {
+      if (this.sessions.get(documentUri) === session) {
+        this.sessions.delete(documentUri);
+      }
+    }
+
+    this.sessionDocumentUris.delete(session);
   }
 
   async resolveLaunchInfo(document, progress) {
@@ -896,7 +1132,7 @@ class AvaloniaPreviewController {
     const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
     const preferredTargetFramework = configuration.get('preview.targetFramework', '');
     const requestedCompilerMode = normalizePreviewCompilerMode(
-      configuration.get('preview.compilerMode', PREVIEW_COMPILER_MODE_SOURCE_GENERATED));
+      configuration.get('preview.compilerMode', PREVIEW_COMPILER_MODE_AUTO));
     const projectState = await this.resolveProjectLaunchState({
       projectContext,
       workspaceRoot,
@@ -913,12 +1149,13 @@ class AvaloniaPreviewController {
       document.getText(),
       projectState.sourceProject,
       projectState.hostProject,
+      await this.resolvePreviewSourceAssemblyPath(projectState.sourceProject, projectState.hostProject),
       requestedCompilerMode);
     launchInfo.documentText = resolvePreviewDocumentText(
       document.getText(),
       tryReadDocumentTextFromDisk(document.fileName),
       document.isDirty,
-      launchInfo.previewPlan.preferredMode);
+      resolveEffectivePreviewMode(launchInfo.previewPlan));
     return launchInfo;
   }
 
@@ -927,7 +1164,7 @@ class AvaloniaPreviewController {
     const dotNetCommand = configuration.get('preview.dotNetCommand', 'dotnet');
     const preferredTargetFramework = configuration.get('preview.targetFramework', '');
     const requestedCompilerMode = normalizePreviewCompilerMode(
-      configuration.get('preview.compilerMode', launchInfo.previewPlan.requestedMode || PREVIEW_COMPILER_MODE_SOURCE_GENERATED));
+      configuration.get('preview.compilerMode', launchInfo.previewPlan.requestedMode || PREVIEW_COMPILER_MODE_AUTO));
     const projectState = await this.resolveProjectLaunchState({
       projectContext: launchInfo.projectContext,
       workspaceRoot: launchInfo.workspaceRoot,
@@ -938,7 +1175,7 @@ class AvaloniaPreviewController {
       requestedCompilerMode,
       buildReason: 'save',
       documentFilePath: document.fileName,
-      activePreviewMode: launchInfo.previewPlan.preferredMode
+      activePreviewMode: resolveEffectivePreviewMode(launchInfo.previewPlan)
     });
     const refreshedLaunchInfo = this.createLaunchInfo(
       launchInfo.projectContext,
@@ -946,24 +1183,50 @@ class AvaloniaPreviewController {
       document.getText(),
       projectState.sourceProject,
       projectState.hostProject,
+      await this.resolvePreviewSourceAssemblyPath(projectState.sourceProject, projectState.hostProject),
       requestedCompilerMode);
     refreshedLaunchInfo.documentText = resolvePreviewDocumentText(
       document.getText(),
       tryReadDocumentTextFromDisk(document.fileName),
       document.isDirty,
-      refreshedLaunchInfo.previewPlan.preferredMode);
+      resolveEffectivePreviewMode(refreshedLaunchInfo.previewPlan));
     return refreshedLaunchInfo;
   }
 
-  createLaunchInfo(projectContext, workspaceRoot, documentText, sourceProject, hostProject, requestedCompilerMode) {
+  createLaunchInfo(projectContext, workspaceRoot, documentText, sourceProject, hostProject, previewSourceAssemblyPath, requestedCompilerMode) {
     return {
       projectContext,
       workspaceRoot,
       documentText,
       sourceProject,
       hostProject,
+      previewSourceAssemblyPath,
       previewPlan: this.createPreviewPlan(requestedCompilerMode, sourceProject)
     };
+  }
+
+  async resolvePreviewSourceAssemblyPath(sourceProject, hostProject) {
+    const sourceTargetPath = normalizeMaybeEmptyPath(sourceProject && sourceProject.targetPath);
+    if (!sourceTargetPath) {
+      return sourceTargetPath;
+    }
+
+    const sourceProjectPath = normalizeMaybeEmptyPath(sourceProject && sourceProject.projectPath);
+    const hostProjectPath = normalizeMaybeEmptyPath(hostProject && hostProject.projectPath);
+    const hostTargetPath = normalizeMaybeEmptyPath(hostProject && hostProject.targetPath);
+    const hostReferencesSource = sourceProjectPath && hostProjectPath
+      ? await this.hostProjectReferencesSourceProject(hostProjectPath, sourceProjectPath)
+      : false;
+    const previewSourceAssemblyPath = resolvePreviewDesignAssemblyPath(
+      sourceTargetPath,
+      hostTargetPath,
+      hostReferencesSource);
+
+    synchronizePreviewSourceAssemblyArtifacts(
+      sourceTargetPath,
+      previewSourceAssemblyPath,
+      this.getOutputChannel());
+    return previewSourceAssemblyPath;
   }
 
   createPreviewPlan(requestedCompilerMode, sourceProject) {
@@ -1067,7 +1330,8 @@ class AvaloniaPreviewController {
           requestedCompilerMode,
           buildReason,
           documentFilePath,
-          activePreviewMode: resolvePreviewCompilerMode(requestedCompilerMode, resolvedState.sourceProject).preferredMode
+          activePreviewMode: options.activePreviewMode ||
+            resolvePreviewBuildMode(requestedCompilerMode, resolvedState.sourceProject)
         });
       }
     }
@@ -1085,7 +1349,7 @@ class AvaloniaPreviewController {
     }
 
     const buildPreviewMode = options.activePreviewMode ||
-      resolvePreviewCompilerMode(options.requestedCompilerMode, options.sourceProject).preferredMode;
+      resolvePreviewBuildMode(options.requestedCompilerMode, options.sourceProject);
     const hostBuildIncludesSource = await this.hostProjectReferencesSourceProject(
       options.hostProject.projectPath,
       options.sourceProject.projectPath);
@@ -1356,11 +1620,77 @@ async function evaluateProjectInfo(projectPath, preferredTargetFramework, dotNet
   };
 }
 
-function createPreviewWebviewHtml(webview, title, previewUrl, status) {
+function describePreviewDesignState(designState) {
+  const fallbackUnavailableMessage = 'AXSG Inspector is waiting for preview design data.';
+  const workspaceMode = typeof designState?.workspaceMode === 'string' && designState.workspaceMode.trim().length > 0
+    ? designState.workspaceMode.trim()
+    : 'Interactive';
+  const hitTestMode = typeof designState?.hitTestMode === 'string' && designState.hitTestMode.trim().length > 0
+    ? designState.hitTestMode.trim()
+    : 'Logical';
+  const explicitMessage = typeof designState?.message === 'string' && designState.message.trim().length > 0
+    ? designState.message.trim()
+    : '';
+
+  if (!designState || !designState.available) {
+    return {
+      kind: 'unavailable',
+      available: false,
+      badgeText: 'Inspector unavailable',
+      message: explicitMessage || fallbackUnavailableMessage
+    };
+  }
+
+  if (workspaceMode === 'Interactive') {
+    return {
+      kind: 'interactive',
+      available: true,
+      badgeText: 'Interactive mode',
+      message: explicitMessage || `Interactive mode is active. Switch Mode to Design or Agent to inspect the ${hitTestMode.toLowerCase()} tree and select elements from the preview surface.`
+    };
+  }
+
+  return {
+    kind: 'ready',
+    available: true,
+    badgeText: `${workspaceMode} / ${hitTestMode}`,
+    message: explicitMessage || `Inspector ready in ${workspaceMode} mode using the ${hitTestMode.toLowerCase()} tree.`
+  };
+}
+
+function describePreviewCompilerMode(compilerMode) {
+  if (String(compilerMode || '') === 'sourceGenerated') {
+    return {
+      kind: 'axsg',
+      label: 'AXSG',
+      title: 'Using AXSG source-generated preview compiler.'
+    };
+  }
+
+  if (String(compilerMode || '') === 'avalonia') {
+    return {
+      kind: 'xamlx',
+      label: 'XamlX',
+      title: 'Using Avalonia XamlX preview compiler.'
+    };
+  }
+
+  return {
+    kind: 'pending',
+    label: 'Auto',
+    title: 'Resolving the active preview compiler.'
+  };
+}
+
+function createPreviewWebviewHtml(webview, title, previewUrl, status, compilerMode) {
   const iframeUrl = previewUrl ? escapeHtml(previewUrl) : '';
   const statusText = escapeHtml(status || 'Preview starting...');
   const escapedTitle = escapeHtml(title);
+  const compilerDescription = describePreviewCompilerMode(compilerMode);
+  const compilerLabel = escapeHtml(compilerDescription.label);
+  const compilerTitle = escapeHtml(compilerDescription.title);
   const frameSourcePolicy = `${webview.cspSource} http: https: vscode-remote: vscode-webview: vscode-webview-resource:`;
+  const compilerIconPath = 'M12.97 3.68a.5.5 0 0 0-.94-.36l-5 13a.5.5 0 1 0 .94.36l5-13ZM5.83 6.12c.2.18.23.5.05.7L3.16 10l2.72 3.17a.5.5 0 0 1-.76.66l-3-3.5a.5.5 0 0 1 0-.66l3-3.5a.5.5 0 0 1 .7-.05Zm8.34 8.26a.5.5 0 0 1-.05-.7l2.72-3.18-2.72-3.17a.5.5 0 1 1 .76-.66l3 3.5a.5.5 0 0 1 0 .66l-3 3.5a.5.5 0 0 1-.7.05Z';
   const zoomOutIconPath = 'M11 8a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h5ZM8.5 2a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
   const zoomResetIconPath = 'M4 10a6 6 0 0 1 10.47-4H12.5a.5.5 0 0 0 0 1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-1 0v1.6a7 7 0 1 0 1.98 4.36.5.5 0 1 0-1 .08L16 10a6 6 0 0 1-12 0Z';
   const zoomInIconPath = 'M8.5 5.5c.28 0 .5.22.5.5v2h2a.5.5 0 0 1 0 1H9v2a.5.5 0 0 1-1 0V9H6a.5.5 0 0 1 0-1h2V6c0-.28.22-.5.5-.5Zm0-3.5a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
@@ -1375,9 +1705,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     :root {
       color-scheme: light dark;
       font-family: var(--vscode-font-family);
-      --axsg-toolbar-height: 52px;
+      --axsg-toolbar-height: 56px;
       --axsg-stage-padding: 24px;
       --axsg-surface-radius: 0px;
+      --axsg-overlay-selected: #0b76d1;
+      --axsg-overlay-hover: #ff8c00;
     }
 
     body {
@@ -1392,18 +1724,19 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     .shell {
       display: grid;
-      grid-template-rows: var(--axsg-toolbar-height) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 100vh;
       height: 100vh;
     }
 
     .toolbar {
       box-sizing: border-box;
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
       align-items: center;
-      justify-content: space-between;
       gap: 16px;
       min-height: var(--axsg-toolbar-height);
-      padding: 0 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--vscode-panel-border);
       background: color-mix(in srgb, var(--vscode-editorWidget-background) 94%, transparent);
       backdrop-filter: blur(18px);
@@ -1413,6 +1746,23 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       min-width: 0;
       display: grid;
       gap: 2px;
+    }
+
+    .status-row {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+
+    .toolbar-meta {
+      display: inline-flex;
+      align-items: center;
+      justify-self: end;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .toolbar-label {
@@ -1425,6 +1775,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     .status {
       min-width: 0;
+      flex: 1 1 auto;
       font-size: 12px;
       line-height: 1.4;
       white-space: nowrap;
@@ -1432,6 +1783,79 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       text-overflow: ellipsis;
     }
 
+    .compiler-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .compiler-chip svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .compiler-chip.pending {
+      color: var(--vscode-descriptionForeground);
+      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent);
+      background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
+    }
+
+    .compiler-chip.axsg {
+      color: #0b76d1;
+      border-color: rgba(11, 118, 209, 0.24);
+      background: rgba(11, 118, 209, 0.1);
+    }
+
+    .compiler-chip.xamlx {
+      color: #b56a00;
+      border-color: rgba(181, 106, 0, 0.26);
+      background: rgba(181, 106, 0, 0.1);
+    }
+
+    .design-status {
+      flex: 0 0 auto;
+      max-width: min(280px, 46vw);
+      padding: 3px 10px;
+      border: 1px solid rgba(127, 127, 127, 0.22);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--vscode-descriptionForeground);
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+    }
+
+    .design-status.unavailable {
+      color: var(--vscode-errorForeground);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground) 45%, transparent);
+      background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 40%, transparent);
+    }
+
+    .design-status.interactive {
+      color: var(--vscode-terminal-ansiYellow, var(--vscode-editorWarning-foreground, #cca700));
+      border-color: color-mix(in srgb, var(--vscode-terminal-ansiYellow, #cca700) 42%, transparent);
+      background: color-mix(in srgb, var(--vscode-editorWarning-background, #5c4b00) 24%, transparent);
+    }
+
+    .design-status.ready {
+      color: var(--vscode-terminal-ansiGreen, var(--vscode-testing-iconPassed, #1f883d));
+      border-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen, #1f883d) 38%, transparent);
+      background: color-mix(in srgb, var(--vscode-testing-iconPassed, #1f883d) 16%, transparent);
+    }
+
+    .toolbar-controls,
     .toolbar-actions {
       display: inline-flex;
       align-items: center;
@@ -1442,6 +1866,36 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       border-radius: 999px;
       background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    .toolbar-field {
+      display: inline-grid;
+      gap: 2px;
+      align-items: center;
+      padding: 0 6px;
+    }
+
+    .toolbar-field span {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .toolbar-field select {
+      min-width: 96px;
+      border: none;
+      background: transparent;
+      color: var(--vscode-editor-foreground);
+      padding: 2px 0;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .toolbar-field select:disabled {
+      opacity: 0.55;
+      cursor: default;
     }
 
     .icon-button {
@@ -1512,16 +1966,19 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       min-width: 100%;
       min-height: 100%;
       display: grid;
-      place-items: center;
+      justify-items: center;
+      align-content: start;
       box-sizing: border-box;
     }
 
     .preview-host {
       width: fit-content;
       height: fit-content;
+      max-width: 100%;
     }
 
     .preview-surface {
+      position: relative;
       display: inline-block;
       border: 1px solid rgba(127, 127, 127, 0.18);
       border-radius: var(--axsg-surface-radius);
@@ -1530,6 +1987,75 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       box-shadow:
         0 22px 48px rgba(0, 0, 0, 0.18),
         0 6px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    .preview-surface-content {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+    }
+
+    .preview-overlay-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .preview-overlay-layer.design-active {
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+
+    .preview-overlay-layer.toolbox-drop-active {
+      pointer-events: auto;
+      cursor: copy;
+    }
+
+    .preview-surface.toolbox-drop-active {
+      box-shadow:
+        0 22px 48px rgba(0, 0, 0, 0.18),
+        0 6px 16px rgba(0, 0, 0, 0.12),
+        0 0 0 2px rgba(11, 118, 209, 0.22);
+    }
+
+    .preview-overlay-box {
+      position: absolute;
+      box-sizing: border-box;
+      min-width: 2px;
+      min-height: 2px;
+      border: 2px solid transparent;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+    }
+
+    .preview-overlay-box.selected {
+      border-color: var(--axsg-overlay-selected);
+      background: rgba(11, 118, 209, 0.08);
+    }
+
+    .preview-overlay-box.hover {
+      border-color: var(--axsg-overlay-hover);
+      background: rgba(255, 140, 0, 0.08);
+      border-style: dashed;
+    }
+
+    .preview-overlay-label {
+      position: absolute;
+      left: -2px;
+      top: -24px;
+      max-width: 280px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.2;
+      color: white;
+      background: rgba(17, 24, 39, 0.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
     }
 
     .preview-canvas {
@@ -1563,18 +2089,21 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12);
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 1040px) {
       .toolbar {
-        padding: 0 12px;
+        grid-template-columns: 1fr;
+        padding: 10px 12px;
+        min-height: auto;
       }
 
+      .toolbar-meta {
+        justify-self: start;
+      }
+    }
+
+    @media (max-width: 720px) {
       #content {
         padding: 16px;
-      }
-
-      .zoom-value {
-        min-width: 42px;
-        padding-right: 6px;
       }
     }
   </style>
@@ -1584,39 +2113,76 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     <div class="toolbar">
       <div class="toolbar-copy">
         <div class="toolbar-label">AXSG Preview</div>
-        <div class="status" id="status">${statusText}</div>
+        <div class="status-row">
+          <div class="status" id="status">${statusText}</div>
+          <div class="compiler-chip ${compilerDescription.kind}" id="compiler-chip" title="${compilerTitle}">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${compilerIconPath}"></path></svg>
+            <span id="compiler-chip-label">${compilerLabel}</span>
+          </div>
+          <div class="design-status unavailable" id="design-status" title="AXSG Inspector is waiting for preview design data.">Inspector unavailable</div>
+        </div>
       </div>
-      <div class="toolbar-actions" aria-label="Preview zoom controls">
-        <button class="icon-button" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomOutIconPath}"></path></svg>
-        </button>
-        <button class="icon-button" id="zoom-reset" type="button" title="Reset zoom to 100%" aria-label="Reset zoom to 100%">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomResetIconPath}"></path></svg>
-        </button>
-        <button class="icon-button" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomInIconPath}"></path></svg>
-        </button>
-        <div class="zoom-value" id="zoom-value">100%</div>
+      <div class="toolbar-meta">
+        <div class="toolbar-controls" aria-label="AXSG design controls">
+          <label class="toolbar-field">
+            <span>Mode</span>
+            <select id="workspace-mode" aria-label="AXSG design mode">
+              <option value="Interactive">Interactive</option>
+              <option value="Design">Design</option>
+              <option value="Agent">Agent</option>
+            </select>
+          </label>
+          <label class="toolbar-field">
+            <span>Tree</span>
+            <select id="hit-test-mode" aria-label="AXSG hit test mode">
+              <option value="Logical">Logical</option>
+              <option value="Visual">Visual</option>
+            </select>
+          </label>
+        </div>
+        <div class="toolbar-actions" aria-label="Preview zoom controls">
+          <button class="icon-button" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomOutIconPath}"></path></svg>
+          </button>
+          <button class="icon-button" id="zoom-reset" type="button" title="Reset zoom to 100%" aria-label="Reset zoom to 100%">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomResetIconPath}"></path></svg>
+          </button>
+          <button class="icon-button" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${zoomInIconPath}"></path></svg>
+          </button>
+          <div class="zoom-value" id="zoom-value">100%</div>
+        </div>
       </div>
     </div>
     <div id="content">${iframeUrl
-      ? `<div class="preview-stage" id="preview-stage"><div class="preview-host" id="preview-host"><div class="preview-surface" id="preview-surface"><iframe id="preview" src="${iframeUrl}" sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock"></iframe></div></div></div>`
+      ? `<div class="preview-stage" id="preview-stage"><div class="preview-host" id="preview-host"><div class="preview-surface" id="preview-surface"><div class="preview-surface-content" id="preview-surface-content"><iframe id="preview" src="${iframeUrl}" sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock"></iframe></div><div class="preview-overlay-layer" id="preview-overlay-layer"></div></div></div></div>`
       : `<div class="preview-stage" id="preview-stage"><div class="placeholder"><div class="placeholder-card">Preview is starting...</div></div></div>`}</div>
   </div>
   <script>
+    ${describePreviewDesignState.toString()}
+    ${describePreviewCompilerMode.toString()}
     ${calculatePreviewSurfaceBounds.toString()}
     ${clampPreviewZoom.toString()}
     ${stepPreviewZoom.toString()}
     ${formatPreviewZoomLabel.toString()}
     ${normalizePreviewRenderScale.toString()}
+    ${mapPreviewClientPointToDesignPoint.toString()}
     ${mapPreviewClientPointToRemotePoint.toString()}
+    ${projectPreviewOverlayBounds.toString()}
     ${getPreviewKeyboardModifiers.toString()}
     ${getPreviewKeyboardText.toString()}
     ${createPreviewKeyInputPayload.toString()}
     ${createPreviewTextInputPayload.toString()}
     ${createPreviewKeyboardInputPayloads.toString()}
+    const TOOLBOX_ITEM_MIME = ${JSON.stringify(DESIGN_TOOLBOX_ITEM_MIME)};
+    const TOOLBOX_ITEM_TEXT_PREFIX = ${JSON.stringify(DESIGN_TOOLBOX_TEXT_PREFIX)};
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    const compilerChip = document.getElementById('compiler-chip');
+    const compilerChipLabel = document.getElementById('compiler-chip-label');
+    const designStatus = document.getElementById('design-status');
+    const workspaceModeSelect = document.getElementById('workspace-mode');
+    const hitTestModeSelect = document.getElementById('hit-test-mode');
     const zoomOutButton = document.getElementById('zoom-out');
     const zoomResetButton = document.getElementById('zoom-reset');
     const zoomInButton = document.getElementById('zoom-in');
@@ -1630,7 +2196,13 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     let nextFrame = null;
     let activePreviewRenderScale = 1;
     let pendingViewportReport = 0;
+    let pendingHoverDispatch = 0;
+    let pendingHoverPoint = null;
+    let pendingToolboxDragClear = 0;
     let displayScaleWatcher = null;
+    let currentDesignState = null;
+    let currentToolboxDragItem = null;
+    let toolboxDragActive = false;
     let currentZoom = clampPreviewZoom(persistedState && persistedState.zoom, 1);
 
     function getViewportScale() {
@@ -1672,6 +2244,30 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       status.title = nextText;
     }
 
+    function updateCompilerChip(compilerMode) {
+      if (!compilerChip || !compilerChipLabel) {
+        return;
+      }
+
+      const description = describePreviewCompilerMode(compilerMode);
+      compilerChip.classList.remove('pending', 'axsg', 'xamlx');
+      compilerChip.classList.add(description.kind);
+      compilerChip.title = description.title;
+      compilerChipLabel.textContent = description.label;
+    }
+
+    function updateDesignStatusBadge() {
+      if (!designStatus) {
+        return;
+      }
+
+      const description = describePreviewDesignState(currentDesignState);
+      designStatus.textContent = description.badgeText;
+      designStatus.title = description.message;
+      designStatus.classList.remove('unavailable', 'interactive', 'ready');
+      designStatus.classList.add(description.kind);
+    }
+
     function updateZoomUi() {
       const zoomText = formatPreviewZoomLabel(currentZoom);
       zoomValue.textContent = zoomText;
@@ -1692,13 +2288,135 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const verticalPadding = computedStyle
         ? (Number.parseFloat(computedStyle.paddingTop || '0') + Number.parseFloat(computedStyle.paddingBottom || '0'))
         : 48;
-      // Use the stage bounds instead of clientWidth/clientHeight so scrollbars from the
-      // rendered preview do not feed back into preview host resize requests.
       return calculatePreviewSurfaceBounds(
         bounds.width || 0,
         bounds.height || 0,
         horizontalPadding,
         verticalPadding);
+    }
+
+    function isInteractiveWorkspaceMode() {
+      return !currentDesignState ||
+        !currentDesignState.available ||
+        String(currentDesignState.workspaceMode || 'Interactive') === 'Interactive';
+    }
+
+    function getOverlaySnapshot() {
+      return currentDesignState && currentDesignState.overlay && typeof currentDesignState.overlay === 'object'
+        ? currentDesignState.overlay
+        : null;
+    }
+
+    function canAcceptToolboxDrop() {
+      return !!(currentDesignState && currentDesignState.available && currentToolboxDragItem);
+    }
+
+    function normalizeToolboxDragItem(candidate) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate.items)) {
+        return null;
+      }
+
+      const name = typeof candidate.name === 'string' && candidate.name.trim().length > 0
+        ? candidate.name.trim()
+        : '';
+      const displayName = typeof candidate.displayName === 'string' && candidate.displayName.trim().length > 0
+        ? candidate.displayName.trim()
+        : name;
+      const xamlSnippet = typeof candidate.xamlSnippet === 'string' && candidate.xamlSnippet.trim().length > 0
+        ? candidate.xamlSnippet
+        : '';
+      if (!name && !displayName) {
+        return null;
+      }
+
+      return {
+        name: name || displayName,
+        displayName: displayName || name,
+        category: typeof candidate.category === 'string' ? candidate.category : '',
+        xamlSnippet,
+        isProjectControl: !!candidate.isProjectControl,
+        tags: Array.isArray(candidate.tags)
+          ? candidate.tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0)
+          : []
+      };
+    }
+
+    function tryParseToolboxDragItem(value) {
+      if (typeof value !== 'string' || value.length === 0) {
+        return null;
+      }
+
+      let payload = value;
+      if (payload.startsWith(TOOLBOX_ITEM_TEXT_PREFIX)) {
+        payload = payload.slice(TOOLBOX_ITEM_TEXT_PREFIX.length);
+      }
+
+      try {
+        return normalizeToolboxDragItem(JSON.parse(payload));
+      } catch {
+        return null;
+      }
+    }
+
+    function readToolboxDragItem(dataTransfer) {
+      if (!dataTransfer || typeof dataTransfer.getData !== 'function') {
+        return null;
+      }
+
+      const customPayload = tryParseToolboxDragItem(dataTransfer.getData(TOOLBOX_ITEM_MIME));
+      if (customPayload) {
+        return customPayload;
+      }
+
+      return tryParseToolboxDragItem(dataTransfer.getData('text/plain'));
+    }
+
+    function cancelToolboxDragClear() {
+      if (!pendingToolboxDragClear) {
+        return;
+      }
+
+      window.clearTimeout(pendingToolboxDragClear);
+      pendingToolboxDragClear = 0;
+    }
+
+    function clearToolboxDragState(resetHover = true) {
+      cancelToolboxDragClear();
+      currentToolboxDragItem = null;
+      if (!toolboxDragActive) {
+        return;
+      }
+
+      toolboxDragActive = false;
+      updateDesignControls();
+      if (resetHover) {
+        scheduleHoverDispatch(-1, -1);
+      }
+    }
+
+    function scheduleToolboxDragClear() {
+      cancelToolboxDragClear();
+      pendingToolboxDragClear = window.setTimeout(() => {
+        pendingToolboxDragClear = 0;
+        clearToolboxDragState();
+      }, 120);
+    }
+
+    function updateToolboxDragState(dataTransfer) {
+      const toolboxItem = readToolboxDragItem(dataTransfer);
+      if (!toolboxItem || !currentDesignState || !currentDesignState.available) {
+        scheduleToolboxDragClear();
+        return null;
+      }
+
+      cancelToolboxDragClear();
+      currentToolboxDragItem = toolboxItem;
+      if (!toolboxDragActive) {
+        toolboxDragActive = true;
+        updateDesignControls();
+      }
+
+      return toolboxItem;
     }
 
     function applyCanvasZoom() {
@@ -1732,15 +2450,16 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const canvas = document.getElementById('preview-canvas');
       if (canvas) {
         applyCanvasZoom();
-        return;
+      } else {
+        const host = document.getElementById('preview-host');
+        const surface = document.getElementById('preview-surface');
+        const iframe = document.getElementById('preview');
+        if (host && surface && iframe) {
+          applyIframeZoom(host, surface, iframe);
+        }
       }
 
-      const host = document.getElementById('preview-host');
-      const surface = document.getElementById('preview-surface');
-      const iframe = document.getElementById('preview');
-      if (host && surface && iframe) {
-        applyIframeZoom(host, surface, iframe);
-      }
+      renderDesignOverlay();
     }
 
     function setZoom(nextZoom) {
@@ -1765,6 +2484,37 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         pendingViewportReport = 0;
         reportViewportSize();
       });
+    }
+
+    function scheduleHoverDispatch(x, y) {
+      pendingHoverPoint = { x, y };
+      if (pendingHoverDispatch) {
+        return;
+      }
+
+      pendingHoverDispatch = window.requestAnimationFrame(() => {
+        pendingHoverDispatch = 0;
+        if (!vscodeApi || !pendingHoverPoint) {
+          return;
+        }
+
+        vscodeApi.postMessage({
+          type: 'designHoverAtPoint',
+          x: pendingHoverPoint.x,
+          y: pendingHoverPoint.y
+        });
+        pendingHoverPoint = null;
+      });
+    }
+
+    function cancelPendingHoverDispatch() {
+      pendingHoverPoint = null;
+      if (!pendingHoverDispatch) {
+        return;
+      }
+
+      window.cancelAnimationFrame(pendingHoverDispatch);
+      pendingHoverDispatch = 0;
     }
 
     function logTransport(message) {
@@ -1829,9 +2579,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     function renderPlaceholder(text, disposeTransport = true) {
+      clearToolboxDragState();
       if (disposeTransport) {
         disposePreviewSocket();
       }
+
       content.innerHTML = '';
       const stage = document.createElement('div');
       stage.id = 'preview-stage';
@@ -1859,6 +2611,116 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       return stage;
     }
 
+    function wireDesignOverlayInput(layer) {
+      if (!layer || layer._axsgDesignWired) {
+        return;
+      }
+
+      layer._axsgDesignWired = true;
+      layer.addEventListener('pointermove', event => {
+        if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode()) {
+          return;
+        }
+
+        const rect = layer.getBoundingClientRect();
+        const point = mapPreviewClientPointToDesignPoint(
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+          currentZoom);
+        scheduleHoverDispatch(point.x, point.y);
+      });
+      layer.addEventListener('pointerleave', () => {
+        if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode()) {
+          return;
+        }
+
+        scheduleHoverDispatch(-1, -1);
+      });
+      layer.addEventListener('pointerdown', event => {
+        if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode() || !vscodeApi) {
+          return;
+        }
+
+        const rect = layer.getBoundingClientRect();
+        const point = mapPreviewClientPointToDesignPoint(
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+          currentZoom);
+        event.preventDefault();
+        event.stopPropagation();
+        vscodeApi.postMessage({
+          type: 'designSelectAtPoint',
+          x: point.x,
+          y: point.y
+        });
+      });
+      layer.addEventListener('contextmenu', event => {
+        if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode()) {
+          return;
+        }
+
+        event.preventDefault();
+      });
+    }
+
+    function wireToolboxDropInput(layer) {
+      if (!layer || layer._axsgToolboxDropWired) {
+        return;
+      }
+
+      layer._axsgToolboxDropWired = true;
+      layer.addEventListener('dragenter', event => {
+        const toolboxItem = updateToolboxDragState(event.dataTransfer);
+        if (!toolboxItem) {
+          return;
+        }
+
+        event.preventDefault();
+      });
+      layer.addEventListener('dragover', event => {
+        const toolboxItem = updateToolboxDragState(event.dataTransfer);
+        if (!toolboxItem || !vscodeApi || !canAcceptToolboxDrop()) {
+          return;
+        }
+
+        const rect = layer.getBoundingClientRect();
+        const point = mapPreviewClientPointToDesignPoint(
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+          currentZoom);
+        scheduleHoverDispatch(point.x, point.y);
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      });
+      layer.addEventListener('dragleave', () => {
+        scheduleToolboxDragClear();
+      });
+      layer.addEventListener('drop', event => {
+        const toolboxItem = updateToolboxDragState(event.dataTransfer);
+        if (!toolboxItem || !vscodeApi || !canAcceptToolboxDrop()) {
+          clearToolboxDragState();
+          return;
+        }
+
+        const rect = layer.getBoundingClientRect();
+        const point = mapPreviewClientPointToDesignPoint(
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+          currentZoom);
+        event.preventDefault();
+        event.stopPropagation();
+        vscodeApi.postMessage({
+          type: 'designDropToolboxItem',
+          toolboxItem,
+          x: point.x,
+          y: point.y
+        });
+        clearToolboxDragState(false);
+      });
+    }
+
     function ensurePreviewSurface() {
       const stage = ensurePreviewStage();
       let host = document.getElementById('preview-host');
@@ -1875,13 +2737,33 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         stage.appendChild(host);
       }
 
+      let surfaceContent = document.getElementById('preview-surface-content');
+      if (!surfaceContent || surfaceContent.parentElement !== surface) {
+        surface.innerHTML = '';
+        surfaceContent = document.createElement('div');
+        surfaceContent.id = 'preview-surface-content';
+        surfaceContent.className = 'preview-surface-content';
+        surface.appendChild(surfaceContent);
+      }
+
+      let overlayLayer = document.getElementById('preview-overlay-layer');
+      if (!overlayLayer || overlayLayer.parentElement !== surface) {
+        overlayLayer = document.createElement('div');
+        overlayLayer.id = 'preview-overlay-layer';
+        overlayLayer.className = 'preview-overlay-layer';
+        surface.appendChild(overlayLayer);
+      }
+
+      wireDesignOverlayInput(overlayLayer);
+      wireToolboxDropInput(overlayLayer);
+
       host.style.width = '';
       host.style.height = '';
       surface.style.width = '';
       surface.style.height = '';
       surface.style.transform = '';
       surface.style.transformOrigin = '';
-      return { host, surface };
+      return { host, surface, surfaceContent, overlayLayer };
     }
 
     function ensureCanvas() {
@@ -1890,27 +2772,27 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         return canvas;
       }
 
-      const { surface } = ensurePreviewSurface();
-      surface.innerHTML = '';
+      const { surfaceContent } = ensurePreviewSurface();
+      surfaceContent.innerHTML = '';
       canvas = document.createElement('canvas');
       canvas.id = 'preview-canvas';
       canvas.className = 'preview-canvas';
       canvas.tabIndex = 0;
       wireCanvasInput(canvas);
-      surface.appendChild(canvas);
+      surfaceContent.appendChild(canvas);
       return canvas;
     }
 
     function renderIframe(previewUrl) {
       disposePreviewSocket();
-      const { host, surface } = ensurePreviewSurface();
+      const { host, surface, surfaceContent } = ensurePreviewSurface();
       let iframe = document.getElementById('preview');
-      if (!iframe) {
-        surface.innerHTML = '';
+      if (!iframe || iframe.parentElement !== surfaceContent) {
+        surfaceContent.innerHTML = '';
         iframe = document.createElement('iframe');
         iframe.id = 'preview';
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-pointer-lock');
-        surface.appendChild(iframe);
+        surfaceContent.appendChild(iframe);
       }
 
       if (iframe.src !== previewUrl) {
@@ -1918,6 +2800,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       }
 
       applyIframeZoom(host, surface, iframe);
+      updateDesignControls();
+      renderDesignOverlay();
       scheduleViewportSizeReport();
     }
 
@@ -1975,7 +2859,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     function sendPointerMessage(kind, event, includeButton) {
-      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN) {
+      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN || !isInteractiveWorkspaceMode()) {
         return;
       }
 
@@ -1995,7 +2879,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     function sendWheelMessage(event) {
-      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN) {
+      if (!previewSocket || previewSocket.readyState !== WebSocket.OPEN || !isInteractiveWorkspaceMode()) {
         return;
       }
 
@@ -2016,7 +2900,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     }
 
     function postPreviewInputPayloads(payloads) {
-      if (!vscodeApi || !Array.isArray(payloads) || payloads.length === 0) {
+      if (!vscodeApi || !Array.isArray(payloads) || payloads.length === 0 || !isInteractiveWorkspaceMode()) {
         return;
       }
 
@@ -2028,6 +2912,12 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     function wireCanvasInput(canvas) {
       canvas.addEventListener('pointerdown', event => {
+        if (!isInteractiveWorkspaceMode()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
         canvas.focus();
         sendPointerMessage('pointer-pressed', event, true);
       });
@@ -2038,6 +2928,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         sendPointerMessage('pointer-moved', event, false);
       });
       canvas.addEventListener('wheel', event => {
+        if (!isInteractiveWorkspaceMode()) {
+          return;
+        }
+
         event.preventDefault();
         sendWheelMessage(event);
       }, { passive: false });
@@ -2074,6 +2968,119 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       canvas.addEventListener('contextmenu', event => event.preventDefault());
     }
 
+    function updateDesignControls() {
+      const overlayLayer = document.getElementById('preview-overlay-layer');
+      const surface = document.getElementById('preview-surface');
+      const iframe = document.getElementById('preview');
+      const canvas = document.getElementById('preview-canvas');
+      const designDescription = describePreviewDesignState(currentDesignState);
+      const available = designDescription.available;
+      const interactive = isInteractiveWorkspaceMode();
+      const dragActive = available && toolboxDragActive;
+
+      updateDesignStatusBadge();
+
+      workspaceModeSelect.disabled = !available;
+      hitTestModeSelect.disabled = !available || interactive;
+      workspaceModeSelect.value = available && currentDesignState.workspaceMode
+        ? currentDesignState.workspaceMode
+        : 'Interactive';
+      hitTestModeSelect.value = available && currentDesignState.hitTestMode
+        ? currentDesignState.hitTestMode
+        : 'Logical';
+      workspaceModeSelect.title = !available
+        ? designDescription.message
+        : 'Change AXSG design mode for preview inspection.';
+      hitTestModeSelect.title = !available
+        ? designDescription.message
+        : (interactive
+            ? designDescription.message
+            : 'Choose whether preview hit testing uses the logical or visual tree.');
+
+      if (overlayLayer) {
+        overlayLayer.classList.toggle('design-active', available && !interactive);
+        overlayLayer.classList.toggle('toolbox-drop-active', dragActive);
+      }
+
+      if (surface) {
+        surface.classList.toggle('toolbox-drop-active', dragActive);
+      }
+
+      if (iframe) {
+        iframe.style.pointerEvents = available && (!interactive || dragActive) ? 'none' : 'auto';
+      }
+
+      if (canvas) {
+        canvas.style.pointerEvents = available && (!interactive || dragActive) ? 'none' : 'auto';
+      }
+    }
+
+    function renderDesignOverlay() {
+      const overlayLayer = document.getElementById('preview-overlay-layer');
+      const surface = document.getElementById('preview-surface');
+      const overlay = getOverlaySnapshot();
+      if (!overlayLayer || !surface) {
+        return;
+      }
+
+      overlayLayer.innerHTML = '';
+      updateDesignControls();
+      if (!overlay || (isInteractiveWorkspaceMode() && !toolboxDragActive)) {
+        return;
+      }
+
+      const surfaceWidth = surface.clientWidth || 0;
+      const surfaceHeight = surface.clientHeight || 0;
+      const rootWidth = Number(overlay.rootWidth) > 0 ? Number(overlay.rootWidth) : surfaceWidth;
+      const rootHeight = Number(overlay.rootHeight) > 0 ? Number(overlay.rootHeight) : surfaceHeight;
+      const overlayItems = [];
+      if (overlay.selected) {
+        overlayItems.push({ kind: 'selected', item: overlay.selected });
+      }
+      if (overlay.hover && (!overlay.selected || overlay.hover.elementId !== overlay.selected.elementId)) {
+        overlayItems.push({ kind: 'hover', item: overlay.hover });
+      }
+
+      for (const entry of overlayItems) {
+        const projectedBounds = projectPreviewOverlayBounds(
+          entry.item.bounds,
+          rootWidth,
+          rootHeight,
+          surfaceWidth,
+          surfaceHeight);
+        if (!projectedBounds) {
+          continue;
+        }
+
+        const box = document.createElement('div');
+        box.className = 'preview-overlay-box ' + entry.kind;
+        box.style.left = projectedBounds.left + 'px';
+        box.style.top = projectedBounds.top + 'px';
+        box.style.width = projectedBounds.width + 'px';
+        box.style.height = projectedBounds.height + 'px';
+
+        const label = document.createElement('div');
+        label.className = 'preview-overlay-label';
+        label.textContent = entry.item.displayLabel || (entry.item.element && (entry.item.element.displayName || entry.item.element.typeName)) || entry.kind;
+        box.appendChild(label);
+        overlayLayer.appendChild(box);
+      }
+    }
+
+    function updateDesignState(nextDesignState) {
+      currentDesignState = nextDesignState && typeof nextDesignState === 'object'
+        ? nextDesignState
+        : null;
+      if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode()) {
+        cancelPendingHoverDispatch();
+      }
+      if (!currentDesignState || !currentDesignState.available) {
+        clearToolboxDragState(false);
+      }
+      updateDesignControls();
+      renderDesignOverlay();
+    }
+
     function renderFrame(frameBuffer) {
       if (!nextFrame) {
         return;
@@ -2091,6 +3098,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         previewSocket.send('frame-received:' + nextFrame.sequenceId);
       }
 
+      renderDesignOverlay();
       scheduleViewportSizeReport();
     }
 
@@ -2174,8 +3182,11 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       };
     }
 
-    function updatePreview(previewUrl, loopbackPreview, statusText) {
+    function updatePreview(previewUrl, loopbackPreview, statusText, compilerMode, designState) {
       updateStatusText(statusText);
+      updateCompilerChip(compilerMode);
+      updateDesignState(designState);
+
       if (loopbackPreview && loopbackPreview.webSocketUrl && loopbackPreview.securityCookie) {
         connectLoopbackPreview(loopbackPreview);
         return;
@@ -2198,11 +3209,51 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     zoomInButton.addEventListener('click', () => {
       setZoom(stepPreviewZoom(currentZoom, 1));
     });
+    workspaceModeSelect.addEventListener('change', () => {
+      if (!vscodeApi) {
+        return;
+      }
+
+      updateDesignState(Object.assign({}, currentDesignState || {}, {
+        available: true,
+        workspaceMode: workspaceModeSelect.value
+      }));
+      vscodeApi.postMessage({
+        type: 'designSetWorkspaceMode',
+        mode: workspaceModeSelect.value
+      });
+    });
+    hitTestModeSelect.addEventListener('change', () => {
+      if (!vscodeApi) {
+        return;
+      }
+
+      updateDesignState(Object.assign({}, currentDesignState || {}, {
+        available: true,
+        hitTestMode: hitTestModeSelect.value
+      }));
+      vscodeApi.postMessage({
+        type: 'designSetHitTestMode',
+        mode: hitTestModeSelect.value
+      });
+    });
+    window.addEventListener('dragenter', event => {
+      updateToolboxDragState(event.dataTransfer);
+    }, true);
+    window.addEventListener('dragover', event => {
+      updateToolboxDragState(event.dataTransfer);
+    }, true);
+    window.addEventListener('drop', () => {
+      clearToolboxDragState();
+    }, true);
+    window.addEventListener('dragend', () => {
+      clearToolboxDragState();
+    }, true);
 
     window.addEventListener('message', event => {
       const message = event.data || {};
       if (message.type === 'update') {
-        updatePreview(message.previewUrl, message.loopbackPreview, message.status);
+        updatePreview(message.previewUrl, message.loopbackPreview, message.status, message.compilerMode, message.designState);
       }
     });
     window.addEventListener('resize', () => {
@@ -2217,7 +3268,9 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       observer.observe(content);
     }
     updateStatusText(status.textContent);
+    updateCompilerChip(${JSON.stringify(compilerMode || '')});
     updateZoomUi();
+    updateDesignControls();
     applyCurrentZoom();
     watchDisplayScaleChanges();
     scheduleViewportSizeReport();
@@ -2362,10 +3415,13 @@ function buildStartAttempts(extensionPath, launchInfo) {
 
   for (const mode of startPlan.modes) {
     if (mode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+      const runtimePaths = resolvePreviewHostRuntimePaths(designerHostPath, launchInfo.hostProject.targetPath, false);
       attempts.push({
         label: 'AXSG source-generated',
         mode,
-        previewerToolPath: designerHostPath
+        previewerToolPath: designerHostPath,
+        runtimeConfigPath: runtimePaths.runtimeConfigPath,
+        depsFilePath: runtimePaths.depsFilePath
       });
       continue;
     }
@@ -2377,18 +3433,67 @@ function buildStartAttempts(extensionPath, launchInfo) {
         launchInfo.hostProject.previewerToolPath);
 
       for (let index = 0; index < previewerToolPaths.length; index += 1) {
+        const previewerToolPath = previewerToolPaths[index];
+        const useHostAssemblyRuntime = samePath(previewerToolPath, launchInfo.hostProject.previewerToolPath);
+        const runtimePaths = resolvePreviewHostRuntimePaths(
+          previewerToolPath,
+          launchInfo.hostProject.targetPath,
+          useHostAssemblyRuntime);
         attempts.push({
           label: index === 0
             ? 'Avalonia XamlX'
             : 'Avalonia XamlX (project host fallback)',
           mode,
-          previewerToolPath: previewerToolPaths[index]
+          previewerToolPath,
+          runtimeConfigPath: runtimePaths.runtimeConfigPath,
+          depsFilePath: runtimePaths.depsFilePath
         });
       }
     }
   }
 
   return attempts;
+}
+
+function synchronizePreviewSourceAssemblyArtifacts(sourceAssemblyPath, previewAssemblyPath, outputChannel) {
+  const normalizedSourceAssemblyPath = normalizeMaybeEmptyPath(sourceAssemblyPath);
+  const normalizedPreviewAssemblyPath = normalizeMaybeEmptyPath(previewAssemblyPath);
+  if (!normalizedSourceAssemblyPath ||
+      !normalizedPreviewAssemblyPath ||
+      samePath(normalizedSourceAssemblyPath, normalizedPreviewAssemblyPath) ||
+      !fs.existsSync(normalizedSourceAssemblyPath)) {
+    return;
+  }
+
+  for (const artifact of enumeratePreviewAssemblyArtifacts(normalizedSourceAssemblyPath, normalizedPreviewAssemblyPath)) {
+    fs.mkdirSync(path.dirname(artifact.targetPath), { recursive: true });
+    synchronizePreviewAssemblyArtifact(artifact.sourcePath, artifact.targetPath, outputChannel);
+  }
+}
+
+function synchronizePreviewAssemblyArtifact(sourcePath, targetPath, outputChannel) {
+  if (!shouldCopyPreviewAssemblyArtifact(sourcePath, targetPath)) {
+    return;
+  }
+
+  fs.copyFileSync(sourcePath, targetPath);
+  if (outputChannel) {
+    outputChannel.appendLine(`[preview] synchronized ${path.basename(sourcePath)} into ${path.dirname(targetPath)}`);
+  }
+}
+
+function shouldCopyPreviewAssemblyArtifact(sourcePath, targetPath) {
+  if (!fs.existsSync(sourcePath)) {
+    return false;
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    return true;
+  }
+
+  const sourceStat = fs.statSync(sourcePath);
+  const targetStat = fs.statSync(targetPath);
+  return sourceStat.size !== targetStat.size || sourceStat.mtimeMs > targetStat.mtimeMs;
 }
 
 function tryReadDocumentTextFromDisk(filePath) {
@@ -2411,6 +3516,20 @@ function getPreviewReadyStatus(fileName, compilerMode) {
   return `Preview ready for ${fileName}.`;
 }
 
+function buildPreviewHostExitStatus(payload) {
+  const exitCode = payload && Object.prototype.hasOwnProperty.call(payload, 'exitCode')
+    ? payload.exitCode
+    : null;
+  const error = payload && typeof payload.error === 'string'
+    ? payload.error.trim()
+    : '';
+  if (error) {
+    return `Preview host crashed (${exitCode ?? 'null'}): ${error}`;
+  }
+
+  return `Preview host exited (${exitCode ?? 'null'}).`;
+}
+
 function escapeHtml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -2420,6 +3539,42 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+function normalizeProjectFilePath(projectDocumentOrUri) {
+  if (!projectDocumentOrUri) {
+    return '';
+  }
+
+  if (typeof projectDocumentOrUri.fsPath === 'string') {
+    return normalizeFilePath(projectDocumentOrUri.fsPath);
+  }
+
+  if (projectDocumentOrUri.uri && typeof projectDocumentOrUri.uri.fsPath === 'string') {
+    return normalizeFilePath(projectDocumentOrUri.uri.fsPath);
+  }
+
+  if (typeof projectDocumentOrUri.toString === 'function') {
+    const value = projectDocumentOrUri.toString();
+    if (typeof value === 'string' && value.startsWith('file://')) {
+      try {
+        return normalizeFilePath(vscode.Uri.parse(value).fsPath);
+      } catch {
+        return '';
+      }
+    }
+  }
+
+  return '';
+}
+
+function isProjectFilePath(filePath) {
+  return typeof filePath === 'string' &&
+    filePath.trim().length > 0 &&
+    path.extname(filePath).toLowerCase() === '.csproj';
+}
+
 module.exports = {
-  AvaloniaPreviewController
+  AvaloniaPreviewController,
+  buildPreviewHostExitStatus,
+  describePreviewCompilerMode,
+  describePreviewDesignState
 };

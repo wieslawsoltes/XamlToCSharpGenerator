@@ -28,7 +28,7 @@ This section documents every shipped AXSG package, tool, and editor artifact. Us
 | `XamlToCSharpGenerator.LanguageServer.Tool` | `axsg-lsp` global/local tool command | LSP hosts | yes |
 | `XamlToCSharpGenerator.McpServer.Tool` | `axsg-mcp` global/local tool command | MCP hosts and AI tooling | narrative only |
 | `XamlToCSharpGenerator.Editor.Avalonia` | `XamlToCSharpGenerator.Editor.Avalonia.dll` | in-app editor hosts | yes |
-| `xamltocsharpgenerator.axsg-language-server` | `.vsix` extension bundle | VS Code users | narrative only |
+| `wieslawsoltes.axsg-language-server` | `.vsix` extension bundle | VS Code users | narrative only |
 
 ## App-facing install surfaces
 

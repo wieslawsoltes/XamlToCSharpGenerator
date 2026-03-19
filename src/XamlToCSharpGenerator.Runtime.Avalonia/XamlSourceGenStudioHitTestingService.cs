@@ -38,6 +38,41 @@ internal static class XamlSourceGenStudioHitTestingService
         return null;
     }
 
+    public static Control? ResolveControlAtPoint(
+        Control liveRoot,
+        Point point,
+        SourceGenHotDesignHitTestMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(liveRoot);
+
+        var logicalRoot = liveRoot as StyledElement;
+        foreach (var visual in liveRoot.GetVisualsAt(point))
+        {
+            if (!IsHitCandidate(visual, liveRoot))
+            {
+                continue;
+            }
+
+            if (visual is not Control control)
+            {
+                continue;
+            }
+
+            if (mode == SourceGenHotDesignHitTestMode.Visual || logicalRoot is null)
+            {
+                return control;
+            }
+
+            var logicalSelection = ResolveLogicalSelectionControl(control, logicalRoot);
+            if (logicalSelection is not null)
+            {
+                return logicalSelection;
+            }
+        }
+
+        return null;
+    }
+
     public static void CollectIdentityCandidates(
         Control control,
         SourceGenHotDesignHitTestMode mode,
@@ -143,6 +178,15 @@ internal static class XamlSourceGenStudioHitTestingService
                control.IsEffectivelyVisible &&
                control.IsHitTestVisible &&
                IsDescendantOf(control, livePresenter);
+    }
+
+    private static bool IsHitCandidate(Visual visual, Visual liveRoot)
+    {
+        return visual is Control control &&
+               control.IsVisible &&
+               control.IsEffectivelyVisible &&
+               control.IsHitTestVisible &&
+               IsDescendantOf(control, liveRoot);
     }
 
     internal static Control? ResolveLogicalSelectionControl(Control control, StyledElement logicalRoot)

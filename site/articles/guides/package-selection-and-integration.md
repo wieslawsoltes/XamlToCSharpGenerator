@@ -69,7 +69,7 @@ Pick tooling packages when you need editor/language infrastructure:
 - `XamlToCSharpGenerator.LanguageService`
 - `XamlToCSharpGenerator.LanguageServer.Tool`
 - `XamlToCSharpGenerator.Editor.Avalonia`
-- `xamltocsharpgenerator.axsg-language-server`
+- `wieslawsoltes.axsg-language-server`
 
 ## Recommended combinations
 

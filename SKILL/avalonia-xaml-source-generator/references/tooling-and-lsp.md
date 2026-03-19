@@ -6,7 +6,7 @@ Load this file when the task is about editor features, language-service hosting,
 
 | Need | Recommended artifact | Why |
 | --- | --- | --- |
-| Packaged VS Code authoring experience | `xamltocsharpgenerator.axsg-language-server` | Delivers the full extension experience with completion, diagnostics, navigation, rename propagation, semantic highlighting, and inline C# support |
+| Packaged VS Code authoring experience | `wieslawsoltes.axsg-language-server` | Delivers the full extension experience with completion, diagnostics, navigation, rename propagation, semantic highlighting, and inline C# support |
 | Standalone LSP host | `XamlToCSharpGenerator.LanguageServer.Tool` | Ships `axsg-lsp` for editors or workflows that want an external language server process |
 | In-process semantic engine | `XamlToCSharpGenerator.LanguageService` | Exposes the shared analysis engine used by the tool and extension |
 | In-app AXAML editor surface | `XamlToCSharpGenerator.Editor.Avalonia` | Adds an AvaloniaEdit-based editor control on top of `LanguageService` |

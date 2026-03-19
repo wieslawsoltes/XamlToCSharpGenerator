@@ -1,5 +1,6 @@
 guides:
   - {path: readme.md, title: "Overview", self: true}
+  - {path: avalonia-name-generator-and-initializecomponent-modes.md, title: "Avalonia Name Generator and InitializeComponent Modes"}
   - {path: csharp-expressions.md, title: "C# Expressions"}
   - {path: inline-csharp-code.md, title: "Inline C# Code"}
   - {path: package-selection-and-integration.md, title: "Package Selection and Integration"}

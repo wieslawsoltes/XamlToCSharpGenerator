@@ -74,6 +74,47 @@ function mapPreviewClientPointToRemotePoint(offsetX, offsetY, viewportScale, pre
   };
 }
 
+function mapPreviewClientPointToDesignPoint(offsetX, offsetY, previewZoom = 1) {
+  const normalizedPreviewZoom = clampPreviewZoom(previewZoom, 1);
+
+  return {
+    x: Number(offsetX) / normalizedPreviewZoom,
+    y: Number(offsetY) / normalizedPreviewZoom
+  };
+}
+
+function projectPreviewOverlayBounds(bounds, rootWidth, rootHeight, surfaceWidth, surfaceHeight) {
+  if (!bounds || typeof bounds !== 'object') {
+    return null;
+  }
+
+  const normalizedRootWidth = Number(rootWidth);
+  const normalizedRootHeight = Number(rootHeight);
+  const normalizedSurfaceWidth = Number(surfaceWidth);
+  const normalizedSurfaceHeight = Number(surfaceHeight);
+  if (!Number.isFinite(normalizedRootWidth) || normalizedRootWidth <= 0 ||
+      !Number.isFinite(normalizedRootHeight) || normalizedRootHeight <= 0 ||
+      !Number.isFinite(normalizedSurfaceWidth) || normalizedSurfaceWidth <= 0 ||
+      !Number.isFinite(normalizedSurfaceHeight) || normalizedSurfaceHeight <= 0) {
+    return null;
+  }
+
+  const x = Number(bounds.X);
+  const y = Number(bounds.Y);
+  const width = Number(bounds.Width);
+  const height = Number(bounds.Height);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  return {
+    left: (x / normalizedRootWidth) * normalizedSurfaceWidth,
+    top: (y / normalizedRootHeight) * normalizedSurfaceHeight,
+    width: (width / normalizedRootWidth) * normalizedSurfaceWidth,
+    height: (height / normalizedRootHeight) * normalizedSurfaceHeight
+  };
+}
+
 function getPreviewKeyboardModifiers(event) {
   return {
     alt: !!(event && event.altKey),
@@ -178,7 +219,9 @@ module.exports = {
   formatPreviewZoomLabel,
   getPreviewKeyboardModifiers,
   getPreviewKeyboardText,
+  mapPreviewClientPointToDesignPoint,
   mapPreviewClientPointToRemotePoint,
   normalizePreviewRenderScale,
+  projectPreviewOverlayBounds,
   stepPreviewZoom
 };

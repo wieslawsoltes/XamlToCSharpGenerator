@@ -213,11 +213,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
         with:
-          name: release-artifacts-${{ needs.build.outputs.version }}
-          path: release-artifacts
+          global-json-file: global.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -231,14 +230,14 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          VSIX_PATH="$(find release-artifacts -type f -name 'axsg-language-server-*.vsix' | head -n 1)"
-          if [[ -z "${VSIX_PATH}" ]]; then
-            echo "Unable to find packaged VSIX in release-artifacts." >&2
-            exit 1
-          fi
+          VSIX_PATH="${RUNNER_TEMP}/axsg-language-server-marketplace.vsix"
+          AXSG_VSCODE_PRERELEASE=false \
+            bash eng/release/package-vscode-extension.sh \
+            "${{ needs.build.outputs.version }}" \
+            "${VSIX_PATH}"
           bash eng/release/publish-vscode-marketplace.sh \
             "${VSIX_PATH}" \
-            "${{ needs.build.outputs.is-prerelease }}"
+            "false"
 
   create-release:
     name: Create GitHub Release

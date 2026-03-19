@@ -1491,6 +1491,53 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
         }
     }
 
+    [Fact]
+    public void IdePollingFallback_IncludedSourceFileChange_Triggers_Owning_Reload_Attempts()
+    {
+        ResetManager();
+        XamlSourceGenHotReloadManager.Enable();
+        XamlSourceGenHotReloadManager.EnableIdePollingFallback(intervalMs: 100);
+
+        var reloadCount = 0;
+        var ownerPath = Path.Combine(Path.GetTempPath(), "AXSG-HotReload-Owner-" + Guid.NewGuid().ToString("N") + ".axaml");
+        var includedPath = Path.Combine(Path.GetTempPath(), "AXSG-HotReload-Included-" + Guid.NewGuid().ToString("N") + ".axaml");
+        File.WriteAllText(ownerPath, "<Styles/>");
+        File.WriteAllText(includedPath, "<Styles/>");
+
+        try
+        {
+            const string ownerBuildUri = "avares://Demo/FluentTheme.xaml";
+            const string includedBuildUri = "avares://Demo/Controls/TextBox.xaml";
+
+            XamlIncludeGraphRegistry.Register(ownerBuildUri, includedBuildUri, "Styles");
+            XamlSourceInfoRegistry.Register(ownerBuildUri, "Object", "Root", ownerPath, 1, 1);
+            XamlSourceInfoRegistry.Register(includedBuildUri, "Object", "Root", includedPath, 1, 1);
+
+            var owner = new IncludeOwnerReloadTarget();
+            XamlSourceGenHotReloadManager.Register(
+                owner,
+                _ => Interlocked.Increment(ref reloadCount),
+                new SourceGenHotReloadRegistrationOptions
+                {
+                    BuildUri = ownerBuildUri,
+                    SourcePath = ownerPath
+                });
+
+            File.WriteAllText(includedPath, "<Styles x:Class=\"Updated\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"/>");
+            var reloaded = SpinWait.SpinUntil(() => Volatile.Read(ref reloadCount) > 0, millisecondsTimeout: 3000);
+
+            Assert.True(reloaded);
+            Assert.True(reloadCount > 0);
+        }
+        finally
+        {
+            XamlSourceGenHotReloadManager.DisableIdePollingFallback();
+            XamlSourceGenHotReloadManager.ClearRegistrations();
+            TryDelete(ownerPath);
+            TryDelete(includedPath);
+        }
+    }
+
     private static void ResetManager()
     {
         XamlSourceGenHotReloadManager.ResetTestHooks();
@@ -1501,9 +1548,25 @@ public class XamlSourceGenHotReloadManagerTests : IDisposable
         XamlSourceGenHotReloadManager.ClearRegistrations();
         XamlSourceGenHotReloadManager.ResetHandlersToDefaults();
         XamlIncludeGraphRegistry.Clear();
+        XamlSourceInfoRegistry.Clear();
         XamlSourceGenArtifactRefreshRegistry.Clear();
         XamlSourceGenTypeUriRegistry.Clear();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best effort temp cleanup.
+        }
     }
 
     private static Type CreateDynamicType(string assemblyName, string typeFullName)

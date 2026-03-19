@@ -3,7 +3,11 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 using XamlToCSharpGenerator.RemoteProtocol.Preview;
+using XamlToCSharpGenerator.RemoteProtocol.Studio;
 using XamlToCSharpGenerator.PreviewerHost.Protocol;
 
 namespace XamlToCSharpGenerator.PreviewerHost;
@@ -11,6 +15,7 @@ namespace XamlToCSharpGenerator.PreviewerHost;
 internal sealed class PreviewSession : IPreviewHostSession
 {
     private const int MaxStartupAttempts = 3;
+    private const string DefaultDesignHost = "127.0.0.1";
     private static readonly string[] PreviewPortBindFailureMarkers =
     [
         "address already in use",
@@ -23,18 +28,22 @@ internal sealed class PreviewSession : IPreviewHostSession
     private readonly TimeSpan _startupTimeout = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _disposeSource = new();
     private readonly PreviewUpdateResultTracker _pendingUpdateResults = new();
+    private readonly object _diagnosticsSync = new();
+    private readonly List<string> _recentHostErrorLines = new();
 
     private TcpListener? _listener;
     private Process? _hostProcess;
     private Task? _acceptLoopTask;
     private Task? _readLoopTask;
     private AvaloniaDesignerTransport? _transport;
+    private StudioRemoteDesignClient? _designClient;
     private string? _sourceAssemblyPath;
     private string? _xamlFileProjectPath;
     private double? _previewWidth;
     private double? _previewHeight;
     private double? _previewScale;
     private bool _sessionStarted;
+    private string? _latestHostErrorSummary;
 
     public event Action<string>? Log;
 
@@ -42,7 +51,7 @@ internal sealed class PreviewSession : IPreviewHostSession
 
     public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-    public event Action<int?>? HostExited;
+    public event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
     public async Task<AxsgPreviewHostStartResponse> StartAsync(
         AxsgPreviewHostStartRequest request,
@@ -63,6 +72,7 @@ internal sealed class PreviewSession : IPreviewHostSession
             _previewWidth = request.PreviewWidth;
             _previewHeight = request.PreviewHeight;
             _previewScale = request.PreviewScale;
+            ResetHostDiagnostics();
 
             Exception? lastException = null;
 
@@ -73,23 +83,30 @@ internal sealed class PreviewSession : IPreviewHostSession
                 var designerSessionStarted = CreateCompletionSource<string>();
                 var hostDiagnostics = new StringBuilder();
                 TcpListener? previewPortReservation = null;
+                TcpListener? designPortReservation = null;
 
                 try
                 {
                     var transportPort = StartListener(clientAccepted);
                     previewPortReservation = ReserveTcpPort();
                     var previewPort = GetListenerPort(previewPortReservation);
+                    designPortReservation = ReserveTcpPort();
+                    var designPort = GetListenerPort(designPortReservation);
 
                     StartHostProcess(
                         request,
                         transportPort,
                         previewPort,
                         previewPortReservation,
+                        DefaultDesignHost,
+                        designPort,
+                        designPortReservation,
                         clientAccepted,
                         previewUrlAvailable,
                         designerSessionStarted,
                         hostDiagnostics);
                     previewPortReservation = null;
+                    designPortReservation = null;
 
                     var acceptedClient = await WaitWithTimeoutAsync(
                         clientAccepted.Task,
@@ -108,24 +125,26 @@ internal sealed class PreviewSession : IPreviewHostSession
                         linkedCancellationToken.Token,
                         "Timed out waiting for the Avalonia preview session to start.").ConfigureAwait(false);
 
-                    await _transport.SendInitialClientBootstrapAsync(
-                        _previewWidth,
-                        _previewHeight,
-                        _previewScale,
+                    _designClient = await StudioRemoteDesignClient.ConnectAsync(
+                        DefaultDesignHost,
+                        designPort,
+                        _startupTimeout,
                         linkedCancellationToken.Token).ConfigureAwait(false);
 
-                    _pendingUpdateResults.EnqueueFireAndForget();
-                    await _transport.SendUpdateXamlAsync(
-                        request.XamlText,
-                        _sourceAssemblyPath,
-                        _xamlFileProjectPath,
-                        linkedCancellationToken.Token).ConfigureAwait(false);
-
-                    var previewUrl = await WaitWithTimeoutAsync(
+                    var previewUrl = await CompleteInitialPreviewStartupAsync(
+                        cancellationToken => _transport.SendInitialClientBootstrapAsync(
+                            _previewWidth,
+                            _previewHeight,
+                            _previewScale,
+                            cancellationToken),
+                        cancellationToken =>
+                        {
+                            _pendingUpdateResults.EnqueueFireAndForget();
+                            return SendUpdateXamlAsync(request.XamlText, cancellationToken);
+                        },
                         previewUrlAvailable.Task,
                         _startupTimeout,
-                        linkedCancellationToken.Token,
-                        "Timed out waiting for the Avalonia preview URL.").ConfigureAwait(false);
+                        linkedCancellationToken.Token).ConfigureAwait(false);
 
                     _sessionStarted = true;
 
@@ -151,6 +170,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                 finally
                 {
                     previewPortReservation?.Stop();
+                    designPortReservation?.Stop();
                 }
             }
 
@@ -234,6 +254,28 @@ internal sealed class PreviewSession : IPreviewHostSession
         {
             await transport.SendKeyEventAsync(keyEventMessage, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<JsonElement> ExecuteDesignAsync(
+        AxsgPreviewHostDesignRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ThrowIfDisposed();
+        StudioRemoteDesignClient client = _designClient ?? throw new InvalidOperationException("Preview design server is not connected.");
+        string command = MapDesignOperation(request.Operation);
+        object? payload = request.Arguments.ValueKind == JsonValueKind.Undefined
+            ? new { }
+            : request.Arguments;
+        JsonElement response = await client.SendCommandAsync(command, payload, cancellationToken).ConfigureAwait(false);
+
+        return request.Operation switch
+        {
+            "documents.selected" => BuildSelectedDocumentPayload(response),
+            "element.selected" => BuildSelectedElementPayload(response),
+            _ => response
+        };
     }
 
     public async ValueTask DisposeAsync()
@@ -324,6 +366,9 @@ internal sealed class PreviewSession : IPreviewHostSession
         int transportPort,
         int previewPort,
         TcpListener previewPortReservation,
+        string designHost,
+        int designPort,
+        TcpListener designPortReservation,
         TaskCompletionSource<TcpClient> clientAccepted,
         TaskCompletionSource<string> previewUrlAvailable,
         TaskCompletionSource<string> designerSessionStarted,
@@ -346,41 +391,16 @@ internal sealed class PreviewSession : IPreviewHostSession
             EnableRaisingEvents = true
         };
 
-        process.StartInfo.ArgumentList.Add("exec");
-        process.StartInfo.ArgumentList.Add("--runtimeconfig");
-        process.StartInfo.ArgumentList.Add(request.RuntimeConfigPath);
-        process.StartInfo.ArgumentList.Add("--depsfile");
-        process.StartInfo.ArgumentList.Add(request.DepsFilePath);
-        process.StartInfo.ArgumentList.Add(request.PreviewerToolPath);
-        process.StartInfo.ArgumentList.Add("--transport");
-        process.StartInfo.ArgumentList.Add(transportUrl);
-        process.StartInfo.ArgumentList.Add("--session-id");
-        process.StartInfo.ArgumentList.Add(sessionId);
-        process.StartInfo.ArgumentList.Add("--method");
-        process.StartInfo.ArgumentList.Add("html");
-        process.StartInfo.ArgumentList.Add("--html-url");
-        process.StartInfo.ArgumentList.Add(previewUrl);
-        process.StartInfo.ArgumentList.Add("--axsg-compiler-mode");
-        process.StartInfo.ArgumentList.Add(request.PreviewCompilerMode);
-        if (request.PreviewWidth is > 0)
+        foreach (string argument in BuildHostProcessArguments(
+                     request,
+                     transportUrl,
+                     sessionId,
+                     previewUrl,
+                     designHost,
+                     designPort))
         {
-            process.StartInfo.ArgumentList.Add("--axsg-preview-width");
-            process.StartInfo.ArgumentList.Add(request.PreviewWidth.Value.ToString(CultureInfo.InvariantCulture));
+            process.StartInfo.ArgumentList.Add(argument);
         }
-
-        if (request.PreviewHeight is > 0)
-        {
-            process.StartInfo.ArgumentList.Add("--axsg-preview-height");
-            process.StartInfo.ArgumentList.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.SourceFilePath))
-        {
-            process.StartInfo.ArgumentList.Add("--axsg-source-file");
-            process.StartInfo.ArgumentList.Add(request.SourceFilePath);
-        }
-
-        process.StartInfo.ArgumentList.Add(request.HostAssemblyPath);
 
         process.OutputDataReceived += (_, args) =>
         {
@@ -399,6 +419,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                     hostDiagnostics.AppendLine(args.Data);
                 }
 
+                CaptureHostErrorDiagnostic(args.Data);
                 Log?.Invoke("[previewer stderr] " + args.Data);
             }
         };
@@ -408,16 +429,16 @@ internal sealed class PreviewSession : IPreviewHostSession
             try
             {
                 int? exitCode = process.HasExited ? process.ExitCode : null;
-                var exception = new InvalidOperationException(
-                    "Avalonia previewer host exited before the session completed." +
-                    (exitCode.HasValue ? " Exit code: " + exitCode.Value + "." : string.Empty));
+                string? errorSummary = GetHostErrorSummary();
+                string exitMessage = BuildHostExitMessage(exitCode, errorSummary);
+                var exception = new InvalidOperationException(exitMessage);
                 clientAccepted.TrySetException(exception);
                 previewUrlAvailable.TrySetException(exception);
                 designerSessionStarted.TrySetException(exception);
-                PublishPendingHotReloadFailure(exception.Message);
+                PublishPendingHotReloadFailure(exitMessage);
                 if (_sessionStarted)
                 {
-                    HostExited?.Invoke(exitCode);
+                    HostExited?.Invoke(new AxsgPreviewHostHostExitedEventPayload(exitCode, errorSummary));
                 }
             }
             catch
@@ -427,6 +448,7 @@ internal sealed class PreviewSession : IPreviewHostSession
         };
 
         previewPortReservation.Stop();
+        designPortReservation.Stop();
 
         if (!process.Start())
         {
@@ -436,6 +458,85 @@ internal sealed class PreviewSession : IPreviewHostSession
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _hostProcess = process;
+    }
+
+    internal static IReadOnlyList<string> BuildHostProcessArguments(
+        AxsgPreviewHostStartRequest request,
+        string transportUrl,
+        string sessionId,
+        string previewUrl,
+        string designHost,
+        int designPort)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrEmpty(transportUrl);
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        ArgumentException.ThrowIfNullOrEmpty(previewUrl);
+        ArgumentException.ThrowIfNullOrEmpty(designHost);
+
+        List<string> arguments =
+        [
+            "exec",
+            "--runtimeconfig",
+            request.RuntimeConfigPath,
+            "--depsfile",
+            request.DepsFilePath,
+            request.PreviewerToolPath,
+            "--transport",
+            transportUrl,
+            "--session-id",
+            sessionId,
+            "--method",
+            "html",
+            "--html-url",
+            previewUrl
+        ];
+
+        if (UsesAxsgPreviewerArguments(request))
+        {
+            arguments.Add("--axsg-compiler-mode");
+            arguments.Add(request.PreviewCompilerMode);
+
+            if (request.PreviewWidth is > 0)
+            {
+                arguments.Add("--axsg-preview-width");
+                arguments.Add(request.PreviewWidth.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (request.PreviewHeight is > 0)
+            {
+                arguments.Add("--axsg-preview-height");
+                arguments.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.SourceFilePath))
+            {
+                arguments.Add("--axsg-source-file");
+                arguments.Add(request.SourceFilePath);
+            }
+
+            arguments.Add("--axsg-source-assembly");
+            arguments.Add(request.SourceAssemblyPath);
+            arguments.Add("--axsg-xaml-project-path");
+            arguments.Add(request.XamlFileProjectPath);
+            arguments.Add("--axsg-design-host");
+            arguments.Add(designHost);
+            arguments.Add("--axsg-design-port");
+            arguments.Add(designPort.ToString(CultureInfo.InvariantCulture));
+        }
+
+        arguments.Add(request.HostAssemblyPath);
+        return arguments;
+    }
+
+    internal static bool UsesAxsgPreviewerArguments(AxsgPreviewHostStartRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        string expectedRuntimeConfigPath = Path.GetFullPath(Path.ChangeExtension(request.PreviewerToolPath, ".runtimeconfig.json")!);
+        string expectedDepsFilePath = Path.GetFullPath(Path.ChangeExtension(request.PreviewerToolPath, ".deps.json")!);
+        return PathEquals(request.RuntimeConfigPath, expectedRuntimeConfigPath) &&
+               PathEquals(request.DepsFilePath, expectedDepsFilePath);
     }
 
     private async Task RunReadLoopAsync(
@@ -494,6 +595,21 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
         catch (Exception ex)
         {
+            string? errorSummary = GetHostErrorSummary();
+            int? exitCode = _hostProcess is { HasExited: true } hostProcess
+                ? hostProcess.ExitCode
+                : null;
+            if (!string.IsNullOrWhiteSpace(errorSummary) && exitCode.HasValue)
+            {
+                string exitMessage = BuildHostExitMessage(exitCode, errorSummary);
+                Log?.Invoke("[previewer] transport ended after preview host crash: " + errorSummary);
+                var transportException = new InvalidOperationException(exitMessage, ex);
+                previewUrlAvailable.TrySetException(transportException);
+                designerSessionStarted.TrySetException(transportException);
+                PublishPendingHotReloadFailure(exitMessage);
+                return;
+            }
+
             Log?.Invoke("[previewer] transport failed: " + ex.Message);
             previewUrlAvailable.TrySetException(ex);
             designerSessionStarted.TrySetException(ex);
@@ -528,10 +644,37 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
     }
 
+    internal static async Task<string> CompleteInitialPreviewStartupAsync(
+        Func<CancellationToken, Task> sendInitialClientBootstrapAsync,
+        Func<CancellationToken, Task> sendInitialUpdateAsync,
+        Task<string> previewUrlAvailable,
+        TimeSpan startupTimeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sendInitialClientBootstrapAsync);
+        ArgumentNullException.ThrowIfNull(sendInitialUpdateAsync);
+        ArgumentNullException.ThrowIfNull(previewUrlAvailable);
+
+        await sendInitialClientBootstrapAsync(cancellationToken).ConfigureAwait(false);
+        string previewUrl = await WaitWithTimeoutAsync(
+            previewUrlAvailable,
+            startupTimeout,
+            cancellationToken,
+            "Timed out waiting for the Avalonia preview URL.").ConfigureAwait(false);
+        await sendInitialUpdateAsync(cancellationToken).ConfigureAwait(false);
+        return previewUrl;
+    }
+
     private async Task CleanupStartupAttemptAsync()
     {
         _sessionStarted = false;
         PublishPendingHotReloadFailure("Preview session stopped before hot reload completed.");
+
+        if (_designClient is not null)
+        {
+            await _designClient.DisposeAsync().ConfigureAwait(false);
+            _designClient = null;
+        }
 
         if (_transport is not null)
         {
@@ -631,6 +774,80 @@ internal sealed class PreviewSession : IPreviewHostSession
             marker => hostDiagnostics.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static string? SummarizePreviewHostDiagnostics(string diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(diagnostics))
+        {
+            return null;
+        }
+
+        string? fallback = null;
+        using var reader = new StringReader(diagnostics);
+        while (reader.ReadLine() is { } line)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (trimmed.StartsWith("Unhandled exception.", StringComparison.OrdinalIgnoreCase))
+            {
+                string summary = trimmed["Unhandled exception.".Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(summary))
+                {
+                    return summary;
+                }
+
+                continue;
+            }
+
+            if (trimmed.StartsWith("at ", StringComparison.Ordinal) ||
+                trimmed.StartsWith("---", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (trimmed.Contains("Exception", StringComparison.Ordinal))
+            {
+                return trimmed;
+            }
+
+            fallback ??= trimmed;
+        }
+
+        return fallback;
+    }
+
+    internal static string BuildHostExitMessage(int? exitCode, string? errorSummary)
+    {
+        string exitCodeText = exitCode.HasValue
+            ? " (" + exitCode.Value.ToString(CultureInfo.InvariantCulture) + ")"
+            : string.Empty;
+        if (!string.IsNullOrWhiteSpace(errorSummary))
+        {
+            return "Preview host crashed" + exitCodeText + ": " + errorSummary;
+        }
+
+        return "Preview host exited" + exitCodeText + ".";
+    }
+
+    private static bool PathEquals(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            comparison);
+    }
+
     private static TcpListener ReserveTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -667,17 +884,176 @@ internal sealed class PreviewSession : IPreviewHostSession
         return new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    private void ResetHostDiagnostics()
+    {
+        lock (_diagnosticsSync)
+        {
+            _recentHostErrorLines.Clear();
+            _latestHostErrorSummary = null;
+        }
+    }
+
+    private void CaptureHostErrorDiagnostic(string diagnosticLine)
+    {
+        lock (_diagnosticsSync)
+        {
+            _recentHostErrorLines.Add(diagnosticLine);
+            if (_recentHostErrorLines.Count > 128)
+            {
+                _recentHostErrorLines.RemoveAt(0);
+            }
+
+            string diagnostics = string.Join(Environment.NewLine, _recentHostErrorLines);
+            _latestHostErrorSummary = SummarizePreviewHostDiagnostics(diagnostics);
+        }
+    }
+
+    private string? GetHostErrorSummary()
+    {
+        lock (_diagnosticsSync)
+        {
+            if (!string.IsNullOrWhiteSpace(_latestHostErrorSummary))
+            {
+                return _latestHostErrorSummary;
+            }
+
+            if (_recentHostErrorLines.Count == 0)
+            {
+                return null;
+            }
+
+            _latestHostErrorSummary = SummarizePreviewHostDiagnostics(
+                string.Join(Environment.NewLine, _recentHostErrorLines));
+            return _latestHostErrorSummary;
+        }
+    }
+
     private async Task SendUpdateXamlAsync(string xamlText, CancellationToken cancellationToken)
     {
         var transport = _transport ?? throw new InvalidOperationException("Preview session is not connected.");
-        var sourceAssemblyPath = _sourceAssemblyPath ?? throw new InvalidOperationException("Source assembly path is unavailable.");
         var xamlFileProjectPath = _xamlFileProjectPath ?? throw new InvalidOperationException("XAML project path is unavailable.");
 
         await transport.SendUpdateXamlAsync(
             xamlText,
-            sourceAssemblyPath,
+            assemblyPath: null,
             xamlFileProjectPath,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string MapDesignOperation(string operation)
+    {
+        return operation switch
+        {
+            "workspace.current" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "workspace.byBuildUri" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "documents.selected" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "element.selected" => AxsgStudioRemoteProtocol.GetWorkspaceCommand,
+            "tree.logical" => AxsgStudioRemoteProtocol.GetLogicalTreeCommand,
+            "tree.visual" => AxsgStudioRemoteProtocol.GetVisualTreeCommand,
+            "overlay.current" => AxsgStudioRemoteProtocol.GetOverlayCommand,
+            "selectDocument" => AxsgStudioRemoteProtocol.SelectDocumentCommand,
+            "selectElement" => AxsgStudioRemoteProtocol.SelectElementCommand,
+            "selectAtPoint" => AxsgStudioRemoteProtocol.SelectAtPointCommand,
+            "applyDocumentText" => AxsgStudioRemoteProtocol.ApplyDocumentTextCommand,
+            "applyPropertyUpdate" => AxsgStudioRemoteProtocol.ApplyPropertyUpdateCommand,
+            "insertElement" => AxsgStudioRemoteProtocol.InsertElementCommand,
+            "removeElement" => AxsgStudioRemoteProtocol.RemoveElementCommand,
+            "undo" => AxsgStudioRemoteProtocol.UndoCommand,
+            "redo" => AxsgStudioRemoteProtocol.RedoCommand,
+            "setWorkspaceMode" => AxsgStudioRemoteProtocol.SetWorkspaceModeCommand,
+            "setHitTestMode" => AxsgStudioRemoteProtocol.SetHitTestModeCommand,
+            "setPropertyFilterMode" => AxsgStudioRemoteProtocol.SetPropertyFilterModeCommand,
+            _ => throw new InvalidOperationException("Unsupported preview design operation '" + operation + "'.")
+        };
+    }
+
+    private static JsonElement BuildSelectedDocumentPayload(JsonElement workspacePayload)
+    {
+        string? activeBuildUri = TryGetStringProperty(workspacePayload, "activeBuildUri", "ActiveBuildUri");
+        JsonElement? selectedDocument = null;
+        if (workspacePayload.TryGetProperty("documents", out JsonElement documentsElement) &&
+            documentsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement document in documentsElement.EnumerateArray())
+            {
+                string? buildUri = TryGetStringProperty(document, "buildUri", "BuildUri");
+                if (string.Equals(buildUri, activeBuildUri, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedDocument = document;
+                    break;
+                }
+            }
+        }
+
+        JsonObject payload = new()
+        {
+            ["activeBuildUri"] = activeBuildUri,
+            ["document"] = selectedDocument.HasValue
+                ? JsonRpcNodeHelpers.CloneJsonElement(selectedDocument.Value)
+                : null
+        };
+        return JsonDocument.Parse(payload.ToJsonString()).RootElement.Clone();
+    }
+
+    private static JsonElement BuildSelectedElementPayload(JsonElement workspacePayload)
+    {
+        string? activeBuildUri = TryGetStringProperty(workspacePayload, "activeBuildUri", "ActiveBuildUri");
+        string? selectedElementId = TryGetStringProperty(workspacePayload, "selectedElementId", "SelectedElementId");
+        JsonElement? selectedElement = null;
+        if (workspacePayload.TryGetProperty("elements", out JsonElement elementsElement) &&
+            elementsElement.ValueKind == JsonValueKind.Array &&
+            !string.IsNullOrWhiteSpace(selectedElementId))
+        {
+            selectedElement = FindElementPayload(elementsElement, selectedElementId);
+        }
+
+        JsonObject payload = new()
+        {
+            ["activeBuildUri"] = activeBuildUri,
+            ["selectedElementId"] = selectedElementId,
+            ["element"] = selectedElement.HasValue
+                ? JsonRpcNodeHelpers.CloneJsonElement(selectedElement.Value)
+                : null
+        };
+        return JsonDocument.Parse(payload.ToJsonString()).RootElement.Clone();
+    }
+
+    private static JsonElement? FindElementPayload(JsonElement elements, string selectedElementId)
+    {
+        foreach (JsonElement element in elements.EnumerateArray())
+        {
+            string? elementId = TryGetStringProperty(element, "id", "Id");
+            if (string.Equals(elementId, selectedElementId, StringComparison.Ordinal))
+            {
+                return element;
+            }
+
+            if (element.TryGetProperty("children", out JsonElement childrenElement) &&
+                childrenElement.ValueKind == JsonValueKind.Array)
+            {
+                JsonElement? child = FindElementPayload(childrenElement, selectedElementId);
+                if (child.HasValue)
+                {
+                    return child;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, params string[] propertyNames)
+    {
+        for (int index = 0; index < propertyNames.Length; index++)
+        {
+            if (element.TryGetProperty(propertyNames[index], out JsonElement propertyElement) &&
+                propertyElement.ValueKind == JsonValueKind.String)
+            {
+                return propertyElement.GetString();
+            }
+        }
+
+        return null;
     }
 
     private AxsgPreviewHostHotReloadResponse CompletePendingHotReload(AxsgPreviewHostHotReloadResponse response)

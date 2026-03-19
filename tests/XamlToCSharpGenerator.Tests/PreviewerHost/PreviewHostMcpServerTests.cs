@@ -84,17 +84,14 @@ public sealed class PreviewHostMcpServerTests
         Assert.Equal("http://127.0.0.1:7000", structuredContent.GetProperty("previewUrl").GetString());
 
         using JsonDocument toolsChanged = await harness.ReadNotificationAsync("notifications/tools/list_changed");
-        using JsonDocument resourceUpdated = await harness.ReadNotificationAsync("notifications/resources/updated");
+        using JsonDocument resourceUpdated = await harness.ReadResourceUpdatedNotificationAsync(
+            PreviewHostMcpServer.StatusResourceUri,
+            timeoutMs: 15000);
 
         Assert.NotNull(toolsChanged);
-        Assert.Contains(
-            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString(),
-            new[]
-            {
-                PreviewHostMcpServer.StatusResourceUri,
-                PreviewHostMcpServer.EventsResourceUri,
-                PreviewHostMcpServer.CurrentSessionResourceUri
-            });
+        Assert.Equal(
+            PreviewHostMcpServer.StatusResourceUri,
+            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString());
 
         await harness.SendRequestAsync(12, "tools/list", new JsonObject());
         using (JsonDocument updatedTools = await harness.ReadResponseAsync(12))
@@ -175,16 +172,14 @@ public sealed class PreviewHostMcpServerTests
         session.RaiseHostExited(9);
 
         using JsonDocument toolsChanged = await harness.ReadNotificationAsync("notifications/tools/list_changed");
-        using JsonDocument resourceUpdated = await harness.ReadNotificationAsync("notifications/resources/updated");
+        using JsonDocument resourceUpdated = await harness.ReadResourceUpdatedNotificationAsync(
+            PreviewHostMcpServer.StatusResourceUri,
+            timeoutMs: 15000);
 
         Assert.NotNull(toolsChanged);
-        Assert.Contains(
-            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString(),
-            new[]
-            {
-                PreviewHostMcpServer.StatusResourceUri,
-                PreviewHostMcpServer.EventsResourceUri
-            });
+        Assert.Equal(
+            PreviewHostMcpServer.StatusResourceUri,
+            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString());
 
         await harness.SendRequestAsync(21, "tools/list", new JsonObject());
         using (JsonDocument updatedTools = await harness.ReadResponseAsync(21))
@@ -229,6 +224,58 @@ public sealed class PreviewHostMcpServerTests
             .Select(static item => item.GetProperty("uri").GetString() ?? string.Empty)
             .ToArray();
         Assert.DoesNotContain(PreviewHostMcpServer.CurrentSessionResourceUri, resourceUris, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task DesignMutation_Updates_BuildUriScoped_Workspace_Resource()
+    {
+        await using var harness = await PreviewHostMcpHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(
+            24,
+            "tools/call",
+            new JsonObject
+            {
+                ["name"] = "axsg.preview.start",
+                ["arguments"] = CreateStartArguments()
+            });
+        using (JsonDocument startResponse = await harness.ReadResponseAsync(24))
+        {
+        }
+
+        const string scopedWorkspaceUri = "axsg://preview/design/workspace/by-build-uri/%2FPages%2FMainView.axaml";
+
+        await harness.SendRequestAsync(
+            25,
+            "resources/subscribe",
+            new JsonObject
+            {
+                ["uri"] = scopedWorkspaceUri
+            });
+        using (JsonDocument subscribeResponse = await harness.ReadResponseAsync(25))
+        {
+        }
+
+        await harness.SendRequestAsync(
+            26,
+            "tools/call",
+            new JsonObject
+            {
+                ["name"] = "axsg.preview.design.setWorkspaceMode",
+                ["arguments"] = new JsonObject
+                {
+                    ["mode"] = "Design"
+                }
+            });
+        using (JsonDocument toolResponse = await harness.ReadResponseAsync(26))
+        {
+        }
+
+        using JsonDocument notification = await harness.ReadResourceUpdatedNotificationAsync(scopedWorkspaceUri);
+        Assert.Equal(
+            scopedWorkspaceUri,
+            notification.RootElement.GetProperty("params").GetProperty("uri").GetString());
     }
 
     [Fact]
@@ -286,6 +333,66 @@ public sealed class PreviewHostMcpServerTests
         using JsonDocument statusPayload = JsonDocument.Parse(statusText);
         Assert.Equal("running", statusPayload.RootElement.GetProperty("phase").GetString());
         Assert.True(statusPayload.RootElement.GetProperty("lastUpdateSucceeded").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Start_Exposes_Design_Tools_And_Resources_For_Active_Session()
+    {
+        await using var harness = await PreviewHostMcpHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        await harness.SendRequestAsync(
+            40,
+            "tools/call",
+            new JsonObject
+            {
+                ["name"] = "axsg.preview.start",
+                ["arguments"] = CreateStartArguments()
+            });
+        using JsonDocument startResponse = await harness.ReadResponseAsync(40);
+
+        await harness.SendRequestAsync(41, "tools/list", new JsonObject());
+        using JsonDocument toolsResponse = await harness.ReadResponseAsync(41);
+        string[] toolNames = toolsResponse.RootElement
+            .GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(static item => item.GetProperty("name").GetString() ?? string.Empty)
+            .ToArray();
+
+        Assert.Contains("axsg.preview.design.selectAtPoint", toolNames, StringComparer.Ordinal);
+        Assert.Contains("axsg.preview.design.applyPropertyUpdate", toolNames, StringComparer.Ordinal);
+
+        await harness.SendRequestAsync(42, "resources/list", new JsonObject());
+        using JsonDocument resourcesResponse = await harness.ReadResponseAsync(42);
+        string[] resourceUris = resourcesResponse.RootElement
+            .GetProperty("result")
+            .GetProperty("resources")
+            .EnumerateArray()
+            .Select(static item => item.GetProperty("uri").GetString() ?? string.Empty)
+            .ToArray();
+
+        Assert.Contains(PreviewHostMcpServer.DesignWorkspaceCurrentResourceUri, resourceUris, StringComparer.Ordinal);
+        Assert.Contains(PreviewHostMcpServer.DesignLogicalTreeResourceUri, resourceUris, StringComparer.Ordinal);
+        Assert.Contains("axsg://preview/design/workspace/by-build-uri/%2FPages%2FMainView.axaml", resourceUris, StringComparer.Ordinal);
+
+        await harness.SendRequestAsync(
+            43,
+            "resources/read",
+            new JsonObject
+            {
+                ["uri"] = PreviewHostMcpServer.DesignWorkspaceCurrentResourceUri
+            });
+        using JsonDocument workspaceResponse = await harness.ReadResponseAsync(43);
+        string workspaceText = workspaceResponse.RootElement
+            .GetProperty("result")
+            .GetProperty("contents")
+            .EnumerateArray()
+            .First()
+            .GetProperty("text")
+            .GetString()!;
+        using JsonDocument workspacePayload = JsonDocument.Parse(workspaceText);
+        Assert.Equal("/Pages/MainView.axaml", workspacePayload.RootElement.GetProperty("activeBuildUri").GetString());
     }
 
     private static JsonObject CreateStartArguments()
@@ -557,9 +664,11 @@ public sealed class PreviewHostMcpServerTests
 
         public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-        public event Action<int?>? HostExited;
+        public event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
         public string? LastHotReloadXaml { get; private set; }
+
+        public AxsgPreviewHostDesignRequest? LastDesignRequest { get; private set; }
 
         public Task<AxsgPreviewHostStartResponse> StartAsync(
             AxsgPreviewHostStartRequest request,
@@ -597,6 +706,12 @@ public sealed class PreviewHostMcpServerTests
             return Task.CompletedTask;
         }
 
+        public Task<JsonElement> ExecuteDesignAsync(AxsgPreviewHostDesignRequest request, CancellationToken cancellationToken)
+        {
+            LastDesignRequest = request;
+            return Task.FromResult(CreateDesignPayload(request.Operation));
+        }
+
         public ValueTask DisposeAsync()
         {
             return ValueTask.CompletedTask;
@@ -617,9 +732,115 @@ public sealed class PreviewHostMcpServerTests
             UpdateCompleted?.Invoke(result);
         }
 
-        public void RaiseHostExited(int? exitCode)
+        public void RaiseHostExited(int? exitCode, string? error = null)
         {
-            HostExited?.Invoke(exitCode);
+            HostExited?.Invoke(new AxsgPreviewHostHostExitedEventPayload(exitCode, error));
+        }
+
+        private static JsonElement CreateDesignPayload(string operation)
+        {
+            object payload = operation switch
+            {
+                "documents.selected" => new
+                {
+                    activeBuildUri = "/Pages/MainView.axaml",
+                    document = new
+                    {
+                        BuildUri = "/Pages/MainView.axaml",
+                        SourcePath = "/workspace/Pages/MainView.axaml"
+                    }
+                },
+                "element.selected" => new
+                {
+                    activeBuildUri = "/Pages/MainView.axaml",
+                    selectedElementId = "root",
+                    element = new
+                    {
+                        Id = "root",
+                        DisplayName = "UserControl"
+                    }
+                },
+                "tree.logical" => new
+                {
+                    ActiveBuildUri = "/Pages/MainView.axaml",
+                    SelectedElementId = "root",
+                    elements = new[]
+                    {
+                        new
+                        {
+                            Id = "root",
+                            DisplayName = "UserControl",
+                            children = Array.Empty<object>()
+                        }
+                    }
+                },
+                "tree.visual" => new
+                {
+                    ActiveBuildUri = "/Pages/MainView.axaml",
+                    SelectedElementId = "root",
+                    elements = new[]
+                    {
+                        new
+                        {
+                            Id = "root",
+                            DisplayName = "UserControl",
+                            children = Array.Empty<object>()
+                        }
+                    }
+                },
+                "overlay.current" => new
+                {
+                    ActiveBuildUri = "/Pages/MainView.axaml",
+                    SelectedElementId = "root",
+                    RootWidth = 800,
+                    RootHeight = 600,
+                    selected = new
+                    {
+                        ElementId = "root",
+                        DisplayLabel = "UserControl",
+                        bounds = new
+                        {
+                            X = 10,
+                            Y = 10,
+                            Width = 100,
+                            Height = 50
+                        }
+                    },
+                    hover = (object?)null
+                },
+                _ => new
+                {
+                    ActiveBuildUri = "/Pages/MainView.axaml",
+                    SelectedElementId = "root",
+                    mode = "Interactive",
+                    hitTestMode = "Logical",
+                    propertyFilterMode = "Smart",
+                    CanUndo = true,
+                    CanRedo = false,
+                    CurrentXamlText = "<UserControl />",
+                    documents = new[]
+                    {
+                        new
+                        {
+                            BuildUri = "/Pages/MainView.axaml",
+                            SourcePath = "/workspace/Pages/MainView.axaml"
+                        }
+                    },
+                    elements = new[]
+                    {
+                        new
+                        {
+                            Id = "root",
+                            DisplayName = "UserControl",
+                            children = Array.Empty<object>()
+                        }
+                    },
+                    properties = Array.Empty<object>(),
+                    toolbox = Array.Empty<object>()
+                }
+            };
+
+            return JsonSerializer.SerializeToDocument(payload, JsonRpcSerializer.DefaultOptions).RootElement.Clone();
         }
     }
 }
