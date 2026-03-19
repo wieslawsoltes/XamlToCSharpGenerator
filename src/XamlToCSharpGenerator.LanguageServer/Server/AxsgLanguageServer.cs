@@ -511,6 +511,7 @@ internal sealed class AxsgLanguageServer : IDisposable
             return;
         }
 
+        List<string>? changedUris = null;
         foreach (JsonElement change in changesElement.EnumerateArray())
         {
             if (!change.TryGetProperty("uri", out JsonElement uriElement) ||
@@ -527,8 +528,21 @@ internal sealed class AxsgLanguageServer : IDisposable
                 continue;
             }
 
-            _engine.InvalidateProjectDiscoveryCaches();
-            break;
+            changedUris ??= new List<string>();
+            changedUris.Add(uri);
+        }
+
+        if (changedUris is null || changedUris.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string openDocumentUri in _engine.HandleWatchedFileChanges(changedUris))
+        {
+            if (_openDocuments.TryGetValue(openDocumentUri, out var state))
+            {
+                QueueDiagnosticsUpdate(openDocumentUri, state.Version);
+            }
         }
     }
 

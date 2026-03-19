@@ -1038,6 +1038,35 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task HandleWatchedFileChanges_InvalidatesOpenDocumentAnalyses()
+    {
+        var countingProvider = new CountingCompilationProvider(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        using var engine = new XamlLanguageServiceEngine(countingProvider);
+        const string uri = "file:///tmp/MainView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" />";
+        var options = new XamlLanguageServiceOptions("/tmp", IncludeCompilationDiagnostics: true, IncludeSemanticDiagnostics: true);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+
+        Assert.Equal(1, countingProvider.GetCompilationCalls);
+
+        var invalidatedUris = engine.HandleWatchedFileChanges(new[]
+        {
+            "file:///tmp/Themes/Shared.axaml"
+        });
+
+        Assert.Equal(1, countingProvider.InvalidateCalls);
+        Assert.Contains(uri, invalidatedUris);
+
+        await engine.GetDiagnosticsAsync(uri, options, CancellationToken.None);
+
+        Assert.Equal(2, countingProvider.GetCompilationCalls);
+    }
+
+    [Fact]
     public async Task SemanticTokens_AreStableForSameVersion_AndRefreshAfterUpdate()
     {
         using var engine = new XamlLanguageServiceEngine(

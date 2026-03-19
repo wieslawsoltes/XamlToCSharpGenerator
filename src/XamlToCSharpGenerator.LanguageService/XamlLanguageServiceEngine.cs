@@ -179,6 +179,42 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         XamlProjectFileDiscoveryService.InvalidateCaches();
     }
 
+    public ImmutableArray<string> HandleWatchedFileChanges(IEnumerable<string> changedUris)
+    {
+        XamlProjectFileDiscoveryService.InvalidateCaches();
+
+        if (changedUris is not null)
+        {
+            var invalidatedFilePaths = new HashSet<string>(
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            foreach (var changedUri in changedUris)
+            {
+                var filePath = UriPathHelper.ToFilePath(changedUri);
+                if (string.IsNullOrWhiteSpace(filePath) || !invalidatedFilePaths.Add(filePath))
+                {
+                    continue;
+                }
+
+                _compilationProvider.Invalidate(filePath);
+            }
+        }
+
+        var openDocuments = _documentStore.GetOpenDocuments();
+        if (openDocuments.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>(openDocuments.Length);
+        foreach (var document in openDocuments)
+        {
+            InvalidateUriCaches(document.Uri);
+            builder.Add(document.Uri);
+        }
+
+        return builder.ToImmutable();
+    }
+
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> GetDiagnosticsAsync(
         string uri,
         XamlLanguageServiceOptions options,

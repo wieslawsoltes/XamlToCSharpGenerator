@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Pipelines;
 using System.Text;
@@ -554,6 +555,101 @@ public sealed class LspServerIntegrationTests
         {
             Directory.Delete(tempRoot, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task WatchedFileChanges_RefreshDiagnostics_ForOpenXamlDocuments()
+    {
+        const string xamlUri = "file:///tmp/MainView.axaml";
+        const string projectUri = "file:///tmp/TestApp.csproj";
+        const string xamlText =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" x:Class=\"TestApp.MainView\" />\n";
+
+        var provider = new TogglingCompilationProvider(
+            CreateAdHocCompilation(
+                """
+                using System;
+
+                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
+                namespace Avalonia.Metadata
+                {
+                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                    public sealed class XmlnsDefinitionAttribute : Attribute
+                    {
+                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                    }
+                }
+
+                namespace TestApp.Controls
+                {
+                    public class UserControl { }
+                }
+
+                namespace TestApp
+                {
+                    public class MainView : TestApp.Controls.UserControl { }
+                }
+                """,
+                assemblyName: "WatchedFileInitial",
+                filePath: "/tmp/WatchedFileInitial.cs"),
+            CreateAdHocCompilation(
+                """
+                using System;
+
+                [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "TestApp.Controls")]
+
+                namespace Avalonia.Metadata
+                {
+                    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                    public sealed class XmlnsDefinitionAttribute : Attribute
+                    {
+                        public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                    }
+                }
+
+                namespace TestApp.Controls
+                {
+                    public class UserControl { }
+                }
+
+                namespace TestApp
+                {
+                    public partial class MainView : TestApp.Controls.UserControl { }
+                }
+                """,
+                assemblyName: "WatchedFileUpdated",
+                filePath: "/tmp/WatchedFileUpdated.cs"));
+
+        await using var harness = await LspServerHarness.StartAsync(provider);
+        await harness.InitializeAsync();
+        await harness.OpenDocumentAsync(xamlUri, xamlText);
+
+        using var initialPublish = await harness.ReadNotificationAsync("textDocument/publishDiagnostics");
+        JsonElement initialParams = initialPublish.RootElement.GetProperty("params");
+        Assert.Equal(xamlUri, initialParams.GetProperty("uri").GetString());
+        JsonElement initialDiagnostics = initialParams.GetProperty("diagnostics");
+        Assert.Contains(
+            initialDiagnostics.EnumerateArray(),
+            diagnostic => string.Equals(diagnostic.GetProperty("code").GetString(), "AXSG0109", StringComparison.Ordinal));
+
+        await harness.SendNotificationAsync("workspace/didChangeWatchedFiles", new JsonObject
+        {
+            ["changes"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["uri"] = projectUri,
+                    ["type"] = 1
+                }
+            }
+        });
+
+        using var updatedPublish = await harness.ReadNotificationAsync("textDocument/publishDiagnostics");
+        JsonElement updatedParams = updatedPublish.RootElement.GetProperty("params");
+        Assert.Equal(xamlUri, updatedParams.GetProperty("uri").GetString());
+        Assert.Equal(0, updatedParams.GetProperty("diagnostics").GetArrayLength());
+        Assert.Equal(1, provider.InvalidateCalls);
     }
 
     [Fact]
@@ -5034,6 +5130,62 @@ public sealed class LspServerIntegrationTests
         }
 
         return count;
+    }
+
+    private static Compilation CreateAdHocCompilation(string source, string assemblyName, string filePath)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: filePath);
+        MetadataReference[] references =
+        [
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
+        ];
+
+        return CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private sealed class TogglingCompilationProvider : ICompilationProvider
+    {
+        private readonly Compilation _initialCompilation;
+        private readonly Compilation _updatedCompilation;
+        private int _invalidated;
+
+        public TogglingCompilationProvider(Compilation initialCompilation, Compilation updatedCompilation)
+        {
+            _initialCompilation = initialCompilation;
+            _updatedCompilation = updatedCompilation;
+        }
+
+        public int InvalidateCalls => _invalidated;
+
+        public Task<CompilationSnapshot> GetCompilationAsync(
+            string filePath,
+            string? workspaceRoot,
+            CancellationToken cancellationToken)
+        {
+            var compilation = Volatile.Read(ref _invalidated) > 0
+                ? _updatedCompilation
+                : _initialCompilation;
+
+            return Task.FromResult(new CompilationSnapshot(
+                ProjectPath: workspaceRoot,
+                Project: null,
+                Compilation: compilation,
+                Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
+        }
+
+        public void Invalidate(string filePath)
+        {
+            Interlocked.Increment(ref _invalidated);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class LspServerHarness : IAsyncDisposable
