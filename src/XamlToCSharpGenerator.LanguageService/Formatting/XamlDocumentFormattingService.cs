@@ -42,7 +42,8 @@ internal sealed class XamlDocumentFormattingService
             OmitXmlDeclaration = document.Declaration is null
         };
 
-        using (var stringWriter = new StringWriter(builder))
+        var declarationEncoding = ResolveDeclarationEncoding(document.Declaration);
+        using (var stringWriter = new StringBuilderEncodingWriter(builder, declarationEncoding))
         using (var writer = XmlWriter.Create(stringWriter, xmlWriterSettings))
         {
             document.Save(writer);
@@ -70,5 +71,35 @@ internal sealed class XamlDocumentFormattingService
         }
 
         return Environment.NewLine;
+    }
+
+    private static Encoding ResolveDeclarationEncoding(XDeclaration? declaration)
+    {
+        if (!string.IsNullOrWhiteSpace(declaration?.Encoding))
+        {
+            try
+            {
+                return Encoding.GetEncoding(declaration.Encoding);
+            }
+            catch
+            {
+                // Keep formatting resilient if the declaration contains a non-standard encoding name.
+            }
+        }
+
+        return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    }
+
+    private sealed class StringBuilderEncodingWriter : StringWriter
+    {
+        private readonly Encoding _encoding;
+
+        public StringBuilderEncodingWriter(StringBuilder builder, Encoding encoding)
+            : base(builder)
+        {
+            _encoding = encoding;
+        }
+
+        public override Encoding Encoding => _encoding;
     }
 }
