@@ -303,6 +303,25 @@ class AvaloniaPreviewSession {
     this.scheduleLiveUpdate(document);
   }
 
+  async flushPendingPreviewUpdateAsync() {
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
+
+    const updateResult = hasPendingPreviewText(this.pendingUpdateText)
+      ? await this.flushPendingUpdate()
+      : await this.updateChain;
+
+    if (updateResult === false) {
+      throw new Error('Preview update failed; retry the inspector action after the preview is in sync.');
+    }
+  }
+
   scheduleLiveUpdate(document) {
     if (this.disposed) {
       return;
@@ -543,7 +562,7 @@ class AvaloniaPreviewSession {
 
   async flushPendingUpdate() {
     if (this.disposed || !hasPendingPreviewText(this.pendingUpdateText)) {
-      return;
+      return true;
     }
 
     const updateText = this.pendingUpdateText;
@@ -561,14 +580,16 @@ class AvaloniaPreviewSession {
         }
 
         await this.helper.sendCommand('update', { xamlText: updateText });
+        return true;
       })
       .catch(error => {
         const message = error instanceof Error ? error.message : String(error);
         this.setStatus(`Preview update failed: ${message}`);
         void vscode.window.showWarningMessage(`AXSG preview update failed for ${this.fileName}: ${message}`);
+        return false;
       });
 
-    await this.updateChain;
+    return await this.updateChain;
   }
 
   handleHelperEvent(message) {

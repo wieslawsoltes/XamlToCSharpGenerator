@@ -42,7 +42,8 @@ function createVscodeMock() {
       Expanded: 2
     },
     window: {
-      async showInformationMessage() {}
+      async showInformationMessage() {},
+      async showErrorMessage() {}
     },
     workspace: {},
     Uri: {
@@ -365,6 +366,92 @@ test('insertToolboxItemAtPoint inserts after a successful hit test', async () =>
     20);
 
   assert.equal(insertCalls, 1);
+});
+
+test('applyMutation flushes pending preview edits before sending the design command', async () => {
+  const { controller } = createController();
+  const steps = [];
+
+  controller.currentSession = {
+    async flushPendingPreviewUpdateAsync() {
+      steps.push('flush');
+    },
+    async sendDesignCommand() {
+      steps.push('command');
+      return {
+        applyResult: {
+          succeeded: true,
+          buildUri: 'avares://tests/MainView.axaml',
+          minimalDiffStart: 0,
+          minimalDiffRemovedLength: 0,
+          minimalDiffInsertedLength: 0
+        },
+        workspace: {
+          currentXamlText: '',
+          documents: []
+        }
+      };
+    },
+    setDesignState() {}
+  };
+  controller.applyMinimalDiffToEditor = async () => {
+    steps.push('diff');
+  };
+  controller.refreshFromSession = async () => {
+    steps.push('refresh');
+  };
+
+  await controller.applyMutation('applyPropertyUpdate', { propertyName: 'Width' });
+
+  assert.deepEqual(steps, ['flush', 'command', 'diff', 'refresh']);
+});
+
+test('applyMutation aborts when flushing pending preview edits fails', async () => {
+  const vscodeMock = createVscodeMock();
+  const errors = [];
+  vscodeMock.window.showErrorMessage = async message => {
+    errors.push(message);
+  };
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: () => null,
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  let commandCalls = 0;
+  controller.currentSession = {
+    async flushPendingPreviewUpdateAsync() {
+      throw new Error('Preview update failed; retry the inspector action after the preview is in sync.');
+    },
+    async sendDesignCommand() {
+      commandCalls++;
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  await controller.applyMutation('insertElement', { elementName: 'Button' });
+
+  assert.equal(commandCalls, 0);
+  assert.deepEqual(errors, [
+    'AXSG Design: Preview update failed; retry the inspector action after the preview is in sync.'
+  ]);
 });
 
 test('toolbox drag controller publishes custom and text payloads', async () => {

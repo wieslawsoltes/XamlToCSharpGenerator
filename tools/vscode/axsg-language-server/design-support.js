@@ -738,6 +738,16 @@ class DesignSessionController {
       return;
     }
 
+    try {
+      if (typeof this.currentSession.flushPendingPreviewUpdateAsync === 'function') {
+        await this.currentSession.flushPendingPreviewUpdateAsync();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await vscode.window.showErrorMessage(`AXSG Design: ${message}`);
+      return;
+    }
+
     const response = await this.currentSession.sendDesignCommand(operation, payload || {});
     if (!response || !response.applyResult) {
       await this.refreshFromSession(this.currentSession, operation);
