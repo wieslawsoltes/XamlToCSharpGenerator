@@ -37,7 +37,7 @@ These shipped artifacts are documented intentionally through package guides and 
 | `XamlToCSharpGenerator.Build` | buildTransitive props/targets package, not an API-first library | [Package: XamlToCSharpGenerator.Build](build/), [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules/) |
 | `XamlToCSharpGenerator.Runtime` | compatibility package that composes runtime layers | [Package: XamlToCSharpGenerator.Runtime](runtime/), [Generated Artifacts and Runtime](../concepts/generated-artifacts-and-runtime/) |
 | `XamlToCSharpGenerator.McpServer.Tool` | `.NET` tool packaging for the workspace MCP host | [Package: XamlToCSharpGenerator.McpServer.Tool](mcp-server-tool/), [MCP Servers and Live Tooling](../guides/mcp-servers-and-live-tooling/) |
-| `xamltocsharpgenerator.axsg-language-server` | VS Code extension package containing the JS client and managed server bundle | [Package: VS Code Extension](vscode-extension/), [VS Code and Language Service](../guides/vscode-language-service/) |
+| `wieslawsoltes.axsg-language-server` | VS Code extension package containing the JS client and managed server bundle | [Package: VS Code Extension](vscode-extension/), [VS Code and Language Service](../guides/vscode-language-service/) |
 
 ## Internal support components
 

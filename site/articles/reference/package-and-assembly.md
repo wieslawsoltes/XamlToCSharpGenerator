@@ -30,7 +30,7 @@ When you already know the assembly or tool package name and need the direct gene
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | `axsg-lsp` command over `XamlToCSharpGenerator.LanguageServer.dll` | `net10.0` tool host | yes |
 | `XamlToCSharpGenerator.McpServer.Tool` | .NET tool package | `axsg-mcp` command over `XamlToCSharpGenerator.McpServer.dll` | `net10.0` tool host | narrative only |
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | `XamlToCSharpGenerator.Editor.Avalonia.dll` | `net10.0` | yes |
-| `xamltocsharpgenerator.axsg-language-server` | VS Code extension | VSIX bundle with JS client and managed AXSG server | VS Code | narrative only |
+| `wieslawsoltes.axsg-language-server` | VS Code extension | VSIX bundle with JS client and managed AXSG server | VS Code | narrative only |
 
 ## Why some artifacts are narrative-only
 

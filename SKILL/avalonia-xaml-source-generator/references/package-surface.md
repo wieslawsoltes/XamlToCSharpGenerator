@@ -14,7 +14,7 @@ Load this file first when the correct AXSG artifact is unclear. It covers the fu
 | `XamlToCSharpGenerator.LanguageService` | NuGet package | Embedding AXSG semantic analysis, completion, hover, rename, or inline C# support in-process | `dotnet add package XamlToCSharpGenerator.LanguageService` |
 | `XamlToCSharpGenerator.Editor.Avalonia` | NuGet package | Embedding an AvaloniaEdit-based AXAML editor inside an Avalonia app | `dotnet add package XamlToCSharpGenerator.Editor.Avalonia` |
 | `XamlToCSharpGenerator.LanguageServer.Tool` | .NET tool package | Hosting the AXSG language server outside VS Code or launching `axsg-lsp` directly | `dotnet tool install --global XamlToCSharpGenerator.LanguageServer.Tool` |
-| `xamltocsharpgenerator.axsg-language-server` | VS Code extension | Using the packaged VS Code AXAML experience | `code --install-extension ./axsg-language-server-x.y.z.vsix` |
+| `wieslawsoltes.axsg-language-server` | VS Code extension | Using the packaged VS Code AXAML experience | `code --install-extension ./axsg-language-server-x.y.z.vsix` |
 | `XamlToCSharpGenerator.Generator` | NuGet package | Taking the standalone Roslyn generator backend instead of the umbrella package | `dotnet add package XamlToCSharpGenerator.Generator` |
 | `XamlToCSharpGenerator.Compiler` | NuGet package | Working on project discovery, include graphs, transform rules, or compiler host orchestration | `dotnet add package XamlToCSharpGenerator.Compiler` |
 | `XamlToCSharpGenerator.Core` | NuGet package | Needing the immutable parser model, diagnostics, configuration model, or semantic contracts | `dotnet add package XamlToCSharpGenerator.Core` |

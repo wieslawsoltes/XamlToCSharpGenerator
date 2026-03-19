@@ -16,7 +16,7 @@ The editing stack is split into three parts:
    - semantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens
 2. `XamlToCSharpGenerator.LanguageServer.Tool`
    - standalone LSP host
-3. `xamltocsharpgenerator.axsg-language-server`
+3. `wieslawsoltes.axsg-language-server`
    - VS Code extension that hosts the client, starts the server lazily, and adds editor-specific behaviors
 
 ## Request flow

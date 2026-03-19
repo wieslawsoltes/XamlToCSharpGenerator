@@ -15,7 +15,7 @@ This guide explains how the editor/tooling artifacts relate to one another and w
 | Standalone LSP host | `XamlToCSharpGenerator.LanguageServer.Tool` | packaged `dotnet tool` for editor integrations |
 | Standalone MCP host | `XamlToCSharpGenerator.McpServer.Tool` | packaged `dotnet tool` for workspace MCP queries |
 | Preview helper host | `XamlToCSharpGenerator.PreviewerHost` | preview helper transport plus preview MCP host for explicit preview lifecycle and hot reload control |
-| VS Code integration | `xamltocsharpgenerator.axsg-language-server` | client middleware, server startup, inline C# projections, editor integration |
+| VS Code integration | `wieslawsoltes.axsg-language-server` | client middleware, server startup, inline C# projections, editor integration |
 | In-app editor host | `XamlToCSharpGenerator.Editor.Avalonia` | AvaloniaEdit-based AXAML editor control |
 
 ## Recommended entry points
