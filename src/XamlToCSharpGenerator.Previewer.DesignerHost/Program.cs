@@ -6,6 +6,7 @@ internal static class Program
     {
         var (options, forwardedArguments) = ParseArguments(args);
         PreviewHostRuntimeState.Configure(options);
+        PreviewHostAssemblyResolution.Configure(options);
         TryInitializePreviewHotDesignRuntime(options);
         SourceGeneratedRuntimeXamlLoaderInstaller.Install(
             options.CompilerMode,

@@ -280,6 +280,80 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [AvaloniaFact]
+    public void PreviewHostAssemblyResolver_Resolves_External_Control_Assembly_From_Source_Output_Directory()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+        try
+        {
+            var sourceAssemblyName = "AxsgPreviewSource_" + Guid.NewGuid().ToString("N");
+            var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
+            var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+            var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
+
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                namespace ExternalPreviewControls;
+
+                public sealed class ReportDesignerControl : global::Avalonia.Controls.Border
+                {
+                }
+                """,
+                dependencyAssemblyPath);
+            EmitAssemblyToFile(
+                sourceAssemblyName,
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                sourceAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null));
+            PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
+
+            Assembly localAssembly = SourceGeneratedRuntimeXamlLoaderInstaller.ResolvePreviewLocalAssembly(localAssembly: null)
+                ?? throw new InvalidOperationException("Local preview assembly was not resolved.");
+            string xaml = $$"""
+                            <local:ReportDesignerControl xmlns="https://github.com/avaloniaui"
+                                                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                                         xmlns:local="clr-namespace:ExternalPreviewControls;assembly={{dependencyAssemblyName}}" />
+                            """;
+            var document = new RuntimeXamlLoaderDocument(
+                new Uri("avares://" + sourceAssemblyName + "/Views/View.axaml"),
+                rootInstance: null,
+                xaml);
+            var configuration = new RuntimeXamlLoaderConfiguration
+            {
+                LocalAssembly = localAssembly,
+                DesignMode = true
+            };
+
+            var result = AvaloniaRuntimeXamlLoader.Load(document, configuration);
+
+            Assert.Equal("ExternalPreviewControls.ReportDesignerControl", result.GetType().FullName);
+            Assert.Equal(dependencyAssemblyName, result.GetType().Assembly.GetName().Name);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
     public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
@@ -614,6 +688,23 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
             "Failed to emit external hydrated view-model test assembly: " +
             string.Join(Environment.NewLine, emitResult.Diagnostics));
         return stream.ToArray();
+    }
+
+    private static void EmitAssemblyToFile(string assemblyName, string source, string outputPath)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: assemblyName + ".cs");
+        IReadOnlyList<MetadataReference> references = CreateLoadedAssemblyMetadataReferences();
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var emitResult = compilation.Emit(outputPath);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit test assembly '" + assemblyName + "': " +
+            string.Join(Environment.NewLine, emitResult.Diagnostics));
     }
 
     private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()
