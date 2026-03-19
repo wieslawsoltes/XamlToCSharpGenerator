@@ -144,6 +144,178 @@ test('selectElement uses sourceElementId for live tree nodes', async () => {
   ]);
 });
 
+test('selectElement reveals the editor even when the target is already selected', async () => {
+  const { controller, updates } = createController();
+  const sentCommands = [];
+  let revealedElement = null;
+
+  controller.currentSession = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Preview.axaml',
+    selectedElementId: '0/0/0',
+    elements: [
+      {
+        id: '0/0/0',
+        sourceBuildUri: 'avares://tests/Preview.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+  controller.revealElementInEditor = async element => {
+    revealedElement = element;
+  };
+
+  await controller.selectElement(
+    {
+      id: 'live:0/0/0',
+      sourceElementId: '0/0/0',
+      sourceBuildUri: 'avares://tests/Preview.axaml'
+    },
+    { revealEditor: true });
+
+  assert.deepEqual(sentCommands, []);
+  assert.equal(revealedElement?.id, '0/0/0');
+  assert.deepEqual(updates, [
+    {
+      key: 'axsg.design.selectedDocument',
+      value: {
+        __default__: 'avares://tests/Preview.axaml'
+      }
+    }
+  ]);
+});
+
+test('syncEditorSelectionAsync uses sourceElementId when the workspace element exposes one', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const session = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => session;
+  controller.currentSession = session;
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Preview.axaml',
+    selectedElementId: null,
+    elements: [
+      {
+        id: 'live:0/0/0',
+        sourceElementId: '0/0/0',
+        sourceBuildUri: 'avares://tests/Preview.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      uri: {
+        toString: () => 'file:///tmp/Preview.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Preview.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+});
+
+test('syncEditorSelectionAsync remembers the selected document buildUri before syncing runtime selection', async () => {
+  const { controller, updates } = createController();
+  const sentCommands = [];
+  const session = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => session;
+  controller.currentSession = session;
+  controller.selectedDocumentBuildUri = 'avares://tests/First.axaml';
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Second.axaml',
+    selectedElementId: null,
+    elements: [
+      {
+        id: '0/0/0',
+        sourceBuildUri: 'avares://tests/Second.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      uri: {
+        toString: () => 'file:///tmp/Preview.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
+  assert.equal(controller.selectedDocumentBuildUri, 'avares://tests/Second.axaml');
+  assert.deepEqual(updates, [
+    {
+      key: 'axsg.design.selectedDocument',
+      value: {
+        __default__: 'avares://tests/Second.axaml'
+      }
+    }
+  ]);
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Second.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+});
+
 test('revealSelectedElementInTreeAsync matches workspace selection by sourceElementId', async () => {
   const { controller } = createController();
   let revealedElement = null;
@@ -239,6 +411,32 @@ test('handleSessionEvent refreshes panelActivated session when it is active', as
   ]);
 });
 
+test('handleSessionEvent defers updateResult refresh instead of refreshing immediately', async () => {
+  const { controller } = createController();
+  const previewSession = { setDesignState() {} };
+  const scheduled = [];
+  const refreshes = [];
+
+  controller.previewController.getActiveSession = () => previewSession;
+  controller.scheduleUpdateResultRefresh = session => {
+    scheduled.push(session);
+  };
+  controller.refreshFromSession = async (session, reason) => {
+    refreshes.push({ session, reason });
+  };
+
+  await controller.handleSessionEvent({
+    session: previewSession,
+    event: 'updateResult',
+    payload: {
+      succeeded: true
+    }
+  });
+
+  assert.deepEqual(scheduled, [previewSession]);
+  assert.deepEqual(refreshes, []);
+});
+
 test('handleSessionEvent clears stale inspector state when the preview host exits', async () => {
   const { controller } = createController();
   const designStates = [];
@@ -279,6 +477,59 @@ test('handleSessionEvent clears stale inspector state when the preview host exit
       message: 'Preview host exited (5). Restart the preview to repopulate the AXSG Inspector.'
     }
   ]);
+});
+
+test('handleSessionWebviewMessage adopts the active preview session before processing design input', async () => {
+  const { controller } = createController();
+  const previousDesignStates = [];
+  let selectRequest = null;
+  const previousSession = {
+    setDesignState(state) {
+      previousDesignStates.push(state);
+    }
+  };
+  const activeSession = {
+    panel: {
+      active: true
+    },
+    setDesignState() {}
+  };
+
+  controller.currentSession = previousSession;
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Other.axaml'
+  };
+  controller.refreshFromSession = async () => {};
+  controller.selectAtPoint = async (session, x, y, updateSelection) => {
+    selectRequest = {
+      session,
+      x,
+      y,
+      updateSelection,
+      currentSession: controller.currentSession,
+      workspace: controller.workspace
+    };
+  };
+
+  const handled = controller.handleSessionWebviewMessage(activeSession, {
+    type: 'designSelectAtPoint',
+    x: 10,
+    y: 20
+  });
+  await Promise.resolve();
+
+  assert.equal(handled, true);
+  assert.equal(controller.currentSession, activeSession);
+  assert.equal(controller.workspace, null);
+  assert.deepEqual(previousDesignStates, [null]);
+  assert.deepEqual(selectRequest, {
+    session: activeSession,
+    x: 10,
+    y: 20,
+    updateSelection: true,
+    currentSession: activeSession,
+    workspace: null
+  });
 });
 
 test('ensureSessionPreferencesAsync retries saved document selection when documents appear later', async () => {
@@ -325,6 +576,142 @@ test('ensureSessionPreferencesAsync retries saved document selection when docume
       }
     }
   ]);
+});
+
+test('performRefreshFromSession uses selected document preferences scoped to the preview session', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const sentCommands = [];
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: key => {
+          if (key === 'axsg.design.selectedDocument') {
+            return {
+              'file:///first.axaml': 'avares://tests/First.axaml',
+              'file:///second.axaml': 'avares://tests/Second.axaml'
+            };
+          }
+
+          return null;
+        },
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  const session = {
+    documentUri: 'file:///second.axaml',
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.loadSessionStateAsync = async currentSession => {
+    controller.currentSession = currentSession;
+    controller.workspace = {
+      mode: 'Design',
+      hitTestMode: 'Logical',
+      activeBuildUri: 'avares://tests/First.axaml',
+      documents: [
+        { buildUri: 'avares://tests/First.axaml' },
+        { buildUri: 'avares://tests/Second.axaml' }
+      ]
+    };
+  };
+  controller.refreshProviders = () => {};
+  controller.publishPreviewDesignState = () => {};
+  controller.revealCurrentSelectionAsync = async () => {};
+
+  await controller.performRefreshFromSessionAsync(session, 'previewStarted');
+
+  assert.equal(controller.selectedDocumentBuildUri, 'avares://tests/Second.axaml');
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectDocument',
+      payload: {
+        buildUri: 'avares://tests/Second.axaml'
+      }
+    }
+  ]);
+});
+
+test('performRefreshFromSession does not reuse another preview session selected document preference', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const sentCommands = [];
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: key => {
+          if (key === 'axsg.design.selectedDocument') {
+            return {
+              'file:///first.axaml': 'avares://tests/First.axaml'
+            };
+          }
+
+          return null;
+        },
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  const session = {
+    documentUri: 'file:///second.axaml',
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.loadSessionStateAsync = async currentSession => {
+    controller.currentSession = currentSession;
+    controller.workspace = {
+      mode: 'Design',
+      hitTestMode: 'Logical',
+      activeBuildUri: 'avares://tests/Second.axaml',
+      documents: [
+        { buildUri: 'avares://tests/First.axaml' },
+        { buildUri: 'avares://tests/Second.axaml' }
+      ]
+    };
+  };
+  controller.refreshProviders = () => {};
+  controller.publishPreviewDesignState = () => {};
+  controller.revealCurrentSelectionAsync = async () => {};
+
+  await controller.performRefreshFromSessionAsync(session, 'previewStarted');
+
+  assert.equal(controller.selectedDocumentBuildUri, null);
+  assert.deepEqual(sentCommands, []);
 });
 
 test('refreshFromSession does not remap workspace documents onto the preview session', async () => {
@@ -384,6 +771,357 @@ test('refreshFromSession does not remap workspace documents onto the preview ses
   assert.equal(syncCalls, 0);
 });
 
+test('flushScheduledUpdateResultRefreshAsync reschedules while preview updates are still pending', async () => {
+  const { controller } = createController();
+  const session = {
+    hasPendingPreviewUpdate() {
+      return true;
+    },
+    setDesignState() {}
+  };
+  const scheduled = [];
+  const refreshes = [];
+
+  controller.pendingUpdateResultRefreshSession = session;
+  controller.scheduleUpdateResultRefresh = (scheduledSession, delayMs) => {
+    scheduled.push({ session: scheduledSession, delayMs });
+  };
+  controller.refreshFromSession = async (refreshSession, reason) => {
+    refreshes.push({ session: refreshSession, reason });
+  };
+
+  await controller.flushScheduledUpdateResultRefreshAsync(session);
+
+  assert.deepEqual(scheduled, [
+    {
+      session,
+      delayMs: 120
+    }
+  ]);
+  assert.deepEqual(refreshes, []);
+});
+
+test('flushScheduledUpdateResultRefreshAsync refreshes once preview updates are idle', async () => {
+  const { controller } = createController();
+  const session = {
+    hasPendingPreviewUpdate() {
+      return false;
+    },
+    setDesignState() {}
+  };
+  const refreshes = [];
+
+  controller.pendingUpdateResultRefreshSession = session;
+  controller.refreshFromSession = async (refreshSession, reason) => {
+    refreshes.push({ session: refreshSession, reason });
+  };
+
+  await controller.flushScheduledUpdateResultRefreshAsync(session);
+
+  assert.deepEqual(refreshes, [
+    {
+      session,
+      reason: 'updateResult'
+    }
+  ]);
+  assert.equal(controller.pendingUpdateResultRefreshSession, null);
+});
+
+test('syncEditorSelectionAsync refreshes and retries when a stale element id no longer exists', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const refreshReasons = [];
+  const session = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      if (sentCommands.length === 1) {
+        throw new Error("No element with id '0/0/1/2/0' exists in buildUri 'avares://tests/Preview.axaml'.");
+      }
+
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => session;
+  controller.currentSession = session;
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Preview.axaml',
+    selectedElementId: null,
+    elements: [
+      {
+        id: '0/0/1/2/0',
+        sourceBuildUri: 'avares://tests/Preview.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+  controller.refreshFromSession = async (_session, reason) => {
+    refreshReasons.push(reason);
+    if (reason === 'editorSelectionRetry') {
+      controller.workspace = {
+        activeBuildUri: 'avares://tests/Preview.axaml',
+        selectedElementId: null,
+        elements: [
+          {
+            id: '0/0/1/3/0',
+            sourceBuildUri: 'avares://tests/Preview.axaml',
+            sourceRange: {
+              startOffset: 0,
+              endOffset: 24
+            },
+            children: []
+          }
+        ]
+      };
+    }
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      uri: {
+        toString: () => 'file:///tmp/Preview.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Preview.axaml',
+        elementId: '0/0/1/2/0'
+      }
+    },
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Preview.axaml',
+        elementId: '0/0/1/3/0'
+      }
+    }
+  ]);
+  assert.deepEqual(refreshReasons, ['editorSelectionRetry', 'editorSelectionSync']);
+});
+
+test('performSelectAtPointAsync remembers the selected document buildUri from hit test results', async () => {
+  const { controller, updates } = createController();
+  let revealedElement = null;
+  const session = {
+    async sendDesignCommand(command) {
+      assert.equal(command, 'selectAtPoint');
+      return {
+        succeeded: true,
+        activeBuildUri: 'avares://tests/Second.axaml',
+        elementId: '0/0/0',
+        element: {
+          id: '0/0/0',
+          sourceBuildUri: 'avares://tests/Second.axaml',
+          sourceRange: {
+            startOffset: 0,
+            endOffset: 24
+          },
+          children: []
+        },
+        overlay: {
+          selectedElementId: '0/0/0'
+        }
+      };
+    },
+    setDesignState() {}
+  };
+
+  controller.currentSession = session;
+  controller.selectedDocumentBuildUri = 'avares://tests/First.axaml';
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/First.axaml',
+    mode: 'Design',
+    elements: []
+  };
+  controller.refreshFromSession = async () => {};
+  controller.revealElementInEditor = async element => {
+    revealedElement = element;
+  };
+
+  await controller.performSelectAtPointAsync(session, 10, 20, true);
+
+  assert.equal(controller.selectedDocumentBuildUri, 'avares://tests/Second.axaml');
+  assert.deepEqual(updates, [
+    {
+      key: 'axsg.design.selectedDocument',
+      value: {
+        __default__: 'avares://tests/Second.axaml'
+      }
+    }
+  ]);
+  assert.equal(revealedElement?.sourceBuildUri, 'avares://tests/Second.axaml');
+});
+
+test('syncEditorSelectionAsync skips runtime selection sync while interactive mode is active', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const session = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => session;
+  controller.currentSession = session;
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Preview.axaml',
+    mode: 'Interactive',
+    selectedElementId: null,
+    elements: [
+      {
+        id: '0/0/0',
+        sourceBuildUri: 'avares://tests/Preview.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      uri: {
+        toString: () => 'file:///tmp/Preview.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
+  assert.deepEqual(sentCommands, []);
+});
+
+test('refreshFromSession coalesces overlapping refresh requests onto the latest pending state', async () => {
+  const { controller } = createController();
+  const session = { setDesignState() {} };
+  const reasons = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let releaseFirstRefresh = null;
+
+  controller.performRefreshFromSessionAsync = async (_session, reason) => {
+    reasons.push(reason);
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    try {
+      if (reason === 'first') {
+        await new Promise(resolve => {
+          releaseFirstRefresh = resolve;
+        });
+      }
+    } finally {
+      inFlight -= 1;
+    }
+  };
+
+  const firstRefresh = controller.refreshFromSession(session, 'first');
+  const secondRefresh = controller.refreshFromSession(session, 'second');
+  const thirdRefresh = controller.refreshFromSession(session, 'third');
+  await Promise.resolve();
+  releaseFirstRefresh();
+  await Promise.all([firstRefresh, secondRefresh, thirdRefresh]);
+
+  assert.deepEqual(reasons, ['first', 'third']);
+  assert.equal(maxInFlight, 1);
+});
+
+test('loadSessionStateAsync loads design snapshots sequentially', async () => {
+  const { controller } = createController();
+  const commands = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const session = {
+    async sendDesignCommand(command) {
+      commands.push(command);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+
+      switch (command) {
+        case 'workspace.current':
+          return { activeBuildUri: 'avares://tests/MainView.axaml', mode: 'Design' };
+        case 'tree.logical':
+          return { elements: [{ id: 'logical:0', children: [] }] };
+        case 'tree.visual':
+          return { elements: [{ id: 'visual:0', children: [] }] };
+        case 'overlay.current':
+          return { selectedElementId: '0/0/0' };
+        default:
+          return null;
+      }
+    }
+  };
+
+  controller.currentSession = session;
+  await controller.loadSessionStateAsync(session);
+
+  assert.deepEqual(commands, [
+    'workspace.current',
+    'tree.logical',
+    'tree.visual',
+    'overlay.current'
+  ]);
+  assert.equal(maxInFlight, 1);
+  assert.deepEqual(controller.workspace, { activeBuildUri: 'avares://tests/MainView.axaml', mode: 'Design' });
+  assert.deepEqual(controller.logicalTree, { elements: [{ id: 'logical:0', children: [] }] });
+  assert.deepEqual(controller.visualTree, { elements: [{ id: 'visual:0', children: [] }] });
+  assert.deepEqual(controller.overlay, { selectedElementId: '0/0/0' });
+});
+
+test('loadSessionStateAsync skips tree and overlay queries while interactive mode is active', async () => {
+  const { controller } = createController();
+  const commands = [];
+  const session = {
+    async sendDesignCommand(command) {
+      commands.push(command);
+      if (command === 'workspace.current') {
+        return {
+          activeBuildUri: 'avares://tests/MainView.axaml',
+          mode: 'Interactive'
+        };
+      }
+
+      throw new Error(`Unexpected command: ${command}`);
+    }
+  };
+
+  controller.currentSession = session;
+  controller.logicalTree = { elements: [{ id: 'stale-logical', children: [] }] };
+  controller.visualTree = { elements: [{ id: 'stale-visual', children: [] }] };
+  controller.overlay = { selectedElementId: 'stale' };
+
+  await controller.loadSessionStateAsync(session);
+
+  assert.deepEqual(commands, ['workspace.current']);
+  assert.equal(controller.logicalTree, null);
+  assert.equal(controller.visualTree, null);
+  assert.equal(controller.overlay, null);
+});
+
 test('insertToolboxItemAtPoint aborts insertion when hit testing misses a parent', async () => {
   const { controller } = createController();
   let insertCalls = 0;
@@ -424,6 +1162,57 @@ test('insertToolboxItemAtPoint inserts after a successful hit test', async () =>
     20);
 
   assert.equal(insertCalls, 1);
+});
+
+test('selectAtPoint collapses overlapping hover hit tests to the latest pending point', async () => {
+  const { controller } = createController();
+  const payloads = [];
+  let releaseFirstHover = null;
+
+  controller.currentSession = {
+    setDesignState() {}
+  };
+  controller.publishPreviewDesignState = () => {};
+
+  const session = {
+    async sendDesignCommand(command, payload) {
+      assert.equal(command, 'selectAtPoint');
+      payloads.push(payload);
+      if (payloads.length === 1) {
+        await new Promise(resolve => {
+          releaseFirstHover = resolve;
+        });
+      }
+
+      return { overlay: { highlightedElementId: payload.x + ':' + payload.y } };
+    }
+  };
+
+  controller.hitTestMode = 'Logical';
+  const firstHover = controller.selectAtPoint(session, 10, 20, false);
+  const secondHover = controller.selectAtPoint(session, 30, 40, false);
+  const thirdHover = controller.selectAtPoint(session, 50, 60, false);
+  await Promise.resolve();
+  releaseFirstHover();
+  await Promise.all([firstHover, secondHover, thirdHover]);
+
+  assert.deepEqual(payloads, [
+    {
+      buildUri: undefined,
+      x: 10,
+      y: 20,
+      updateSelection: false,
+      hitTestMode: 'Logical'
+    },
+    {
+      buildUri: undefined,
+      x: 50,
+      y: 60,
+      updateSelection: false,
+      hitTestMode: 'Logical'
+    }
+  ]);
+  assert.deepEqual(controller.overlay, { highlightedElementId: '50:60' });
 });
 
 test('applyMutation flushes pending preview edits before sending the design command', async () => {

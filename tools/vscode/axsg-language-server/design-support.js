@@ -11,12 +11,16 @@ const {
 const WORKSPACE_MODE_STATE_KEY = 'axsg.design.workspaceMode';
 const HIT_TEST_MODE_STATE_KEY = 'axsg.design.hitTestMode';
 const SELECTED_DOCUMENT_STATE_KEY = 'axsg.design.selectedDocument';
+const DEFAULT_SELECTED_DOCUMENT_SCOPE = '__default__';
 const LOGICAL_EXPANDED_STATE_KEY = 'axsg.design.logicalExpanded';
 const VISUAL_EXPANDED_STATE_KEY = 'axsg.design.visualExpanded';
 const PANEL_VISIBILITY_STATE_KEY = 'axsg.design.panelVisibility';
 const DEFAULT_WORKSPACE_MODE = 'Interactive';
 const DEFAULT_HIT_TEST_MODE = 'Logical';
 const EDITOR_SELECTION_DEBOUNCE_MS = 120;
+const UPDATE_RESULT_REFRESH_DELAY_MS = 450;
+const UPDATE_RESULT_REFRESH_RETRY_DELAY_MS = 120;
+const TREE_REVEAL_RETRY_DELAYS_MS = [0, 30, 90];
 
 class DesignSessionController {
   constructor(options) {
@@ -33,12 +37,21 @@ class DesignSessionController {
     this.lastUnavailableMessage = null;
     this.suppressEditorSync = false;
     this.editorSelectionTimer = null;
+    this.updateResultRefreshTimer = null;
+    this.pendingUpdateResultRefreshSession = null;
+    this.refreshLoopPromise = null;
+    this.pendingRefresh = null;
+    this.hoverSelectLoopPromise = null;
+    this.pendingHoverSelectRequest = null;
+    this.selectionChain = Promise.resolve();
     this.preferencesAppliedSessions = new WeakMap();
     this.logicalExpandedIds = new Set(this.context.workspaceState.get(LOGICAL_EXPANDED_STATE_KEY, []));
     this.visualExpandedIds = new Set(this.context.workspaceState.get(VISUAL_EXPANDED_STATE_KEY, []));
     this.workspaceMode = this.context.workspaceState.get(WORKSPACE_MODE_STATE_KEY, DEFAULT_WORKSPACE_MODE);
     this.hitTestMode = this.context.workspaceState.get(HIT_TEST_MODE_STATE_KEY, DEFAULT_HIT_TEST_MODE);
-    this.selectedDocumentBuildUri = this.context.workspaceState.get(SELECTED_DOCUMENT_STATE_KEY, null);
+    this.selectedDocumentPreferences = normalizeSelectedDocumentPreferences(
+      this.context.workspaceState.get(SELECTED_DOCUMENT_STATE_KEY, null));
+    this.selectedDocumentBuildUri = this.selectedDocumentPreferences[DEFAULT_SELECTED_DOCUMENT_SCOPE] || null;
     this.panelVisibility = Object.assign(
       {
         documents: true,
@@ -163,6 +176,12 @@ class DesignSessionController {
       this.currentSession.setDesignState(null);
     }
 
+    if (this.updateResultRefreshTimer) {
+      clearTimeout(this.updateResultRefreshTimer);
+      this.updateResultRefreshTimer = null;
+    }
+    this.pendingUpdateResultRefreshSession = null;
+
     if (this.previewController && typeof this.previewController.setDesignController === 'function') {
       this.previewController.setDesignController(null);
     }
@@ -230,6 +249,7 @@ class DesignSessionController {
     }
 
     if (event.event === 'hostExited') {
+      this.cancelScheduledUpdateResultRefresh(event.session);
       const previousSession = this.currentSession;
       this.currentSession = event.session;
       if (previousSession && previousSession !== event.session) {
@@ -246,18 +266,67 @@ class DesignSessionController {
       return;
     }
 
-    if (event.event === 'previewStarted' || event.event === 'updateResult' || event.event === 'panelActivated') {
+    if (event.event === 'updateResult') {
+      this.scheduleUpdateResultRefresh(event.session);
+      return;
+    }
+
+    if (event.event === 'previewStarted' || event.event === 'panelActivated') {
       await this.refreshFromSession(event.session, event.event);
     }
   }
 
+  cancelScheduledUpdateResultRefresh(session) {
+    if (session && this.pendingUpdateResultRefreshSession && session !== this.pendingUpdateResultRefreshSession) {
+      return;
+    }
+
+    if (this.updateResultRefreshTimer) {
+      clearTimeout(this.updateResultRefreshTimer);
+      this.updateResultRefreshTimer = null;
+    }
+
+    this.pendingUpdateResultRefreshSession = null;
+  }
+
+  scheduleUpdateResultRefresh(session, delayMs = UPDATE_RESULT_REFRESH_DELAY_MS) {
+    if (!session) {
+      return;
+    }
+
+    this.pendingUpdateResultRefreshSession = session;
+    if (this.updateResultRefreshTimer) {
+      clearTimeout(this.updateResultRefreshTimer);
+    }
+
+    this.updateResultRefreshTimer = setTimeout(() => {
+      this.updateResultRefreshTimer = null;
+      void this.flushScheduledUpdateResultRefreshAsync(session);
+    }, Math.max(0, delayMs));
+  }
+
+  async flushScheduledUpdateResultRefreshAsync(session) {
+    if (!session || this.pendingUpdateResultRefreshSession !== session) {
+      return;
+    }
+
+    if (typeof session.hasPendingPreviewUpdate === 'function' && session.hasPendingPreviewUpdate()) {
+      this.scheduleUpdateResultRefresh(session, UPDATE_RESULT_REFRESH_RETRY_DELAY_MS);
+      return;
+    }
+
+    this.pendingUpdateResultRefreshSession = null;
+    await this.refreshFromSession(session, 'updateResult');
+  }
+
   handleSessionWebviewMessage(session, message) {
-    if (!message || !message.type || !this.currentSession || session !== this.currentSession) {
+    if (!message || !message.type) {
       return false;
     }
 
-    if (!this.workspace && message.type.startsWith('design')) {
-      return true;
+    const isDesignMessage = message.type.startsWith('design');
+    if ((!this.currentSession || session !== this.currentSession) && !this.tryAdoptSessionFromWebviewMessage(session, isDesignMessage)) {
+      return false;
     }
 
     switch (message.type) {
@@ -321,8 +390,40 @@ class DesignSessionController {
   }
 
   async refreshFromSession(session, reason) {
+    if (!session) {
+      this.clearState();
+      return;
+    }
+
+    this.pendingRefresh = { session, reason };
+    if (this.refreshLoopPromise) {
+      await this.refreshLoopPromise;
+      return;
+    }
+
+    const refreshLoopPromise = this.runRefreshLoopAsync();
+    this.refreshLoopPromise = refreshLoopPromise;
+    try {
+      await refreshLoopPromise;
+    } finally {
+      if (this.refreshLoopPromise === refreshLoopPromise) {
+        this.refreshLoopPromise = null;
+      }
+    }
+  }
+
+  async runRefreshLoopAsync() {
+    while (this.pendingRefresh) {
+      const nextRefresh = this.pendingRefresh;
+      this.pendingRefresh = null;
+      await this.performRefreshFromSessionAsync(nextRefresh.session, nextRefresh.reason);
+    }
+  }
+
+  async performRefreshFromSessionAsync(session, reason) {
     const previousSession = this.currentSession;
     this.currentSession = session;
+    this.selectedDocumentBuildUri = this.getRememberedSelectedDocumentBuildUri(session);
     if (previousSession && previousSession !== session) {
       previousSession.setDesignState(null);
     }
@@ -346,25 +447,40 @@ class DesignSessionController {
 
   async loadSessionStateAsync(session) {
     const workspace = await session.sendDesignCommand('workspace.current', {});
-    const [logicalTreeResult, visualTreeResult, overlayResult] = await Promise.allSettled([
-      session.sendDesignCommand('tree.logical', {}),
-      session.sendDesignCommand('tree.visual', {}),
-      session.sendDesignCommand('overlay.current', {})
-    ]);
     if (this.currentSession !== session) {
       return;
     }
 
     this.workspace = workspace || null;
-    this.logicalTree = logicalTreeResult.status === 'fulfilled'
-      ? logicalTreeResult.value || null
-      : null;
-    this.visualTree = visualTreeResult.status === 'fulfilled'
-      ? visualTreeResult.value || null
-      : null;
-    this.overlay = overlayResult.status === 'fulfilled'
-      ? overlayResult.value || null
-      : null;
+    const workspaceMode = typeof this.workspace?.mode === 'string'
+      ? this.workspace.mode
+      : DEFAULT_WORKSPACE_MODE;
+    if (sameText(workspaceMode, DEFAULT_WORKSPACE_MODE)) {
+      this.logicalTree = null;
+      this.visualTree = null;
+      this.overlay = null;
+      return;
+    }
+
+    this.logicalTree = await this.tryLoadOptionalSessionStateAsync(session, 'tree.logical');
+    if (this.currentSession !== session) {
+      return;
+    }
+
+    this.visualTree = await this.tryLoadOptionalSessionStateAsync(session, 'tree.visual');
+    if (this.currentSession !== session) {
+      return;
+    }
+
+    this.overlay = await this.tryLoadOptionalSessionStateAsync(session, 'overlay.current');
+  }
+
+  async tryLoadOptionalSessionStateAsync(session, operation) {
+    try {
+      return await session.sendDesignCommand(operation, {}) || null;
+    } catch {
+      return null;
+    }
   }
 
   async ensureSessionPreferencesAsync(session) {
@@ -419,6 +535,7 @@ class DesignSessionController {
   }
 
   clearState() {
+    this.cancelScheduledUpdateResultRefresh();
     if (this.currentSession) {
       this.currentSession.setDesignState(null);
     }
@@ -488,11 +605,7 @@ class DesignSessionController {
       return;
     }
 
-    try {
-      await this.documentsTreeView.reveal(document, { focus: false, select: true });
-    } catch {
-      // The tree view may be hidden or not expanded yet.
-    }
+    await this.revealTreeItemWithRetryAsync(this.documentsTreeView, document, { focus: false, select: true });
   }
 
   async revealSelectedElementInTreeAsync(treeView, treeSnapshot) {
@@ -505,11 +618,7 @@ class DesignSessionController {
       return;
     }
 
-    try {
-      await treeView.reveal(element, { focus: false, select: true, expand: 10 });
-    } catch {
-      // Best effort tree synchronization.
-    }
+    await this.revealTreeItemWithRetryAsync(treeView, element, { focus: false, select: true, expand: 10 });
   }
 
   async selectDocument(buildUri, options = {}) {
@@ -517,8 +626,7 @@ class DesignSessionController {
       return;
     }
 
-    this.selectedDocumentBuildUri = buildUri;
-    await this.context.workspaceState.update(SELECTED_DOCUMENT_STATE_KEY, buildUri);
+    await this.rememberSelectedDocumentBuildUri(buildUri);
     await this.currentSession.sendDesignCommand('selectDocument', { buildUri });
     await this.refreshFromSession(this.currentSession, 'selectDocument');
 
@@ -539,8 +647,15 @@ class DesignSessionController {
 
     const buildUri = element.sourceBuildUri || this.workspace?.activeBuildUri || undefined;
     if (buildUri) {
-      this.selectedDocumentBuildUri = buildUri;
-      await this.context.workspaceState.update(SELECTED_DOCUMENT_STATE_KEY, buildUri);
+      await this.rememberSelectedDocumentBuildUri(buildUri);
+    }
+
+    if (selectionElementId === this.workspace?.selectedElementId) {
+      if (options.revealEditor) {
+        await this.revealElementInEditor(this.getSelectedElement() || this.findWorkspaceElementForSelection(selectionElementId) || element);
+      }
+
+      return;
     }
 
     await this.currentSession.sendDesignCommand('selectElement', {
@@ -550,7 +665,7 @@ class DesignSessionController {
     await this.refreshFromSession(this.currentSession, 'selectElement');
 
     if (options.revealEditor) {
-      await this.revealElementInEditor(this.getSelectedElement() || element);
+      await this.revealElementInEditor(this.getSelectedElement() || this.findWorkspaceElementForSelection(selectionElementId) || element);
     }
   }
 
@@ -559,6 +674,40 @@ class DesignSessionController {
       return null;
     }
 
+    if (!updateSelection) {
+      this.pendingHoverSelectRequest = { session, x, y };
+      if (!this.hoverSelectLoopPromise) {
+        const hoverLoopPromise = this.runHoverSelectLoopAsync();
+        this.hoverSelectLoopPromise = hoverLoopPromise;
+        try {
+          await hoverLoopPromise;
+        } finally {
+          if (this.hoverSelectLoopPromise === hoverLoopPromise) {
+            this.hoverSelectLoopPromise = null;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    this.pendingHoverSelectRequest = null;
+    const selectionPromise = this.selectionChain
+      .catch(() => {})
+      .then(() => this.performSelectAtPointAsync(session, x, y, true));
+    this.selectionChain = selectionPromise.catch(() => {});
+    return selectionPromise;
+  }
+
+  async runHoverSelectLoopAsync() {
+    while (this.pendingHoverSelectRequest) {
+      const request = this.pendingHoverSelectRequest;
+      this.pendingHoverSelectRequest = null;
+      await this.performSelectAtPointAsync(request.session, request.x, request.y, false);
+    }
+  }
+
+  async performSelectAtPointAsync(session, x, y, updateSelection) {
     try {
       const result = await session.sendDesignCommand('selectAtPoint', {
         buildUri: this.workspace?.activeBuildUri || undefined,
@@ -578,8 +727,16 @@ class DesignSessionController {
           return result;
         }
 
+        await this.rememberSelectedDocumentBuildUri(
+          result?.activeBuildUri ||
+          result?.element?.sourceBuildUri ||
+          this.workspace?.activeBuildUri ||
+          undefined);
         await this.refreshFromSession(session, 'selectAtPoint');
-        const selectedElement = this.getSelectedElement();
+        const selectedElement = this.getSelectedElement() ||
+          this.findWorkspaceElementForSelection(result?.elementId) ||
+          result?.element ||
+          null;
         if (selectedElement) {
           await this.revealElementInEditor(selectedElement);
         }
@@ -632,6 +789,15 @@ class DesignSessionController {
       message.includes('Broken pipe') ||
       message.includes('Unable to write data to the transport connection') ||
       message.includes('Connection reset by peer');
+  }
+
+  isMissingElementSelectionMessage(message) {
+    if (!message) {
+      return false;
+    }
+
+    return message.includes('No element with id') &&
+      message.includes('exists in buildUri');
   }
 
   async setWorkspaceMode(session, mode) {
@@ -891,6 +1057,10 @@ class DesignSessionController {
       return;
     }
 
+    if (sameText(this.workspace.mode, DEFAULT_WORKSPACE_MODE)) {
+      return;
+    }
+
     const activeSelection = Array.isArray(editor.selections) && editor.selections.length > 0
       ? editor.selections[0]
       : editor.selection;
@@ -900,15 +1070,67 @@ class DesignSessionController {
 
     const offset = editor.document.offsetAt(activeSelection.active);
     const element = this.findDeepestElementByOffset(this.workspace.elements, offset);
-    if (!element || element.id === this.workspace.selectedElementId) {
+    const selectionElementId = this.getSelectableElementId(element);
+    if (!selectionElementId || selectionElementId === this.workspace.selectedElementId) {
       return;
     }
 
-    await session.sendDesignCommand('selectElement', {
-      buildUri: element.sourceBuildUri || this.workspace.activeBuildUri || undefined,
-      elementId: element.id
-    });
+    const selectionApplied = await this.trySyncEditorSelectionAsync(
+      session,
+      offset,
+      element.sourceBuildUri || this.workspace.activeBuildUri || undefined,
+      selectionElementId);
+    if (!selectionApplied) {
+      return;
+    }
+
     await this.refreshFromSession(session, 'editorSelectionSync');
+  }
+
+  async trySyncEditorSelectionAsync(session, offset, buildUri, selectionElementId) {
+    try {
+      await this.rememberSelectedDocumentBuildUri(buildUri);
+      await session.sendDesignCommand('selectElement', {
+        buildUri,
+        elementId: selectionElementId
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!this.isMissingElementSelectionMessage(message)) {
+        throw error;
+      }
+
+      await this.refreshFromSession(session, 'editorSelectionRetry');
+      if (!this.workspace || !Array.isArray(this.workspace.elements) || this.workspace.elements.length === 0) {
+        return false;
+      }
+
+      const refreshedElement = this.findDeepestElementByOffset(this.workspace.elements, offset);
+      const refreshedSelectionElementId = this.getSelectableElementId(refreshedElement);
+      if (!refreshedSelectionElementId || refreshedSelectionElementId === this.workspace.selectedElementId) {
+        return false;
+      }
+
+      const refreshedBuildUri = refreshedElement?.sourceBuildUri || this.workspace.activeBuildUri || buildUri;
+      try {
+        await this.rememberSelectedDocumentBuildUri(refreshedBuildUri);
+        await session.sendDesignCommand('selectElement', {
+          buildUri: refreshedBuildUri || undefined,
+          elementId: refreshedSelectionElementId
+        });
+        return true;
+      } catch (retryError) {
+        const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+        if (!this.isMissingElementSelectionMessage(retryMessage)) {
+          throw retryError;
+        }
+
+        this.getOutputChannel().appendLine(
+          `[design] editor selection sync skipped because the target element no longer exists after refresh: ${retryMessage}`);
+        return false;
+      }
+    }
   }
 
   async revealElementInEditor(element) {
@@ -933,6 +1155,82 @@ class DesignSessionController {
         this.suppressEditorSync = false;
       }, 0);
     }
+  }
+
+  tryAdoptSessionFromWebviewMessage(session, isDesignMessage) {
+    if (!session || !isDesignMessage || !this.isActivePreviewSession(session)) {
+      return false;
+    }
+
+    const previousSession = this.currentSession;
+    this.currentSession = session;
+    this.selectedDocumentBuildUri = this.getRememberedSelectedDocumentBuildUri(session);
+    this.workspace = null;
+    this.logicalTree = null;
+    this.visualTree = null;
+    this.overlay = null;
+    this.lastUnavailableKind = null;
+    this.lastUnavailableMessage = null;
+    if (previousSession && previousSession !== session) {
+      previousSession.setDesignState(null);
+    }
+
+    void this.refreshFromSession(session, 'webviewMessage');
+    return true;
+  }
+
+  isActivePreviewSession(session) {
+    if (!session) {
+      return false;
+    }
+
+    if (session.panel && session.panel.active) {
+      return true;
+    }
+
+    return this.previewController.getActiveSession() === session;
+  }
+
+  async rememberSelectedDocumentBuildUri(buildUri) {
+    if (typeof buildUri !== 'string' || buildUri.trim().length === 0) {
+      return;
+    }
+
+    const normalizedBuildUri = buildUri.trim();
+    const scopeKey = this.getSelectedDocumentPreferenceScopeKey(this.currentSession);
+    const currentScopedBuildUri = this.selectedDocumentPreferences[scopeKey] || null;
+    if (sameText(currentScopedBuildUri, normalizedBuildUri)) {
+      this.selectedDocumentBuildUri = normalizedBuildUri;
+      return;
+    }
+
+    this.selectedDocumentPreferences = Object.assign({}, this.selectedDocumentPreferences, {
+      [scopeKey]: normalizedBuildUri
+    });
+    this.selectedDocumentBuildUri = normalizedBuildUri;
+    await this.context.workspaceState.update(SELECTED_DOCUMENT_STATE_KEY, this.selectedDocumentPreferences);
+  }
+
+  async revealTreeItemWithRetryAsync(treeView, element, options) {
+    if (!treeView || !element || typeof treeView.reveal !== 'function') {
+      return;
+    }
+
+    let lastError = null;
+    for (const delayMs of TREE_REVEAL_RETRY_DELAYS_MS) {
+      if (delayMs > 0) {
+        await waitAsync(delayMs);
+      }
+
+      try {
+        await treeView.reveal(element, options);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    void lastError;
   }
 
   async openSourceForBuildUri(buildUri) {
@@ -1035,7 +1333,7 @@ class DesignSessionController {
   }
 
   getSelectedElement() {
-    return this.findElementById(this.workspace && Array.isArray(this.workspace.elements) ? this.workspace.elements : [], this.workspace?.selectedElementId);
+    return this.findWorkspaceElementForSelection(this.workspace?.selectedElementId);
   }
 
   getSelectableElementId(element) {
@@ -1120,6 +1418,25 @@ class DesignSessionController {
     }
 
     return null;
+  }
+
+  findWorkspaceElementForSelection(elementId) {
+    return this.findElementForSelection(
+      this.workspace && Array.isArray(this.workspace.elements) ? this.workspace.elements : [],
+      elementId);
+  }
+
+  getSelectedDocumentPreferenceScopeKey(session) {
+    return session && typeof session.documentUri === 'string' && session.documentUri.trim().length > 0
+      ? session.documentUri.trim()
+      : DEFAULT_SELECTED_DOCUMENT_SCOPE;
+  }
+
+  getRememberedSelectedDocumentBuildUri(session) {
+    const scopeKey = this.getSelectedDocumentPreferenceScopeKey(session);
+    return this.selectedDocumentPreferences[scopeKey] ||
+      this.selectedDocumentPreferences[DEFAULT_SELECTED_DOCUMENT_SCOPE] ||
+      null;
   }
 
   findDeepestElementByOffset(elements, offset) {
@@ -1891,6 +2208,33 @@ function escapeHtmlAttribute(value) {
 
 function sameText(left, right) {
   return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function normalizeSelectedDocumentPreferences(rawValue) {
+  if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+    return {
+      [DEFAULT_SELECTED_DOCUMENT_SCOPE]: rawValue.trim()
+    };
+  }
+
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(rawValue)) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      continue;
+    }
+
+    normalized[String(key).trim() || DEFAULT_SELECTED_DOCUMENT_SCOPE] = value.trim();
+  }
+
+  return normalized;
+}
+
+function waitAsync(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, delayMs)));
 }
 
 module.exports = {
