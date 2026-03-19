@@ -901,24 +901,33 @@ class DesignSessionController {
   }
 
   async applyMutation(operation, payload) {
-    if (!this.currentSession) {
+    const mutationSession = this.currentSession;
+    if (!mutationSession) {
       return;
     }
 
     try {
-      if (typeof this.currentSession.flushPendingPreviewUpdateAsync === 'function') {
-        await this.currentSession.flushPendingPreviewUpdateAsync();
+      if (typeof mutationSession.flushPendingPreviewUpdateAsync === 'function') {
+        await mutationSession.flushPendingPreviewUpdateAsync();
       }
     } catch (error) {
+      if (this.isStaleMutationSession(mutationSession)) {
+        return;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       await vscode.window.showErrorMessage(`AXSG Design: ${message}`);
       return;
     }
 
     const mutationSourceSnapshot = await this.captureMutationSourceSnapshot(payload);
-    const response = await this.executeDesignCommandAsync(this.currentSession, operation, payload || {});
+    const response = await this.executeDesignCommandAsync(mutationSession, operation, payload || {});
+    if (this.isStaleMutationSession(mutationSession)) {
+      return;
+    }
+
     if (!response || !response.applyResult) {
-      await this.refreshFromSession(this.currentSession, operation);
+      await this.refreshFromSession(mutationSession, operation);
       return;
     }
 
@@ -940,11 +949,15 @@ class DesignSessionController {
       response.applyResult,
       response.workspace || this.workspace,
       mutationSourceSnapshot);
+    if (this.isStaleMutationSession(mutationSession)) {
+      return;
+    }
+
     if (appliedMinimalDiff === false && typeof vscode.window.showWarningMessage === 'function') {
       await vscode.window.showWarningMessage(
         'AXSG Design: The XAML document changed while the design edit was in flight, so the source update was skipped. Retry the action after the editor is idle.');
     }
-    await this.refreshFromSession(this.currentSession, operation);
+    await this.refreshFromSession(mutationSession, operation);
   }
 
   async captureMutationSourceSnapshot(payload) {
@@ -1544,6 +1557,21 @@ class DesignSessionController {
 
     this.designCommandChains.set(session, next.catch(() => {}));
     return next;
+  }
+
+  isStaleMutationSession(session) {
+    if (!session) {
+      return true;
+    }
+
+    if (this.currentSession && this.currentSession !== session) {
+      return true;
+    }
+
+    const activeSession = this.previewController && typeof this.previewController.getActiveSession === 'function'
+      ? this.previewController.getActiveSession()
+      : null;
+    return !!activeSession && activeSession !== session;
   }
 }
 

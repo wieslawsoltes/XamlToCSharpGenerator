@@ -1650,6 +1650,63 @@ test('applyMutation aborts when flushing pending preview edits fails', async () 
   ]);
 });
 
+test('applyMutation ignores stale mutation failures from a replaced preview session', async () => {
+  const vscodeMock = createVscodeMock();
+  const errors = [];
+  vscodeMock.window.showErrorMessage = async message => {
+    errors.push(message);
+  };
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const sessionA = {
+    async flushPendingPreviewUpdateAsync() {},
+    async sendDesignCommand() {
+      return {
+        applyResult: {
+          succeeded: false,
+          message: 'Hot design mode is disabled.'
+        }
+      };
+    },
+    setDesignState() {}
+  };
+  const sessionB = {
+    async sendDesignCommand() {
+      return {};
+    },
+    setDesignState() {}
+  };
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: () => null,
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return sessionB;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  controller.currentSession = sessionA;
+  controller.captureMutationSourceSnapshot = async () => {
+    controller.currentSession = sessionB;
+    return null;
+  };
+
+  await controller.applyMutation('applyPropertyUpdate', { propertyName: 'Width' });
+
+  assert.deepEqual(errors, []);
+});
+
 test('applyMutation skips minimal diff when the source document changes while the mutation is in flight', async () => {
   const vscodeMock = createVscodeMock();
   const warnings = [];
