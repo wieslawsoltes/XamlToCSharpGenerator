@@ -195,6 +195,55 @@ test('selectElement reveals the editor even when the target is already selected'
   ]);
 });
 
+test('selectElement does not skip selection when the element id matches but the source document changed', async () => {
+  const { controller, updates } = createController();
+  const sentCommands = [];
+
+  controller.currentSession = {
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/First.axaml',
+    selectedElementId: '0/0/0',
+    elements: []
+  };
+
+  await controller.selectElement(
+    {
+      id: '0/0/0',
+      sourceBuildUri: 'avares://tests/Second.axaml',
+      sourceRange: {
+        startOffset: 0,
+        endOffset: 24
+      },
+      children: []
+    },
+    { revealEditor: false });
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Second.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+  assert.deepEqual(updates, [
+    {
+      key: 'axsg.design.selectedDocument',
+      value: {
+        __default__: 'avares://tests/Second.axaml'
+      }
+    }
+  ]);
+});
+
 test('syncEditorSelectionAsync uses sourceElementId when the workspace element exposes one', async () => {
   const { controller } = createController();
   const sentCommands = [];
@@ -251,6 +300,41 @@ test('syncEditorSelectionAsync uses sourceElementId when the workspace element e
   ]);
 });
 
+test('resolveSessionForEditor falls back to the current preview session for workspace documents without direct session mapping', () => {
+  const { controller } = createController();
+  const currentSession = {
+    documentUri: 'file:///tmp/Launch.axaml',
+    setDesignState() {}
+  };
+  const editor = {
+    document: {
+      fileName: '/tmp/Secondary.axaml',
+      uri: {
+        fsPath: '/tmp/Secondary.axaml',
+        toString: () => 'file:///tmp/Secondary.axaml'
+      }
+    }
+  };
+
+  controller.currentSession = currentSession;
+  controller.workspace = {
+    documents: [
+      {
+        buildUri: 'avares://tests/Launch.axaml',
+        sourcePath: '/tmp/Launch.axaml'
+      },
+      {
+        buildUri: 'avares://tests/Secondary.axaml',
+        sourcePath: '/tmp/Secondary.axaml'
+      }
+    ]
+  };
+  controller.previewController.getSession = () => null;
+  controller.previewController.getActiveSession = () => null;
+
+  assert.equal(controller.resolveSessionForEditor(editor), currentSession);
+});
+
 test('syncEditorSelectionAsync remembers the selected document buildUri before syncing runtime selection', async () => {
   const { controller, updates } = createController();
   const sentCommands = [];
@@ -305,6 +389,142 @@ test('syncEditorSelectionAsync remembers the selected document buildUri before s
       }
     }
   ]);
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Second.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+});
+
+test('syncEditorSelectionAsync uses the current preview session for secondary workspace documents', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const session = {
+    documentUri: 'file:///tmp/Launch.axaml',
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => null;
+  controller.currentSession = session;
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/Secondary.axaml',
+    selectedElementId: null,
+    documents: [
+      {
+        buildUri: 'avares://tests/Launch.axaml',
+        sourcePath: '/tmp/Launch.axaml'
+      },
+      {
+        buildUri: 'avares://tests/Secondary.axaml',
+        sourcePath: '/tmp/Secondary.axaml'
+      }
+    ],
+    elements: [
+      {
+        id: '0/0/0',
+        sourceBuildUri: 'avares://tests/Secondary.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      fileName: '/tmp/Secondary.axaml',
+      uri: {
+        fsPath: '/tmp/Secondary.axaml',
+        toString: () => 'file:///tmp/Secondary.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
+  assert.deepEqual(sentCommands, [
+    {
+      command: 'selectElement',
+      payload: {
+        buildUri: 'avares://tests/Secondary.axaml',
+        elementId: '0/0/0'
+      }
+    }
+  ]);
+});
+
+test('syncEditorSelectionAsync does not skip selection when another workspace document has the same element id', async () => {
+  const { controller } = createController();
+  const sentCommands = [];
+  const session = {
+    documentUri: 'file:///tmp/Launch.axaml',
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState() {}
+  };
+
+  controller.previewController.getSession = () => null;
+  controller.currentSession = session;
+  controller.refreshFromSession = async () => {};
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/First.axaml',
+    selectedElementId: '0/0/0',
+    documents: [
+      {
+        buildUri: 'avares://tests/First.axaml',
+        sourcePath: '/tmp/First.axaml'
+      },
+      {
+        buildUri: 'avares://tests/Second.axaml',
+        sourcePath: '/tmp/Second.axaml'
+      }
+    ],
+    elements: [
+      {
+        id: '0/0/0',
+        sourceBuildUri: 'avares://tests/Second.axaml',
+        sourceRange: {
+          startOffset: 0,
+          endOffset: 24
+        },
+        children: []
+      }
+    ]
+  };
+
+  await controller.syncEditorSelectionAsync({
+    document: {
+      fileName: '/tmp/Second.axaml',
+      uri: {
+        fsPath: '/tmp/Second.axaml',
+        toString: () => 'file:///tmp/Second.axaml'
+      },
+      offsetAt() {
+        return 4;
+      }
+    },
+    selection: {
+      active: {}
+    }
+  });
+
   assert.deepEqual(sentCommands, [
     {
       command: 'selectElement',
@@ -646,6 +866,72 @@ test('performRefreshFromSession uses selected document preferences scoped to the
       payload: {
         buildUri: 'avares://tests/Second.axaml'
       }
+    }
+  ]);
+});
+
+test('refreshFromActiveSession keeps the current preview session for active secondary workspace editors', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: () => null,
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  const session = {
+    documentUri: 'file:///tmp/Launch.axaml',
+    setDesignState() {}
+  };
+  const editor = {
+    document: {
+      fileName: '/tmp/Secondary.axaml',
+      uri: {
+        fsPath: '/tmp/Secondary.axaml',
+        toString: () => 'file:///tmp/Secondary.axaml'
+      }
+    }
+  };
+  const refreshes = [];
+
+  controller.currentSession = session;
+  controller.workspace = {
+    documents: [
+      {
+        buildUri: 'avares://tests/Launch.axaml',
+        sourcePath: '/tmp/Launch.axaml'
+      },
+      {
+        buildUri: 'avares://tests/Secondary.axaml',
+        sourcePath: '/tmp/Secondary.axaml'
+      }
+    ]
+  };
+  controller.refreshFromSession = async (resolvedSession, reason) => {
+    refreshes.push({ session: resolvedSession, reason });
+  };
+
+  await controller.refreshFromActiveSession('activeEditor', editor);
+
+  assert.deepEqual(refreshes, [
+    {
+      session,
+      reason: 'activeEditor'
     }
   ]);
 });

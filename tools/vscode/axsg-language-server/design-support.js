@@ -158,7 +158,7 @@ class DesignSessionController {
         return;
       }
 
-      await this.refreshFromActiveSession('activeEditor');
+      await this.refreshFromActiveSession('activeEditor', editor);
     }));
     context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(event => {
       this.handleEditorSelectionChanged(event);
@@ -379,8 +379,8 @@ class DesignSessionController {
       }));
   }
 
-  async refreshFromActiveSession(reason) {
-    const session = this.previewController.getActiveSession();
+  async refreshFromActiveSession(reason, editor = vscode.window.activeTextEditor) {
+    const session = this.resolveSessionForEditor(editor) || this.previewController.getActiveSession();
     if (!session) {
       this.clearState();
       return;
@@ -650,7 +650,7 @@ class DesignSessionController {
       await this.rememberSelectedDocumentBuildUri(buildUri);
     }
 
-    if (selectionElementId === this.workspace?.selectedElementId) {
+    if (this.isCurrentWorkspaceSelection(selectionElementId, buildUri)) {
       if (options.revealEditor) {
         await this.revealElementInEditor(this.getSelectedElement() || this.findWorkspaceElementForSelection(selectionElementId) || element);
       }
@@ -838,7 +838,7 @@ class DesignSessionController {
       return;
     }
 
-    const session = this.previewController.getSession(editor.document.uri.toString());
+    const session = this.resolveSessionForEditor(editor);
     if (!session) {
       await vscode.window.showInformationMessage('Open AXSG Preview for the current document before syncing the AXSG Inspector selection.');
       return;
@@ -1044,7 +1044,7 @@ class DesignSessionController {
       return;
     }
 
-    const session = this.previewController.getSession(editor.document.uri.toString());
+    const session = this.resolveSessionForEditor(editor);
     if (!session) {
       return;
     }
@@ -1071,14 +1071,15 @@ class DesignSessionController {
     const offset = editor.document.offsetAt(activeSelection.active);
     const element = this.findDeepestElementByOffset(this.workspace.elements, offset);
     const selectionElementId = this.getSelectableElementId(element);
-    if (!selectionElementId || selectionElementId === this.workspace.selectedElementId) {
+    const selectionBuildUri = element?.sourceBuildUri || this.workspace.activeBuildUri || undefined;
+    if (!selectionElementId || this.isCurrentWorkspaceSelection(selectionElementId, selectionBuildUri)) {
       return;
     }
 
     const selectionApplied = await this.trySyncEditorSelectionAsync(
       session,
       offset,
-      element.sourceBuildUri || this.workspace.activeBuildUri || undefined,
+      selectionBuildUri,
       selectionElementId);
     if (!selectionApplied) {
       return;
@@ -1108,11 +1109,11 @@ class DesignSessionController {
 
       const refreshedElement = this.findDeepestElementByOffset(this.workspace.elements, offset);
       const refreshedSelectionElementId = this.getSelectableElementId(refreshedElement);
-      if (!refreshedSelectionElementId || refreshedSelectionElementId === this.workspace.selectedElementId) {
+      const refreshedBuildUri = refreshedElement?.sourceBuildUri || this.workspace.activeBuildUri || buildUri;
+      if (!refreshedSelectionElementId || this.isCurrentWorkspaceSelection(refreshedSelectionElementId, refreshedBuildUri)) {
         return false;
       }
 
-      const refreshedBuildUri = refreshedElement?.sourceBuildUri || this.workspace.activeBuildUri || buildUri;
       try {
         await this.rememberSelectedDocumentBuildUri(refreshedBuildUri);
         await session.sendDesignCommand('selectElement', {
@@ -1374,6 +1375,53 @@ class DesignSessionController {
       : null;
   }
 
+  resolveSessionForEditor(editor) {
+    if (!editor || !editor.document) {
+      return null;
+    }
+
+    const directSession = this.previewController.getSession(editor.document.uri.toString());
+    if (directSession) {
+      return directSession;
+    }
+
+    if (this.currentSession && this.workspaceContainsEditorDocument(this.workspace, editor.document)) {
+      return this.currentSession;
+    }
+
+    const activeSession = this.previewController.getActiveSession();
+    if (activeSession && activeSession !== this.currentSession && this.workspaceContainsEditorDocument(this.workspace, editor.document)) {
+      return this.currentSession;
+    }
+
+    return null;
+  }
+
+  workspaceContainsEditorDocument(workspace, document) {
+    if (!workspace || !document) {
+      return false;
+    }
+
+    const documentPath = normalizeFilePath(document.fileName || document.uri?.fsPath || '');
+    const documentUri = typeof document.uri?.toString === 'function'
+      ? document.uri.toString()
+      : '';
+    const documents = Array.isArray(workspace.documents) ? workspace.documents : [];
+    return documents.some(entry => {
+      if (!entry || typeof entry !== 'object') {
+        return false;
+      }
+
+      if (documentPath && samePath(documentPath, entry.sourcePath)) {
+        return true;
+      }
+
+      return documentUri &&
+        typeof entry.sourceUri === 'string' &&
+        sameText(entry.sourceUri, documentUri);
+    });
+  }
+
   findElementById(elements, elementId) {
     if (!Array.isArray(elements) || !elementId) {
       return null;
@@ -1424,6 +1472,22 @@ class DesignSessionController {
     return this.findElementForSelection(
       this.workspace && Array.isArray(this.workspace.elements) ? this.workspace.elements : [],
       elementId);
+  }
+
+  isCurrentWorkspaceSelection(elementId, buildUri) {
+    if (!elementId || !this.workspace) {
+      return false;
+    }
+
+    if (!sameText(this.workspace.selectedElementId, elementId)) {
+      return false;
+    }
+
+    if (!buildUri) {
+      return true;
+    }
+
+    return sameText(this.workspace.activeBuildUri, buildUri);
   }
 
   getSelectedDocumentPreferenceScopeKey(session) {
@@ -2208,6 +2272,25 @@ function escapeHtmlAttribute(value) {
 
 function sameText(left, right) {
   return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function normalizeFilePath(filePath) {
+  if (typeof filePath !== 'string' || filePath.trim().length === 0) {
+    return '';
+  }
+
+  const normalized = path.normalize(filePath.trim());
+  return process.platform === 'win32'
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+function samePath(left, right) {
+  const normalizedLeft = normalizeFilePath(left);
+  const normalizedRight = normalizeFilePath(right);
+  return normalizedLeft.length > 0 &&
+    normalizedRight.length > 0 &&
+    normalizedLeft === normalizedRight;
 }
 
 function normalizeSelectedDocumentPreferences(rawValue) {
