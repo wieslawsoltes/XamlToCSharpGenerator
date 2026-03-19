@@ -1747,7 +1747,7 @@ public static class XamlSourceGenHotDesignCoreTools
                 Name: projectType.Name,
                 DisplayName: projectType.Name,
                 Category: "Project",
-                XamlSnippet: "<" + projectType.Name + " />",
+                XamlSnippet: BuildProjectControlXamlSnippet(projectType),
                 IsProjectControl: true,
                 Tags: BuildToolboxTags("Project", projectType.Name, "project", projectType.Assembly.GetName().Name)));
         }
@@ -1804,6 +1804,21 @@ public static class XamlSourceGenHotDesignCoreTools
         }
 
         collector.Add(type);
+    }
+
+    private static string BuildProjectControlXamlSnippet(Type projectType)
+    {
+        if (string.IsNullOrWhiteSpace(projectType.Namespace))
+        {
+            return "<" + projectType.Name + " />";
+        }
+
+        var assemblyName = projectType.Assembly.GetName().Name;
+        var namespaceUri = string.IsNullOrWhiteSpace(assemblyName)
+            ? "clr-namespace:" + projectType.Namespace
+            : "clr-namespace:" + projectType.Namespace + ";assembly=" + assemblyName;
+
+        return "<project:" + projectType.Name + " xmlns:project=\"" + namespaceUri + "\" />";
     }
 
     private static SourceGenHotDesignDocumentRole InferPreviewDocumentRole(Type rootType)
