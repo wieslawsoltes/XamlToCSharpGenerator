@@ -108,6 +108,18 @@ function createController() {
   return { controller, updates };
 }
 
+async function waitFor(predicate) {
+  for (let index = 0; index < 20; index += 1) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  throw new Error('Timed out waiting for predicate.');
+}
+
 test('selectElement uses sourceElementId for live tree nodes', async () => {
   const { controller } = createController();
   const sentCommands = [];
@@ -1478,7 +1490,7 @@ test('selectAtPoint collapses overlapping hover hit tests to the latest pending 
   const firstHover = controller.selectAtPoint(session, 10, 20, false);
   const secondHover = controller.selectAtPoint(session, 30, 40, false);
   const thirdHover = controller.selectAtPoint(session, 50, 60, false);
-  await Promise.resolve();
+  await waitFor(() => typeof releaseFirstHover === 'function');
   releaseFirstHover();
   await Promise.all([firstHover, secondHover, thirdHover]);
 
@@ -1499,6 +1511,57 @@ test('selectAtPoint collapses overlapping hover hit tests to the latest pending 
     }
   ]);
   assert.deepEqual(controller.overlay, { highlightedElementId: '50:60' });
+});
+
+test('selectAtPoint clears pending hover work when a click selection arrives', async () => {
+  const { controller } = createController();
+  const payloads = [];
+  let releaseFirstHover = null;
+
+  controller.currentSession = {
+    setDesignState() {}
+  };
+  controller.publishPreviewDesignState = () => {};
+  controller.refreshFromSession = async () => {};
+
+  const session = {
+    async sendDesignCommand(command, payload) {
+      assert.equal(command, 'selectAtPoint');
+      payloads.push(payload);
+      if (payloads.length === 1) {
+        await new Promise(resolve => {
+          releaseFirstHover = resolve;
+        });
+      }
+
+      return { succeeded: true, overlay: { highlightedElementId: payload.x + ':' + payload.y } };
+    }
+  };
+
+  controller.hitTestMode = 'Logical';
+  const firstHover = controller.selectAtPoint(session, 10, 20, false);
+  const secondHover = controller.selectAtPoint(session, 30, 40, false);
+  const selection = controller.selectAtPoint(session, 50, 60, true);
+  await waitFor(() => typeof releaseFirstHover === 'function');
+  releaseFirstHover();
+  await Promise.all([firstHover, secondHover, selection]);
+
+  assert.deepEqual(payloads, [
+    {
+      buildUri: undefined,
+      x: 10,
+      y: 20,
+      updateSelection: false,
+      hitTestMode: 'Logical'
+    },
+    {
+      buildUri: undefined,
+      x: 50,
+      y: 60,
+      updateSelection: true,
+      hitTestMode: 'Logical'
+    }
+  ]);
 });
 
 test('applyMutation flushes pending preview edits before sending the design command', async () => {

@@ -44,6 +44,7 @@ class DesignSessionController {
     this.hoverSelectLoopPromise = null;
     this.pendingHoverSelectRequest = null;
     this.selectionChain = Promise.resolve();
+    this.designCommandChains = new WeakMap();
     this.preferencesAppliedSessions = new WeakMap();
     this.logicalExpandedIds = new Set(this.context.workspaceState.get(LOGICAL_EXPANDED_STATE_KEY, []));
     this.visualExpandedIds = new Set(this.context.workspaceState.get(VISUAL_EXPANDED_STATE_KEY, []));
@@ -446,7 +447,7 @@ class DesignSessionController {
   }
 
   async loadSessionStateAsync(session) {
-    const workspace = await session.sendDesignCommand('workspace.current', {});
+    const workspace = await this.executeDesignCommandAsync(session, 'workspace.current', {});
     if (this.currentSession !== session) {
       return;
     }
@@ -477,7 +478,7 @@ class DesignSessionController {
 
   async tryLoadOptionalSessionStateAsync(session, operation) {
     try {
-      return await session.sendDesignCommand(operation, {}) || null;
+      return await this.executeDesignCommandAsync(session, operation, {}) || null;
     } catch {
       return null;
     }
@@ -497,7 +498,7 @@ class DesignSessionController {
     let changed = false;
     if (!sameText(this.workspace.mode, this.workspaceMode) &&
       !sameText(appliedPreferences.workspaceMode, this.workspaceMode)) {
-      await session.sendDesignCommand('setWorkspaceMode', { mode: this.workspaceMode });
+      await this.executeDesignCommandAsync(session, 'setWorkspaceMode', { mode: this.workspaceMode });
       appliedPreferences.workspaceMode = this.workspaceMode;
       changed = true;
     } else if (sameText(this.workspace.mode, this.workspaceMode)) {
@@ -506,7 +507,7 @@ class DesignSessionController {
 
     if (!sameText(this.workspace.hitTestMode, this.hitTestMode) &&
       !sameText(appliedPreferences.hitTestMode, this.hitTestMode)) {
-      await session.sendDesignCommand('setHitTestMode', { mode: this.hitTestMode });
+      await this.executeDesignCommandAsync(session, 'setHitTestMode', { mode: this.hitTestMode });
       appliedPreferences.hitTestMode = this.hitTestMode;
       changed = true;
     } else if (sameText(this.workspace.hitTestMode, this.hitTestMode)) {
@@ -518,7 +519,7 @@ class DesignSessionController {
     if (hasPreferredDocument &&
       !sameText(this.workspace.activeBuildUri, this.selectedDocumentBuildUri) &&
       !sameText(appliedPreferences.selectedDocumentBuildUri, this.selectedDocumentBuildUri)) {
-      await session.sendDesignCommand('selectDocument', { buildUri: this.selectedDocumentBuildUri });
+      await this.executeDesignCommandAsync(session, 'selectDocument', { buildUri: this.selectedDocumentBuildUri });
       appliedPreferences.selectedDocumentBuildUri = this.selectedDocumentBuildUri;
       changed = true;
     } else if (!this.selectedDocumentBuildUri) {
@@ -627,7 +628,7 @@ class DesignSessionController {
     }
 
     await this.rememberSelectedDocumentBuildUri(buildUri);
-    await this.currentSession.sendDesignCommand('selectDocument', { buildUri });
+    await this.executeDesignCommandAsync(this.currentSession, 'selectDocument', { buildUri });
     await this.refreshFromSession(this.currentSession, 'selectDocument');
 
     if (options.revealEditor) {
@@ -658,7 +659,7 @@ class DesignSessionController {
       return;
     }
 
-    await this.currentSession.sendDesignCommand('selectElement', {
+    await this.executeDesignCommandAsync(this.currentSession, 'selectElement', {
       buildUri,
       elementId: selectionElementId
     });
@@ -709,7 +710,7 @@ class DesignSessionController {
 
   async performSelectAtPointAsync(session, x, y, updateSelection) {
     try {
-      const result = await session.sendDesignCommand('selectAtPoint', {
+      const result = await this.executeDesignCommandAsync(session, 'selectAtPoint', {
         buildUri: this.workspace?.activeBuildUri || undefined,
         x,
         y,
@@ -807,7 +808,7 @@ class DesignSessionController {
 
     this.workspaceMode = mode;
     await this.context.workspaceState.update(WORKSPACE_MODE_STATE_KEY, mode);
-    await session.sendDesignCommand('setWorkspaceMode', { mode });
+    await this.executeDesignCommandAsync(session, 'setWorkspaceMode', { mode });
     await this.refreshFromSession(session, 'setWorkspaceMode');
   }
 
@@ -818,7 +819,7 @@ class DesignSessionController {
 
     this.hitTestMode = mode;
     await this.context.workspaceState.update(HIT_TEST_MODE_STATE_KEY, mode);
-    await session.sendDesignCommand('setHitTestMode', { mode });
+    await this.executeDesignCommandAsync(session, 'setHitTestMode', { mode });
     await this.refreshFromSession(session, 'setHitTestMode');
   }
 
@@ -827,7 +828,7 @@ class DesignSessionController {
       return;
     }
 
-    await this.currentSession.sendDesignCommand('setPropertyFilterMode', { mode });
+    await this.executeDesignCommandAsync(this.currentSession, 'setPropertyFilterMode', { mode });
     await this.refreshFromSession(this.currentSession, 'setPropertyFilterMode');
   }
 
@@ -915,7 +916,7 @@ class DesignSessionController {
     }
 
     const mutationSourceSnapshot = await this.captureMutationSourceSnapshot(payload);
-    const response = await this.currentSession.sendDesignCommand(operation, payload || {});
+    const response = await this.executeDesignCommandAsync(this.currentSession, operation, payload || {});
     if (!response || !response.applyResult) {
       await this.refreshFromSession(this.currentSession, operation);
       return;
@@ -1091,7 +1092,7 @@ class DesignSessionController {
   async trySyncEditorSelectionAsync(session, offset, buildUri, selectionElementId) {
     try {
       await this.rememberSelectedDocumentBuildUri(buildUri);
-      await session.sendDesignCommand('selectElement', {
+      await this.executeDesignCommandAsync(session, 'selectElement', {
         buildUri,
         elementId: selectionElementId
       });
@@ -1116,7 +1117,7 @@ class DesignSessionController {
 
       try {
         await this.rememberSelectedDocumentBuildUri(refreshedBuildUri);
-        await session.sendDesignCommand('selectElement', {
+        await this.executeDesignCommandAsync(session, 'selectElement', {
           buildUri: refreshedBuildUri || undefined,
           elementId: refreshedSelectionElementId
         });
@@ -1529,6 +1530,20 @@ class DesignSessionController {
     }
 
     return best;
+  }
+
+  async executeDesignCommandAsync(session, operation, payload) {
+    if (!session || typeof session.sendDesignCommand !== 'function') {
+      throw new Error('Preview session is not available.');
+    }
+
+    const previous = this.designCommandChains.get(session) || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => session.sendDesignCommand(operation, payload || {}));
+
+    this.designCommandChains.set(session, next.catch(() => {}));
+    return next;
   }
 }
 
