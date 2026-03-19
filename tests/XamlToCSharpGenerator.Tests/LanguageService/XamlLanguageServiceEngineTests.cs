@@ -45,6 +45,24 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task FormatDocumentAsync_PreservesXmlDeclarationEncoding()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/FormattingWithDeclaration.axaml";
+        const string xaml =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var edits = await engine.FormatDocumentAsync(uri, new XamlFormattingOptions(2, InsertSpaces: true), CancellationToken.None);
+
+        var edit = Assert.Single(edits);
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n", edit.NewText, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"Hello\" />", edit.NewText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FormatDocumentAsync_InvalidXaml_ReturnsNoEdits()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -144,6 +162,33 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Equal("TextBlock", GetRangeText(xaml, linkedEditingRanges.Ranges[0]));
         Assert.Equal("TextBlock", GetRangeText(xaml, linkedEditingRanges.Ranges[1]));
         Assert.Equal(@"[-.\w:]+", linkedEditingRanges.WordPattern);
+    }
+
+    [Fact]
+    public async Task GetLinkedEditingRangesAsync_UsesMatchingClosingTagForNestedElements()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/NestedLinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </Grid>\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("Grid", StringComparison.Ordinal) + 1);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var linkedEditingRanges = await engine.GetLinkedEditingRangesAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.NotNull(linkedEditingRanges);
+        Assert.Equal(2, linkedEditingRanges!.Ranges.Length);
+        Assert.Equal("Grid", GetRangeText(xaml, linkedEditingRanges.Ranges[0]));
+        Assert.Equal("Grid", GetRangeText(xaml, linkedEditingRanges.Ranges[1]));
     }
 
     [Fact]

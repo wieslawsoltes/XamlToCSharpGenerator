@@ -297,7 +297,7 @@ internal static class XamlXmlSourceRangeService
             return false;
         }
 
-        var closingTagStart = FindClosingTagStart(text, startTagEnd + 1, elementEnd);
+        var closingTagStart = FindMatchingClosingTagStart(text, startTagEnd + 1, elementEnd);
         if (closingTagStart < 0)
         {
             return false;
@@ -410,7 +410,7 @@ internal static class XamlXmlSourceRangeService
             return false;
         }
 
-        var closingTagStart = FindClosingTagStart(text, startTagEnd + 1, elementEnd);
+        var closingTagStart = FindMatchingClosingTagStart(text, startTagEnd + 1, elementEnd);
         if (closingTagStart < 0 || closingTagStart < startTagEnd + 1)
         {
             return false;
@@ -681,9 +681,9 @@ internal static class XamlXmlSourceRangeService
         return false;
     }
 
-    private static int FindClosingTagStart(string text, int searchStart, int elementEnd)
+    private static int FindMatchingClosingTagStart(string text, int searchStart, int elementEnd)
     {
-        for (var index = searchStart; index < elementEnd - 1; index++)
+        for (var index = Math.Min(elementEnd - 2, text.Length - 2); index >= searchStart; index--)
         {
             if (text[index] == '<' && text[index + 1] == '/')
             {

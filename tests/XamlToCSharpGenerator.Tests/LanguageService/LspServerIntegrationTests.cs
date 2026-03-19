@@ -115,6 +115,49 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task Formatting_Request_PreservesXmlDeclarationEncoding()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/FormattingWithDeclaration.axaml";
+        const string xaml =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<UserControl xmlns=\"https://github.com/avaloniaui\"><StackPanel><TextBlock Text=\"Hello\"/></StackPanel></UserControl>";
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(111, "textDocument/formatting", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["options"] = new JsonObject
+            {
+                ["tabSize"] = 2,
+                ["insertSpaces"] = true
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(111);
+        var edits = response.RootElement.GetProperty("result");
+        var edit = edits[0];
+        var newText = edit.GetProperty("newText").GetString();
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n", newText, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"Hello\" />", newText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FoldingRange_Request_ReturnsElementAndCommentRegions()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -278,6 +321,57 @@ public sealed class LspServerIntegrationTests
         Assert.True(enumerator.MoveNext());
         Assert.Equal("TextBlock", GetRangeText(xaml, enumerator.Current));
         Assert.Equal(@"[-.\w:]+", result.GetProperty("wordPattern").GetString());
+    }
+
+    [Fact]
+    public async Task LinkedEditingRange_Request_UsesMatchingClosingTagForNestedElements()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/NestedLinkedEditingView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <Grid>\n" +
+            "    <TextBlock>Hello</TextBlock>\n" +
+            "  </Grid>\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Grid", StringComparison.Ordinal) + 1);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(114, "textDocument/linkedEditingRange", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(114);
+        var result = response.RootElement.GetProperty("result");
+        var ranges = result.GetProperty("ranges");
+        Assert.Equal(2, ranges.GetArrayLength());
+
+        var enumerator = ranges.EnumerateArray();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("Grid", GetRangeText(xaml, enumerator.Current));
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("Grid", GetRangeText(xaml, enumerator.Current));
     }
 
     [Fact]
