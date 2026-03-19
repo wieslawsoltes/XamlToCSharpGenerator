@@ -174,6 +174,11 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         InvalidateUriCaches(uri);
     }
 
+    public void InvalidateProjectDiscoveryCaches()
+    {
+        XamlProjectFileDiscoveryService.InvalidateCaches();
+    }
+
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> GetDiagnosticsAsync(
         string uri,
         XamlLanguageServiceOptions options,

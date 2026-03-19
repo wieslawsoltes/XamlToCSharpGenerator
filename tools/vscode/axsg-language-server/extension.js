@@ -1169,7 +1169,10 @@ function resolveClientOptions(context) {
       { scheme: 'file', language: 'xaml' }
     ],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.{xaml,axaml}')
+      fileEvents: [
+        vscode.workspace.createFileSystemWatcher('**/*.{xaml,axaml}'),
+        vscode.workspace.createFileSystemWatcher('**/*.csproj')
+      ]
     },
     outputChannel,
     initializationOptions: {

@@ -23,6 +23,12 @@ internal static class XamlProjectFileDiscoveryService
 
     internal readonly record struct ProjectXamlFileEntry(string FilePath, string TargetPath);
 
+    public static void InvalidateCaches()
+    {
+        ProjectFileListCache.Clear();
+        WorkspaceProjectListCache.Clear();
+    }
+
     public static ImmutableArray<string> DiscoverProjectXamlFilePaths(
         string? projectPath,
         string? currentFilePath)

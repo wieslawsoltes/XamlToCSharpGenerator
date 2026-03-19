@@ -155,6 +155,10 @@ internal sealed class AxsgLanguageServer : IDisposable
                 await HandleDidCloseAsync(parameters, cancellationToken).ConfigureAwait(false);
                 break;
 
+            case "workspace/didChangeWatchedFiles":
+                HandleDidChangeWatchedFiles(parameters);
+                break;
+
             case "textDocument/completion":
                 if (hasId)
                 {
@@ -497,6 +501,35 @@ internal sealed class AxsgLanguageServer : IDisposable
 
         _engine.CloseDocument(uri);
         return PublishDiagnosticsAsync(uri, ImmutableArray<LanguageServiceDiagnostic>.Empty, cancellationToken);
+    }
+
+    private void HandleDidChangeWatchedFiles(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("changes", out JsonElement changesElement) ||
+            changesElement.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (JsonElement change in changesElement.EnumerateArray())
+        {
+            if (!change.TryGetProperty("uri", out JsonElement uriElement) ||
+                uriElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            string uri = uriElement.GetString() ?? string.Empty;
+            if (!uri.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase) &&
+                !uri.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase) &&
+                !uri.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _engine.InvalidateProjectDiscoveryCaches();
+            break;
+        }
     }
 
     private void QueueDiagnosticsUpdate(string uri, int expectedVersion)

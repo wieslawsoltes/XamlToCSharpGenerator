@@ -488,6 +488,75 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task WorkspaceSymbol_Request_RefreshesDiscovery_After_Watched_File_Changes()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "axsg-lsp-watch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var projectPath = Path.Combine(tempRoot, "TestApp.csproj");
+        var rootViewPath = Path.Combine(tempRoot, "MainView.axaml");
+        var addedViewPath = Path.Combine(tempRoot, "FreshView.axaml");
+        const string freshSymbolName = "FreshNode";
+
+        await File.WriteAllTextAsync(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        await File.WriteAllTextAsync(
+            rootViewPath,
+            "<UserControl xmlns=\"https://github.com/avaloniaui\" />");
+
+        try
+        {
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: tempRoot);
+            await harness.InitializeAsync();
+
+            await harness.SendRequestAsync(181, "workspace/symbol", new JsonObject
+            {
+                ["query"] = freshSymbolName
+            });
+
+            using (var initialResponse = await harness.ReadResponseAsync(181))
+            {
+                Assert.Equal(0, initialResponse.RootElement.GetProperty("result").GetArrayLength());
+            }
+
+            await File.WriteAllTextAsync(
+                addedViewPath,
+                """
+                <UserControl xmlns="https://github.com/avaloniaui"
+                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                  <Grid x:Name="FreshNode" />
+                </UserControl>
+                """);
+
+            await harness.SendNotificationAsync("workspace/didChangeWatchedFiles", new JsonObject
+            {
+                ["changes"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["uri"] = new Uri(addedViewPath).AbsoluteUri,
+                        ["type"] = 1
+                    }
+                }
+            });
+
+            await harness.SendRequestAsync(182, "workspace/symbol", new JsonObject
+            {
+                ["query"] = freshSymbolName
+            });
+
+            using var updatedResponse = await harness.ReadResponseAsync(182);
+            JsonElement symbols = updatedResponse.RootElement.GetProperty("result");
+            Assert.Equal(1, symbols.GetArrayLength());
+            Assert.Equal(new Uri(addedViewPath).AbsoluteUri, symbols[0].GetProperty("location").GetProperty("uri").GetString());
+            Assert.Contains(freshSymbolName, symbols[0].GetProperty("name").GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SignatureHelp_Request_ReturnsBindingSignature()
     {
         await using var harness = await LspServerHarness.StartAsync();
