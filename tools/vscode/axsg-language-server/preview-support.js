@@ -897,11 +897,24 @@ class AvaloniaPreviewController {
       }
     }));
     context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      if (this.isProjectDocument(document)) {
+        this.invalidateProjectEvaluationCaches(document.uri);
+        return;
+      }
+
       const session = this.sessions.get(document.uri.toString());
       if (session) {
         void session.handleDocumentSaved(document);
       }
     }));
+    if (typeof vscode.workspace.createFileSystemWatcher === 'function') {
+      const projectFileWatcher = vscode.workspace.createFileSystemWatcher('**/*.csproj');
+      const invalidateProjectCaches = uri => this.invalidateProjectEvaluationCaches(uri);
+      context.subscriptions.push(projectFileWatcher);
+      context.subscriptions.push(projectFileWatcher.onDidChange(invalidateProjectCaches));
+      context.subscriptions.push(projectFileWatcher.onDidCreate(invalidateProjectCaches));
+      context.subscriptions.push(projectFileWatcher.onDidDelete(invalidateProjectCaches));
+    }
     context.subscriptions.push({
       dispose: () => {
         for (const session of new Set(this.sessions.values())) {
@@ -919,6 +932,23 @@ class AvaloniaPreviewController {
     this.sessionDocumentUris.clear();
     for (const session of sessions) {
       await session.dispose();
+    }
+  }
+
+  isProjectDocument(document) {
+    const fsPath = document && document.uri && typeof document.uri.fsPath === 'string'
+      ? document.uri.fsPath
+      : '';
+    return isProjectFilePath(fsPath);
+  }
+
+  invalidateProjectEvaluationCaches(changedProjectUri) {
+    this.projectInfoCache.clear();
+    this.projectReferenceCache.clear();
+
+    const normalizedPath = normalizeProjectFilePath(changedProjectUri);
+    if (normalizedPath) {
+      this.getOutputChannel().appendLine(`[preview] invalidated cached project evaluation for ${normalizedPath}`);
     }
   }
 
@@ -3347,6 +3377,39 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function normalizeProjectFilePath(projectDocumentOrUri) {
+  if (!projectDocumentOrUri) {
+    return '';
+  }
+
+  if (typeof projectDocumentOrUri.fsPath === 'string') {
+    return normalizeFilePath(projectDocumentOrUri.fsPath);
+  }
+
+  if (projectDocumentOrUri.uri && typeof projectDocumentOrUri.uri.fsPath === 'string') {
+    return normalizeFilePath(projectDocumentOrUri.uri.fsPath);
+  }
+
+  if (typeof projectDocumentOrUri.toString === 'function') {
+    const value = projectDocumentOrUri.toString();
+    if (typeof value === 'string' && value.startsWith('file://')) {
+      try {
+        return normalizeFilePath(vscode.Uri.parse(value).fsPath);
+      } catch {
+        return '';
+      }
+    }
+  }
+
+  return '';
+}
+
+function isProjectFilePath(filePath) {
+  return typeof filePath === 'string' &&
+    filePath.trim().length > 0 &&
+    path.extname(filePath).toLowerCase() === '.csproj';
 }
 
 module.exports = {

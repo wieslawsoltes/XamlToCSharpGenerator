@@ -3,27 +3,110 @@ const assert = require('node:assert/strict');
 const Module = require('node:module');
 
 function createVscodeMock() {
+  const didChangeTextDocumentListeners = [];
+  const didSaveTextDocumentListeners = [];
+  const fileWatchers = [];
+
   return {
     window: {
       activeTextEditor: null
     },
-    workspace: {},
+    workspace: {
+      onDidChangeTextDocument(listener) {
+        didChangeTextDocumentListeners.push(listener);
+        return {
+          dispose() {}
+        };
+      },
+      onDidSaveTextDocument(listener) {
+        didSaveTextDocumentListeners.push(listener);
+        return {
+          dispose() {}
+        };
+      },
+      createFileSystemWatcher() {
+        const changeListeners = [];
+        const createListeners = [];
+        const deleteListeners = [];
+        const watcher = {
+          onDidChange(listener) {
+            changeListeners.push(listener);
+            return { dispose() {} };
+          },
+          onDidCreate(listener) {
+            createListeners.push(listener);
+            return { dispose() {} };
+          },
+          onDidDelete(listener) {
+            deleteListeners.push(listener);
+            return { dispose() {} };
+          },
+          dispose() {}
+        };
+
+        fileWatchers.push({
+          fireChange(uri) {
+            for (const listener of changeListeners) {
+              listener(uri);
+            }
+          },
+          fireCreate(uri) {
+            for (const listener of createListeners) {
+              listener(uri);
+            }
+          },
+          fireDelete(uri) {
+            for (const listener of deleteListeners) {
+              listener(uri);
+            }
+          }
+        });
+
+        return watcher;
+      }
+    },
     Uri: {
       file(value) {
         return {
+          fsPath: value,
           toString() {
             return `file://${value}`;
           }
         };
+      },
+      parse(value) {
+        return {
+          fsPath: value.replace(/^file:\/\//, ''),
+          toString() {
+            return value;
+          }
+        };
       }
     },
-    commands: {},
+    commands: {
+      registerCommand() {
+        return {
+          dispose() {}
+        };
+      }
+    },
     ProgressLocation: {
       Notification: 15
     },
     ViewColumn: {
       Beside: 2
-    }
+    },
+    __fireDidChangeTextDocument(event) {
+      for (const listener of didChangeTextDocumentListeners) {
+        listener(event);
+      }
+    },
+    __fireDidSaveTextDocument(document) {
+      for (const listener of didSaveTextDocumentListeners) {
+        listener(document);
+      }
+    },
+    __fileWatchers: fileWatchers
   };
 }
 
@@ -131,6 +214,54 @@ test('preview sessions stay scoped to their launch document', () => {
   assert.equal(controller.getSession('file:///root.axaml'), null);
   assert.equal(controller.getSession('file:///tmp/Secondary.axaml'), null);
   assert.equal(controller.getSession('file:///tmp/Tertiary.axaml'), null);
+});
+
+test('register clears cached project evaluation state after saving a project file', () => {
+  const vscodeMock = createVscodeMock();
+  const controller = createController(vscodeMock);
+  const context = {
+    subscriptions: []
+  };
+
+  controller.projectInfoCache.set('/tmp::/tmp/App.csproj::<auto>', { targetPath: '/tmp/bin/App.dll' });
+  controller.projectReferenceCache.set('/tmp/Host.csproj::/tmp/App.csproj', true);
+
+  controller.register(context);
+  vscodeMock.__fireDidSaveTextDocument({
+    uri: {
+      fsPath: '/tmp/App.csproj',
+      toString() {
+        return 'file:///tmp/App.csproj';
+      }
+    }
+  });
+
+  assert.equal(controller.projectInfoCache.size, 0);
+  assert.equal(controller.projectReferenceCache.size, 0);
+});
+
+test('register clears cached project evaluation state after watched project changes', () => {
+  const vscodeMock = createVscodeMock();
+  const controller = createController(vscodeMock);
+  const context = {
+    subscriptions: []
+  };
+
+  controller.projectInfoCache.set('/tmp::/tmp/App.csproj::<auto>', { targetPath: '/tmp/bin/App.dll' });
+  controller.projectReferenceCache.set('/tmp/Host.csproj::/tmp/App.csproj', true);
+
+  controller.register(context);
+  assert.equal(vscodeMock.__fileWatchers.length, 1);
+
+  vscodeMock.__fileWatchers[0].fireChange({
+    fsPath: '/tmp/App.csproj',
+    toString() {
+      return 'file:///tmp/App.csproj';
+    }
+  });
+
+  assert.equal(controller.projectInfoCache.size, 0);
+  assert.equal(controller.projectReferenceCache.size, 0);
 });
 
 test('describePreviewDesignState reports unavailable inspector state', () => {
