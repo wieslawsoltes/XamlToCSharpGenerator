@@ -43,7 +43,8 @@ function createVscodeMock() {
     },
     window: {
       async showInformationMessage() {},
-      async showErrorMessage() {}
+      async showErrorMessage() {},
+      async showWarningMessage() {}
     },
     workspace: {},
     Uri: {
@@ -451,6 +452,108 @@ test('applyMutation aborts when flushing pending preview edits fails', async () 
   assert.equal(commandCalls, 0);
   assert.deepEqual(errors, [
     'AXSG Design: Preview update failed; retry the inspector action after the preview is in sync.'
+  ]);
+});
+
+test('applyMutation skips minimal diff when the source document changes while the mutation is in flight', async () => {
+  const vscodeMock = createVscodeMock();
+  const warnings = [];
+  let applyEditCalls = 0;
+  let refreshCalls = 0;
+  let documentVersion = 1;
+  let documentText = '<TextBox Width="100" />';
+  const document = {
+    get version() {
+      return documentVersion;
+    },
+    getText() {
+      return documentText;
+    },
+    positionAt(offset) {
+      return { offset };
+    }
+  };
+
+  vscodeMock.window.showWarningMessage = async message => {
+    warnings.push(message);
+  };
+  vscodeMock.workspace.openTextDocument = async () => document;
+  vscodeMock.workspace.applyEdit = async () => {
+    applyEditCalls++;
+    return true;
+  };
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: () => null,
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+
+  controller.workspace = {
+    activeBuildUri: 'avares://tests/MainView.axaml',
+    documents: [
+      {
+        buildUri: 'avares://tests/MainView.axaml',
+        sourcePath: '/tmp/MainView.axaml'
+      }
+    ]
+  };
+  controller.currentSession = {
+    async flushPendingPreviewUpdateAsync() {},
+    async sendDesignCommand() {
+      documentVersion = 2;
+      documentText = '<TextBox Width="100" /><Button />';
+      return {
+        applyResult: {
+          succeeded: true,
+          buildUri: 'avares://tests/MainView.axaml',
+          minimalDiffStart: 22,
+          minimalDiffRemovedLength: 0,
+          minimalDiffInsertedLength: 10
+        },
+        workspace: {
+          activeBuildUri: 'avares://tests/MainView.axaml',
+          currentXamlText: '<TextBox Width="100" /><Button />',
+          documents: [
+            {
+              buildUri: 'avares://tests/MainView.axaml',
+              sourcePath: '/tmp/MainView.axaml'
+            }
+          ]
+        }
+      };
+    },
+    setDesignState() {}
+  };
+  controller.refreshFromSession = async () => {
+    refreshCalls++;
+  };
+
+  await controller.applyMutation('insertElement', {
+    buildUri: 'avares://tests/MainView.axaml',
+    elementName: 'Button'
+  });
+
+  assert.equal(applyEditCalls, 0);
+  assert.equal(refreshCalls, 1);
+  assert.deepEqual(warnings, [
+    'AXSG Design: The XAML document changed while the design edit was in flight, so the source update was skipped. Retry the action after the editor is idle.'
   ]);
 });
 

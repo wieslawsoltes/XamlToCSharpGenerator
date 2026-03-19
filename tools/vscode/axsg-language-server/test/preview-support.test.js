@@ -8,6 +8,15 @@ function createVscodeMock() {
       activeTextEditor: null
     },
     workspace: {},
+    Uri: {
+      file(value) {
+        return {
+          toString() {
+            return `file://${value}`;
+          }
+        };
+      }
+    },
     commands: {},
     ProgressLocation: {
       Notification: 15
@@ -101,6 +110,31 @@ test('getActiveSession prefers the active preview panel over a stale text editor
   controller.sessions.set('file:///preview.axaml', activePreviewSession);
 
   assert.equal(controller.getActiveSession(), activePreviewSession);
+});
+
+test('syncSessionDocuments maps secondary workspace documents to the existing preview session', () => {
+  const vscodeMock = createVscodeMock();
+  const controller = createController(vscodeMock);
+  const session = {
+    documentUri: 'file:///root.axaml',
+    panel: { active: false }
+  };
+
+  controller.registerSessionDocumentUris(session, [session.documentUri]);
+  controller.syncSessionDocuments(session, [
+    { sourcePath: '/tmp/Secondary.axaml' },
+    { sourcePath: '/tmp/Tertiary.axaml' }
+  ]);
+
+  assert.equal(controller.getSession('file:///root.axaml'), session);
+  assert.equal(controller.getSession('file:///tmp/Secondary.axaml'), session);
+  assert.equal(controller.getSession('file:///tmp/Tertiary.axaml'), session);
+
+  controller.removeSession('file:///root.axaml');
+
+  assert.equal(controller.getSession('file:///root.axaml'), null);
+  assert.equal(controller.getSession('file:///tmp/Secondary.axaml'), null);
+  assert.equal(controller.getSession('file:///tmp/Tertiary.axaml'), null);
 });
 
 test('describePreviewDesignState reports unavailable inspector state', () => {

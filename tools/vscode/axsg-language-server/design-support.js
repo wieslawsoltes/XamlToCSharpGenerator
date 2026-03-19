@@ -332,6 +332,9 @@ class DesignSessionController {
       if (this.workspace) {
         this.lastUnavailableKind = null;
         this.lastUnavailableMessage = null;
+        if (this.previewController && typeof this.previewController.syncSessionDocuments === 'function') {
+          this.previewController.syncSessionDocuments(session, this.workspace.documents);
+        }
       }
       await this.ensureSessionPreferencesAsync(session);
       this.refreshProviders();
@@ -748,6 +751,7 @@ class DesignSessionController {
       return;
     }
 
+    const mutationSourceSnapshot = await this.captureMutationSourceSnapshot(payload);
     const response = await this.currentSession.sendDesignCommand(operation, payload || {});
     if (!response || !response.applyResult) {
       await this.refreshFromSession(this.currentSession, operation);
@@ -768,21 +772,55 @@ class DesignSessionController {
       this.overlay = response.overlay;
     }
 
-    await this.applyMinimalDiffToEditor(response.applyResult, response.workspace || this.workspace);
+    const appliedMinimalDiff = await this.applyMinimalDiffToEditor(
+      response.applyResult,
+      response.workspace || this.workspace,
+      mutationSourceSnapshot);
+    if (appliedMinimalDiff === false && typeof vscode.window.showWarningMessage === 'function') {
+      await vscode.window.showWarningMessage(
+        'AXSG Design: The XAML document changed while the design edit was in flight, so the source update was skipped. Retry the action after the editor is idle.');
+    }
     await this.refreshFromSession(this.currentSession, operation);
   }
 
-  async applyMinimalDiffToEditor(applyResult, workspace) {
+  async captureMutationSourceSnapshot(payload) {
+    const buildUri = payload && typeof payload.buildUri === 'string' && payload.buildUri
+      ? payload.buildUri
+      : this.workspace?.activeBuildUri;
+    const sourcePath = this.resolveSourcePath(buildUri, this.workspace);
+    if (!sourcePath || !vscode.workspace || typeof vscode.workspace.openTextDocument !== 'function') {
+      return null;
+    }
+
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(sourcePath));
+    return {
+      sourcePath,
+      version: typeof document.version === 'number' ? document.version : null,
+      text: typeof document.getText === 'function' ? document.getText() : null
+    };
+  }
+
+  async applyMinimalDiffToEditor(applyResult, workspace, mutationSourceSnapshot = null) {
     const sourcePath = this.resolveSourcePath(applyResult.buildUri, workspace);
     if (!sourcePath || !workspace || typeof workspace.currentXamlText !== 'string') {
       return;
     }
 
-    const uri = vscode.Uri.file(sourcePath);
-    const document = await vscode.workspace.openTextDocument(uri);
     const startOffset = Math.max(0, Number(applyResult.minimalDiffStart) || 0);
     const removedLength = Math.max(0, Number(applyResult.minimalDiffRemovedLength) || 0);
     const insertedLength = Math.max(0, Number(applyResult.minimalDiffInsertedLength) || 0);
+    if (removedLength === 0 && insertedLength === 0) {
+      return true;
+    }
+
+    const uri = vscode.Uri.file(sourcePath);
+    const document = await vscode.workspace.openTextDocument(uri);
+    if (this.didMutationSourceChange(mutationSourceSnapshot, sourcePath, document)) {
+      this.getOutputChannel().appendLine(
+        `[design] Skipped applying minimal diff because the source document changed while the design mutation was in flight: ${sourcePath}`);
+      return false;
+    }
+
     const insertedText = insertedLength > 0
       ? workspace.currentXamlText.substring(startOffset, startOffset + insertedLength)
       : '';
@@ -795,11 +833,32 @@ class DesignSessionController {
     this.suppressEditorSync = true;
     try {
       await vscode.workspace.applyEdit(edit);
+      return true;
     } finally {
       setTimeout(() => {
         this.suppressEditorSync = false;
       }, 0);
     }
+  }
+
+  didMutationSourceChange(mutationSourceSnapshot, sourcePath, document) {
+    if (!mutationSourceSnapshot) {
+      return false;
+    }
+
+    if (!sameText(mutationSourceSnapshot.sourcePath, sourcePath)) {
+      return true;
+    }
+
+    if (mutationSourceSnapshot.version !== null && typeof document.version === 'number' && document.version !== mutationSourceSnapshot.version) {
+      return true;
+    }
+
+    if (typeof mutationSourceSnapshot.text === 'string' && typeof document.getText === 'function' && document.getText() !== mutationSourceSnapshot.text) {
+      return true;
+    }
+
+    return false;
   }
 
   handleEditorSelectionChanged(event) {

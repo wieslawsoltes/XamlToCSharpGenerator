@@ -869,6 +869,7 @@ class AvaloniaPreviewController {
     this.isXamlDocument = options.isXamlDocument;
     this.workspaceRoot = options.workspaceRoot;
     this.sessions = new Map();
+    this.sessionDocumentUris = new Map();
     this.projectInfoCache = new Map();
     this.projectReferenceCache = new Map();
     this.designController = null;
@@ -903,17 +904,19 @@ class AvaloniaPreviewController {
     }));
     context.subscriptions.push({
       dispose: () => {
-        for (const session of this.sessions.values()) {
+        for (const session of new Set(this.sessions.values())) {
           void session.dispose();
         }
         this.sessions.clear();
+        this.sessionDocumentUris.clear();
       }
     });
   }
 
   async dispose() {
-    const sessions = Array.from(this.sessions.values());
+    const sessions = Array.from(new Set(this.sessions.values()));
     this.sessions.clear();
+    this.sessionDocumentUris.clear();
     for (const session of sessions) {
       await session.dispose();
     }
@@ -944,7 +947,7 @@ class AvaloniaPreviewController {
         const launchInfo = await this.resolveLaunchInfo(document, progress);
         progress.report({ message: 'Starting preview host...' });
         const createdSession = new AvaloniaPreviewSession(this, document, launchInfo);
-        this.sessions.set(document.uri.toString(), createdSession);
+        this.registerSessionDocumentUris(createdSession, [document.uri.toString()]);
         try {
           await createdSession.start();
           return;
@@ -957,9 +960,9 @@ class AvaloniaPreviewController {
   }
 
   removeSession(documentUri) {
-    const existing = this.sessions.get(documentUri);
-    this.sessions.delete(documentUri);
+    const existing = this.getSession(documentUri);
     if (existing) {
+      this.unregisterSession(existing);
       this.notifySessionEvent(existing, 'disposed', {});
     }
   }
@@ -997,6 +1000,25 @@ class AvaloniaPreviewController {
     return this.sessions.get(typeof documentUri === 'string' ? documentUri : documentUri.toString()) || null;
   }
 
+  syncSessionDocuments(session, documents) {
+    if (!session) {
+      return;
+    }
+
+    const documentUris = [session.documentUri];
+    if (Array.isArray(documents)) {
+      for (const document of documents) {
+        if (!document || typeof document.sourcePath !== 'string' || document.sourcePath.trim().length === 0) {
+          continue;
+        }
+
+        documentUris.push(vscode.Uri.file(document.sourcePath).toString());
+      }
+    }
+
+    this.registerSessionDocumentUris(session, documentUris);
+  }
+
   getActiveSession() {
     for (const session of this.sessions.values()) {
       if (session && session.panel && session.panel.active) {
@@ -1013,6 +1035,47 @@ class AvaloniaPreviewController {
     }
 
     return null;
+  }
+
+  registerSessionDocumentUris(session, documentUris) {
+    if (!session) {
+      return;
+    }
+
+    this.unregisterSession(session);
+
+    const normalizedUris = [];
+    const seen = new Set();
+    for (const candidate of Array.isArray(documentUris) ? documentUris : []) {
+      if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+        continue;
+      }
+
+      if (seen.has(candidate)) {
+        continue;
+      }
+
+      seen.add(candidate);
+      normalizedUris.push(candidate);
+      this.sessions.set(candidate, session);
+    }
+
+    this.sessionDocumentUris.set(session, normalizedUris);
+  }
+
+  unregisterSession(session) {
+    const documentUris = this.sessionDocumentUris.get(session);
+    if (!Array.isArray(documentUris)) {
+      return;
+    }
+
+    for (const documentUri of documentUris) {
+      if (this.sessions.get(documentUri) === session) {
+        this.sessions.delete(documentUri);
+      }
+    }
+
+    this.sessionDocumentUris.delete(session);
   }
 
   async resolveLaunchInfo(document, progress) {
