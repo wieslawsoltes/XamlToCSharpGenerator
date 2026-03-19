@@ -236,6 +236,7 @@ class AvaloniaPreviewSession {
     this.pendingUpdateText = null;
     this.updateTimer = null;
     this.updateChain = Promise.resolve();
+    this.updateInFlight = false;
     this.disposed = false;
     this.startPromise = null;
     this.activeCompilerMode = null;
@@ -320,6 +321,12 @@ class AvaloniaPreviewSession {
     if (updateResult === false) {
       throw new Error('Preview update failed; retry the inspector action after the preview is in sync.');
     }
+  }
+
+  hasPendingPreviewUpdate() {
+    return this.updateInFlight ||
+      this.updateTimer !== null ||
+      hasPendingPreviewText(this.pendingUpdateText);
   }
 
   scheduleLiveUpdate(document) {
@@ -579,10 +586,16 @@ class AvaloniaPreviewSession {
           throw new Error('Preview host is not available.');
         }
 
-        await this.helper.sendCommand('update', { xamlText: updateText });
-        return true;
+        this.updateInFlight = true;
+        try {
+          await this.helper.sendCommand('update', { xamlText: updateText });
+          return true;
+        } finally {
+          this.updateInFlight = false;
+        }
       })
       .catch(error => {
+        this.updateInFlight = false;
         const message = error instanceof Error ? error.message : String(error);
         this.setStatus(`Preview update failed: ${message}`);
         void vscode.window.showWarningMessage(`AXSG preview update failed for ${this.fileName}: ${message}`);
@@ -1674,7 +1687,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
 
     .shell {
       display: grid;
-      grid-template-rows: var(--axsg-toolbar-height) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 100vh;
       height: 100vh;
     }
 
@@ -1685,7 +1699,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       align-items: center;
       gap: 16px;
       min-height: var(--axsg-toolbar-height);
-      padding: 0 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--vscode-panel-border);
       background: color-mix(in srgb, var(--vscode-editorWidget-background) 94%, transparent);
       backdrop-filter: blur(18px);
@@ -1875,13 +1889,15 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       min-width: 100%;
       min-height: 100%;
       display: grid;
-      place-items: center;
+      justify-items: center;
+      align-content: start;
       box-sizing: border-box;
     }
 
     .preview-host {
       width: fit-content;
       height: fit-content;
+      max-width: 100%;
     }
 
     .preview-surface {
@@ -1999,7 +2015,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     @media (max-width: 1040px) {
       .toolbar {
         grid-template-columns: 1fr;
-        padding: 8px 12px;
+        padding: 10px 12px;
         min-height: auto;
       }
 
@@ -2393,6 +2409,16 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         });
         pendingHoverPoint = null;
       });
+    }
+
+    function cancelPendingHoverDispatch() {
+      pendingHoverPoint = null;
+      if (!pendingHoverDispatch) {
+        return;
+      }
+
+      window.cancelAnimationFrame(pendingHoverDispatch);
+      pendingHoverDispatch = 0;
     }
 
     function logTransport(message) {
@@ -2859,7 +2885,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       updateDesignStatusBadge();
 
       workspaceModeSelect.disabled = !available;
-      hitTestModeSelect.disabled = !available;
+      hitTestModeSelect.disabled = !available || interactive;
       workspaceModeSelect.value = available && currentDesignState.workspaceMode
         ? currentDesignState.workspaceMode
         : 'Interactive';
@@ -2949,6 +2975,9 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       currentDesignState = nextDesignState && typeof nextDesignState === 'object'
         ? nextDesignState
         : null;
+      if (!currentDesignState || !currentDesignState.available || isInteractiveWorkspaceMode()) {
+        cancelPendingHoverDispatch();
+      }
       if (!currentDesignState || !currentDesignState.available) {
         clearToolboxDragState(false);
       }
@@ -3088,6 +3117,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         return;
       }
 
+      updateDesignState(Object.assign({}, currentDesignState || {}, {
+        available: true,
+        workspaceMode: workspaceModeSelect.value
+      }));
       vscodeApi.postMessage({
         type: 'designSetWorkspaceMode',
         mode: workspaceModeSelect.value
@@ -3098,6 +3131,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         return;
       }
 
+      updateDesignState(Object.assign({}, currentDesignState || {}, {
+        available: true,
+        hitTestMode: hitTestModeSelect.value
+      }));
       vscodeApi.postMessage({
         type: 'designSetHitTestMode',
         mode: hitTestModeSelect.value
