@@ -1000,25 +1000,6 @@ class AvaloniaPreviewController {
     return this.sessions.get(typeof documentUri === 'string' ? documentUri : documentUri.toString()) || null;
   }
 
-  syncSessionDocuments(session, documents) {
-    if (!session) {
-      return;
-    }
-
-    const documentUris = [session.documentUri];
-    if (Array.isArray(documents)) {
-      for (const document of documents) {
-        if (!document || typeof document.sourcePath !== 'string' || document.sourcePath.trim().length === 0) {
-          continue;
-        }
-
-        documentUris.push(vscode.Uri.file(document.sourcePath).toString());
-      }
-    }
-
-    this.registerSessionDocumentUris(session, documentUris);
-  }
-
   getActiveSession() {
     for (const session of this.sessions.values()) {
       if (session && session.panel && session.panel.active) {

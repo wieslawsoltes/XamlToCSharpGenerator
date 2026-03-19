@@ -332,9 +332,6 @@ class DesignSessionController {
       if (this.workspace) {
         this.lastUnavailableKind = null;
         this.lastUnavailableMessage = null;
-        if (this.previewController && typeof this.previewController.syncSessionDocuments === 'function') {
-          this.previewController.syncSessionDocuments(session, this.workspace.documents);
-        }
       }
       await this.ensureSessionPreferencesAsync(session);
       this.refreshProviders();

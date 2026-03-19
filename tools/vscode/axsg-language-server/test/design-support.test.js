@@ -327,6 +327,63 @@ test('ensureSessionPreferencesAsync retries saved document selection when docume
   ]);
 });
 
+test('refreshFromSession does not remap workspace documents onto the preview session', async () => {
+  const vscodeMock = createVscodeMock();
+  const { DesignSessionController } = loadDesignSupport(vscodeMock);
+  let syncCalls = 0;
+  const controller = new DesignSessionController({
+    context: {
+      workspaceState: {
+        get: () => null,
+        update: async () => {}
+      }
+    },
+    previewController: {
+      setDesignController() {},
+      getActiveSession() {
+        return null;
+      },
+      getSession() {
+        return null;
+      },
+      syncSessionDocuments() {
+        syncCalls++;
+      }
+    },
+    getOutputChannel: () => ({
+      appendLine() {}
+    }),
+    isXamlDocument: () => true
+  });
+  const session = { setDesignState() {} };
+
+  controller.loadSessionStateAsync = async () => {
+    controller.workspace = {
+      mode: 'Design',
+      hitTestMode: 'Logical',
+      activeBuildUri: 'avares://tests/MainView.axaml',
+      documents: [
+        {
+          buildUri: 'avares://tests/MainView.axaml',
+          sourcePath: '/tmp/MainView.axaml'
+        },
+        {
+          buildUri: 'avares://tests/Secondary.axaml',
+          sourcePath: '/tmp/Secondary.axaml'
+        }
+      ]
+    };
+  };
+  controller.ensureSessionPreferencesAsync = async () => {};
+  controller.refreshProviders = () => {};
+  controller.publishPreviewDesignState = () => {};
+  controller.revealCurrentSelectionAsync = async () => {};
+
+  await controller.refreshFromSession(session, 'test');
+
+  assert.equal(syncCalls, 0);
+});
+
 test('insertToolboxItemAtPoint aborts insertion when hit testing misses a parent', async () => {
   const { controller } = createController();
   let insertCalls = 0;

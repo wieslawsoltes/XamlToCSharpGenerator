@@ -112,7 +112,7 @@ test('getActiveSession prefers the active preview panel over a stale text editor
   assert.equal(controller.getActiveSession(), activePreviewSession);
 });
 
-test('syncSessionDocuments maps secondary workspace documents to the existing preview session', () => {
+test('preview sessions stay scoped to their launch document', () => {
   const vscodeMock = createVscodeMock();
   const controller = createController(vscodeMock);
   const session = {
@@ -121,14 +121,10 @@ test('syncSessionDocuments maps secondary workspace documents to the existing pr
   };
 
   controller.registerSessionDocumentUris(session, [session.documentUri]);
-  controller.syncSessionDocuments(session, [
-    { sourcePath: '/tmp/Secondary.axaml' },
-    { sourcePath: '/tmp/Tertiary.axaml' }
-  ]);
 
   assert.equal(controller.getSession('file:///root.axaml'), session);
-  assert.equal(controller.getSession('file:///tmp/Secondary.axaml'), session);
-  assert.equal(controller.getSession('file:///tmp/Tertiary.axaml'), session);
+  assert.equal(controller.getSession('file:///tmp/Secondary.axaml'), null);
+  assert.equal(controller.getSession('file:///tmp/Tertiary.axaml'), null);
 
   controller.removeSession('file:///root.axaml');
 
