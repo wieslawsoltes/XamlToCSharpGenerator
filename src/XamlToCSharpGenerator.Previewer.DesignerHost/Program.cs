@@ -96,6 +96,16 @@ internal static class Program
             }
         }
 
+        string? hostAssemblyPath = null;
+        if (forwardedArguments.Count > 0)
+        {
+            string candidate = forwardedArguments[^1];
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                hostAssemblyPath = Path.GetFullPath(candidate);
+            }
+        }
+
         return (
             new PreviewHostOptions(
                 compilerMode,
@@ -105,7 +115,8 @@ internal static class Program
                 sourceFilePath,
                 xamlFileProjectPath,
                 designHost,
-                designPort),
+                designPort,
+                hostAssemblyPath),
             forwardedArguments.ToArray());
     }
 

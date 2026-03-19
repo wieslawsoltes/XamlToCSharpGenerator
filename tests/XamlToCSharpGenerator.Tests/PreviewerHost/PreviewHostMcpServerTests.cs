@@ -664,7 +664,7 @@ public sealed class PreviewHostMcpServerTests
 
         public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-        public event Action<int?>? HostExited;
+        public event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
         public string? LastHotReloadXaml { get; private set; }
 
@@ -732,9 +732,9 @@ public sealed class PreviewHostMcpServerTests
             UpdateCompleted?.Invoke(result);
         }
 
-        public void RaiseHostExited(int? exitCode)
+        public void RaiseHostExited(int? exitCode, string? error = null)
         {
-            HostExited?.Invoke(exitCode);
+            HostExited?.Invoke(new AxsgPreviewHostHostExitedEventPayload(exitCode, error));
         }
 
         private static JsonElement CreateDesignPayload(string operation)

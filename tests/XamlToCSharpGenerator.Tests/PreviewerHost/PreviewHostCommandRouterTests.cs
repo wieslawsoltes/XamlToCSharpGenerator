@@ -64,7 +64,7 @@ public sealed class PreviewHostCommandRouterTests
         sessions[0].RaiseLog("ready");
         sessions[0].RaisePreviewStarted("http://127.0.0.1:7000");
         sessions[0].RaiseUpdateCompleted(new AxsgPreviewHostUpdateResultEventPayload(true, null, null));
-        sessions[0].RaiseHostExited(5);
+        sessions[0].RaiseHostExited(5, "System.TypeLoadException: Could not load type 'Example.MissingType'.");
 
         var secondStart = await router.HandleCommandAsync(
             new AxsgPreviewHostCommandEnvelope(
@@ -85,6 +85,9 @@ public sealed class PreviewHostCommandRouterTests
             item => Assert.Equal(AxsgPreviewHostProtocol.PreviewStartedEvent, item.Event),
             item => Assert.Equal(AxsgPreviewHostProtocol.UpdateResultEvent, item.Event),
             item => Assert.Equal(AxsgPreviewHostProtocol.HostExitedEvent, item.Event));
+        Assert.Equal(
+            "System.TypeLoadException: Could not load type 'Example.MissingType'.",
+            events[^1].Payload?["error"]?.GetValue<string>());
     }
 
     [Fact]
@@ -213,7 +216,7 @@ public sealed class PreviewHostCommandRouterTests
 
         public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-        public event Action<int?>? HostExited;
+        public event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
         public int DisposeCount { get; private set; }
 
@@ -301,9 +304,9 @@ public sealed class PreviewHostCommandRouterTests
             UpdateCompleted?.Invoke(result);
         }
 
-        public void RaiseHostExited(int? exitCode)
+        public void RaiseHostExited(int? exitCode, string? error = null)
         {
-            HostExited?.Invoke(exitCode);
+            HostExited?.Invoke(new AxsgPreviewHostHostExitedEventPayload(exitCode, error));
         }
     }
 }

@@ -11,7 +11,7 @@ internal interface IPreviewHostSession : IAsyncDisposable
 
     event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-    event Action<int?>? HostExited;
+    event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
     Task<AxsgPreviewHostStartResponse> StartAsync(AxsgPreviewHostStartRequest request, CancellationToken cancellationToken);
 
@@ -207,11 +207,11 @@ internal sealed class PreviewHostCommandRouter : IAsyncDisposable
                 result));
     }
 
-    private void HandleHostExited(int? exitCode)
+    private void HandleHostExited(AxsgPreviewHostHostExitedEventPayload payload)
     {
         EventPublished?.Invoke(
             AxsgPreviewHostProtocol.CreateEvent(
                 AxsgPreviewHostProtocol.HostExitedEvent,
-                new AxsgPreviewHostHostExitedEventPayload(exitCode)));
+                payload));
     }
 }

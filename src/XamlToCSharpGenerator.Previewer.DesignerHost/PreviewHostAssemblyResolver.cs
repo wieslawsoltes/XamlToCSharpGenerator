@@ -15,7 +15,7 @@ internal static class PreviewHostAssemblyResolution
 
         lock (Sync)
         {
-            _resolver = new PreviewHostAssemblyResolver(options.SourceAssemblyPath);
+            _resolver = new PreviewHostAssemblyResolver(options.SourceAssemblyPath, options.HostAssemblyPath);
             EnsureInstalledNoLock();
         }
     }
@@ -66,31 +66,19 @@ internal static class PreviewHostAssemblyResolution
 
 internal sealed class PreviewHostAssemblyResolver
 {
-    private readonly AssemblyDependencyResolver? _dependencyResolver;
-    private readonly string? _sourceAssemblyDirectory;
+    private readonly AssemblyDependencyResolver[] _dependencyResolvers;
+    private readonly string[] _assemblyDirectories;
 
-    public PreviewHostAssemblyResolver(string? sourceAssemblyPath)
+    public PreviewHostAssemblyResolver(string? sourceAssemblyPath, string? hostAssemblyPath)
     {
-        if (string.IsNullOrWhiteSpace(sourceAssemblyPath))
-        {
-            return;
-        }
+        List<AssemblyDependencyResolver> dependencyResolvers = [];
+        HashSet<string> directories = new(StringComparer.Ordinal);
 
-        string normalizedPath = Path.GetFullPath(sourceAssemblyPath);
-        if (!File.Exists(normalizedPath))
-        {
-            return;
-        }
+        AddAssemblyLocation(sourceAssemblyPath, dependencyResolvers, directories);
+        AddAssemblyLocation(hostAssemblyPath, dependencyResolvers, directories);
 
-        _sourceAssemblyDirectory = Path.GetDirectoryName(normalizedPath);
-        try
-        {
-            _dependencyResolver = new AssemblyDependencyResolver(normalizedPath);
-        }
-        catch
-        {
-            _dependencyResolver = null;
-        }
+        _dependencyResolvers = [.. dependencyResolvers];
+        _assemblyDirectories = [.. directories];
     }
 
     public Assembly? Resolve(AssemblyLoadContext context, AssemblyName assemblyName)
@@ -129,30 +117,71 @@ internal sealed class PreviewHostAssemblyResolver
     {
         ArgumentNullException.ThrowIfNull(assemblyName);
 
-        string? fromDependencyResolver = _dependencyResolver?.ResolveAssemblyToPath(assemblyName);
-        if (!string.IsNullOrWhiteSpace(fromDependencyResolver) &&
-            File.Exists(fromDependencyResolver))
+        for (var index = 0; index < _dependencyResolvers.Length; index += 1)
         {
-            return Path.GetFullPath(fromDependencyResolver);
+            string? fromDependencyResolver = _dependencyResolvers[index].ResolveAssemblyToPath(assemblyName);
+            if (!string.IsNullOrWhiteSpace(fromDependencyResolver) &&
+                File.Exists(fromDependencyResolver))
+            {
+                return Path.GetFullPath(fromDependencyResolver);
+            }
         }
 
         string? assemblySimpleName = assemblyName.Name;
-        if (string.IsNullOrWhiteSpace(_sourceAssemblyDirectory) ||
-            string.IsNullOrWhiteSpace(assemblySimpleName))
+        if (string.IsNullOrWhiteSpace(assemblySimpleName))
         {
             return null;
         }
 
-        string dllCandidate = Path.Combine(_sourceAssemblyDirectory, assemblySimpleName + ".dll");
-        if (File.Exists(dllCandidate))
+        for (var index = 0; index < _assemblyDirectories.Length; index += 1)
         {
-            return dllCandidate;
+            string assemblyDirectory = _assemblyDirectories[index];
+            string dllCandidate = Path.Combine(assemblyDirectory, assemblySimpleName + ".dll");
+            if (File.Exists(dllCandidate))
+            {
+                return dllCandidate;
+            }
+
+            string exeCandidate = Path.Combine(assemblyDirectory, assemblySimpleName + ".exe");
+            if (File.Exists(exeCandidate))
+            {
+                return exeCandidate;
+            }
         }
 
-        string exeCandidate = Path.Combine(_sourceAssemblyDirectory, assemblySimpleName + ".exe");
-        return File.Exists(exeCandidate)
-            ? exeCandidate
-            : null;
+        return null;
+    }
+
+    private static void AddAssemblyLocation(
+        string? assemblyPath,
+        List<AssemblyDependencyResolver> dependencyResolvers,
+        HashSet<string> directories)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyPath))
+        {
+            return;
+        }
+
+        string normalizedPath = Path.GetFullPath(assemblyPath);
+        if (!File.Exists(normalizedPath))
+        {
+            return;
+        }
+
+        string? assemblyDirectory = Path.GetDirectoryName(normalizedPath);
+        if (!string.IsNullOrWhiteSpace(assemblyDirectory))
+        {
+            directories.Add(assemblyDirectory);
+        }
+
+        try
+        {
+            dependencyResolvers.Add(new AssemblyDependencyResolver(normalizedPath));
+        }
+        catch
+        {
+            // Best effort only; plain directory probing still applies.
+        }
     }
 
     private static bool TryGetLoadedAssembly(string assemblySimpleName, out Assembly? assembly)

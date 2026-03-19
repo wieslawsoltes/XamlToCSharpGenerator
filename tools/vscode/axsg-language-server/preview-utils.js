@@ -598,6 +598,7 @@ function createPreviewBuildPlan(options) {
   const sourceOutputMissing = !sourceTargetPath || !fs.existsSync(sourceTargetPath);
   const hostOutputMissing = !hostTargetPath || !fs.existsSync(hostTargetPath);
   const documentChangedSinceBuild = isInputNewerThanOutput(options.documentFilePath, sourceTargetPath);
+  const sourceBuildRequired = sourceOutputMissing || documentChangedSinceBuild;
 
   if (previewMode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
     if (buildReason === 'save') {
@@ -624,7 +625,7 @@ function createPreviewBuildPlan(options) {
       };
     }
 
-    const buildSource = sourceOutputMissing || documentChangedSinceBuild || requiresSourceGeneratedCapabilityRefresh;
+    const buildSource = sourceBuildRequired || requiresSourceGeneratedCapabilityRefresh;
     const buildHost = hostOutputMissing || (sameProject && buildSource);
     return {
       buildHost,
@@ -635,16 +636,16 @@ function createPreviewBuildPlan(options) {
 
   if (sameProject) {
     return {
-      buildHost: hostOutputMissing,
+      buildHost: hostOutputMissing || sourceBuildRequired,
       buildSource: false,
       hostBuildIncludesSource: true
     };
   }
 
-  const buildHost = hostOutputMissing;
+  const buildHost = hostOutputMissing || (hostBuildIncludesSource && sourceBuildRequired);
   return {
     buildHost,
-    buildSource: sourceOutputMissing && !(buildHost && hostBuildIncludesSource),
+    buildSource: sourceBuildRequired && !(buildHost && hostBuildIncludesSource),
     hostBuildIncludesSource
   };
 }
@@ -659,6 +660,23 @@ function replaceFileExtension(filePath, nextExtension) {
   return path.join(parsedPath.dir, parsedPath.name + nextExtension);
 }
 
+function resolvePreviewHostRuntimePaths(previewerToolPath, hostAssemblyPath, useHostAssemblyRuntime = false) {
+  const runtimeBasePath = normalizeMaybeEmptyPath(useHostAssemblyRuntime
+    ? hostAssemblyPath
+    : previewerToolPath);
+  if (!runtimeBasePath) {
+    return {
+      runtimeConfigPath: '',
+      depsFilePath: ''
+    };
+  }
+
+  return {
+    runtimeConfigPath: replaceFileExtension(runtimeBasePath, '.runtimeconfig.json'),
+    depsFilePath: replaceFileExtension(runtimeBasePath, '.deps.json')
+  };
+}
+
 module.exports = {
   createCommandFailureMessage,
   buildArguments,
@@ -666,6 +684,7 @@ module.exports = {
   enumeratePreviewAssemblyArtifacts,
   resolveAvaloniaPreviewerToolPaths,
   resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
   getPreviewViewportMetricsKey,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,

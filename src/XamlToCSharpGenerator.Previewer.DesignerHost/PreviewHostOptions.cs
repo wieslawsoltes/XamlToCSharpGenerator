@@ -14,4 +14,5 @@ internal sealed record PreviewHostOptions(
     string? SourceFilePath,
     string? XamlFileProjectPath,
     string? DesignHost,
-    int? DesignPort);
+    int? DesignPort,
+    string? HostAssemblyPath);

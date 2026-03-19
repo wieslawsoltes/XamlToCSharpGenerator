@@ -15,6 +15,7 @@ const {
   getPreviewViewportMetricsKey,
   resolveAvaloniaPreviewerToolPaths,
   resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
   isExecutableProjectInfo,
   isInputNewerThanOutput,
   isPreviewableProjectInfo,
@@ -527,6 +528,30 @@ test('resolvePreviewDesignAssemblyPath keeps the source output when the host doe
     path.normalize('/repo/samples/ControlCatalog/bin/Debug/net10.0/ControlCatalog.dll'));
 });
 
+test('resolvePreviewHostRuntimePaths uses the previewer tool sidecars by default', () => {
+  assert.deepEqual(
+    resolvePreviewHostRuntimePaths(
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/app/App.dll',
+      false),
+    {
+      runtimeConfigPath: path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.runtimeconfig.json'),
+      depsFilePath: path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.deps.json')
+    });
+});
+
+test('resolvePreviewHostRuntimePaths switches to the host assembly sidecars for project-host fallback', () => {
+  assert.deepEqual(
+    resolvePreviewHostRuntimePaths(
+      '/tmp/project/Avalonia.Designer.HostApp.dll',
+      '/tmp/app/App.dll',
+      true),
+    {
+      runtimeConfigPath: path.normalize('/tmp/app/App.runtimeconfig.json'),
+      depsFilePath: path.normalize('/tmp/app/App.deps.json')
+    });
+});
+
 test('enumeratePreviewAssemblyArtifacts includes deps and pdb sidecars for aligned previews', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-artifacts-'));
   try {
@@ -644,6 +669,38 @@ test('createPreviewBuildPlan skips launch builds when Avalonia preview outputs a
 
     assert.deepEqual(actual, {
       buildHost: false,
+      buildSource: false,
+      hostBuildIncludesSource: true
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('createPreviewBuildPlan rebuilds the host for Avalonia launch when a referenced library document is newer than the assembly', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-utils-'));
+  try {
+    const documentPath = path.join(tempRoot, 'View.axaml');
+    const sourceTargetPath = path.join(tempRoot, 'Library.dll');
+    const hostTargetPath = path.join(tempRoot, 'App.dll');
+    fs.writeFileSync(sourceTargetPath, '', 'utf8');
+    fs.writeFileSync(hostTargetPath, '', 'utf8');
+    await new Promise(resolve => setTimeout(resolve, 15));
+    fs.writeFileSync(documentPath, '', 'utf8');
+
+    const actual = createPreviewBuildPlan({
+      buildReason: 'launch',
+      previewMode: PREVIEW_COMPILER_MODE_AVALONIA,
+      documentFilePath: documentPath,
+      sourceProjectPath: path.join(tempRoot, 'Library.csproj'),
+      sourceTargetPath,
+      hostProjectPath: path.join(tempRoot, 'App.csproj'),
+      hostTargetPath,
+      hostBuildIncludesSource: true
+    });
+
+    assert.deepEqual(actual, {
+      buildHost: true,
       buildSource: false,
       hostBuildIncludesSource: true
     });

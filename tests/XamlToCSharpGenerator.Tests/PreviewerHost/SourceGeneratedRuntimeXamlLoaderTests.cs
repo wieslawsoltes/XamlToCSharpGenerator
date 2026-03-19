@@ -27,7 +27,8 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
                 "/tmp/Preview.axaml",
                 "/Pages/Preview.axaml",
                 null,
-                null));
+                null,
+                typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location));
             var document = new RuntimeXamlLoaderDocument("<UserControl />");
             var configuration = new RuntimeXamlLoaderConfiguration();
 
@@ -321,6 +322,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
                 Path.Combine(tempRoot, "View.axaml"),
                 "/Views/View.axaml",
                 null,
+                null,
                 null));
             PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
 
@@ -349,6 +351,71 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         finally
         {
             PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PreviewHostAssemblyResolver_Resolves_Dependencies_From_Host_Output_Directory()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var sourceDirectory = Path.Combine(tempRoot, "source");
+            var hostDirectory = Path.Combine(tempRoot, "host");
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(hostDirectory);
+
+            var sourceAssemblyPath = Path.Combine(sourceDirectory, "PreviewSource.dll");
+            var hostAssemblyPath = Path.Combine(hostDirectory, "PreviewHost.dll");
+            var dependencyAssemblyName = "Avalonia.Controls.ColorPicker";
+            var dependencyAssemblyPath = Path.Combine(hostDirectory, dependencyAssemblyName + ".dll");
+
+            EmitAssemblyToFile(
+                "PreviewSource",
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+            EmitAssemblyToFile(
+                "PreviewHost",
+                """
+                namespace PreviewHost;
+
+                public sealed class HostShell
+                {
+                }
+                """,
+                hostAssemblyPath);
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                namespace Avalonia.Controls.ColorPicker;
+
+                public sealed class ColorPickerHost
+                {
+                }
+                """,
+                dependencyAssemblyPath);
+
+            var resolver = new PreviewHostAssemblyResolver(sourceAssemblyPath, hostAssemblyPath);
+
+            string? resolvedPath = resolver.ResolveAssemblyPath(new AssemblyName(dependencyAssemblyName));
+
+            Assert.NotNull(resolvedPath);
+            Assert.Equal(dependencyAssemblyName + ".dll", Path.GetFileName(resolvedPath));
+            Assert.Contains(
+                $"{Path.DirectorySeparatorChar}host{Path.DirectorySeparatorChar}",
+                resolvedPath,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
             Directory.Delete(tempRoot, recursive: true);
         }
     }
@@ -717,6 +784,7 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
             var assembly = loadedAssemblies[index];
             if (assembly.IsDynamic ||
                 string.IsNullOrWhiteSpace(assembly.Location) ||
+                !File.Exists(assembly.Location) ||
                 !seenPaths.Add(assembly.Location))
             {
                 continue;

@@ -34,6 +34,7 @@ const {
   resolveConfiguredProjectPath,
   resolveAvaloniaPreviewerToolPaths,
   resolvePreviewDesignAssemblyPath,
+  resolvePreviewHostRuntimePaths,
   resolveEffectivePreviewMode,
   resolvePreviewBuildMode,
   resolveLoopbackPreviewWebviewTarget,
@@ -546,6 +547,8 @@ class AvaloniaPreviewSession {
       dotNetCommand,
       hostAssemblyPath: this.launchInfo.hostProject.targetPath,
       previewerToolPath: attempt.previewerToolPath,
+      runtimeConfigPath: attempt.runtimeConfigPath,
+      depsFilePath: attempt.depsFilePath,
       sourceAssemblyPath: this.launchInfo.previewSourceAssemblyPath || this.launchInfo.sourceProject.targetPath,
       sourceFilePath: this.launchInfo.projectContext.filePath || '',
       xamlFileProjectPath: normalizePreviewTargetPath(this.launchInfo.projectContext.targetPath),
@@ -630,7 +633,7 @@ class AvaloniaPreviewSession {
     }
 
     if (eventName === 'hostExited') {
-      const exitText = `Preview host exited (${payload.exitCode ?? 'null'}).`;
+      const exitText = buildPreviewHostExitStatus(payload);
       const helper = this.helper;
       if (!helper) {
         this.currentPreviewUrl = '';
@@ -3317,10 +3320,13 @@ function buildStartAttempts(extensionPath, launchInfo) {
 
   for (const mode of startPlan.modes) {
     if (mode === PREVIEW_COMPILER_MODE_SOURCE_GENERATED) {
+      const runtimePaths = resolvePreviewHostRuntimePaths(designerHostPath, launchInfo.hostProject.targetPath, false);
       attempts.push({
         label: 'AXSG source-generated',
         mode,
-        previewerToolPath: designerHostPath
+        previewerToolPath: designerHostPath,
+        runtimeConfigPath: runtimePaths.runtimeConfigPath,
+        depsFilePath: runtimePaths.depsFilePath
       });
       continue;
     }
@@ -3332,12 +3338,20 @@ function buildStartAttempts(extensionPath, launchInfo) {
         launchInfo.hostProject.previewerToolPath);
 
       for (let index = 0; index < previewerToolPaths.length; index += 1) {
+        const previewerToolPath = previewerToolPaths[index];
+        const useHostAssemblyRuntime = samePath(previewerToolPath, launchInfo.hostProject.previewerToolPath);
+        const runtimePaths = resolvePreviewHostRuntimePaths(
+          previewerToolPath,
+          launchInfo.hostProject.targetPath,
+          useHostAssemblyRuntime);
         attempts.push({
           label: index === 0
             ? 'Avalonia XamlX'
             : 'Avalonia XamlX (project host fallback)',
           mode,
-          previewerToolPath: previewerToolPaths[index]
+          previewerToolPath,
+          runtimeConfigPath: runtimePaths.runtimeConfigPath,
+          depsFilePath: runtimePaths.depsFilePath
         });
       }
     }
@@ -3405,6 +3419,20 @@ function getPreviewReadyStatus(fileName, compilerMode) {
   }
 
   return `Preview ready for ${fileName}.`;
+}
+
+function buildPreviewHostExitStatus(payload) {
+  const exitCode = payload && Object.prototype.hasOwnProperty.call(payload, 'exitCode')
+    ? payload.exitCode
+    : null;
+  const error = payload && typeof payload.error === 'string'
+    ? payload.error.trim()
+    : '';
+  if (error) {
+    return `Preview host crashed (${exitCode ?? 'null'}): ${error}`;
+  }
+
+  return `Preview host exited (${exitCode ?? 'null'}).`;
 }
 
 function escapeHtml(text) {

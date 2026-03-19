@@ -122,4 +122,4 @@ public sealed record AxsgPreviewHostHotReloadResponse(
 /// <summary>
 /// Represents the event payload raised when the preview host process exits.
 /// </summary>
-public sealed record AxsgPreviewHostHostExitedEventPayload(int? ExitCode);
+public sealed record AxsgPreviewHostHostExitedEventPayload(int? ExitCode, string? Error);

@@ -28,6 +28,8 @@ internal sealed class PreviewSession : IPreviewHostSession
     private readonly TimeSpan _startupTimeout = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _disposeSource = new();
     private readonly PreviewUpdateResultTracker _pendingUpdateResults = new();
+    private readonly object _diagnosticsSync = new();
+    private readonly List<string> _recentHostErrorLines = new();
 
     private TcpListener? _listener;
     private Process? _hostProcess;
@@ -41,6 +43,7 @@ internal sealed class PreviewSession : IPreviewHostSession
     private double? _previewHeight;
     private double? _previewScale;
     private bool _sessionStarted;
+    private string? _latestHostErrorSummary;
 
     public event Action<string>? Log;
 
@@ -48,7 +51,7 @@ internal sealed class PreviewSession : IPreviewHostSession
 
     public event Action<AxsgPreviewHostUpdateResultEventPayload>? UpdateCompleted;
 
-    public event Action<int?>? HostExited;
+    public event Action<AxsgPreviewHostHostExitedEventPayload>? HostExited;
 
     public async Task<AxsgPreviewHostStartResponse> StartAsync(
         AxsgPreviewHostStartRequest request,
@@ -69,6 +72,7 @@ internal sealed class PreviewSession : IPreviewHostSession
             _previewWidth = request.PreviewWidth;
             _previewHeight = request.PreviewHeight;
             _previewScale = request.PreviewScale;
+            ResetHostDiagnostics();
 
             Exception? lastException = null;
 
@@ -387,51 +391,16 @@ internal sealed class PreviewSession : IPreviewHostSession
             EnableRaisingEvents = true
         };
 
-        process.StartInfo.ArgumentList.Add("exec");
-        process.StartInfo.ArgumentList.Add("--runtimeconfig");
-        process.StartInfo.ArgumentList.Add(request.RuntimeConfigPath);
-        process.StartInfo.ArgumentList.Add("--depsfile");
-        process.StartInfo.ArgumentList.Add(request.DepsFilePath);
-        process.StartInfo.ArgumentList.Add(request.PreviewerToolPath);
-        process.StartInfo.ArgumentList.Add("--transport");
-        process.StartInfo.ArgumentList.Add(transportUrl);
-        process.StartInfo.ArgumentList.Add("--session-id");
-        process.StartInfo.ArgumentList.Add(sessionId);
-        process.StartInfo.ArgumentList.Add("--method");
-        process.StartInfo.ArgumentList.Add("html");
-        process.StartInfo.ArgumentList.Add("--html-url");
-        process.StartInfo.ArgumentList.Add(previewUrl);
-        process.StartInfo.ArgumentList.Add("--axsg-compiler-mode");
-        process.StartInfo.ArgumentList.Add(request.PreviewCompilerMode);
-        if (request.PreviewWidth is > 0)
+        foreach (string argument in BuildHostProcessArguments(
+                     request,
+                     transportUrl,
+                     sessionId,
+                     previewUrl,
+                     designHost,
+                     designPort))
         {
-            process.StartInfo.ArgumentList.Add("--axsg-preview-width");
-            process.StartInfo.ArgumentList.Add(request.PreviewWidth.Value.ToString(CultureInfo.InvariantCulture));
+            process.StartInfo.ArgumentList.Add(argument);
         }
-
-        if (request.PreviewHeight is > 0)
-        {
-            process.StartInfo.ArgumentList.Add("--axsg-preview-height");
-            process.StartInfo.ArgumentList.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.SourceFilePath))
-        {
-            process.StartInfo.ArgumentList.Add("--axsg-source-file");
-            process.StartInfo.ArgumentList.Add(request.SourceFilePath);
-        }
-
-        process.StartInfo.ArgumentList.Add("--axsg-source-assembly");
-        process.StartInfo.ArgumentList.Add(request.SourceAssemblyPath);
-        process.StartInfo.ArgumentList.Add("--axsg-xaml-project-path");
-        process.StartInfo.ArgumentList.Add(request.XamlFileProjectPath);
-
-        process.StartInfo.ArgumentList.Add("--axsg-design-host");
-        process.StartInfo.ArgumentList.Add(designHost);
-        process.StartInfo.ArgumentList.Add("--axsg-design-port");
-        process.StartInfo.ArgumentList.Add(designPort.ToString(CultureInfo.InvariantCulture));
-
-        process.StartInfo.ArgumentList.Add(request.HostAssemblyPath);
 
         process.OutputDataReceived += (_, args) =>
         {
@@ -450,6 +419,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                     hostDiagnostics.AppendLine(args.Data);
                 }
 
+                CaptureHostErrorDiagnostic(args.Data);
                 Log?.Invoke("[previewer stderr] " + args.Data);
             }
         };
@@ -459,16 +429,16 @@ internal sealed class PreviewSession : IPreviewHostSession
             try
             {
                 int? exitCode = process.HasExited ? process.ExitCode : null;
-                var exception = new InvalidOperationException(
-                    "Avalonia previewer host exited before the session completed." +
-                    (exitCode.HasValue ? " Exit code: " + exitCode.Value + "." : string.Empty));
+                string? errorSummary = GetHostErrorSummary();
+                string exitMessage = BuildHostExitMessage(exitCode, errorSummary);
+                var exception = new InvalidOperationException(exitMessage);
                 clientAccepted.TrySetException(exception);
                 previewUrlAvailable.TrySetException(exception);
                 designerSessionStarted.TrySetException(exception);
-                PublishPendingHotReloadFailure(exception.Message);
+                PublishPendingHotReloadFailure(exitMessage);
                 if (_sessionStarted)
                 {
-                    HostExited?.Invoke(exitCode);
+                    HostExited?.Invoke(new AxsgPreviewHostHostExitedEventPayload(exitCode, errorSummary));
                 }
             }
             catch
@@ -488,6 +458,85 @@ internal sealed class PreviewSession : IPreviewHostSession
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _hostProcess = process;
+    }
+
+    internal static IReadOnlyList<string> BuildHostProcessArguments(
+        AxsgPreviewHostStartRequest request,
+        string transportUrl,
+        string sessionId,
+        string previewUrl,
+        string designHost,
+        int designPort)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrEmpty(transportUrl);
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        ArgumentException.ThrowIfNullOrEmpty(previewUrl);
+        ArgumentException.ThrowIfNullOrEmpty(designHost);
+
+        List<string> arguments =
+        [
+            "exec",
+            "--runtimeconfig",
+            request.RuntimeConfigPath,
+            "--depsfile",
+            request.DepsFilePath,
+            request.PreviewerToolPath,
+            "--transport",
+            transportUrl,
+            "--session-id",
+            sessionId,
+            "--method",
+            "html",
+            "--html-url",
+            previewUrl
+        ];
+
+        if (UsesAxsgPreviewerArguments(request))
+        {
+            arguments.Add("--axsg-compiler-mode");
+            arguments.Add(request.PreviewCompilerMode);
+
+            if (request.PreviewWidth is > 0)
+            {
+                arguments.Add("--axsg-preview-width");
+                arguments.Add(request.PreviewWidth.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (request.PreviewHeight is > 0)
+            {
+                arguments.Add("--axsg-preview-height");
+                arguments.Add(request.PreviewHeight.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.SourceFilePath))
+            {
+                arguments.Add("--axsg-source-file");
+                arguments.Add(request.SourceFilePath);
+            }
+
+            arguments.Add("--axsg-source-assembly");
+            arguments.Add(request.SourceAssemblyPath);
+            arguments.Add("--axsg-xaml-project-path");
+            arguments.Add(request.XamlFileProjectPath);
+            arguments.Add("--axsg-design-host");
+            arguments.Add(designHost);
+            arguments.Add("--axsg-design-port");
+            arguments.Add(designPort.ToString(CultureInfo.InvariantCulture));
+        }
+
+        arguments.Add(request.HostAssemblyPath);
+        return arguments;
+    }
+
+    internal static bool UsesAxsgPreviewerArguments(AxsgPreviewHostStartRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        string expectedRuntimeConfigPath = Path.GetFullPath(Path.ChangeExtension(request.PreviewerToolPath, ".runtimeconfig.json")!);
+        string expectedDepsFilePath = Path.GetFullPath(Path.ChangeExtension(request.PreviewerToolPath, ".deps.json")!);
+        return PathEquals(request.RuntimeConfigPath, expectedRuntimeConfigPath) &&
+               PathEquals(request.DepsFilePath, expectedDepsFilePath);
     }
 
     private async Task RunReadLoopAsync(
@@ -546,6 +595,21 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
         catch (Exception ex)
         {
+            string? errorSummary = GetHostErrorSummary();
+            int? exitCode = _hostProcess is { HasExited: true } hostProcess
+                ? hostProcess.ExitCode
+                : null;
+            if (!string.IsNullOrWhiteSpace(errorSummary) && exitCode.HasValue)
+            {
+                string exitMessage = BuildHostExitMessage(exitCode, errorSummary);
+                Log?.Invoke("[previewer] transport ended after preview host crash: " + errorSummary);
+                var transportException = new InvalidOperationException(exitMessage, ex);
+                previewUrlAvailable.TrySetException(transportException);
+                designerSessionStarted.TrySetException(transportException);
+                PublishPendingHotReloadFailure(exitMessage);
+                return;
+            }
+
             Log?.Invoke("[previewer] transport failed: " + ex.Message);
             previewUrlAvailable.TrySetException(ex);
             designerSessionStarted.TrySetException(ex);
@@ -710,6 +774,80 @@ internal sealed class PreviewSession : IPreviewHostSession
             marker => hostDiagnostics.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static string? SummarizePreviewHostDiagnostics(string diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(diagnostics))
+        {
+            return null;
+        }
+
+        string? fallback = null;
+        using var reader = new StringReader(diagnostics);
+        while (reader.ReadLine() is { } line)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (trimmed.StartsWith("Unhandled exception.", StringComparison.OrdinalIgnoreCase))
+            {
+                string summary = trimmed["Unhandled exception.".Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(summary))
+                {
+                    return summary;
+                }
+
+                continue;
+            }
+
+            if (trimmed.StartsWith("at ", StringComparison.Ordinal) ||
+                trimmed.StartsWith("---", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (trimmed.Contains("Exception", StringComparison.Ordinal))
+            {
+                return trimmed;
+            }
+
+            fallback ??= trimmed;
+        }
+
+        return fallback;
+    }
+
+    internal static string BuildHostExitMessage(int? exitCode, string? errorSummary)
+    {
+        string exitCodeText = exitCode.HasValue
+            ? " (" + exitCode.Value.ToString(CultureInfo.InvariantCulture) + ")"
+            : string.Empty;
+        if (!string.IsNullOrWhiteSpace(errorSummary))
+        {
+            return "Preview host crashed" + exitCodeText + ": " + errorSummary;
+        }
+
+        return "Preview host exited" + exitCodeText + ".";
+    }
+
+    private static bool PathEquals(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            comparison);
+    }
+
     private static TcpListener ReserveTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -744,6 +882,50 @@ internal sealed class PreviewSession : IPreviewHostSession
     private static TaskCompletionSource<T> CreateCompletionSource<T>()
     {
         return new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private void ResetHostDiagnostics()
+    {
+        lock (_diagnosticsSync)
+        {
+            _recentHostErrorLines.Clear();
+            _latestHostErrorSummary = null;
+        }
+    }
+
+    private void CaptureHostErrorDiagnostic(string diagnosticLine)
+    {
+        lock (_diagnosticsSync)
+        {
+            _recentHostErrorLines.Add(diagnosticLine);
+            if (_recentHostErrorLines.Count > 128)
+            {
+                _recentHostErrorLines.RemoveAt(0);
+            }
+
+            string diagnostics = string.Join(Environment.NewLine, _recentHostErrorLines);
+            _latestHostErrorSummary = SummarizePreviewHostDiagnostics(diagnostics);
+        }
+    }
+
+    private string? GetHostErrorSummary()
+    {
+        lock (_diagnosticsSync)
+        {
+            if (!string.IsNullOrWhiteSpace(_latestHostErrorSummary))
+            {
+                return _latestHostErrorSummary;
+            }
+
+            if (_recentHostErrorLines.Count == 0)
+            {
+                return null;
+            }
+
+            _latestHostErrorSummary = SummarizePreviewHostDiagnostics(
+                string.Join(Environment.NewLine, _recentHostErrorLines));
+            return _latestHostErrorSummary;
+        }
     }
 
     private async Task SendUpdateXamlAsync(string xamlText, CancellationToken cancellationToken)
