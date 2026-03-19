@@ -84,17 +84,14 @@ public sealed class PreviewHostMcpServerTests
         Assert.Equal("http://127.0.0.1:7000", structuredContent.GetProperty("previewUrl").GetString());
 
         using JsonDocument toolsChanged = await harness.ReadNotificationAsync("notifications/tools/list_changed");
-        using JsonDocument resourceUpdated = await harness.ReadNotificationAsync("notifications/resources/updated");
+        using JsonDocument resourceUpdated = await harness.ReadResourceUpdatedNotificationAsync(
+            PreviewHostMcpServer.StatusResourceUri,
+            timeoutMs: 15000);
 
         Assert.NotNull(toolsChanged);
-        Assert.Contains(
-            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString(),
-            new[]
-            {
-                PreviewHostMcpServer.StatusResourceUri,
-                PreviewHostMcpServer.EventsResourceUri,
-                PreviewHostMcpServer.CurrentSessionResourceUri
-            });
+        Assert.Equal(
+            PreviewHostMcpServer.StatusResourceUri,
+            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString());
 
         await harness.SendRequestAsync(12, "tools/list", new JsonObject());
         using (JsonDocument updatedTools = await harness.ReadResponseAsync(12))
@@ -175,16 +172,14 @@ public sealed class PreviewHostMcpServerTests
         session.RaiseHostExited(9);
 
         using JsonDocument toolsChanged = await harness.ReadNotificationAsync("notifications/tools/list_changed");
-        using JsonDocument resourceUpdated = await harness.ReadNotificationAsync("notifications/resources/updated");
+        using JsonDocument resourceUpdated = await harness.ReadResourceUpdatedNotificationAsync(
+            PreviewHostMcpServer.StatusResourceUri,
+            timeoutMs: 15000);
 
         Assert.NotNull(toolsChanged);
-        Assert.Contains(
-            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString(),
-            new[]
-            {
-                PreviewHostMcpServer.StatusResourceUri,
-                PreviewHostMcpServer.EventsResourceUri
-            });
+        Assert.Equal(
+            PreviewHostMcpServer.StatusResourceUri,
+            resourceUpdated.RootElement.GetProperty("params").GetProperty("uri").GetString());
 
         await harness.SendRequestAsync(21, "tools/list", new JsonObject());
         using (JsonDocument updatedTools = await harness.ReadResponseAsync(21))
