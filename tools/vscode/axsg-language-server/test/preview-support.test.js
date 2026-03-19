@@ -264,6 +264,40 @@ test('register clears cached project evaluation state after watched project chan
   assert.equal(controller.projectReferenceCache.size, 0);
 });
 
+test('buildPreviewHostExitStatus prefers the captured crash summary', () => {
+  const vscodeMock = createVscodeMock();
+  const { buildPreviewHostExitStatus } = loadPreviewSupport(vscodeMock);
+
+  assert.equal(
+    buildPreviewHostExitStatus({
+      exitCode: 134,
+      error: "System.TypeLoadException: Could not load type 'Example.MissingType'."
+    }),
+    "Preview host crashed (134): System.TypeLoadException: Could not load type 'Example.MissingType'.");
+});
+
+test('describePreviewCompilerMode reports AXSG for source-generated preview', () => {
+  const vscodeMock = createVscodeMock();
+  const { describePreviewCompilerMode } = loadPreviewSupport(vscodeMock);
+
+  assert.deepEqual(describePreviewCompilerMode('sourceGenerated'), {
+    kind: 'axsg',
+    label: 'AXSG',
+    title: 'Using AXSG source-generated preview compiler.'
+  });
+});
+
+test('describePreviewCompilerMode reports XamlX for Avalonia preview', () => {
+  const vscodeMock = createVscodeMock();
+  const { describePreviewCompilerMode } = loadPreviewSupport(vscodeMock);
+
+  assert.deepEqual(describePreviewCompilerMode('avalonia'), {
+    kind: 'xamlx',
+    label: 'XamlX',
+    title: 'Using Avalonia XamlX preview compiler.'
+  });
+});
+
 test('describePreviewDesignState reports unavailable inspector state', () => {
   const vscodeMock = createVscodeMock();
   const { describePreviewDesignState } = loadPreviewSupport(vscodeMock);

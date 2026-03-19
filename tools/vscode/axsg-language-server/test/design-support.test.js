@@ -1776,6 +1776,7 @@ test('renderPropertiesViewHtml renders a property-grid layout with name filterin
   assert.match(html, /data-property-search="text"/);
   assert.match(html, /id="property-summary">2 properties</);
   assert.match(html, /class="group-table"/);
+  assert.match(html, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
   assert.match(html, /<textarea class="editor-textarea" data-property-input/);
 });
 

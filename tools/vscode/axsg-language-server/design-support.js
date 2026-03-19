@@ -1876,6 +1876,10 @@ function renderPropertiesViewHtml(webview, selectedElement, properties, property
       background: color-mix(in srgb, var(--vscode-editor-background, var(--vscode-sideBar-background)) 72%, transparent);
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     .row {
       display: grid;
       grid-template-columns: minmax(110px, 38%) minmax(0, 1fr);

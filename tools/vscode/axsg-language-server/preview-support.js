@@ -425,7 +425,12 @@ class AvaloniaPreviewSession {
         },
         createPreviewWebviewOptions()));
 
-    panel.webview.html = createPreviewWebviewHtml(panel.webview, this.fileName, this.currentPreviewUrl, this.currentStatus);
+    panel.webview.html = createPreviewWebviewHtml(
+      panel.webview,
+      this.fileName,
+      this.currentPreviewUrl,
+      this.currentStatus,
+      this.activeCompilerMode);
     panel.webview.onDidReceiveMessage(message => {
       if (!message || !message.type) {
         return;
@@ -699,6 +704,7 @@ class AvaloniaPreviewSession {
       previewUrl: this.currentPreviewUrl,
       loopbackPreview: this.currentLoopbackPreview,
       status: this.currentStatus,
+      compilerMode: this.activeCompilerMode,
       designState: this.designState
     });
   }
@@ -1652,11 +1658,39 @@ function describePreviewDesignState(designState) {
   };
 }
 
-function createPreviewWebviewHtml(webview, title, previewUrl, status) {
+function describePreviewCompilerMode(compilerMode) {
+  if (String(compilerMode || '') === 'sourceGenerated') {
+    return {
+      kind: 'axsg',
+      label: 'AXSG',
+      title: 'Using AXSG source-generated preview compiler.'
+    };
+  }
+
+  if (String(compilerMode || '') === 'avalonia') {
+    return {
+      kind: 'xamlx',
+      label: 'XamlX',
+      title: 'Using Avalonia XamlX preview compiler.'
+    };
+  }
+
+  return {
+    kind: 'pending',
+    label: 'Auto',
+    title: 'Resolving the active preview compiler.'
+  };
+}
+
+function createPreviewWebviewHtml(webview, title, previewUrl, status, compilerMode) {
   const iframeUrl = previewUrl ? escapeHtml(previewUrl) : '';
   const statusText = escapeHtml(status || 'Preview starting...');
   const escapedTitle = escapeHtml(title);
+  const compilerDescription = describePreviewCompilerMode(compilerMode);
+  const compilerLabel = escapeHtml(compilerDescription.label);
+  const compilerTitle = escapeHtml(compilerDescription.title);
   const frameSourcePolicy = `${webview.cspSource} http: https: vscode-remote: vscode-webview: vscode-webview-resource:`;
+  const compilerIconPath = 'M12.97 3.68a.5.5 0 0 0-.94-.36l-5 13a.5.5 0 1 0 .94.36l5-13ZM5.83 6.12c.2.18.23.5.05.7L3.16 10l2.72 3.17a.5.5 0 0 1-.76.66l-3-3.5a.5.5 0 0 1 0-.66l3-3.5a.5.5 0 0 1 .7-.05Zm8.34 8.26a.5.5 0 0 1-.05-.7l2.72-3.18-2.72-3.17a.5.5 0 1 1 .76-.66l3 3.5a.5.5 0 0 1 0 .66l-3 3.5a.5.5 0 0 1-.7.05Z';
   const zoomOutIconPath = 'M11 8a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h5ZM8.5 2a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
   const zoomResetIconPath = 'M4 10a6 6 0 0 1 10.47-4H12.5a.5.5 0 0 0 0 1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-1 0v1.6a7 7 0 1 0 1.98 4.36.5.5 0 1 0-1 .08L16 10a6 6 0 0 1-12 0Z';
   const zoomInIconPath = 'M8.5 5.5c.28 0 .5.22.5.5v2h2a.5.5 0 0 1 0 1H9v2a.5.5 0 0 1-1 0V9H6a.5.5 0 0 1 0-1h2V6c0-.28.22-.5.5-.5Zm0-3.5a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.5 6.5 0 1 1 8.5 2Zm0 1a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z';
@@ -1719,6 +1753,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+      row-gap: 6px;
     }
 
     .toolbar-meta {
@@ -1745,6 +1781,44 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .compiler-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .compiler-chip svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .compiler-chip.pending {
+      color: var(--vscode-descriptionForeground);
+      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent);
+      background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
+    }
+
+    .compiler-chip.axsg {
+      color: #0b76d1;
+      border-color: rgba(11, 118, 209, 0.24);
+      background: rgba(11, 118, 209, 0.1);
+    }
+
+    .compiler-chip.xamlx {
+      color: #b56a00;
+      border-color: rgba(181, 106, 0, 0.26);
+      background: rgba(181, 106, 0, 0.1);
     }
 
     .design-status {
@@ -2041,6 +2115,10 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
         <div class="toolbar-label">AXSG Preview</div>
         <div class="status-row">
           <div class="status" id="status">${statusText}</div>
+          <div class="compiler-chip ${compilerDescription.kind}" id="compiler-chip" title="${compilerTitle}">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${compilerIconPath}"></path></svg>
+            <span id="compiler-chip-label">${compilerLabel}</span>
+          </div>
           <div class="design-status unavailable" id="design-status" title="AXSG Inspector is waiting for preview design data.">Inspector unavailable</div>
         </div>
       </div>
@@ -2082,6 +2160,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
   </div>
   <script>
     ${describePreviewDesignState.toString()}
+    ${describePreviewCompilerMode.toString()}
     ${calculatePreviewSurfaceBounds.toString()}
     ${clampPreviewZoom.toString()}
     ${stepPreviewZoom.toString()}
@@ -2099,6 +2178,8 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     const TOOLBOX_ITEM_TEXT_PREFIX = ${JSON.stringify(DESIGN_TOOLBOX_TEXT_PREFIX)};
     const content = document.getElementById('content');
     const status = document.getElementById('status');
+    const compilerChip = document.getElementById('compiler-chip');
+    const compilerChipLabel = document.getElementById('compiler-chip-label');
     const designStatus = document.getElementById('design-status');
     const workspaceModeSelect = document.getElementById('workspace-mode');
     const hitTestModeSelect = document.getElementById('hit-test-mode');
@@ -2161,6 +2242,18 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       const nextText = text || 'Preview ready.';
       status.textContent = nextText;
       status.title = nextText;
+    }
+
+    function updateCompilerChip(compilerMode) {
+      if (!compilerChip || !compilerChipLabel) {
+        return;
+      }
+
+      const description = describePreviewCompilerMode(compilerMode);
+      compilerChip.classList.remove('pending', 'axsg', 'xamlx');
+      compilerChip.classList.add(description.kind);
+      compilerChip.title = description.title;
+      compilerChipLabel.textContent = description.label;
     }
 
     function updateDesignStatusBadge() {
@@ -3089,8 +3182,9 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       };
     }
 
-    function updatePreview(previewUrl, loopbackPreview, statusText, designState) {
+    function updatePreview(previewUrl, loopbackPreview, statusText, compilerMode, designState) {
       updateStatusText(statusText);
+      updateCompilerChip(compilerMode);
       updateDesignState(designState);
 
       if (loopbackPreview && loopbackPreview.webSocketUrl && loopbackPreview.securityCookie) {
@@ -3159,7 +3253,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
     window.addEventListener('message', event => {
       const message = event.data || {};
       if (message.type === 'update') {
-        updatePreview(message.previewUrl, message.loopbackPreview, message.status, message.designState);
+        updatePreview(message.previewUrl, message.loopbackPreview, message.status, message.compilerMode, message.designState);
       }
     });
     window.addEventListener('resize', () => {
@@ -3174,6 +3268,7 @@ function createPreviewWebviewHtml(webview, title, previewUrl, status) {
       observer.observe(content);
     }
     updateStatusText(status.textContent);
+    updateCompilerChip(${JSON.stringify(compilerMode || '')});
     updateZoomUi();
     updateDesignControls();
     applyCurrentZoom();
@@ -3479,5 +3574,7 @@ function isProjectFilePath(filePath) {
 
 module.exports = {
   AvaloniaPreviewController,
+  buildPreviewHostExitStatus,
+  describePreviewCompilerMode,
   describePreviewDesignState
 };
