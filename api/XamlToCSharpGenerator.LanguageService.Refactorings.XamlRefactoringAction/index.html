@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="XamlRefactoringAction Class | XamlToCSharpGenerator">
-<meta name="twitter:description" content="XamlRefactoringAction Class Definition Namespace XamlToCSharpGenerator.LanguageService.Refactorings Assembly XamlToCSharpGenerator.LanguageService.dll Inherits Object Implements IEquatable&lt;XamlRefactoringAction> View source Show inherited members (7) System.Object.Equals(System.Object) System.Object.Equals(System.Object, System.Object) System.Object.GetHashCode() System.Object.GetType() System.Object.MemberwiseClone() System.Object.ReferenceEquals(System.Object, System.Object) System.Object.ToString() public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlRefactoringCommand Command) : IEquatable&lt;XamlRefactoringAction> Filter members:...">
+<meta name="twitter:description" content="XamlRefactoringAction Class Definition Namespace XamlToCSharpGenerator.LanguageService.Refactorings Assembly XamlToCSharpGenerator.LanguageService.dll Inherits Object Implements IEquatable&lt;XamlRefactoringAction> View source Show inherited members (7) System.Object.Equals(System.Object) System.Object.Equals(System.Object, System.Object) System.Object.GetHashCode() System.Object.GetType() System.Object.MemberwiseClone() System.Object.ReferenceEquals(System.Object, System.Object) System.Object.ToString() public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlWorkspaceEdit? Edit = null, XamlRefactoringCommand? Command = null) : IEquatable&lt;XamlRefactoringAction>...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="XamlRefactoringAction Class | XamlToCSharpGenerator">
 <meta property="og:title" content="XamlRefactoringAction Class | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="XamlRefactoringAction Class Definition Namespace XamlToCSharpGenerator.LanguageService.Refactorings Assembly XamlToCSharpGenerator.LanguageService.dll Inherits Object Implements IEquatable&lt;XamlRefactoringAction> View source Show inherited members (7) System.Object.Equals(System.Object) System.Object.Equals(System.Object, System.Object) System.Object.GetHashCode() System.Object.GetType() System.Object.MemberwiseClone() System.Object.ReferenceEquals(System.Object, System.Object) System.Object.ToString() public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlRefactoringCommand Command) : IEquatable&lt;XamlRefactoringAction> Filter members:...">
+<meta property="og:description" content="XamlRefactoringAction Class Definition Namespace XamlToCSharpGenerator.LanguageService.Refactorings Assembly XamlToCSharpGenerator.LanguageService.dll Inherits Object Implements IEquatable&lt;XamlRefactoringAction> View source Show inherited members (7) System.Object.Equals(System.Object) System.Object.Equals(System.Object, System.Object) System.Object.GetHashCode() System.Object.GetType() System.Object.MemberwiseClone() System.Object.ReferenceEquals(System.Object, System.Object) System.Object.ToString() public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlWorkspaceEdit? Edit = null, XamlRefactoringCommand? Command = null) : IEquatable&lt;XamlRefactoringAction>...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="XamlRefactoringAction Class | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-menu.319d92e5542491480fbfd8f78952e2c6.html' data-lunet-menu-open='menu-id-menu-0,menu-id-menu-1972,menu-id-menu-1959' data-lunet-menu-active='menu-item-menu-1972,menu-item-menu-1959,menu-item-menu-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-menu.494c186530d9b37470cb1b6ae23d7d8a.html' data-lunet-menu-open='menu-id-menu-0,menu-id-menu-2062,menu-id-menu-2049' data-lunet-menu-active='menu-item-menu-2062,menu-item-menu-2049,menu-item-menu-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -171,7 +171,7 @@
 </ul>
 </details>
 </div>
-<pre><code class="language-csharp">public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlRefactoringCommand Command) : IEquatable&lt;XamlRefactoringAction&gt;
+<pre><code class="language-csharp">public sealed record XamlRefactoringAction(string Title, string Kind, bool IsPreferred, XamlWorkspaceEdit? Edit = null, XamlRefactoringCommand? Command = null) : IEquatable&lt;XamlRefactoringAction&gt;
 </code></pre>
 <div class="api-dotnet-member-filter" data-api-dotnet-filter>
 <div class="api-dotnet-member-filter-row">
@@ -183,11 +183,12 @@
 </div>
 <h2 id="constructors">Constructors <span class="api-dotnet-count">(1)</span></h2>
 <div class="api-dotnet-members list-group list-group-flush" data-api-dotnet-members="constructors">
-<div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Constructor"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.-ctor-Syst-454c60893740/"><i class="bi bi-hammer api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">XamlRefactoringAction(String, String, Boolean, XamlRefactoringCommand)</code></a></div>
+<div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Constructor"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.-ctor-Syst-964838d0049c/"><i class="bi bi-hammer api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">XamlRefactoringAction(String, String, Boolean, XamlWorkspaceEdit?, XamlRefactoringCommand?)</code></a></div>
 </div>
-<h2 id="properties">Properties <span class="api-dotnet-count">(4)</span></h2>
+<h2 id="properties">Properties <span class="api-dotnet-count">(5)</span></h2>
 <div class="api-dotnet-members list-group list-group-flush" data-api-dotnet-members="properties">
 <div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Property"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.Command/"><i class="bi bi-sliders api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">Command</code></a></div>
+<div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Property"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.Edit/"><i class="bi bi-sliders api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">Edit</code></a></div>
 <div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Property"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.IsPreferred/"><i class="bi bi-sliders api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">IsPreferred</code></a></div>
 <div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Property"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.Kind/"><i class="bi bi-sliders api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">Kind</code></a></div>
 <div class="api-dotnet-member-item list-group-item api-dotnet-member-item-has-link" data-api-kind="Property"><a class="api-dotnet-member-title api-dotnet-member-title-link" href="/XamlToCSharpGenerator/api/XamlToCSharpGenerator.LanguageService.Refactorings.XamlRefactoringAction.Title/"><i class="bi bi-sliders api-dotnet-kind-icon" aria-hidden="true"></i><code class="api-dotnet-member-name">Title</code></a></div>

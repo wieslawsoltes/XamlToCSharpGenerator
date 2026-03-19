@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
-<meta name="twitter:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). The short rule Keep constructor calls like: public MainWindow() { InitializeComponent(); } But do not keep an unconditional hand-written method like: private void InitializeComponent() { global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this); } when AXSG is enabled. Why For class-backed XAML, AXSG generates an...">
+<meta name="twitter:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must not keep an active legacy loader path when AXSG is the selected backend. The short rule Keep constructor calls like:...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
 <meta property="og:title" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). The short rule Keep constructor calls like: public MainWindow() { InitializeComponent(); } But do not keep an unconditional hand-written method like: private void InitializeComponent() { global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this); } when AXSG is enabled. Why For class-backed XAML, AXSG generates an...">
+<meta property="og:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must not keep an active legacy loader path when AXSG is the selected backend. The short rule Keep constructor calls like:...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
   </head>
@@ -159,6 +159,7 @@
 <!-- lunet:summarize -->
 <h1 id="initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</h1>
 <p>This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written <code>InitializeComponent()</code> method that still calls <code>AvaloniaXamlLoader.Load(this)</code>.</p>
+<p>That rule includes <code>App.axaml.cs</code>. The application root is a class-backed XAML type too, so <code>App</code> must not keep an active legacy loader path when AXSG is the selected backend.</p>
 <h2 id="the-short-rule">The short rule</h2>
 <p>Keep constructor calls like:</p>
 <pre><code class="language-csharp">public MainWindow()
@@ -173,6 +174,7 @@
 }
 </code></pre>
 <p>when AXSG is enabled.</p>
+<p>Also do not treat <code>AvaloniaNameGeneratorIsEnabled</code> as the AXSG switch. That property belongs to the legacy Avalonia path. In an AXSG project, a direct <code>AvaloniaXamlLoader.Load(this)</code> class-initialization path is not compatible with the generated SourceGen initialization path.</p>
 <h2 id="why">Why</h2>
 <p>For class-backed XAML, AXSG generates an <code>InitializeComponent(bool loadXaml = true)</code> method in the generated partial class. That is the method expected to build the object graph from generated code.</p>
 <p>If your code-behind also declares a parameterless <code>InitializeComponent()</code>, then the constructor call <code>InitializeComponent();</code> binds to the hand-written method, not the generated one. In that case AXSG output exists, but your view never uses it.</p>
@@ -182,6 +184,15 @@
 <pre><code class="language-csharp">public MainWindow()
 {
     InitializeComponent();
+}
+</code></pre>
+<p>That includes the application root:</p>
+<pre><code class="language-csharp">public partial class App : Application
+{
+    public App()
+    {
+        InitializeComponent();
+    }
 }
 </code></pre>
 <h3 id="mixed-backend-or-multi-target-project">Mixed-backend or multi-target project</h3>
@@ -199,6 +210,10 @@ private void InitializeComponent()
 #endif
 </code></pre>
 <p>This is the recommended portable pattern for libraries and apps that still need to build on both AXSG and non-AXSG paths.</p>
+<p>For the full backend and name-generator matrix, use:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+</ul>
 <h2 id="when-the-fallback-is-still-useful">When the fallback is still useful</h2>
 <p>The guarded fallback remains appropriate when:</p>
 <ul>
@@ -224,17 +239,19 @@ private void InitializeComponent()
 </ul>
 <p>Both are part of the normal supported setup.</p>
 <h2 id="troubleshooting-checklist">Troubleshooting checklist</h2>
-<p>If a class-backed view seems to ignore AXSG output:</p>
+<p>If a class-backed view or <code>App.axaml.cs</code> seems to ignore AXSG output:</p>
 <ol>
 <li>Check whether the project sets <code>AvaloniaXamlCompilerBackend=SourceGen</code>.</li>
 <li>Check whether the app calls <code>.UseAvaloniaSourceGeneratedXaml()</code>.</li>
-<li>Check whether the code-behind still declares an unconditional parameterless <code>InitializeComponent()</code>.</li>
+<li>Check whether the code-behind, including <code>App.axaml.cs</code>, still declares an unconditional parameterless <code>InitializeComponent()</code>.</li>
+<li>Check whether the project is forcing <code>AvaloniaNameGeneratorIsEnabled=true</code>.</li>
 <li>Inspect generated output under <code>obj/...</code> and confirm the class-backed partial includes AXSG-generated <code>InitializeComponent</code>.</li>
 </ol>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/installation">Installation</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/quickstart">Quickstart</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent">Class-backed XAML and InitializeComponent Internals</a></li>
 </ul>

@@ -259,6 +259,10 @@ private void InitializeComponent()
 <h2 id="relationship-to-avaloniaxamlloader">Relationship to <code>AvaloniaXamlLoader</code></h2>
 <p><code>Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this)</code> is not inherently wrong. It is simply the non-AXSG initialization path.</p>
 <p>The problem is not the method itself. The problem is leaving a parameterless <code>InitializeComponent()</code> wrapper around it in the same class when AXSG is active, because that steals the constructor call from the generated AXSG method.</p>
+<p>If you need the build-property and compatibility matrix behind that rule, use:</p>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+</ul>
 <h2 id="relationship-to-useavaloniasourcegeneratedxaml">Relationship to <code>.UseAvaloniaSourceGeneratedXaml()</code></h2>
 <p>These concerns operate at different layers:</p>
 <ul>
@@ -321,6 +325,7 @@ private void InitializeComponent()
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/installation">Installation</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/quickstart">Quickstart</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>

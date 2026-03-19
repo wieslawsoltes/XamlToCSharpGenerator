@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="VS Code and Language Service | XamlToCSharpGenerator">
-<meta name="twitter:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. Main components The editing stack is split into three parts: XamlToCSharpGenerator.LanguageServicesemantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens XamlToCSharpGenerator.LanguageServer.Toolstandalone LSP host...">
+<meta name="twitter:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. For the product-facing extension docs, including installation, configuration, preview, and the AXSG Inspector side panel, start with the dedicated VS Code section. Main components The editing stack is split into three...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="VS Code and Language Service | XamlToCSharpGenerator">
 <meta property="og:title" content="VS Code and Language Service | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. Main components The editing stack is split into three parts: XamlToCSharpGenerator.LanguageServicesemantic engine for completion, hover, navigation, references, rename, inlay hints, and semantic tokens XamlToCSharpGenerator.LanguageServer.Toolstandalone LSP host...">
+<meta property="og:description" content="VS Code and Language Service This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output. For the product-facing extension docs, including installation, configuration, preview, and the AXSG Inspector side panel, start with the dedicated VS Code section. Main components The editing stack is split into three...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="VS Code and Language Service | XamlToCSharpGenerator">
   </head>
@@ -98,7 +98,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body">
-          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.f9caf0257ea5a41ace800fc791b7ba52.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-5,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
+          <div class='lunet-menu-async' data-lunet-menu-partial='/XamlToCSharpGenerator/partials/menus/menu-guides.a3cd10aabf831d101641ee848f3704ca.html' data-lunet-menu-open='menu-id-guides-0' data-lunet-menu-active='menu-item-guides-6,menu-item-guides-0'><div class='menu-loading text-body-secondary small'>Loading menu…</div></div>
         </div>
       </nav>
       <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
@@ -145,6 +145,7 @@
 <!-- lunet:summarize -->
 <h1 id="vs-code-and-language-service">VS Code and Language Service</h1>
 <p>This guide explains how the AXSG language service, the standalone server, and the VS Code extension fit together. Use it when editor behavior is the problem you are trying to understand, not build output.</p>
+<p>For the product-facing extension docs, including installation, configuration, preview, and the AXSG Inspector side panel, start with the dedicated <a href="/XamlToCSharpGenerator/articles/vscode">VS Code</a> section.</p>
 <h2 id="main-components">Main components</h2>
 <p>The editing stack is split into three parts:</p>
 <ol>
@@ -158,7 +159,7 @@
 <li>standalone LSP host</li>
 </ul>
 </li>
-<li><code>xamltocsharpgenerator.axsg-language-server</code>
+<li><code>wieslawsoltes.axsg-language-server</code>
 <ul>
 <li>VS Code extension that hosts the client, starts the server lazily, and adds editor-specific behaviors</li>
 </ul>
@@ -256,6 +257,7 @@
 <p>The extension still uses its own bundled preview orchestration for the product preview experience. MCP support exists alongside that flow, not instead of it.</p>
 <h2 id="related-docs">Related docs</h2>
 <ul>
+<li><a href="/XamlToCSharpGenerator/articles/vscode">VS Code</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/mcp-servers-and-live-tooling">MCP Servers and Live Tooling</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/preview-mcp-host-and-live-preview">Preview MCP Host and Live Preview</a></li>

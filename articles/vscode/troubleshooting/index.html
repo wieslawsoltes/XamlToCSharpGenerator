@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Troubleshooting | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Troubleshooting | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Troubleshooting This page focuses on the packaged VS Code extension workflow. The AXSG Inspector views still appear under Explorer Usually this means VS Code persisted the old view location from a previous build. Try: reload the VS Code window run View: Reset View Locations reopen AXSG Inspector: Show Inspector Panel The intended layout is: preview in the editor area inspector views in a dedicated left activity-bar container The AXSG Inspector...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Troubleshooting | XamlToCSharpGenerator">
+<meta property="og:title" content="Troubleshooting | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Troubleshooting This page focuses on the packaged VS Code extension workflow. The AXSG Inspector views still appear under Explorer Usually this means VS Code persisted the old view location from a previous build. Try: reload the VS Code window run View: Reset View Locations reopen AXSG Inspector: Show Inspector Panel The intended layout is: preview in the editor area inspector views in a dedicated left activity-bar container The AXSG Inspector...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Troubleshooting | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <nav id="docs-sidebar-menu" class="col-md-3 col-lg-3 col-xl-3 col-xxl-2 offcanvas-md offcanvas-start sticky-md-top menu-sidebar align-self-start order-1 order-md-0" tabindex="-1" aria-labelledby="docs-sidebar-menu-label" aria-expanded="true">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="docs-sidebar-menu-label">Menu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#docs-sidebar-menu" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <ol id='menu-id-vscode-0' class='menu menu-level0 show '>
+            <li id='menu-item-vscode-1' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/' class='menu-link  '>Overview</a></span>  </li>
+            <li id='menu-item-vscode-2' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/installation-and-setup/' class='menu-link  '>Installation and Setup</a></span>  </li>
+            <li id='menu-item-vscode-3' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/configuration/' class='menu-link  '>Configuration</a></span>  </li>
+            <li id='menu-item-vscode-4' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/editing-and-navigation/' class='menu-link  '>Editing and Navigation</a></span>  </li>
+            <li id='menu-item-vscode-5' class='menu-item '>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/preview-and-inspector/' class='menu-link  '>Preview and Inspector</a></span>  </li>
+            <li id='menu-item-vscode-6' class='menu-item  active'>
+              <span class='menu-item-row'><a href='/XamlToCSharpGenerator/articles/vscode/troubleshooting/' class='menu-link  '>Troubleshooting</a></span>  </li>
+          </ol>
+
+        </div>
+      </nav>
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        <ol class='breadcrumb'>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/' class='breadcrumb-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/' class='breadcrumb-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a>  </li>
+          <li class='breadcrumb-item '>
+            <a href='/XamlToCSharpGenerator/articles/vscode/' class='breadcrumb-link  '>VS Code</a>  </li>
+          <li class='breadcrumb-item  active'>
+            Troubleshooting  </li>
+        </ol>
+
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm me-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#docs-sidebar-menu"
+            aria-controls="docs-sidebar-menu"
+            aria-label="Toggle docs menu">
+            Menu
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="troubleshooting">Troubleshooting</h1>
+<p>This page focuses on the packaged VS Code extension workflow.</p>
+<h2 id="the-axsg-inspector-views-still-appear-under-explorer">The AXSG Inspector views still appear under Explorer</h2>
+<p>Usually this means VS Code persisted the old view location from a previous build.</p>
+<p>Try:</p>
+<ol>
+<li>reload the VS Code window</li>
+<li>run <code>View: Reset View Locations</code></li>
+<li>reopen <code>AXSG Inspector: Show Inspector Panel</code></li>
+</ol>
+<p>The intended layout is:</p>
+<ul>
+<li>preview in the editor area</li>
+<li>inspector views in a dedicated left activity-bar container</li>
+</ul>
+<h2 id="the-axsg-inspector-rail-button-is-missing">The AXSG Inspector rail button is missing</h2>
+<p>Check:</p>
+<ul>
+<li>the updated extension build is actually installed</li>
+<li>VS Code was reloaded after installation</li>
+<li>the workspace contains <code>.xaml</code> or <code>.axaml</code> so AXSG activates</li>
+</ul>
+<p>If you just rebuilt the VSIX locally, reinstall that exact package and reload the window.</p>
+<h2 id="preview-startup-fails-immediately">Preview startup fails immediately</h2>
+<p>Start with the <code>AXSG Language Server</code> output channel.</p>
+<p>Common causes:</p>
+<ul>
+<li>the host project does not build</li>
+<li>the active XAML file is in a library and <code>axsg.preview.hostProject</code> is not set</li>
+<li>the chosen target framework is not the desktop TFM you intended</li>
+<li>the installed extension bundle is stale</li>
+</ul>
+<p>Recommended settings while diagnosing:</p>
+<pre><code class="language-json">{
+  &quot;axsg.preview.compilerMode&quot;: &quot;auto&quot;,
+  &quot;axsg.preview.buildBeforeLaunch&quot;: true
+}
+</code></pre>
+<h2 id="source-generated-preview-is-unavailable">Source-generated preview is unavailable</h2>
+<p>In <code>auto</code> mode this should fall back cleanly to Avalonia/XamlX.</p>
+<p>If you forced:</p>
+<pre><code class="language-json">{
+  &quot;axsg.preview.compilerMode&quot;: &quot;sourceGenerated&quot;
+}
+</code></pre>
+<p>then the preview will fail until the AXSG runtime output is present in the build output.</p>
+<h2 id="preview-works-for-executables-but-not-for-library-xaml">Preview works for executables but not for library XAML</h2>
+<p>Set:</p>
+<pre><code class="language-json">{
+  &quot;axsg.preview.hostProject&quot;: &quot;/path/to/your/app.csproj&quot;
+}
+</code></pre>
+<p>Optionally also set:</p>
+<pre><code class="language-json">{
+  &quot;axsg.preview.targetFramework&quot;: &quot;net10.0&quot;
+}
+</code></pre>
+<p>if the project multi-targets and the chosen desktop TFM is not the one you want.</p>
+<h2 id="preview-is-visible-but-interaction-is-wrong">Preview is visible but interaction is wrong</h2>
+<p>Check the workspace mode in the preview toolbar:</p>
+<ul>
+<li>use <code>Interactive</code> for normal app input</li>
+<li>use <code>Design</code> for hit testing and overlay selection</li>
+</ul>
+<p>If clicks are selecting elements instead of pressing buttons, you are in <code>Design</code>.</p>
+<p>If keyboard input is not reaching the previewed app, confirm you are not in <code>Design</code>.</p>
+<h2 id="selection-sync-looks-stale">Selection sync looks stale</h2>
+<p>Try:</p>
+<ol>
+<li><code>AXSG Inspector: Refresh</code></li>
+<li>reopening the preview tab</li>
+<li>reselecting the document from <code>Documents</code></li>
+</ol>
+<p>Also verify that the active editor is the same XAML document that belongs to the active preview session.</p>
+<h2 id="property-edits-or-toolbox-insertions-do-not-land-where-expected">Property edits or toolbox insertions do not land where expected</h2>
+<p>The runtime mutation pipeline operates against the current active design document and selected element.</p>
+<p>Before editing:</p>
+<ul>
+<li>confirm the right document is active in <code>Documents</code></li>
+<li>confirm the right element is selected in preview or tree</li>
+<li>use the <code>Logical Tree</code> or <code>Visual Tree</code> to verify the current selection</li>
+</ul>
+<h2 id="native-preview-dependencies">Native preview dependencies</h2>
+<p>The packaged extension bundles designer-host native assets for:</p>
+<ul>
+<li>macOS</li>
+<li>Windows</li>
+<li>Linux</li>
+</ul>
+<p>If preview startup still reports missing native rendering libraries, the installed VSIX is usually stale or incomplete. Reinstall the freshly packaged extension and reload VS Code.</p>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/vscode/installation-and-setup">Installation and Setup</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/vscode/configuration">Configuration</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/vscode/preview-and-inspector">Preview and Inspector</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/packaging-and-release">Packaging and Release</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>
