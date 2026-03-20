@@ -355,8 +355,9 @@ public sealed class AvaloniaTypeIndex
         INamedTypeSymbol declaringType,
         AttributeData attribute)
     {
-        foreach (var pseudoClassName in EnumeratePseudoClassNames(attribute))
+        foreach (var pseudoClassEntry in EnumeratePseudoClassEntries(attribute))
         {
+            var pseudoClassName = pseudoClassEntry.Name;
             if (string.IsNullOrWhiteSpace(pseudoClassName))
             {
                 continue;
@@ -366,12 +367,17 @@ public sealed class AvaloniaTypeIndex
                 Name: NormalizePseudoClassName(pseudoClassName),
                 DeclaringTypeFullName: declaringType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
                 DeclaringAssemblyName: declaringType.ContainingAssembly.Identity.Name,
-                SourceLocation: TryCreatePseudoClassSourceLocation(compilation, attribute, pseudoClassName));
+                SourceLocation: TryCreatePseudoClassSourceLocation(
+                    compilation,
+                    attribute,
+                    pseudoClassName,
+                    pseudoClassEntry.Ordinal));
         }
     }
 
-    private static IEnumerable<string> EnumeratePseudoClassNames(AttributeData attribute)
+    private static IEnumerable<(string Name, int Ordinal)> EnumeratePseudoClassEntries(AttributeData attribute)
     {
+        var ordinal = 0;
         if (attribute.ConstructorArguments.Length == 1 &&
             attribute.ConstructorArguments[0].Kind == TypedConstantKind.Array)
         {
@@ -379,7 +385,8 @@ public sealed class AvaloniaTypeIndex
             {
                 if (value.Value is string text)
                 {
-                    yield return text;
+                    yield return (text, ordinal);
+                    ordinal++;
                 }
             }
 
@@ -390,7 +397,8 @@ public sealed class AvaloniaTypeIndex
         {
             if (argument.Value is string text)
             {
-                yield return text;
+                yield return (text, ordinal);
+                ordinal++;
             }
         }
     }
@@ -398,31 +406,28 @@ public sealed class AvaloniaTypeIndex
     private static AvaloniaSymbolSourceLocation? TryCreatePseudoClassSourceLocation(
         Compilation compilation,
         AttributeData attribute,
-        string pseudoClassName)
+        string pseudoClassName,
+        int pseudoClassOrdinal)
     {
         if (attribute.ApplicationSyntaxReference?.GetSyntax() is not AttributeSyntax attributeSyntax ||
-            attributeSyntax.ArgumentList is null)
+            !TryGetPseudoClassExpression(attributeSyntax, pseudoClassOrdinal, out var expression))
         {
             return null;
         }
 
         var normalizedPseudoClassName = NormalizePseudoClassName(pseudoClassName);
-        var semanticModel = compilation.GetSemanticModel(attributeSyntax.SyntaxTree);
-        foreach (var argument in attributeSyntax.ArgumentList.Arguments)
+        var semanticModel = TryGetSemanticModel(compilation, expression.SyntaxTree);
+        if (semanticModel is not null &&
+            TryCreatePseudoClassArgumentSourceLocation(
+                semanticModel,
+                expression,
+                normalizedPseudoClassName,
+                out var sourceLocation))
         {
-            if (!TryCreatePseudoClassArgumentSourceLocation(
-                    semanticModel,
-                    argument.Expression,
-                    normalizedPseudoClassName,
-                    out var sourceLocation))
-            {
-                continue;
-            }
-
             return sourceLocation;
         }
 
-        return null;
+        return TryCreateExpressionSourceLocation(expression);
     }
 
     private static bool TryCreatePseudoClassArgumentSourceLocation(
@@ -447,13 +452,75 @@ public sealed class AvaloniaTypeIndex
             return true;
         }
 
-        var lineSpan = expression.GetLocation().GetLineSpan();
-        if (expression.SyntaxTree.FilePath is null)
+        if (TryCreateExpressionSourceLocation(expression) is not { } expressionSourceLocation)
         {
             return false;
         }
 
-        sourceLocation = new AvaloniaSymbolSourceLocation(
+        sourceLocation = expressionSourceLocation;
+        return true;
+    }
+
+    private static bool TryGetPseudoClassExpression(
+        AttributeSyntax attributeSyntax,
+        int pseudoClassOrdinal,
+        out ExpressionSyntax expression)
+    {
+        expression = null!;
+        if (attributeSyntax.ArgumentList is null || pseudoClassOrdinal < 0)
+        {
+            return false;
+        }
+
+        var arguments = attributeSyntax.ArgumentList.Arguments;
+        if (pseudoClassOrdinal < arguments.Count)
+        {
+            expression = arguments[pseudoClassOrdinal].Expression;
+            return true;
+        }
+
+        if (arguments.Count != 1)
+        {
+            return false;
+        }
+
+        switch (arguments[0].Expression)
+        {
+            case ArrayCreationExpressionSyntax { Initializer: { } initializer }
+                when pseudoClassOrdinal < initializer.Expressions.Count:
+                expression = initializer.Expressions[pseudoClassOrdinal];
+                return true;
+            case ImplicitArrayCreationExpressionSyntax { Initializer: { } initializer }
+                when pseudoClassOrdinal < initializer.Expressions.Count:
+                expression = initializer.Expressions[pseudoClassOrdinal];
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static SemanticModel? TryGetSemanticModel(Compilation compilation, SyntaxTree syntaxTree)
+    {
+        foreach (var candidate in compilation.SyntaxTrees)
+        {
+            if (ReferenceEquals(candidate, syntaxTree))
+            {
+                return compilation.GetSemanticModel(syntaxTree);
+            }
+        }
+
+        return null;
+    }
+
+    private static AvaloniaSymbolSourceLocation? TryCreateExpressionSourceLocation(ExpressionSyntax expression)
+    {
+        var lineSpan = expression.GetLocation().GetLineSpan();
+        if (expression.SyntaxTree.FilePath is null)
+        {
+            return null;
+        }
+
+        return new AvaloniaSymbolSourceLocation(
             UriPathHelper.ToDocumentUri(expression.SyntaxTree.FilePath),
             new SourceRange(
                 new SourcePosition(
@@ -462,7 +529,6 @@ public sealed class AvaloniaTypeIndex
                 new SourcePosition(
                     lineSpan.EndLinePosition.Line,
                     lineSpan.EndLinePosition.Character)));
-        return true;
     }
 
     private static string NormalizePseudoClassName(string value)

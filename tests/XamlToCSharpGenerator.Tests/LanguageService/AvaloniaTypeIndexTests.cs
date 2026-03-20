@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 using Xunit;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 
@@ -128,19 +131,119 @@ public sealed class AvaloniaTypeIndexTests
             item.XmlNamespace == "https://github.com/avaloniaui");
     }
 
-    private static Compilation CreateCompilation(string source)
+    [Fact]
+    public async Task TryGetTypeByClrNamespace_HandlesPseudoClassesFromReferencedSourceCompilation()
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: "/tmp/AvaloniaTypeIndexTests.cs");
-        var references = new[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
-        };
+        const string referencedSource = """
+                                        using System;
+
+                                        [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "Lib.Controls")]
+
+                                        namespace Avalonia.Metadata
+                                        {
+                                            [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                            public sealed class XmlnsDefinitionAttribute : Attribute
+                                            {
+                                                public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                            }
+                                        }
+
+                                        namespace Avalonia.Controls.Metadata
+                                        {
+                                            [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+                                            public sealed class PseudoClassesAttribute : Attribute
+                                            {
+                                                public PseudoClassesAttribute(params string[] pseudoClasses) { }
+                                            }
+                                        }
+
+                                        namespace Lib.Controls
+                                        {
+                                            public static class KnownPseudoClasses
+                                            {
+                                                public const string Active = ":active";
+                                            }
+
+                                            [Avalonia.Controls.Metadata.PseudoClassesAttribute(KnownPseudoClasses.Active, ":pointerover")]
+                                            public class LibraryButton
+                                            {
+                                            }
+                                        }
+                                        """;
+
+        const string appSource = """
+                                 namespace App
+                                 {
+                                     public class RootViewModel
+                                     {
+                                     }
+                                 }
+                                 """;
+
+        using var workspace = new AdhocWorkspace();
+        var referencedProjectId = ProjectId.CreateNewId();
+        var appProjectId = ProjectId.CreateNewId();
+        var references = CreateBaseReferences();
+
+        var solution = workspace.CurrentSolution
+            .AddProject(referencedProjectId, "Lib.Controls", "Lib.Controls", LanguageNames.CSharp)
+            .AddMetadataReferences(referencedProjectId, references)
+            .AddDocument(
+                DocumentId.CreateNewId(referencedProjectId),
+                "Lib.Controls.cs",
+                SourceText.From(referencedSource),
+                filePath: "/tmp/Lib.Controls.cs")
+            .AddProject(appProjectId, "App", "App", LanguageNames.CSharp)
+            .AddMetadataReferences(appProjectId, references)
+            .AddProjectReference(appProjectId, new ProjectReference(referencedProjectId))
+            .AddDocument(
+                DocumentId.CreateNewId(appProjectId),
+                "App.cs",
+                SourceText.From(appSource),
+                filePath: "/tmp/App.cs");
+
+        Assert.True(workspace.TryApplyChanges(solution));
+
+        var compilation = await workspace.CurrentSolution.GetProject(appProjectId)!.GetCompilationAsync();
+        Assert.NotNull(compilation);
+
+        var index = AvaloniaTypeIndex.Create(compilation!);
+
+        Assert.True(index.TryGetTypeByClrNamespace("Lib.Controls", "LibraryButton", out var typeInfo));
+        Assert.NotNull(typeInfo);
+        Assert.Contains(typeInfo!.PseudoClasses, pseudoClass =>
+            string.Equals(pseudoClass.Name, ":active", StringComparison.Ordinal) &&
+            pseudoClass.SourceLocation is { Uri: var activeUri } &&
+            activeUri.Contains("Lib.Controls.cs", StringComparison.Ordinal));
+        Assert.Contains(typeInfo.PseudoClasses, pseudoClass =>
+            string.Equals(pseudoClass.Name, ":pointerover", StringComparison.Ordinal) &&
+            pseudoClass.SourceLocation is { Uri: var pointerOverUri } &&
+            pointerOverUri.Contains("Lib.Controls.cs", StringComparison.Ordinal));
+    }
+
+    private static CSharpCompilation CreateCompilation(
+        string source,
+        string filePath = "/tmp/AvaloniaTypeIndexTests.cs",
+        string assemblyName = "AvaloniaTypeIndexTests",
+        params MetadataReference[] additionalReferences)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: filePath);
+        var references = new List<MetadataReference>(CreateBaseReferences());
+        references.AddRange(additionalReferences);
 
         return CSharpCompilation.Create(
-            assemblyName: "AvaloniaTypeIndexTests",
+            assemblyName: assemblyName,
             syntaxTrees: new[] { syntaxTree },
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static MetadataReference[] CreateBaseReferences()
+    {
+        return
+        [
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
+        ];
     }
 }
