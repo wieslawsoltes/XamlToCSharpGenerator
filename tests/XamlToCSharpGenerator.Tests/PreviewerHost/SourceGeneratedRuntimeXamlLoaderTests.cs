@@ -50,6 +50,78 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [AvaloniaFact]
+    public void PreparePreviewDocument_Prefers_Source_Assembly_When_Designer_Passes_Host_LocalAssembly()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+
+        try
+        {
+            var sourceAssemblyName = "AxsgPreviewSource_" + Guid.NewGuid().ToString("N");
+            var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+            EmitAssemblyToFile(
+                sourceAssemblyName,
+                """
+                namespace ExternalPreviewRoot;
+
+                public sealed class PreviewRoot : global::Avalonia.Controls.UserControl
+                {
+                }
+                """,
+                sourceAssemblyPath);
+
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                sourceAssemblyPath,
+                Path.Combine(tempRoot, "PreviewRoot.axaml"),
+                "/Views/PreviewRoot.axaml",
+                null,
+                null,
+                typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location));
+            PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
+
+            const string xaml = """
+                                <UserControl xmlns="https://github.com/avaloniaui"
+                                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                             x:Class="ExternalPreviewRoot.PreviewRoot" />
+                                """;
+            var document = new RuntimeXamlLoaderDocument(
+                new Uri("avares://PreviewHost/Views/PreviewRoot.axaml"),
+                rootInstance: null,
+                xaml);
+            var configuration = new RuntimeXamlLoaderConfiguration
+            {
+                LocalAssembly = typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly,
+                DesignMode = true
+            };
+
+            RuntimeXamlLoaderDocument preparedDocument = SourceGeneratedRuntimeXamlLoaderInstaller.PreparePreviewDocument(
+                document,
+                xaml,
+                configuration,
+                out RuntimeXamlLoaderConfiguration preparedConfiguration);
+
+            Assert.Equal(sourceAssemblyName, preparedConfiguration.LocalAssembly?.GetName().Name);
+            Assert.Equal(
+                new Uri("avares://" + sourceAssemblyName + "/Views/PreviewRoot.axaml"),
+                preparedDocument.BaseUri);
+
+            var result = AvaloniaRuntimeXamlLoader.Load(preparedDocument, preparedConfiguration);
+
+            Assert.Equal("ExternalPreviewRoot.PreviewRoot", result.GetType().FullName);
+            Assert.Equal(sourceAssemblyName, result.GetType().Assembly.GetName().Name);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
     public void LoadCore_Reuses_Initial_Baseline_For_Successful_Live_Overlay()
     {
         var loader = new SourceGeneratedRuntimeXamlLoader();
