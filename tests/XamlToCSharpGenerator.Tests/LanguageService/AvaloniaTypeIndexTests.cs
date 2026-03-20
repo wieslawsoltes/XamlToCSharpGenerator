@@ -132,6 +132,63 @@ public sealed class AvaloniaTypeIndexTests
     }
 
     [Fact]
+    public void TryGetTypeByClrNamespace_MapsExplicitArrayPseudoClassEntriesToInitializerElements()
+    {
+        const string source = """
+                              using System;
+
+                              [assembly: Avalonia.Metadata.XmlnsDefinitionAttribute("https://github.com/avaloniaui", "Test.Controls")]
+
+                              namespace Avalonia.Metadata
+                              {
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsDefinitionAttribute : Attribute
+                                  {
+                                      public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                  }
+                              }
+
+                              namespace Avalonia.Controls.Metadata
+                              {
+                                  [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+                                  public sealed class PseudoClassesAttribute : Attribute
+                                  {
+                                      public PseudoClassesAttribute(params string[] pseudoClasses) { }
+                                  }
+                              }
+
+                              namespace Test.Controls
+                              {
+                                  public static class KnownPseudoClasses
+                                  {
+                                      public const string Active = ":active";
+                                  }
+
+                                  [Avalonia.Controls.Metadata.PseudoClassesAttribute(new[] { KnownPseudoClasses.Active, ":pointerover" })]
+                                  public class Button
+                                  {
+                                  }
+                              }
+                              """;
+
+        var compilation = CreateCompilation(source);
+        var index = AvaloniaTypeIndex.Create(compilation);
+
+        Assert.True(index.TryGetTypeByClrNamespace("Test.Controls", "Button", out var typeInfo));
+        Assert.NotNull(typeInfo);
+
+        var activePseudoClass = Assert.Single(typeInfo!.PseudoClasses, pseudoClass =>
+            string.Equals(pseudoClass.Name, ":active", StringComparison.Ordinal));
+        var pointerOverPseudoClass = Assert.Single(typeInfo.PseudoClasses, pseudoClass =>
+            string.Equals(pseudoClass.Name, ":pointerover", StringComparison.Ordinal));
+
+        Assert.NotNull(activePseudoClass.SourceLocation);
+        Assert.NotNull(pointerOverPseudoClass.SourceLocation);
+        Assert.Equal("Active", ReadRangeText(source, activePseudoClass.SourceLocation!.Value));
+        Assert.Equal("\":pointerover\"", ReadRangeText(source, pointerOverPseudoClass.SourceLocation!.Value));
+    }
+
+    [Fact]
     public async Task TryGetTypeByClrNamespace_HandlesPseudoClassesFromReferencedSourceCompilation()
     {
         const string referencedSource = """
@@ -245,5 +302,17 @@ public sealed class AvaloniaTypeIndexTests
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
         ];
+    }
+
+    private static string ReadRangeText(string source, AvaloniaSymbolSourceLocation location)
+    {
+        var sourceText = SourceText.From(source);
+        var start = sourceText.Lines.GetPosition(new LinePosition(
+            location.Range.Start.Line,
+            location.Range.Start.Character));
+        var end = sourceText.Lines.GetPosition(new LinePosition(
+            location.Range.End.Line,
+            location.Range.End.Character));
+        return sourceText.ToString(TextSpan.FromBounds(start, end));
     }
 }

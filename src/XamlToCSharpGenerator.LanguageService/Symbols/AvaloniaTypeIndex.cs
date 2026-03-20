@@ -473,30 +473,28 @@ public sealed class AvaloniaTypeIndex
         }
 
         var arguments = attributeSyntax.ArgumentList.Arguments;
+        if (arguments.Count == 1)
+        {
+            switch (arguments[0].Expression)
+            {
+                case ArrayCreationExpressionSyntax { Initializer: { } initializer }
+                    when pseudoClassOrdinal < initializer.Expressions.Count:
+                    expression = initializer.Expressions[pseudoClassOrdinal];
+                    return true;
+                case ImplicitArrayCreationExpressionSyntax { Initializer: { } initializer }
+                    when pseudoClassOrdinal < initializer.Expressions.Count:
+                    expression = initializer.Expressions[pseudoClassOrdinal];
+                    return true;
+            }
+        }
+
         if (pseudoClassOrdinal < arguments.Count)
         {
             expression = arguments[pseudoClassOrdinal].Expression;
             return true;
         }
 
-        if (arguments.Count != 1)
-        {
-            return false;
-        }
-
-        switch (arguments[0].Expression)
-        {
-            case ArrayCreationExpressionSyntax { Initializer: { } initializer }
-                when pseudoClassOrdinal < initializer.Expressions.Count:
-                expression = initializer.Expressions[pseudoClassOrdinal];
-                return true;
-            case ImplicitArrayCreationExpressionSyntax { Initializer: { } initializer }
-                when pseudoClassOrdinal < initializer.Expressions.Count:
-                expression = initializer.Expressions[pseudoClassOrdinal];
-                return true;
-            default:
-                return false;
-        }
+        return false;
     }
 
     private static SemanticModel? TryGetSemanticModel(Compilation compilation, SyntaxTree syntaxTree)
