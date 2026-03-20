@@ -386,8 +386,9 @@ public sealed class AvaloniaTypeIndex
                 if (value.Value is string text)
                 {
                     yield return (text, ordinal);
-                    ordinal++;
                 }
+
+                ordinal++;
             }
 
             yield break;
@@ -398,8 +399,9 @@ public sealed class AvaloniaTypeIndex
             if (argument.Value is string text)
             {
                 yield return (text, ordinal);
-                ordinal++;
             }
+
+            ordinal++;
         }
     }
 
