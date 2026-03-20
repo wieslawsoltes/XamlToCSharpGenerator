@@ -19134,6 +19134,111 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Uses_BindingLocal_DataType_For_AssignBinding_Clr_Property_CompiledBindings()
+    {
+        const string code = """
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public abstract class BindingBase { }
+
+                public class Binding : BindingBase
+                {
+                    public Binding() { }
+                    public Binding(string path) { Path = path; }
+
+                    public string? Path { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class CompiledBindingExtension : global::Avalonia.Data.BindingBase
+                {
+                    public string? Path { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class RowVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+
+                public sealed class MainVm
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public sealed class BindingHost
+                {
+                    [global::Avalonia.Data.AssignBinding]
+                    public global::Avalonia.Data.BindingBase? ValueBinding { get; set; }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         xmlns:local="clr-namespace:Demo"
+                         xmlns:markup="clr-namespace:Avalonia.Markup.Xaml.MarkupExtensions"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <StackPanel>
+                    <local:BindingHost ValueBinding="{CompiledBinding Name, DataType={x:Type vm:RowVm}}" />
+                    <local:BindingHost>
+                        <local:BindingHost.ValueBinding>
+                            <markup:CompiledBinding Path="Name" DataType="{x:Type vm:RowVm}" />
+                        </local:BindingHost.ValueBinding>
+                    </local:BindingHost>
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "SourceGenCompiledBindingDescriptor(\"avares://Demo.Assembly/MainView.axaml\", \"global::Demo.BindingHost\", \"ValueBinding\", \"Name\", \"global::Demo.ViewModels.RowVm\"",
+            generated);
+        Assert.True(
+            Regex.Matches(
+                generated,
+                @"ValueBinding\s*=",
+                RegexOptions.CultureInvariant).Count >= 2,
+            "Expected binding-holder CLR assignments to be emitted for both attribute and object-node compiled bindings.");
+    }
+
+    [Fact]
     public void Preserves_AssignBinding_For_Attached_Avalonia_Property_As_Binding_Object()
     {
         const string code = """

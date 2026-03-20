@@ -267,12 +267,24 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
             {
+                sourceType = ResolveBindingMarkupDataType(compilation, document, bindingMarkup);
+                if (sourceType is not null)
+                {
+                    return true;
+                }
+
                 sourceType = ambientDataType;
                 requiresAmbientDataType = sourceType is null;
                 return sourceType is not null;
             }
 
             return false;
+        }
+
+        sourceType = ResolveBindingMarkupDataType(compilation, document, bindingMarkup);
+        if (sourceType is not null)
+        {
+            return true;
         }
 
         sourceType = ambientDataType;
@@ -319,6 +331,23 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             bindingTargetType,
             out sourceType,
             out requiresAmbientDataType);
+    }
+
+    private static INamedTypeSymbol? ResolveBindingMarkupDataType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        BindingMarkup bindingMarkup)
+    {
+        if (string.IsNullOrWhiteSpace(bindingMarkup.DataType))
+        {
+            return null;
+        }
+
+        return ResolveTypeFromTypeExpression(
+            compilation,
+            document,
+            bindingMarkup.DataType,
+            document.ClassNamespace);
     }
 
     private static INamedTypeSymbol? ResolveNamedElementBindingSourceType(
@@ -5037,6 +5066,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         elementName: null,
                         relativeSource: null,
                         source: null,
+                        dataType: null,
                         converter: null,
                         converterCulture: null,
                         converterParameter: null,
@@ -5560,6 +5590,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             document,
             setterTargetType,
             initializerParts);
+        AddBindingInitializerPart(
+            bindingType,
+            propertyName: "DataType",
+            rawValue: bindingMarkup.DataType,
+            compilation,
+            document,
+            setterTargetType,
+            initializerParts);
 
         AddBindingInitializerPart(
             bindingType,
@@ -5695,6 +5733,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             reflectionBindingExtensionType,
             propertyName: "Source",
             rawValue: bindingMarkup.Source,
+            compilation,
+            document,
+            setterTargetType,
+            initializerParts);
+        AddBindingInitializerPart(
+            reflectionBindingExtensionType,
+            propertyName: "DataType",
+            rawValue: bindingMarkup.DataType,
             compilation,
             document,
             setterTargetType,
@@ -6288,29 +6334,25 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
+        var bindingBaseType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingBase);
+        if (bindingBaseType is not null &&
+            IsTypeAssignableTo(propertyType, bindingBaseType))
+        {
+            return true;
+        }
+
         var iBindingType = ResolveContractType(compilation, TypeContractId.AvaloniaBindingInterface);
-        if (iBindingType is null)
-        {
-            return false;
-        }
-
-        if (SymbolEqualityComparer.Default.Equals(propertyType, iBindingType))
+        if (iBindingType is not null &&
+            IsTypeAssignableTo(propertyType, iBindingType))
         {
             return true;
         }
 
-        if (propertyType is INamedTypeSymbol namedPropertyType &&
-            namedPropertyType.AllInterfaces.Any(interfaceType => SymbolEqualityComparer.Default.Equals(interfaceType, iBindingType)))
+        var iBinding2Type = ResolveContractType(compilation, TypeContractId.AvaloniaBindingInterface2);
+        if (iBinding2Type is not null &&
+            IsTypeAssignableTo(propertyType, iBinding2Type))
         {
             return true;
-        }
-
-        for (var current = propertyType as INamedTypeSymbol; current is not null; current = current.BaseType)
-        {
-            if (SymbolEqualityComparer.Default.Equals(current, iBindingType))
-            {
-                return true;
-            }
         }
 
         return false;

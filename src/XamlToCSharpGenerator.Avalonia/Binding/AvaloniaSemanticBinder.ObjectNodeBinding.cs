@@ -2491,6 +2491,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             "ElementName" => "ElementName",
             "RelativeSource" => "RelativeSource",
             "Source" => "Source",
+            "DataType" => "DataType",
             "Converter" => "Converter",
             "ConverterCulture" => "ConverterCulture",
             "ConverterParameter" => "ConverterParameter",
