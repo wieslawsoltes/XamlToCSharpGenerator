@@ -432,6 +432,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
                     INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
                     var requiresAmbientDataType = false;
+                    var hasInvalidLocalDataType = false;
                     if (!TryReportBindingSourceConflict(
                             bindingMarkup,
                             diagnostics,
@@ -447,7 +448,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             styleDataType,
                             targetType,
                             out compiledBindingSourceTypeSymbol,
-                            out requiresAmbientDataType))
+                            out requiresAmbientDataType,
+                            out hasInvalidLocalDataType))
                     {
                         if (!TryBuildCompiledBindingAccessorExpression(
                                      compilation,
@@ -485,6 +487,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindingPath = compiledBindingResolution.NormalizedPath;
                             compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
+                    }
+                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && hasInvalidLocalDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for style setter '{setter.PropertyName}' specifies invalid DataType '{bindingMarkup.DataType}'.",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
                     }
                     else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
                     {
@@ -963,6 +975,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
                     INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
                     var requiresAmbientDataType = false;
+                    var hasInvalidLocalDataType = false;
                     if (!TryReportBindingSourceConflict(
                             bindingMarkup,
                             diagnostics,
@@ -978,7 +991,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             themeDataType,
                             targetType,
                             out compiledBindingSourceTypeSymbol,
-                            out requiresAmbientDataType))
+                            out requiresAmbientDataType,
+                            out hasInvalidLocalDataType))
                     {
                         if (!TryBuildCompiledBindingAccessorExpression(
                                      compilation,
@@ -1016,6 +1030,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             compiledBindingPath = compiledBindingResolution.NormalizedPath;
                             compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         }
+                    }
+                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && hasInvalidLocalDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for control theme setter '{setter.PropertyName}' specifies invalid DataType '{bindingMarkup.DataType}'.",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
                     }
                     else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
                     {

@@ -235,10 +235,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? ambientDataType,
         INamedTypeSymbol? bindingTargetType,
         out INamedTypeSymbol? sourceType,
-        out bool requiresAmbientDataType)
+        out bool requiresAmbientDataType,
+        out bool hasInvalidLocalDataType)
     {
         sourceType = null;
         requiresAmbientDataType = false;
+        hasInvalidLocalDataType = false;
 
         if (bindingMarkup.HasSourceConflict)
         {
@@ -267,10 +269,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
             {
-                sourceType = ResolveBindingMarkupDataType(compilation, document, bindingMarkup);
-                if (sourceType is not null)
+                if (TryResolveBindingMarkupDataType(
+                        compilation,
+                        document,
+                        bindingMarkup,
+                        out sourceType,
+                        out var hasExplicitLocalDataType))
                 {
                     return true;
+                }
+
+                if (hasExplicitLocalDataType)
+                {
+                    hasInvalidLocalDataType = true;
+                    return false;
                 }
 
                 sourceType = ambientDataType;
@@ -281,10 +293,20 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        sourceType = ResolveBindingMarkupDataType(compilation, document, bindingMarkup);
-        if (sourceType is not null)
+        if (TryResolveBindingMarkupDataType(
+                compilation,
+                document,
+                bindingMarkup,
+                out sourceType,
+                out var hasExplicitBindingLocalDataType))
         {
             return true;
+        }
+
+        if (hasExplicitBindingLocalDataType)
+        {
+            hasInvalidLocalDataType = true;
+            return false;
         }
 
         sourceType = ambientDataType;
@@ -330,24 +352,30 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             ambientDataType,
             bindingTargetType,
             out sourceType,
-            out requiresAmbientDataType);
+            out requiresAmbientDataType,
+            out _);
     }
 
-    private static INamedTypeSymbol? ResolveBindingMarkupDataType(
+    private static bool TryResolveBindingMarkupDataType(
         Compilation compilation,
         XamlDocumentModel document,
-        BindingMarkup bindingMarkup)
+        BindingMarkup bindingMarkup,
+        out INamedTypeSymbol? sourceType,
+        out bool hasExplicitDataType)
     {
-        if (string.IsNullOrWhiteSpace(bindingMarkup.DataType))
+        sourceType = null;
+        hasExplicitDataType = !string.IsNullOrWhiteSpace(bindingMarkup.DataType);
+        if (!hasExplicitDataType)
         {
-            return null;
+            return false;
         }
 
-        return ResolveTypeFromTypeExpression(
+        sourceType = ResolveTypeFromTypeExpression(
             compilation,
             document,
             bindingMarkup.DataType,
             document.ClassNamespace);
+        return sourceType is not null;
     }
 
     private static INamedTypeSymbol? ResolveNamedElementBindingSourceType(
@@ -5248,6 +5276,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
             INamedTypeSymbol? compiledBindingSourceType = null;
             var requiresAmbientDataType = false;
+            var hasInvalidLocalDataType = false;
             var shouldCompileBinding = wantsCompiledBinding &&
                                        TryResolveCompiledBindingSourceType(
                                            compilation,
@@ -5256,7 +5285,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                            nodeDataType,
                                            setterTargetType ?? targetType,
                                            out compiledBindingSourceType,
-                                           out requiresAmbientDataType);
+                                           out requiresAmbientDataType,
+                                           out hasInvalidLocalDataType);
             if (shouldCompileBinding)
             {
                 if (!TryBuildCompiledBindingAccessorExpression(
@@ -5327,6 +5357,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     PreserveBindingValue: preserveBindingValue);
                     return true;
                 }
+            }
+            else if (wantsCompiledBinding && hasInvalidLocalDataType)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    "AXSG0110",
+                    $"Compiled binding for '{propertyName}' specifies invalid DataType '{bindingMarkup.DataType}'.",
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                return true;
             }
             else if (wantsCompiledBinding && requiresAmbientDataType)
             {

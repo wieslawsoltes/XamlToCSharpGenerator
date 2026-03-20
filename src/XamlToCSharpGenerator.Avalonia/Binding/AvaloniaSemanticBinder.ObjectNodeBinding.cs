@@ -513,6 +513,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
                     INamedTypeSymbol? compiledBindingSourceType = null;
                     var requiresAmbientDataType = false;
+                    var hasInvalidLocalDataType = false;
                     var shouldCompileBinding = wantsCompiledBinding &&
                                                TryResolveCompiledBindingSourceType(
                                                    compilation,
@@ -521,7 +522,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                                                    assignmentDataType,
                                                    currentSetterTargetType ?? symbol,
                                                    out compiledBindingSourceType,
-                                                   out requiresAmbientDataType);
+                                                   out requiresAmbientDataType,
+                                                   out hasInvalidLocalDataType);
                     if (shouldCompileBinding)
                     {
                         if (!TryBuildCompiledBindingAccessorExpression(
@@ -587,6 +589,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
                             continue;
                         }
+                    }
+                    else if (wantsCompiledBinding && hasInvalidLocalDataType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0110",
+                            $"Compiled binding for '{property.Name}' specifies invalid DataType '{bindingMarkup.DataType}'.",
+                            document.FilePath,
+                            assignment.Line,
+                            assignment.Column,
+                            options.StrictMode));
+                        continue;
                     }
                     else if (wantsCompiledBinding && requiresAmbientDataType)
                     {
@@ -2391,7 +2404,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             var canonicalName = GetCanonicalBindingObjectNodeArgumentName(propertyElement.PropertyName);
             if (canonicalName is null ||
-                !TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var value))
+                !TryGetSingleBindingObjectNodeArgumentValue(
+                    propertyElement,
+                    allowTypeExpressionExtraction: string.Equals(canonicalName, "DataType", StringComparison.Ordinal),
+                    out var value))
             {
                 continue;
             }
@@ -2455,6 +2471,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool TryGetSingleBindingObjectNodeArgumentValue(
         XamlPropertyElement propertyElement,
+        bool allowTypeExpressionExtraction,
         out string value)
     {
         value = string.Empty;
@@ -2466,8 +2483,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 return true;
             }
 
-            if (TryExtractTypeExpressionFromXamlTypeNode(propertyElement.ObjectValues[0], out value))
+            if (TryExtractTypeExpressionFromXamlTypeNode(propertyElement.ObjectValues[0], out var typeExpression))
             {
+                value = allowTypeExpressionExtraction
+                    ? typeExpression
+                    : "{x:Type " + typeExpression + "}";
                 return true;
             }
         }
@@ -2529,7 +2549,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                if (TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var propertyElementValue) &&
+                if (TryGetSingleBindingObjectNodeArgumentValue(
+                        propertyElement,
+                        allowTypeExpressionExtraction: false,
+                        out var propertyElementValue) &&
                     !string.IsNullOrWhiteSpace(propertyElementValue))
                 {
                     typeExpression = Unquote(propertyElementValue).Trim();
@@ -2784,7 +2807,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                if (TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var propertyElementValue) &&
+                if (TryGetSingleBindingObjectNodeArgumentValue(
+                        propertyElement,
+                        allowTypeExpressionExtraction: false,
+                        out var propertyElementValue) &&
                     !string.IsNullOrWhiteSpace(propertyElementValue))
                 {
                     typeToken = Unquote(propertyElementValue).Trim();

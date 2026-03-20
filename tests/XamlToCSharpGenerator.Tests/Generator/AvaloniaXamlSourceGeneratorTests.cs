@@ -3286,6 +3286,88 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Preserves_XType_Markup_For_NonDataType_ObjectNode_Binding_Arguments()
+    {
+        const string code = """
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public abstract class BindingBase { }
+
+                public class Binding : BindingBase
+                {
+                    public Binding() { }
+                    public Binding(string path) { }
+                    public string? Path { get; set; }
+                    public object? ConverterParameter { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class RowVm { }
+            }
+
+            namespace Demo
+            {
+                public sealed class BindingHost
+                {
+                    [global::Avalonia.Data.AssignBinding]
+                    public global::Avalonia.Data.BindingBase? ValueBinding { get; set; }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:data="clr-namespace:Avalonia.Data"
+                         xmlns:local="clr-namespace:Demo"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <local:BindingHost>
+                        <local:BindingHost.ValueBinding>
+                            <data:Binding Path="Name">
+                                <data:Binding.ConverterParameter>
+                                    <x:Type TypeName="vm:RowVm" />
+                                </data:Binding.ConverterParameter>
+                            </data:Binding>
+                        </local:BindingHost.ValueBinding>
+                    </local:BindingHost>
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("ValueBinding =", generated);
+        Assert.Contains("typeof(global::Demo.ViewModels.RowVm)", generated);
+        Assert.DoesNotContain("\"vm:RowVm\"", generated);
+    }
+
+    [Fact]
     public void Preserves_Binding_Options_When_Query_Path_Is_Normalized()
     {
         const string code = """
@@ -19382,8 +19464,98 @@ public class AvaloniaXamlSourceGeneratorTests
             Regex.Matches(
                 generated,
                 @"ValueBinding\s*=",
-                RegexOptions.CultureInvariant).Count >= 2,
+            RegexOptions.CultureInvariant).Count >= 2,
             "Expected binding-holder CLR assignments to be emitted for both attribute and object-node compiled bindings.");
+    }
+
+    [Fact]
+    public void Reports_Invalid_BindingLocal_DataType_For_AssignBinding_Clr_Property_CompiledBinding()
+    {
+        const string code = """
+            namespace Avalonia.Data
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class AssignBindingAttribute : global::System.Attribute { }
+
+                public abstract class BindingBase { }
+
+                public class Binding : BindingBase
+                {
+                    public Binding() { }
+                    public Binding(string path) { Path = path; }
+
+                    public string? Path { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel
+                {
+                    public global::System.Collections.Generic.List<object> Children { get; } = new();
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class CompiledBindingExtension : global::Avalonia.Data.BindingBase
+                {
+                    public string? Path { get; set; }
+                    public global::System.Type? DataType { get; set; }
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainVm
+                {
+                    public string Name { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public sealed class BindingHost
+                {
+                    [global::Avalonia.Data.AssignBinding]
+                    public global::Avalonia.Data.BindingBase? ValueBinding { get; set; }
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView"
+                         x:DataType="vm:MainVm"
+                         x:CompileBindings="True">
+                <StackPanel>
+                    <local:BindingHost ValueBinding="{CompiledBinding Name, DataType={x:Type vm:MissingVm}}" />
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (_, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Contains(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0110" &&
+                          diagnostic.GetMessage().Contains("invalid DataType '{x:Type vm:MissingVm}'", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Id == "AXSG0111" &&
+                          diagnostic.GetMessage().Contains("source type 'global::Demo.ViewModels.MainVm'", StringComparison.Ordinal));
     }
 
     [Fact]

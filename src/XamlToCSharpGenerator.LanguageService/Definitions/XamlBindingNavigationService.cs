@@ -767,10 +767,20 @@ internal static class XamlBindingNavigationService
         sourceTypeSymbol = null!;
         prefixMap = context.PrefixMap;
 
+        if (context.BindingMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(context.BindingMarkup.ElementName) &&
             TryResolveNamedElementType(context, context.BindingMarkup.ElementName!, out sourceTypeSymbol))
         {
             return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.BindingMarkup.Source))
+        {
+            return false;
         }
 
         if (context.BindingMarkup.RelativeSource is { } relativeSource)
@@ -793,18 +803,79 @@ internal static class XamlBindingNavigationService
                 }
             }
 
-            if (TryResolveBindingLocalDataType(context, out sourceTypeSymbol, out prefixMap))
+            if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                if (TryResolveBindingLocalDataType(
+                        context,
+                        out sourceTypeSymbol,
+                        out prefixMap,
+                        out var hasExplicitLocalDataType))
+                {
+                    return true;
+                }
+
+                if (hasExplicitLocalDataType)
+                {
+                    return false;
+                }
+
+                return TryResolveAmbientDataType(context, out sourceTypeSymbol, out prefixMap);
             }
 
             return false;
         }
 
-        if (TryResolveBindingLocalDataType(context, out sourceTypeSymbol, out prefixMap))
+        if (TryResolveBindingLocalDataType(
+                context,
+                out sourceTypeSymbol,
+                out prefixMap,
+                out var hasExplicitBindingLocalDataType))
         {
             return true;
         }
+
+        if (hasExplicitBindingLocalDataType)
+        {
+            return false;
+        }
+
+        return TryResolveAmbientDataType(context, out sourceTypeSymbol, out prefixMap);
+    }
+
+    private static bool TryResolveBindingLocalDataType(
+        BindingContext context,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap,
+        out bool hasExplicitLocalDataType)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = context.PrefixMap;
+        hasExplicitLocalDataType = !string.IsNullOrWhiteSpace(context.BindingMarkup.DataType);
+
+        if (!hasExplicitLocalDataType)
+        {
+            return false;
+        }
+
+        var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(context.Element);
+        var localType = ResolveTypeSymbol(context.Analysis, localPrefixMap, context.BindingMarkup.DataType!);
+        if (localType is null)
+        {
+            return false;
+        }
+
+        sourceTypeSymbol = localType;
+        prefixMap = localPrefixMap;
+        return true;
+    }
+
+    private static bool TryResolveAmbientDataType(
+        BindingContext context,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = context.PrefixMap;
 
         var current = context.Element;
         while (current is not null)
@@ -827,31 +898,6 @@ internal static class XamlBindingNavigationService
         }
 
         return false;
-    }
-
-    private static bool TryResolveBindingLocalDataType(
-        BindingContext context,
-        out INamedTypeSymbol sourceTypeSymbol,
-        out ImmutableDictionary<string, string> prefixMap)
-    {
-        sourceTypeSymbol = null!;
-        prefixMap = context.PrefixMap;
-
-        if (string.IsNullOrWhiteSpace(context.BindingMarkup.DataType))
-        {
-            return false;
-        }
-
-        var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(context.Element);
-        var localType = ResolveTypeSymbol(context.Analysis, localPrefixMap, context.BindingMarkup.DataType!);
-        if (localType is null)
-        {
-            return false;
-        }
-
-        sourceTypeSymbol = localType;
-        prefixMap = localPrefixMap;
-        return true;
     }
 
     private static bool TryResolveNamedElementType(
