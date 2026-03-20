@@ -793,7 +793,17 @@ internal static class XamlBindingNavigationService
                 }
             }
 
+            if (TryResolveBindingLocalDataType(context, out sourceTypeSymbol, out prefixMap))
+            {
+                return true;
+            }
+
             return false;
+        }
+
+        if (TryResolveBindingLocalDataType(context, out sourceTypeSymbol, out prefixMap))
+        {
+            return true;
         }
 
         var current = context.Element;
@@ -817,6 +827,31 @@ internal static class XamlBindingNavigationService
         }
 
         return false;
+    }
+
+    private static bool TryResolveBindingLocalDataType(
+        BindingContext context,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = context.PrefixMap;
+
+        if (string.IsNullOrWhiteSpace(context.BindingMarkup.DataType))
+        {
+            return false;
+        }
+
+        var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(context.Element);
+        var localType = ResolveTypeSymbol(context.Analysis, localPrefixMap, context.BindingMarkup.DataType!);
+        if (localType is null)
+        {
+            return false;
+        }
+
+        sourceTypeSymbol = localType;
+        prefixMap = localPrefixMap;
+        return true;
     }
 
     private static bool TryResolveNamedElementType(
