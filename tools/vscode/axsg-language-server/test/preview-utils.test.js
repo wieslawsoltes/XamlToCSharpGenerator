@@ -36,6 +36,7 @@ const {
   PREVIEW_COMPILER_MODE_SOURCE_GENERATED,
   projectReferencesProject,
   samePath,
+  shouldUseProjectHostRuntime,
   shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
   supportsSourceGeneratedLivePreview,
@@ -550,6 +551,24 @@ test('resolvePreviewHostRuntimePaths switches to the host assembly sidecars for 
       runtimeConfigPath: path.normalize('/tmp/app/App.runtimeconfig.json'),
       depsFilePath: path.normalize('/tmp/app/App.deps.json')
     });
+});
+
+test('shouldUseProjectHostRuntime returns false for the bundled designer host even when the project path matches', () => {
+  assert.equal(
+    shouldUseProjectHostRuntime(
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll'),
+    false);
+});
+
+test('shouldUseProjectHostRuntime returns true only for project-host fallback paths', () => {
+  assert.equal(
+    shouldUseProjectHostRuntime(
+      '/tmp/project/Avalonia.Designer.HostApp.dll',
+      '/tmp/project/Avalonia.Designer.HostApp.dll',
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll'),
+    true);
 });
 
 test('enumeratePreviewAssemblyArtifacts includes deps and pdb sidecars for aligned previews', () => {

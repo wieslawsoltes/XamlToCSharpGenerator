@@ -41,6 +41,7 @@ const {
   resolvePreviewDocumentText,
   resolvePreviewCompilerMode,
   samePath,
+  shouldUseProjectHostRuntime,
   shouldUseInlineLoopbackPreviewClient,
   shouldUseNoRestoreBuild,
   supportsSourceGeneratedLivePreview,
@@ -3434,7 +3435,10 @@ function buildStartAttempts(extensionPath, launchInfo) {
 
       for (let index = 0; index < previewerToolPaths.length; index += 1) {
         const previewerToolPath = previewerToolPaths[index];
-        const useHostAssemblyRuntime = samePath(previewerToolPath, launchInfo.hostProject.previewerToolPath);
+        const useHostAssemblyRuntime = shouldUseProjectHostRuntime(
+          previewerToolPath,
+          launchInfo.hostProject.previewerToolPath,
+          designerHostPath);
         const runtimePaths = resolvePreviewHostRuntimePaths(
           previewerToolPath,
           launchInfo.hostProject.targetPath,

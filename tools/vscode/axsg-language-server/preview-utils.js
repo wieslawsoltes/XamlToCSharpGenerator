@@ -677,6 +677,23 @@ function resolvePreviewHostRuntimePaths(previewerToolPath, hostAssemblyPath, use
   };
 }
 
+function shouldUseProjectHostRuntime(previewerToolPath, projectPreviewerToolPath, bundledDesignerHostPath) {
+  const normalizedPreviewerToolPath = normalizeMaybeEmptyPath(previewerToolPath);
+  if (!normalizedPreviewerToolPath) {
+    return false;
+  }
+
+  const normalizedBundledDesignerHostPath = normalizeMaybeEmptyPath(bundledDesignerHostPath);
+  if (normalizedBundledDesignerHostPath && samePath(normalizedPreviewerToolPath, normalizedBundledDesignerHostPath)) {
+    return false;
+  }
+
+  const normalizedProjectPreviewerToolPath = normalizeMaybeEmptyPath(projectPreviewerToolPath);
+  return Boolean(
+    normalizedProjectPreviewerToolPath &&
+    samePath(normalizedPreviewerToolPath, normalizedProjectPreviewerToolPath));
+}
+
 module.exports = {
   createCommandFailureMessage,
   buildArguments,
@@ -685,6 +702,7 @@ module.exports = {
   resolveAvaloniaPreviewerToolPaths,
   resolvePreviewDesignAssemblyPath,
   resolvePreviewHostRuntimePaths,
+  shouldUseProjectHostRuntime,
   getPreviewViewportMetricsKey,
   resolveLoopbackPreviewWebviewTarget,
   createPreviewStartPlan,
