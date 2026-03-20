@@ -2459,10 +2459,17 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     {
         value = string.Empty;
 
-        if (propertyElement.ObjectValues.Length == 1 &&
-            TryGetSingleMarkupExtensionArgumentValue(propertyElement.ObjectValues[0], out value))
+        if (propertyElement.ObjectValues.Length == 1)
         {
-            return true;
+            if (TryGetSingleMarkupExtensionArgumentValue(propertyElement.ObjectValues[0], out value))
+            {
+                return true;
+            }
+
+            if (TryExtractTypeExpressionFromXamlTypeNode(propertyElement.ObjectValues[0], out value))
+            {
+                return true;
+            }
         }
 
         var rawTextContent = propertyElement.RawTextContent?.Trim();
@@ -2480,6 +2487,95 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return false;
+    }
+
+    private static bool TryExtractTypeExpressionFromXamlTypeNode(
+        XamlObjectNode node,
+        out string typeExpression)
+    {
+        typeExpression = string.Empty;
+
+        if (node.XmlNamespace != Xaml2006.NamespaceName ||
+            !node.XmlTypeName.Equals("Type", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (assignment.IsAttached)
+            {
+                continue;
+            }
+
+            var normalizedName = NormalizePropertyName(assignment.PropertyName);
+            if ((normalizedName.Equals("TypeName", StringComparison.Ordinal) ||
+                 normalizedName.Equals("Type", StringComparison.Ordinal)) &&
+                !string.IsNullOrWhiteSpace(assignment.Value))
+            {
+                typeExpression = Unquote(assignment.Value).Trim();
+                break;
+            }
+        }
+
+        if (typeExpression.Length == 0)
+        {
+            foreach (var propertyElement in node.PropertyElements)
+            {
+                var normalizedName = NormalizePropertyName(propertyElement.PropertyName);
+                if (!(normalizedName.Equals("TypeName", StringComparison.Ordinal) ||
+                      normalizedName.Equals("Type", StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (TryGetSingleBindingObjectNodeArgumentValue(propertyElement, out var propertyElementValue) &&
+                    !string.IsNullOrWhiteSpace(propertyElementValue))
+                {
+                    typeExpression = Unquote(propertyElementValue).Trim();
+                    break;
+                }
+            }
+        }
+
+        if (typeExpression.Length == 0 &&
+            node.ConstructorArguments.Length == 1 &&
+            TryGetSingleMarkupExtensionArgumentValue(node.ConstructorArguments[0], out var constructorArgumentValue) &&
+            !string.IsNullOrWhiteSpace(constructorArgumentValue))
+        {
+            typeExpression = Unquote(constructorArgumentValue).Trim();
+        }
+
+        if (typeExpression.Length == 0)
+        {
+            var rawTextContent = node.RawTextContent?.Trim();
+            if (!string.IsNullOrWhiteSpace(rawTextContent))
+            {
+                typeExpression = Unquote(rawTextContent!).Trim();
+            }
+        }
+
+        if (typeExpression.Length == 0)
+        {
+            var textContent = node.TextContent?.Trim();
+            if (!string.IsNullOrWhiteSpace(textContent))
+            {
+                typeExpression = Unquote(textContent!).Trim();
+            }
+        }
+
+        if (typeExpression.Length == 0)
+        {
+            return false;
+        }
+
+        if (node.TypeArguments.Length > 0 &&
+            !TryParseGenericTypeToken(typeExpression, out _, out _))
+        {
+            typeExpression += "(" + string.Join(", ", node.TypeArguments) + ")";
+        }
+
+        return true;
     }
 
     private static string? GetCanonicalBindingObjectNodeArgumentName(string propertyName)
