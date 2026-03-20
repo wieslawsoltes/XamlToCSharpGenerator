@@ -82,7 +82,7 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
             DiagnosticHandler = configuration.DiagnosticHandler
         };
 
-        Uri? baseUri = document.BaseUri ?? BuildPreviewBaseUri(localAssembly, PreviewHostRuntimeState.Current.XamlFileProjectPath);
+        Uri? baseUri = ResolvePreviewBaseUri(document.BaseUri, localAssembly, PreviewHostRuntimeState.Current.XamlFileProjectPath);
         if (Equals(baseUri, document.BaseUri) && ReferenceEquals(preparedConfiguration.LocalAssembly, configuration.LocalAssembly))
         {
             return document;
@@ -97,34 +97,23 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
 
     internal static Assembly? ResolvePreviewLocalAssembly(Assembly? localAssembly)
     {
-        if (localAssembly is not null)
+        string? sourceAssemblyPath = PreviewHostRuntimeState.Current.SourceAssemblyPath;
+        if (string.IsNullOrWhiteSpace(sourceAssemblyPath))
+        {
+            return localAssembly ?? Assembly.GetEntryAssembly();
+        }
+
+        string assemblyName = Path.GetFileNameWithoutExtension(sourceAssemblyPath);
+        if (localAssembly is not null &&
+            AssemblyMatchesPreviewSource(localAssembly, sourceAssemblyPath, assemblyName))
         {
             return localAssembly;
         }
 
-        string? sourceAssemblyPath = PreviewHostRuntimeState.Current.SourceAssemblyPath;
-        if (string.IsNullOrWhiteSpace(sourceAssemblyPath))
+        if (!string.IsNullOrWhiteSpace(assemblyName) &&
+            TryResolveLoadedAssembly(sourceAssemblyPath, assemblyName, out Assembly? loadedAssembly))
         {
-            return Assembly.GetEntryAssembly();
-        }
-
-        string assemblyName = Path.GetFileNameWithoutExtension(sourceAssemblyPath);
-        if (!string.IsNullOrWhiteSpace(assemblyName))
-        {
-            foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    if (string.Equals(loadedAssembly.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return loadedAssembly;
-                    }
-                }
-                catch
-                {
-                    // Best effort match.
-                }
-            }
+            return loadedAssembly;
         }
 
         try
@@ -133,7 +122,7 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         }
         catch
         {
-            return Assembly.GetEntryAssembly();
+            return localAssembly ?? Assembly.GetEntryAssembly();
         }
     }
 
@@ -157,6 +146,71 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         }
 
         return new Uri("avares://" + assemblyName + normalizedPath, UriKind.Absolute);
+    }
+
+    private static Uri? ResolvePreviewBaseUri(Uri? baseUri, Assembly? localAssembly, string? xamlFileProjectPath)
+    {
+        Uri? previewBaseUri = BuildPreviewBaseUri(localAssembly, xamlFileProjectPath);
+        if (previewBaseUri is null)
+        {
+            return baseUri;
+        }
+
+        if (baseUri is null ||
+            !baseUri.IsAbsoluteUri ||
+            !string.Equals(baseUri.Scheme, previewBaseUri.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(baseUri.Host, previewBaseUri.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            return previewBaseUri;
+        }
+
+        return baseUri;
+    }
+
+    private static bool AssemblyMatchesPreviewSource(Assembly assembly, string sourceAssemblyPath, string sourceAssemblyName)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        try
+        {
+            string? assemblyLocation = assembly.Location;
+            if (string.IsNullOrWhiteSpace(assemblyLocation))
+            {
+                return !string.IsNullOrWhiteSpace(sourceAssemblyName) &&
+                       string.Equals(assembly.GetName().Name, sourceAssemblyName, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(
+                Path.GetFullPath(assemblyLocation),
+                Path.GetFullPath(sourceAssemblyPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryResolveLoadedAssembly(string sourceAssemblyPath, string assemblyName, out Assembly? assembly)
+    {
+        foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                if (AssemblyMatchesPreviewSource(loadedAssembly, sourceAssemblyPath, assemblyName))
+                {
+                    assembly = loadedAssembly;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Best effort match.
+            }
+        }
+
+        assembly = null;
+        return false;
     }
 
     private static bool ResolveUseCompiledBindingsByDefault(bool configuredValue, Assembly? localAssembly)
