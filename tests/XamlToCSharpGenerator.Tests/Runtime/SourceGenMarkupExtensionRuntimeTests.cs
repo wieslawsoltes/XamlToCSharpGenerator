@@ -1507,6 +1507,106 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal(1, root.BindBackCount);
     }
 
+    [AvaloniaFact]
+    public void UpdateXBind_Flushes_Explicit_BindBack_Pending_Value()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Explicit,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Explicit update  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        SourceGenMarkupExtensionRuntime.UpdateXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Explicit update", root.SearchDraft);
+        Assert.Equal("Explicit update", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void StopTrackingXBind_Can_Be_Followed_By_InitializeXBind()
+    {
+        var root = new XBindTwoWayLoopProbe("Catalog alias");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindTwoWayLoopProbe, XBindTwoWayLoopProbe, TextBox>(
+            static (source, _, _) => source.Alias,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindTwoWayLoopProbe.Alias), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.Alias = SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Catalog alias", target.Text);
+
+        SourceGenMarkupExtensionRuntime.StopTrackingXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        root.Alias = "Updated alias";
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotEqual("Updated alias", target.Text);
+
+        SourceGenMarkupExtensionRuntime.InitializeXBind(root);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Updated alias", target.Text);
+    }
+
     private static void WaitForDispatcherCondition(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

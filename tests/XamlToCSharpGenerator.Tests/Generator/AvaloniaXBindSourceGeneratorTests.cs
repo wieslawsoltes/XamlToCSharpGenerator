@@ -376,6 +376,155 @@ public class AvaloniaXBindSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_XBind_Source_Options_And_Lifecycle_Surface()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public class Binding
+                {
+                    public object? ConverterCulture { get; set; }
+                }
+
+                public enum BindingMode
+                {
+                    OneTime,
+                    OneWay,
+                    TwoWay
+                }
+
+                public enum UpdateSourceTrigger
+                {
+                    Default,
+                    PropertyChanged,
+                    LostFocus,
+                    Explicit
+                }
+
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+
+                public enum RelativeSourceMode
+                {
+                    Self,
+                    TemplatedParent,
+                    FindAncestor,
+                    DataContext
+                }
+
+                public sealed class RelativeSource
+                {
+                    public RelativeSource(RelativeSourceMode mode)
+                    {
+                        Mode = mode;
+                    }
+
+                    public RelativeSourceMode Mode { get; }
+                    public global::System.Type? AncestorType { get; set; }
+                    public int AncestorLevel { get; set; }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TagProperty = new();
+                    public object? Tag { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class TextBox : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+            }
+
+            namespace XamlToCSharpGenerator.Runtime
+            {
+                public static class SourceGenMarkupExtensionRuntime
+                {
+                    public static T ResolveNamedElement<T>(object target, object root, string name) => default!;
+                    public static T CoerceMarkupExtensionValue<T>(object value) => default!;
+                    public static void InitializeXBind(object root) { }
+                    public static void UpdateXBind(object root) { }
+                    public static void StopTrackingXBind(object root) { }
+                }
+            }
+
+            namespace Demo
+            {
+                public sealed class StaticSource
+                {
+                    public string Value { get; set; } = string.Empty;
+                }
+
+                public static class BindingSources
+                {
+                    public static StaticSource Current { get; } = new();
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <TextBox x:Name="Editor" Text="hello" />
+                    <TextBlock Text="{x:Bind Text, ElementName=Editor}" />
+                    <TextBlock Tag="{x:Bind Tag, RelativeSource={RelativeSource Self}}" />
+                    <TextBlock Text="{x:Bind Value, Source={x:Static local:BindingSources.Current}, DataType=local:StaticSource, ConverterLanguage='pl-PL'}" />
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("public __SourceGenXBindBindings Bindings =>", generated);
+        Assert.Contains("SourceGenBindingSourceKind.ElementName", generated);
+        Assert.Contains("SourceGenBindingSourceKind.Target", generated);
+        Assert.Contains("SourceGenBindingSourceKind.ExplicitSource", generated);
+        Assert.Contains("global::Demo.BindingSources.Current", generated);
+        Assert.Contains("\"pl-PL\"", generated);
+    }
+
+    [Fact]
     public void Generates_Pathless_XBind_For_Current_Source_Object()
     {
         const string code = """
@@ -500,6 +649,113 @@ public class AvaloniaXBindSourceGeneratorTests
 
         Assert.Contains(generatedSources, static source => source.Contains("HandleClick", StringComparison.Ordinal));
         Assert.Contains(generatedSources, static source => source.Contains("__axsgRootTyped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generates_XBind_Event_Binding_With_ElementName_Source_Resolution()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject
+                {
+                    public string? Tag { get; set; }
+                }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                    public void Perform()
+                    {
+                    }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+            }
+
+            namespace XamlToCSharpGenerator.Runtime
+            {
+                public readonly record struct SourceGenBindingDependency(
+                    SourceGenBindingSourceKind SourceKind,
+                    string? Path,
+                    string? ElementName,
+                    object? RelativeSource = null,
+                    object? Source = null);
+
+                public enum SourceGenBindingSourceKind
+                {
+                    DataContext = 0,
+                    Root = 1,
+                    Target = 2,
+                    ElementName = 3
+                }
+
+                public static class SourceGenMarkupExtensionRuntime
+                {
+                    public static T ResolveNamedElement<T>(object target, object root, string name) => default!;
+                    public static T CoerceMarkupExtensionValue<T>(object value) => default!;
+                    public static bool TryResolveXBindDependency<T>(SourceGenBindingDependency dependency, object? targetObject, object? anchorObject, object? rootObject, out T value)
+                    {
+                        value = default!;
+                        return true;
+                    }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <Button x:Name="ActionButton" />
+                    <Button Click="{x:Bind Perform(), ElementName=ActionButton}" />
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedSources = updatedCompilation.SyntaxTrees
+            .Select(static tree => tree.ToString())
+            .Where(static source => source.StartsWith("// <auto-generated />", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains("TryResolveXBindDependency<", StringComparison.Ordinal));
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains("SourceGenBindingSourceKind.ElementName", StringComparison.Ordinal));
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains("\"ActionButton\"", StringComparison.Ordinal));
     }
 
     [Fact]
