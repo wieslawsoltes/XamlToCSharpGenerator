@@ -525,6 +525,98 @@ public class AvaloniaXBindSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_XBind_For_RelativeSource_DataContext_Using_Ambient_DataType()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+            }
+
+            namespace XamlToCSharpGenerator.Runtime
+            {
+                public static class SourceGenMarkupExtensionRuntime
+                {
+                    public static T ResolveNamedElement<T>(object target, object root, string name) => default!;
+                    public static T CoerceMarkupExtensionValue<T>(object value) => default!;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class MainViewModel
+                {
+                    public string FirstName { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string Title { get; set; } = string.Empty;
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView">
+                <StackPanel x:DataType="vm:MainViewModel">
+                    <TextBlock Text="{x:Bind FirstName, RelativeSource={RelativeSource DataContext}}" />
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(
+            "ProvideXBindExpressionBinding<global::Demo.ViewModels.MainViewModel, global::Demo.MainView, global::Avalonia.Controls.TextBlock>",
+            generated);
+        Assert.Contains("SourceGenBindingSourceKind.DataContext", generated);
+    }
+
+    [Fact]
     public void Generates_Pathless_XBind_For_Current_Source_Object()
     {
         const string code = """
@@ -756,6 +848,194 @@ public class AvaloniaXBindSourceGeneratorTests
         Assert.Contains(
             generatedSources,
             static source => source.Contains("\"ActionButton\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generates_XBind_With_Namescope_Aware_Named_Element_Resolution()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public string? Content { get; set; }
+                }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public string? Text { get; set; }
+                }
+
+                public class StackPanel : Control
+                {
+                    public global::System.Collections.Generic.List<Control> Children { get; } = new();
+                }
+
+                public class ItemsControl : Control
+                {
+                    public object? ItemTemplate { get; set; }
+                }
+
+                public class DataTemplate
+                {
+                    public object? DataType { get; set; }
+                }
+            }
+
+            namespace XamlToCSharpGenerator.Runtime
+            {
+                public static class SourceGenMarkupExtensionRuntime
+                {
+                    public static T ResolveNamedElement<T>(object target, object root, string name) => default!;
+                    public static T CoerceMarkupExtensionValue<T>(object value) => default!;
+                }
+            }
+
+            namespace Demo.ViewModels
+            {
+                public sealed class ItemViewModel
+                {
+                    public string DisplayName { get; set; } = string.Empty;
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:vm="clr-namespace:Demo.ViewModels"
+                         x:Class="Demo.MainView">
+                <StackPanel>
+                    <Button x:Name="Shared" Content="Root" />
+                    <TextBlock Text="{x:Bind Shared.Content}" />
+                    <ItemsControl>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ItemViewModel">
+                                <StackPanel>
+                                    <TextBlock x:Name="Shared" Text="{x:Bind DisplayName}" />
+                                    <TextBlock Text="{x:Bind Text, ElementName=Shared}" />
+                                    <TextBlock Text="{x:Bind Shared.Text}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedSources = updatedCompilation.SyntaxTrees
+            .Select(static tree => tree.ToString())
+            .Where(static source => source.StartsWith("// <auto-generated />", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains(
+                "ResolveNamedElement<global::Avalonia.Controls.Button>(target, root, \"Shared\").Content",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generates_XBind_Event_Binding_With_Root_Scope_Explicit_DataType_Source()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+
+                public class Button : Control
+                {
+                    public event global::System.EventHandler? Click;
+                }
+            }
+
+            namespace Demo
+            {
+                public sealed class ActionSource
+                {
+                    public void Perform()
+                    {
+                    }
+                }
+
+                public static class BindingSources
+                {
+                    public static ActionSource Current { get; } = new();
+                }
+
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView">
+                <Button Click="{x:Bind Perform(), Source={x:Static local:BindingSources.Current}, DataType=local:ActionSource}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedSources = updatedCompilation.SyntaxTrees
+            .Select(static tree => tree.ToString())
+            .Where(static source => source.StartsWith("// <auto-generated />", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains("BindingSources.Current", StringComparison.Ordinal));
+        Assert.Contains(
+            generatedSources,
+            static source => source.Contains("Perform", StringComparison.Ordinal));
     }
 
     [Fact]

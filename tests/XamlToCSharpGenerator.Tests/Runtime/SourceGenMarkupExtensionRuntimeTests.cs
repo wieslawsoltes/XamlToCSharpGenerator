@@ -1607,6 +1607,146 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal("Updated alias", target.Text);
     }
 
+    [AvaloniaFact]
+    public void StopTrackingXBind_Cancels_Deferred_Ancestor_Attachment()
+    {
+        var root = new UserControl
+        {
+            DataContext = new DeferredAnchorViewModel()
+        };
+        var panel = new StackPanel();
+        root.Content = panel;
+
+        var anchor = new Border();
+        var target = new DeferredAncestorBindingTarget();
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<UserControl, UserControl, DeferredAncestorBindingTarget>(
+            static (source, _, _) => ((DeferredAnchorViewModel)source.DataContext!).Message,
+            new SourceGenBindingDependency(
+                SourceGenBindingSourceKind.FindAncestor,
+                ".",
+                null,
+                new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(UserControl),
+                    AncestorLevel = 1
+                }),
+            dependencies: null,
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: DeferredAncestorBindingTarget.ValueProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, DeferredAncestorBindingTarget.ValueProperty, binding, anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        SourceGenMarkupExtensionRuntime.StopTrackingXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        var window = new Window
+        {
+            Content = root
+        };
+
+        try
+        {
+            panel.Children.Add(anchor);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Null(target.Value);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    [AvaloniaFact]
+    public void ResetXBind_Cancels_Deferred_Ancestor_Attachment()
+    {
+        var root = new UserControl
+        {
+            DataContext = new DeferredAnchorViewModel()
+        };
+        var panel = new StackPanel();
+        root.Content = panel;
+
+        var anchor = new Border();
+        var target = new DeferredAncestorBindingTarget();
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<UserControl, UserControl, DeferredAncestorBindingTarget>(
+            static (source, _, _) => ((DeferredAnchorViewModel)source.DataContext!).Message,
+            new SourceGenBindingDependency(
+                SourceGenBindingSourceKind.FindAncestor,
+                ".",
+                null,
+                new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(UserControl),
+                    AncestorLevel = 1
+                }),
+            dependencies: null,
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: DeferredAncestorBindingTarget.ValueProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, DeferredAncestorBindingTarget.ValueProperty, binding, anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        SourceGenMarkupExtensionRuntime.ResetXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        var window = new Window
+        {
+            Content = root
+        };
+
+        try
+        {
+            panel.Children.Add(anchor);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Null(target.Value);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
     private static void WaitForDispatcherCondition(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
