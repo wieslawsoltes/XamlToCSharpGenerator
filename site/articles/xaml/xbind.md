@@ -87,4 +87,4 @@ help. Runtime materialization is generated and reflection-free.
 - [Guides: x:Bind](../guides/xbind/)
 - [Compiled Bindings](compiled-bindings/)
 - [Binding and Expression Model](../concepts/binding-and-expression-model/)
-- full implementation/spec document: [`plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md)
+- the detailed implementation/spec notes are mirrored in the repository `plan/` folder for engineering work

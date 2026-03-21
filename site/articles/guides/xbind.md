@@ -276,4 +276,4 @@ Not currently part of the validated surface:
 - [Compiled Bindings](../xaml/compiled-bindings/)
 - [Inline C# Code](inline-csharp-code/)
 - [Event Bindings](../xaml/event-bindings/)
-- implementation/spec reference: [`plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md)
+- the detailed implementation/spec notes are mirrored in the repository `plan/` folder for engineering work

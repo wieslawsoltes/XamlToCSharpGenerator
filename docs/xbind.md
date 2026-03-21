@@ -236,4 +236,4 @@ Not currently part of the validated surface:
 
 - [`site/articles/xaml/xbind.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/site/articles/xaml/xbind.md)
 - [`site/articles/guides/xbind.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/site/articles/guides/xbind.md)
-- [`plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/plan/127-xbind-implementation-spec-and-comparison-2026-03-21.md)
+- Detailed implementation/spec notes are also kept in the repository `plan/` folder for engineering work.
