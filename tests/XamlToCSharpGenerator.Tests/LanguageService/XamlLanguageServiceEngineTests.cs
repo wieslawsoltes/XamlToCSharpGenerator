@@ -476,6 +476,56 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task Completion_InBindingPathContext_Prefers_BindingLocal_DataType()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingLocalDataTypeCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <TextBlock Text=\"{CompiledBinding Dis, DataType={x:Type vm:CustomerViewModel}}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Dis", StringComparison.Ordinal) + 3);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(bindingCaret.Line, bindingCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "DisplayName", StringComparison.Ordinal));
+        Assert.DoesNotContain(completions, item => string.Equals(item.Label, "FirstName", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_InBindingPathContext_DoesNotUse_BindingLocal_DataType_For_Self_RelativeSource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/BindingLocalDataTypeSelfRelativeSource.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" " +
+                            "xmlns:local=\"using:TestApp.Controls\" " +
+                            "x:DataType=\"vm:MainWindowViewModel\">\n" +
+                            "  <local:MainView Title=\"{CompiledBinding Roo, RelativeSource={RelativeSource Self}, DataType={x:Type vm:CustomerViewModel}}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Roo", StringComparison.Ordinal) + 3);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(bindingCaret.Line, bindingCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "RootOnly", StringComparison.Ordinal));
+        Assert.DoesNotContain(completions, item => string.Equals(item.Label, "DisplayName", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Completion_InNestedBindingPathContext_ReturnsNestedProperties()
     {
         using var engine = new XamlLanguageServiceEngine(

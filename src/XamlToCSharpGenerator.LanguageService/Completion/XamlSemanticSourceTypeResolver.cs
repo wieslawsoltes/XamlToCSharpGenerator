@@ -22,10 +22,20 @@ internal static class XamlSemanticSourceTypeResolver
         sourceTypeSymbol = null!;
         prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
 
+        if (bindingMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(bindingMarkup.ElementName) &&
             TryResolveNamedElementType(analysis, element.Document?.Root, bindingMarkup.ElementName!, out sourceTypeSymbol))
         {
             return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingMarkup.Source))
+        {
+            return false;
         }
 
         if (bindingMarkup.RelativeSource is { } relativeSource)
@@ -48,6 +58,43 @@ internal static class XamlSemanticSourceTypeResolver
                 }
             }
 
+            if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryResolveBindingLocalDataType(
+                        analysis,
+                        element,
+                        bindingMarkup,
+                        out sourceTypeSymbol,
+                        out prefixMap,
+                        out var hasExplicitLocalDataType))
+                {
+                    return true;
+                }
+
+                if (hasExplicitLocalDataType)
+                {
+                    return false;
+                }
+
+                return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+            }
+
+            return false;
+        }
+
+        if (TryResolveBindingLocalDataType(
+                analysis,
+                element,
+                bindingMarkup,
+                out sourceTypeSymbol,
+                out prefixMap,
+                out var hasExplicitBindingLocalDataType))
+        {
+            return true;
+        }
+
+        if (hasExplicitBindingLocalDataType)
+        {
             return false;
         }
 
@@ -85,6 +132,35 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         return false;
+    }
+
+    private static bool TryResolveBindingLocalDataType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        BindingMarkup bindingMarkup,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap,
+        out bool hasExplicitLocalDataType)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = ImmutableDictionary<string, string>.Empty;
+        hasExplicitLocalDataType = !string.IsNullOrWhiteSpace(bindingMarkup.DataType);
+
+        if (!hasExplicitLocalDataType)
+        {
+            return false;
+        }
+
+        var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+        var localType = ResolveTypeSymbol(analysis, localPrefixMap, bindingMarkup.DataType!);
+        if (localType is null)
+        {
+            return false;
+        }
+
+        sourceTypeSymbol = localType;
+        prefixMap = localPrefixMap;
+        return true;
     }
 
     public static bool TryResolveElementTypeSymbol(

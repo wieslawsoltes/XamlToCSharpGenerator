@@ -76,6 +76,7 @@ public readonly struct BindingMarkup
         string? elementName,
         RelativeSourceMarkup? relativeSource,
         string? source,
+        string? dataType,
         string? converter,
         string? converterCulture,
         string? converterParameter,
@@ -94,6 +95,7 @@ public readonly struct BindingMarkup
         ElementName = elementName;
         RelativeSource = relativeSource;
         Source = source;
+        DataType = dataType;
         Converter = converter;
         ConverterCulture = converterCulture;
         ConverterParameter = converterParameter;
@@ -118,6 +120,8 @@ public readonly struct BindingMarkup
     public RelativeSourceMarkup? RelativeSource { get; }
 
     public string? Source { get; }
+
+    public string? DataType { get; }
 
     public string? Converter { get; }
 
