@@ -30,7 +30,7 @@ AXSG is useful when you need one or more of these:
 
 ### XAML language features
 
-- compiled bindings with explicit and inferred source context
+- compiled bindings and full `x:Bind` support with explicit and inferred source context
 - shorthand expressions and full expression bindings
 - inline C# in attribute, object-element, and CDATA forms
 - event bindings and inline event code

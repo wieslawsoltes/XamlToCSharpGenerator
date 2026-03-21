@@ -5,7 +5,7 @@ using global::Avalonia.Data.Converters;
 
 namespace XamlToCSharpGenerator.Runtime;
 
-internal sealed class SourceGenExpressionMultiValueConverter<TSource> : IMultiValueConverter where TSource : class
+internal sealed class SourceGenExpressionMultiValueConverter<TSource> : IMultiValueConverter
 {
     private readonly Func<TSource, object?> _evaluator;
 

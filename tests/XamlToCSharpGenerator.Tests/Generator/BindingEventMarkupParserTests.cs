@@ -64,6 +64,34 @@ public class BindingEventMarkupParserTests
     }
 
     [Fact]
+    public void TryParseXBindMarkup_Parses_ConverterLanguage_As_ConverterCulture()
+    {
+        var success = BindingEventMarkupParser.TryParseXBindMarkup(
+            "{x:Bind Name, ConverterLanguage='pl-PL'}",
+            TryParseMarkupExtension,
+            out var xBindMarkup);
+
+        Assert.True(success);
+        Assert.Equal("Name", xBindMarkup.Path);
+        Assert.Equal("pl-PL", xBindMarkup.ConverterCulture);
+    }
+
+    [Fact]
+    public void TryParseXBindMarkup_Normalizes_Source_Reference_To_ElementName()
+    {
+        var success = BindingEventMarkupParser.TryParseXBindMarkup(
+            "{x:Bind Text, Source={x:Reference Editor}}",
+            TryParseMarkupExtension,
+            out var xBindMarkup);
+
+        Assert.True(success);
+        Assert.Equal("Text", xBindMarkup.Path);
+        Assert.Equal("Editor", xBindMarkup.ElementName);
+        Assert.Null(xBindMarkup.Source);
+        Assert.False(xBindMarkup.HasSourceConflict);
+    }
+
+    [Fact]
     public void TryParseEventBindingMarkup_Parses_Command_And_Binding_Parameter()
     {
         Assert.True(

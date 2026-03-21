@@ -3,6 +3,7 @@ namespace XamlToCSharpGenerator.Core.Configuration;
 public enum TypeContractId
 {
     SystemObject,
+    SystemActionOfT1T2,
     SystemTaskOfT,
     SystemTask,
     SystemObservableOfT,

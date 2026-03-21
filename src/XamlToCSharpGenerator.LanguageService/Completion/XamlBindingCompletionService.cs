@@ -27,9 +27,40 @@ internal static class XamlBindingCompletionService
     {
         completions = ImmutableArray<XamlCompletionItem>.Empty;
         if (!TryFindAttributeContext(analysis, position, out var element, out var attribute, out var caretOffsetInValue) ||
-            !TryCreateBindingEditContext(attribute.Value, caretOffsetInValue, out var context) ||
-            !XamlSemanticSourceTypeResolver.TryResolveBindingSourceType(analysis, element, context.BindingMarkup, out var sourceType, out var prefixMap) ||
-            !TryResolveReceiverType(analysis, context.PathPrefix, sourceType, prefixMap, out var receiverType, out var memberPrefix))
+            !TryCreateBindingEditContext(attribute.Value, caretOffsetInValue, out var context))
+        {
+            return false;
+        }
+
+        var isXBind = context.ExtensionKind == XamlMarkupExtensionKind.XBind;
+        if (!(isXBind
+                ? XamlSemanticSourceTypeResolver.TryResolveXBindSourceType(analysis, element, context.XBindMarkup, out var sourceType, out var prefixMap)
+                : XamlSemanticSourceTypeResolver.TryResolveBindingSourceType(analysis, element, context.BindingMarkup, out sourceType, out prefixMap)))
+        {
+            return false;
+        }
+
+        if (isXBind &&
+            TryGetTopLevelXBindCompletions(
+                analysis,
+                element,
+                context.PathPrefix,
+                sourceType,
+                out completions))
+        {
+            return completions.Length > 0;
+        }
+
+        if (!TryResolveReceiverType(
+                analysis,
+                element,
+                context.ExtensionKind,
+                context.PathPrefix,
+                sourceType,
+                prefixMap,
+                out var receiverType,
+                out var memberPrefix,
+                out var staticOnly))
         {
             return false;
         }
@@ -37,7 +68,10 @@ internal static class XamlBindingCompletionService
         completions = XamlClrMemberCompletionFactory.CreateMemberCompletions(
             receiverType,
             memberPrefix,
-            XamlMemberCompletionMode.BindingPath);
+            XamlMemberCompletionMode.BindingPath,
+            staticOnly: staticOnly,
+            includeFieldsInBindingPath: isXBind,
+            allowMethodsWithParameters: isXBind);
         return completions.Length > 0;
     }
 
@@ -99,17 +133,27 @@ internal static class XamlBindingCompletionService
         context = default;
         if (!TryExtractEditableMarkup(attributeValue, out var innerText, out _, out var innerStartInValue) ||
             !XamlMarkupArgumentSemantics.TryParseHead(innerText, out var extensionName, out _) ||
-            XamlMarkupExtensionNameSemantics.Classify(extensionName) is not (XamlMarkupExtensionKind.Binding or XamlMarkupExtensionKind.CompiledBinding or XamlMarkupExtensionKind.ReflectionBinding))
+            XamlMarkupExtensionNameSemantics.Classify(extensionName) is not (XamlMarkupExtensionKind.Binding or XamlMarkupExtensionKind.CompiledBinding or XamlMarkupExtensionKind.ReflectionBinding or XamlMarkupExtensionKind.XBind))
         {
             return false;
         }
 
-        if (!TryParseBindingMarkupForEditing(attributeValue, innerText, extensionName, innerStartInValue, caretOffsetInValue, out var bindingMarkup, out var pathPrefix))
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(extensionName);
+        if (!TryParseBindingMarkupForEditing(
+                attributeValue,
+                innerText,
+                extensionName,
+                extensionKind,
+                innerStartInValue,
+                caretOffsetInValue,
+                out var bindingMarkup,
+                out var xBindMarkup,
+                out var pathPrefix))
         {
             return false;
         }
 
-        context = new BindingEditContext(bindingMarkup, pathPrefix);
+        context = new BindingEditContext(extensionKind, bindingMarkup, xBindMarkup, pathPrefix);
         return true;
     }
 
@@ -117,15 +161,18 @@ internal static class XamlBindingCompletionService
         string attributeValue,
         string innerText,
         string extensionName,
+        XamlMarkupExtensionKind extensionKind,
         int innerStartInValue,
         int caretOffsetInValue,
         out BindingMarkup bindingMarkup,
+        out XBindMarkup xBindMarkup,
         out string pathPrefix)
     {
         bindingMarkup = default;
+        xBindMarkup = default;
         pathPrefix = string.Empty;
 
-        if (!TryParseHeadSpan(innerText, out _, out var argumentsStartInInner))
+        if (!TryParseHeadSpan(innerText, out _, out var pathStartInInner, out var argumentsStartInInner))
         {
             return false;
         }
@@ -135,15 +182,34 @@ internal static class XamlBindingCompletionService
             : string.Empty;
         var argumentSegments = ParseArgumentSegments(attributeValue, argumentsText, innerStartInValue + argumentsStartInInner);
 
-        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(extensionName);
-        if (!TryCreateMarkupExtensionInfo(extensionName, argumentSegments, out var markupInfo) ||
-            !BindingEventMarkupParser.TryParseBindingMarkupCore(markupInfo, extensionKind, TryParseMarkupExtension, out bindingMarkup))
+        if (!TryCreateMarkupExtensionInfo(extensionName, argumentSegments, out var markupInfo))
+        {
+            return false;
+        }
+
+        if (extensionKind == XamlMarkupExtensionKind.XBind)
+        {
+            if (!BindingEventMarkupParser.TryParseXBindMarkupCore(markupInfo, out xBindMarkup))
+            {
+                return false;
+            }
+        }
+        else if (!BindingEventMarkupParser.TryParseBindingMarkupCore(markupInfo, extensionKind, TryParseMarkupExtension, out bindingMarkup))
         {
             return false;
         }
 
         if (TryResolveEditablePathContext(caretOffsetInValue, argumentSegments, out pathPrefix))
         {
+            return true;
+        }
+
+        var pathStartInValue = innerStartInValue + pathStartInInner;
+        var argumentsStartInValue = innerStartInValue + argumentsStartInInner;
+        if (caretOffsetInValue >= pathStartInValue &&
+            caretOffsetInValue < argumentsStartInValue)
+        {
+            pathPrefix = string.Empty;
             return true;
         }
 
@@ -301,16 +367,106 @@ internal static class XamlBindingCompletionService
         return true;
     }
 
+    private static bool TryGetTopLevelXBindCompletions(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string pathPrefix,
+        INamedTypeSymbol sourceType,
+        out ImmutableArray<XamlCompletionItem> completions)
+    {
+        completions = ImmutableArray<XamlCompletionItem>.Empty;
+
+        var trimmedPathPrefix = pathPrefix.Trim();
+        SplitPathForCompletion(trimmedPathPrefix, out var completedPath, out var memberPrefix);
+        if (completedPath.Length != 0 || !IsMemberPrefix(memberPrefix))
+        {
+            return false;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>();
+        AddXBindReceiverCompletions(builder, sourceType, memberPrefix);
+
+        if (XamlSemanticSourceTypeResolver.TryResolveRootType(analysis, out var rootType) &&
+            !SymbolEqualityComparer.Default.Equals(rootType, sourceType))
+        {
+            AddXBindReceiverCompletions(builder, rootType, memberPrefix);
+        }
+
+        if (XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, element, out var targetType) &&
+            !SymbolEqualityComparer.Default.Equals(targetType, sourceType))
+        {
+            AddXBindReceiverCompletions(builder, targetType, memberPrefix);
+        }
+
+        AddNamedElementCompletions(builder, analysis, memberPrefix);
+        completions = builder
+            .DistinctBy(static item => item.Label, StringComparer.Ordinal)
+            .OrderBy(static item => item.Label, StringComparer.Ordinal)
+            .ToImmutableArray();
+        return true;
+    }
+
+    private static void AddXBindReceiverCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder builder,
+        INamedTypeSymbol receiverType,
+        string memberPrefix)
+    {
+        builder.AddRange(XamlClrMemberCompletionFactory.CreateMemberCompletions(
+            receiverType,
+            memberPrefix,
+            XamlMemberCompletionMode.BindingPath,
+            staticOnly: false,
+            includeFieldsInBindingPath: true,
+            allowMethodsWithParameters: true));
+    }
+
+    private static void AddNamedElementCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder builder,
+        XamlAnalysisResult analysis,
+        string memberPrefix)
+    {
+        var documentRoot = analysis.XmlDocument?.Root;
+        if (documentRoot is null)
+        {
+            return;
+        }
+
+        foreach (var candidateElement in documentRoot.DescendantsAndSelf())
+        {
+            var nameAttribute = candidateElement.Attributes()
+                .FirstOrDefault(attribute =>
+                    string.Equals(attribute.Name.LocalName, "Name", StringComparison.Ordinal) &&
+                    !string.IsNullOrWhiteSpace(attribute.Value));
+            if (nameAttribute is null ||
+                !MatchesPrefix(nameAttribute.Value, memberPrefix) ||
+                !XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, candidateElement, out var typeSymbol))
+            {
+                continue;
+            }
+
+            builder.Add(new XamlCompletionItem(
+                nameAttribute.Value,
+                nameAttribute.Value,
+                XamlCompletionItemKind.Element,
+                typeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+                "Named element in the current namescope."));
+        }
+    }
+
     private static bool TryResolveReceiverType(
         XamlAnalysisResult analysis,
+        XElement element,
+        XamlMarkupExtensionKind extensionKind,
         string pathPrefix,
         INamedTypeSymbol sourceType,
         ImmutableDictionary<string, string> prefixMap,
         out INamedTypeSymbol receiverType,
-        out string memberPrefix)
+        out string memberPrefix,
+        out bool staticOnly)
     {
         receiverType = sourceType;
         memberPrefix = string.Empty;
+        staticOnly = false;
 
         var trimmedPathPrefix = pathPrefix.Trim();
         if (trimmedPathPrefix.Length == 0 || string.Equals(trimmedPathPrefix, ".", StringComparison.Ordinal))
@@ -331,26 +487,41 @@ internal static class XamlBindingCompletionService
 
         return TryResolveCompletedPathReceiverType(
             analysis,
+            element,
+            extensionKind == XamlMarkupExtensionKind.XBind,
             completedPath,
             sourceType,
             prefixMap,
-            out receiverType);
+            out receiverType,
+            out staticOnly);
     }
 
     private static bool TryResolveCompletedPathReceiverType(
         XamlAnalysisResult analysis,
+        XElement element,
+        bool isXBind,
         string completedPath,
         INamedTypeSymbol sourceType,
         ImmutableDictionary<string, string> prefixMap,
-        out INamedTypeSymbol receiverType)
+        out INamedTypeSymbol receiverType,
+        out bool staticOnly)
     {
         receiverType = sourceType;
+        staticOnly = false;
+        if (!isXBind &&
+            TryResolveNamedElementType(analysis, element, completedPath, out var namedElementType))
+        {
+            receiverType = namedElementType;
+            return true;
+        }
+
         if (!TryTokenizeBindingPath(completedPath, out var segmentTokens))
         {
             return false;
         }
 
         ITypeSymbol currentType = sourceType;
+        var currentIsStatic = false;
         for (var index = 0; index < segmentTokens.Length; index++)
         {
             var segment = segmentTokens[index];
@@ -363,6 +534,20 @@ internal static class XamlBindingCompletionService
                 }
 
                 currentType = castType;
+                currentIsStatic = false;
+            }
+
+            if (segment.IsTypeReferenceSegment)
+            {
+                var typeReference = XamlSemanticSourceTypeResolver.ResolveTypeSymbol(analysis, prefixMap, segment.TypeReferenceToken ?? segment.MemberName);
+                if (typeReference is null)
+                {
+                    return false;
+                }
+
+                currentType = typeReference;
+                currentIsStatic = true;
+                continue;
             }
 
             if (segment.IsAttachedProperty)
@@ -389,40 +574,153 @@ internal static class XamlBindingCompletionService
                 }
 
                 currentType = attachedPropertyType;
+                currentIsStatic = false;
                 continue;
             }
 
-            var currentNamedType = currentType as INamedTypeSymbol;
-            if (currentNamedType is null)
+            if (currentType is not INamedTypeSymbol currentNamedType)
             {
                 return false;
             }
 
-            if (segment.IsMethodCall)
+            if (isXBind &&
+                index == 0 &&
+                TryResolveXBindInitialSegmentType(
+                    analysis,
+                    element,
+                    segment,
+                    sourceType,
+                    prefixMap,
+                    out var initialType,
+                    out currentIsStatic))
             {
-                var method = XamlClrMemberSymbolResolver.ResolveParameterlessMethod(currentNamedType, segment.MemberName);
-                if (method is null)
-                {
-                    return false;
-                }
-
-                currentType = method.ReturnType;
+                currentType = initialType;
                 continue;
             }
 
-            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentNamedType, segment.MemberName);
-            if (resolvedProperty is null)
+            if (!TryResolveClrSegmentType(currentNamedType, currentIsStatic, segment, out var nextType))
             {
                 return false;
             }
 
-            currentType = segment.HasIndexers
-                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(resolvedProperty.Type) ?? resolvedProperty.Type
-                : resolvedProperty.Type;
+            currentType = nextType;
+            currentIsStatic = false;
         }
 
         receiverType = currentType as INamedTypeSymbol ?? sourceType;
+        staticOnly = currentIsStatic;
         return currentType is INamedTypeSymbol;
+    }
+
+    private static bool TryResolveXBindInitialSegmentType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        BindingPathSegmentToken segment,
+        INamedTypeSymbol sourceType,
+        ImmutableDictionary<string, string> prefixMap,
+        out ITypeSymbol resultType,
+        out bool staticOnly)
+    {
+        resultType = sourceType;
+        staticOnly = false;
+
+        if (TryResolveClrSegmentType(sourceType, staticOnly: false, segment, out resultType))
+        {
+            return true;
+        }
+
+        if (XamlSemanticSourceTypeResolver.TryResolveRootType(analysis, out var rootType) &&
+            !SymbolEqualityComparer.Default.Equals(rootType, sourceType) &&
+            TryResolveClrSegmentType(rootType, staticOnly: false, segment, out resultType))
+        {
+            return true;
+        }
+
+        if (XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, element, out var targetType) &&
+            TryResolveClrSegmentType(targetType, staticOnly: false, segment, out resultType))
+        {
+            return true;
+        }
+
+        if (!segment.IsMethodCall &&
+            !segment.HasIndexers &&
+            TryResolveNamedElementType(analysis, element, segment.MemberName, out var namedElementType))
+        {
+            resultType = namedElementType;
+            return true;
+        }
+
+        if (!segment.IsMethodCall &&
+            !segment.HasIndexers &&
+            XamlSemanticSourceTypeResolver.ResolveTypeSymbol(analysis, prefixMap, segment.MemberName) is { } staticType)
+        {
+            resultType = staticType;
+            staticOnly = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveClrSegmentType(
+        INamedTypeSymbol currentType,
+        bool staticOnly,
+        BindingPathSegmentToken segment,
+        out ITypeSymbol resultType)
+    {
+        resultType = currentType;
+
+        if (segment.IsMethodCall)
+        {
+            var method = XamlClrMemberSymbolResolver.ResolveMethod(
+                currentType,
+                segment.MemberName,
+                staticOnly,
+                segment.ArgumentCount,
+                allowVoidReturn: false);
+            if (method is null)
+            {
+                return false;
+            }
+
+            resultType = segment.HasIndexers
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(method.ReturnType) ?? method.ReturnType
+                : method.ReturnType;
+            return true;
+        }
+
+        var property = staticOnly
+            ? XamlClrMemberSymbolResolver.ResolveStaticProperty(currentType, segment.MemberName)
+            : XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
+        if (property is not null)
+        {
+            resultType = segment.HasIndexers
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(property.Type) ?? property.Type
+                : property.Type;
+            return true;
+        }
+
+        var field = staticOnly
+            ? XamlClrMemberSymbolResolver.ResolveStaticField(currentType, segment.MemberName)
+            : XamlClrMemberSymbolResolver.ResolveInstanceField(currentType, segment.MemberName);
+        if (field is null)
+        {
+            return false;
+        }
+
+        resultType = segment.HasIndexers
+            ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(field.Type) ?? field.Type
+            : field.Type;
+        return true;
+    }
+
+    private static bool TryResolveNamedElementType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        string elementName,
+        out INamedTypeSymbol typeSymbol)
+    {
+        return XamlSemanticSourceTypeResolver.TryResolveNamedElementType(analysis, element, elementName, out typeSymbol);
     }
 
     private static AvaloniaTypeInfo? ResolveTypeInfo(
@@ -577,7 +875,8 @@ internal static class XamlBindingCompletionService
         out ImmutableArray<BindingPathSegmentToken> segmentTokens)
     {
         segmentTokens = ImmutableArray<BindingPathSegmentToken>.Empty;
-        if (path.Length == 0 || !CompiledBindingPathParser.TryParse(path, out _, out var leadingNotCount, out _))
+        if (path.Length == 0 ||
+            !TryGetLeadingNotCount(path, out var leadingNotCount))
         {
             return false;
         }
@@ -702,6 +1001,29 @@ internal static class XamlBindingCompletionService
         return true;
     }
 
+    private static bool TryGetLeadingNotCount(string path, out int leadingNotCount)
+    {
+        leadingNotCount = 0;
+        if (CompiledBindingPathParser.TryParse(path, out _, out leadingNotCount, out _))
+        {
+            return true;
+        }
+
+        while (leadingNotCount < path.Length &&
+               (path[leadingNotCount] == '!' || char.IsWhiteSpace(path[leadingNotCount])))
+        {
+            if (path[leadingNotCount] == '!')
+            {
+                leadingNotCount++;
+                continue;
+            }
+
+            leadingNotCount++;
+        }
+
+        return leadingNotCount < path.Length;
+    }
+
     private static bool TryParseBindingPathSegmentToken(
         string path,
         int segmentStart,
@@ -751,10 +1073,13 @@ internal static class XamlBindingCompletionService
             token = new BindingPathSegmentToken(
                 MemberName: attachedMemberName,
                 CastTypeToken: null,
+                TypeReferenceToken: null,
+                IsTypeReferenceSegment: false,
                 IsAttachedProperty: true,
                 AttachedOwnerTypeToken: attachedOwnerTypeToken,
                 HasIndexers: segmentText.IndexOf('[', StringComparison.Ordinal) >= 0,
-                IsMethodCall: false);
+                IsMethodCall: false,
+                ArgumentCount: 0);
             return true;
         }
 
@@ -788,6 +1113,22 @@ internal static class XamlBindingCompletionService
             }
         }
 
+        if (cursor < segmentText.Length &&
+            LooksLikeTypeReferenceToken(segmentText.Substring(cursor)))
+        {
+            token = new BindingPathSegmentToken(
+                MemberName: segmentText.Substring(cursor),
+                CastTypeToken: castTypeToken,
+                TypeReferenceToken: segmentText.Substring(cursor),
+                IsTypeReferenceSegment: true,
+                IsAttachedProperty: false,
+                AttachedOwnerTypeToken: null,
+                HasIndexers: false,
+                IsMethodCall: false,
+                ArgumentCount: 0);
+            return true;
+        }
+
         if (cursor >= segmentText.Length ||
             !MiniLanguageSyntaxFacts.IsIdentifierStart(segmentText[cursor]))
         {
@@ -803,6 +1144,13 @@ internal static class XamlBindingCompletionService
 
         var memberName = segmentText.Substring(memberStart, cursor - memberStart);
         var isMethodCall = cursor < segmentText.Length && segmentText[cursor] == '(';
+        var argumentCount = 0;
+        if (isMethodCall &&
+            !TryCountInvocationArguments(segmentText, cursor, out argumentCount))
+        {
+            return false;
+        }
+
         if (requiresSegmentClosure)
         {
             while (cursor < segmentText.Length && segmentText[cursor] != ')')
@@ -819,10 +1167,69 @@ internal static class XamlBindingCompletionService
         token = new BindingPathSegmentToken(
             MemberName: memberName,
             CastTypeToken: castTypeToken,
+            TypeReferenceToken: null,
+            IsTypeReferenceSegment: false,
             IsAttachedProperty: false,
             AttachedOwnerTypeToken: null,
             HasIndexers: segmentText.IndexOf('[', StringComparison.Ordinal) >= 0,
-            IsMethodCall: isMethodCall);
+            IsMethodCall: isMethodCall,
+            ArgumentCount: argumentCount);
+        return true;
+    }
+
+    private static bool TryCountInvocationArguments(string segmentText, int openParenIndex, out int argumentCount)
+    {
+        argumentCount = 0;
+        var parseIndex = openParenIndex;
+        if (!TopLevelTextParser.TryReadBalancedContent(segmentText, ref parseIndex, '(', ')', out var argumentsText))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(argumentsText))
+        {
+            argumentCount = 0;
+            return true;
+        }
+
+        argumentCount = TopLevelTextParser.SplitTopLevelSegments(
+                argumentsText,
+                ',',
+                trimTokens: true,
+                removeEmpty: true)
+            .Length;
+        return true;
+    }
+
+    private static bool LooksLikeTypeReferenceToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        var colonIndex = token.IndexOf(':');
+        if (colonIndex <= 0 || colonIndex >= token.Length - 1)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < token.Length; index++)
+        {
+            var current = token[index];
+            if (current == ':')
+            {
+                continue;
+            }
+
+            if (current == '.' || MiniLanguageSyntaxFacts.IsIdentifierPart(current))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
         return true;
     }
 
@@ -880,9 +1287,11 @@ internal static class XamlBindingCompletionService
     private static bool TryParseHeadSpan(
         string innerText,
         out string extensionName,
+        out int pathStartInInner,
         out int argumentsStartInInner)
     {
         extensionName = string.Empty;
+        pathStartInInner = 0;
         argumentsStartInInner = 0;
         if (!XamlMarkupArgumentSemantics.TryParseHead(innerText, out extensionName, out _))
         {
@@ -897,6 +1306,7 @@ internal static class XamlBindingCompletionService
             headLength++;
         }
 
+        pathStartInInner = headLength;
         argumentsStartInInner = headLength;
         while (argumentsStartInInner < innerText.Length && char.IsWhiteSpace(innerText[argumentsStartInInner]))
         {
@@ -943,6 +1353,11 @@ internal static class XamlBindingCompletionService
         }
 
         return true;
+    }
+
+    private static bool MatchesPrefix(string candidate, string prefix)
+    {
+        return prefix.Length == 0 || candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void NormalizeQuotedToken(
@@ -992,7 +1407,9 @@ internal static class XamlBindingCompletionService
     }
 
     private readonly record struct BindingEditContext(
+        XamlMarkupExtensionKind ExtensionKind,
         BindingMarkup BindingMarkup,
+        XBindMarkup XBindMarkup,
         string PathPrefix);
 
     private readonly record struct MarkupArgumentEditSpan(
@@ -1007,8 +1424,11 @@ internal static class XamlBindingCompletionService
     private readonly record struct BindingPathSegmentToken(
         string MemberName,
         string? CastTypeToken,
+        string? TypeReferenceToken,
+        bool IsTypeReferenceSegment,
         bool IsAttachedProperty,
         string? AttachedOwnerTypeToken,
         bool HasIndexers,
-        bool IsMethodCall);
+        bool IsMethodCall,
+        int ArgumentCount);
 }

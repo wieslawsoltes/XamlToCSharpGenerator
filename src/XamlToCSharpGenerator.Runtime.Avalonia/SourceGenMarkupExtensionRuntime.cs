@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using System.Xml.Linq;
 using Avalonia;
 using global::Avalonia.Controls;
 using global::Avalonia.Data;
+using global::Avalonia.Data.Converters;
 using global::Avalonia.Data.Core;
 using global::Avalonia.LogicalTree;
 using global::Avalonia.Markup.Xaml;
@@ -345,6 +347,12 @@ public static class SourceGenMarkupExtensionRuntime
             return;
         }
 
+        if (binding is SourceGenProvidedXBindBinding xBindBinding)
+        {
+            xBindBinding.AttachMetadata(nameScope, xmlNamespaces);
+            return;
+        }
+
         if (binding is Binding dataBinding)
         {
             if (xmlNamespaces is not null && xmlNamespaces.Count > 0)
@@ -380,16 +388,52 @@ public static class SourceGenMarkupExtensionRuntime
             return;
         }
 
+        if (value is SourceGenProvidedXBindBinding xBindBinding)
+        {
+            xBindBinding.Apply(avaloniaObject, property, anchor);
+            return;
+        }
+
+        ApplyBindingCore(avaloniaObject, property, value, anchor);
+    }
+
+    public static void InitializeXBind(object rootObject)
+    {
+        ArgumentNullException.ThrowIfNull(rootObject);
+        SourceGenXBindLifecycleRegistry.Initialize(rootObject);
+    }
+
+    public static void UpdateXBind(object rootObject)
+    {
+        ArgumentNullException.ThrowIfNull(rootObject);
+        SourceGenXBindLifecycleRegistry.Update(rootObject);
+    }
+
+    public static void StopTrackingXBind(object rootObject)
+    {
+        ArgumentNullException.ThrowIfNull(rootObject);
+        SourceGenXBindLifecycleRegistry.StopTracking(rootObject);
+    }
+
+    public static void ResetXBind(object rootObject)
+    {
+        ArgumentNullException.ThrowIfNull(rootObject);
+        SourceGenXBindLifecycleRegistry.Reset(rootObject);
+    }
+
+    internal static IDisposable? ApplyBindingCore(AvaloniaObject avaloniaObject, AvaloniaProperty property, object? value, object? anchor = null)
+    {
         if (value is InstancedBinding instancedBinding)
         {
 #pragma warning disable CS0618
-            BindingOperations.Apply(avaloniaObject, property, instancedBinding);
+            return BindingOperations.Apply(avaloniaObject, property, instancedBinding);
 #pragma warning restore CS0618
-            return;
         }
 
         if (value is IBinding binding)
         {
+            var bindingHandle = new SourceGenBindingApplicationHandle();
+
             bool TryApplyBindingNow(
                 string stage,
                 out InvalidOperationException? deferredException,
@@ -397,8 +441,29 @@ public static class SourceGenMarkupExtensionRuntime
             {
                 deferredException = null;
                 deferredReason = DeferredBindingFailureReason.None;
-                if (TryBind(avaloniaObject, property, binding, anchor, out deferredException))
+                if (bindingHandle.IsDisposed)
                 {
+                    return false;
+                }
+
+                if (bindingHandle.HasAttachedBinding)
+                {
+                    return true;
+                }
+
+                if (TryBind(
+                        avaloniaObject,
+                        property,
+                        binding,
+                        anchor,
+                        out var appliedBindingExpression,
+                        out deferredException))
+                {
+                    if (!bindingHandle.TrySetBindingExpression(appliedBindingExpression))
+                    {
+                        return false;
+                    }
+
                     if (!string.Equals(stage, "immediate", StringComparison.Ordinal) ||
                         BindingTraceVerboseEnabled)
                     {
@@ -418,24 +483,40 @@ public static class SourceGenMarkupExtensionRuntime
 
             if (TryApplyBindingNow("immediate", out _, out var initialDeferredReason))
             {
-                return;
+                return bindingHandle;
             }
 
             void AttachDeferredRetryHooks(StyledElement observedElement, Visual? observedVisual, string ownerKind)
             {
-                void TryApplyAndDetachHandlers()
+                void DetachHandlers()
                 {
-                    if (!TryApplyBindingNow("event/" + ownerKind, out _, out _))
-                    {
-                        return;
-                    }
-
                     observedElement.PropertyChanged -= OnPropertyChanged;
                     observedElement.AttachedToLogicalTree -= OnAttachedToLogicalTree;
                     if (observedVisual is not null)
                     {
                         observedVisual.AttachedToVisualTree -= OnAttachedToVisualTree;
                     }
+                }
+
+                if (!bindingHandle.TryRegisterCleanup(DetachHandlers))
+                {
+                    return;
+                }
+
+                void TryApplyAndDetachHandlers()
+                {
+                    if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
+                    {
+                        DetachHandlers();
+                        return;
+                    }
+
+                    if (!TryApplyBindingNow("event/" + ownerKind, out _, out _))
+                    {
+                        return;
+                    }
+
+                    DetachHandlers();
                 }
 
                 void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
@@ -467,26 +548,27 @@ public static class SourceGenMarkupExtensionRuntime
                 }
             }
 
-            if (target is StyledElement styledTarget)
+            if (avaloniaObject is StyledElement styledTarget)
             {
-                AttachDeferredRetryHooks(styledTarget, target as Visual, "target");
+                AttachDeferredRetryHooks(styledTarget, avaloniaObject as Visual, "target");
             }
 
             if (anchor is StyledElement styledAnchor &&
-                (target is not StyledElement styledTargetReference || !ReferenceEquals(styledAnchor, styledTargetReference)))
+                (avaloniaObject is not StyledElement styledTargetReference || !ReferenceEquals(styledAnchor, styledTargetReference)))
             {
                 AttachDeferredRetryHooks(styledAnchor, styledAnchor as Visual, "anchor");
             }
 
             if (ShouldScheduleTimedBindingRetry(avaloniaObject, binding, anchor, initialDeferredReason))
             {
-                ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
+                ScheduleBindingRetry(avaloniaObject, property, binding, anchor, bindingHandle);
             }
 
-            return;
+            return bindingHandle;
         }
 
         avaloniaObject.SetValue(property, value);
+        return null;
     }
 
     public static object? ResolveBindingAnchor(object? target, IReadOnlyList<object>? parentStack)
@@ -940,7 +1022,12 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
-    private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
+    private static void ScheduleBindingRetry(
+        AvaloniaObject target,
+        AvaloniaProperty property,
+        IBinding binding,
+        object? anchor,
+        SourceGenBindingApplicationHandle bindingHandle)
     {
         var fallbackSynchronizationContext = SynchronizationContext.Current as AvaloniaSynchronizationContext;
 
@@ -952,10 +1039,25 @@ public static class SourceGenMarkupExtensionRuntime
 
         void TryApply(int attempt)
         {
+            if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
+            {
+                return;
+            }
+
             if (!SourceGenDispatcherRuntime.TryPost(() =>
             {
-                if (TryBind(target, property, binding, anchor, out var deferredException))
+                if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
                 {
+                    return;
+                }
+
+                if (TryBind(target, property, binding, anchor, out var bindingExpression, out var deferredException))
+                {
+                    if (!bindingHandle.TrySetBindingExpression(bindingExpression))
+                    {
+                        return;
+                    }
+
                     TraceBinding($"Applied binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}): {DescribeBindingTarget(target, property)}.");
                     return;
                 }
@@ -966,7 +1068,9 @@ public static class SourceGenMarkupExtensionRuntime
                     TraceBinding($"Deferred binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}/{deferredReason}): {DescribeBindingTarget(target, property)}. {deferredException.Message}");
                 }
 
-                if (attempt + 1 < MaxDeferredBindingRetryCount)
+                if (!bindingHandle.IsDisposed &&
+                    !bindingHandle.HasAttachedBinding &&
+                    attempt + 1 < MaxDeferredBindingRetryCount)
                 {
                     var nextAttempt = attempt + 1;
                     var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
@@ -984,7 +1088,9 @@ public static class SourceGenMarkupExtensionRuntime
                 }
             }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background, fallbackSynchronizationContext))
             {
-                if (attempt + 1 >= MaxDeferredBindingRetryCount)
+                if (bindingHandle.IsDisposed ||
+                    bindingHandle.HasAttachedBinding ||
+                    attempt + 1 >= MaxDeferredBindingRetryCount)
                 {
                     return;
                 }
@@ -998,8 +1104,15 @@ public static class SourceGenMarkupExtensionRuntime
         TryApply(0);
     }
 
-    private static bool TryBind(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor, out InvalidOperationException? deferredException)
+    private static bool TryBind(
+        AvaloniaObject target,
+        AvaloniaProperty property,
+        IBinding binding,
+        object? anchor,
+        out IDisposable? bindingExpression,
+        out InvalidOperationException? deferredException)
     {
+        bindingExpression = null;
         deferredException = null;
 
         if (!TryPrepareBindingForDetachedTarget(target, binding, anchor, out deferredException))
@@ -1012,12 +1125,12 @@ public static class SourceGenMarkupExtensionRuntime
             if (anchor is not null)
             {
 #pragma warning disable CS0618
-                target.Bind(property, binding, anchor);
+                bindingExpression = target.Bind(property, binding, anchor);
 #pragma warning restore CS0618
             }
             else
             {
-                target.Bind(property, binding);
+                bindingExpression = target.Bind(property, binding);
             }
 
             return true;
@@ -1440,9 +1553,6 @@ public static class SourceGenMarkupExtensionRuntime
         object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack)
-        where TSource : class
-        where TRoot : class
-        where TTarget : class
     {
         _ = CreateContextProvider(
             parentServiceProvider,
@@ -1487,6 +1597,186 @@ public static class SourceGenMarkupExtensionRuntime
         return multiBinding;
     }
 
+    public static object ProvideXBindExpressionBinding<TSource, TRoot, TTarget>(
+        Func<TSource, TRoot, TTarget, object?> evaluator,
+        SourceGenBindingDependency source,
+        IReadOnlyList<SourceGenBindingDependency>? dependencies,
+        BindingMode mode,
+        Action<TSource, object?>? bindBack,
+        Type? bindBackValueType,
+        object? converter,
+        CultureInfo? converterCulture,
+        object? converterParameter,
+        string? stringFormat,
+        object? fallbackValue,
+        object? targetNullValue,
+        int delay,
+        UpdateSourceTrigger updateSourceTrigger,
+        BindingPriority priority,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        return new SourceGenProvidedXBindBinding(
+            rootObject,
+            metadata => CreatePreparedXBindBinding(
+                evaluator,
+                source,
+                dependencies,
+                mode,
+                bindBack,
+                bindBackValueType,
+                converter,
+                converterCulture,
+                converterParameter,
+                stringFormat,
+                fallbackValue,
+                targetNullValue,
+                delay,
+                updateSourceTrigger,
+                priority,
+                parentServiceProvider,
+                rootObject,
+                intermediateRootObject,
+                targetObject,
+                targetProperty,
+                baseUri,
+                parentStack,
+                metadata.NameScope,
+                metadata.XmlNamespaces));
+    }
+
+    private static SourceGenPreparedXBindBinding CreatePreparedXBindBinding<TSource, TRoot, TTarget>(
+        Func<TSource, TRoot, TTarget, object?> evaluator,
+        SourceGenBindingDependency source,
+        IReadOnlyList<SourceGenBindingDependency>? dependencies,
+        BindingMode mode,
+        Action<TSource, object?>? bindBack,
+        Type? bindBackValueType,
+        object? converter,
+        CultureInfo? converterCulture,
+        object? converterParameter,
+        string? stringFormat,
+        object? fallbackValue,
+        object? targetNullValue,
+        int delay,
+        UpdateSourceTrigger updateSourceTrigger,
+        BindingPriority priority,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack,
+        INameScope? attachedNameScope,
+        IReadOnlyDictionary<string, string>? attachedXmlNamespaces)
+    {
+        var contextProvider = CreateContextProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject,
+            targetProperty,
+            baseUri,
+            parentStack);
+
+        var multiBinding = new MultiBinding
+        {
+            Converter = new SourceGenInlineCodeMultiValueConverter<TSource, TRoot, TTarget>(
+                evaluator,
+                rootObject,
+                targetObject,
+                converter as IValueConverter),
+            ConverterCulture = converterCulture,
+            ConverterParameter = converterParameter,
+            FallbackValue = fallbackValue ?? AvaloniaProperty.UnsetValue,
+            TargetNullValue = targetNullValue ?? AvaloniaProperty.UnsetValue,
+            StringFormat = stringFormat,
+            Mode = bindBack is null ? mode : BindingMode.OneWay,
+            Priority = priority
+        };
+
+        multiBinding.Bindings.Add(CreateXBindChildBinding(source, rootObject, targetObject));
+
+        if (dependencies is not null)
+        {
+            var seen = new HashSet<SourceGenBindingDependency>();
+            foreach (var dependency in dependencies)
+            {
+                if (!seen.Add(dependency))
+                {
+                    continue;
+                }
+
+                multiBinding.Bindings.Add(CreateXBindChildBinding(dependency, rootObject, targetObject));
+            }
+        }
+
+        var nameScope = attachedNameScope ?? contextProvider.GetService(typeof(INameScope)) as INameScope;
+        AttachBindingMetadata(multiBinding, nameScope, attachedXmlNamespaces);
+
+        if (bindBack is null || mode != BindingMode.TwoWay)
+        {
+            return new SourceGenPreparedXBindBinding(multiBinding, null);
+        }
+
+        if (targetObject is not AvaloniaObject avaloniaTarget ||
+            targetProperty is not AvaloniaProperty avaloniaProperty)
+        {
+            return new SourceGenPreparedXBindBinding(multiBinding, null);
+        }
+
+        var anchor = ResolveBindingAnchor(targetObject, parentStack);
+        var forward = multiBinding.Initiate(avaloniaTarget, avaloniaProperty, anchor);
+        if (forward is null)
+        {
+            return new SourceGenPreparedXBindBinding(multiBinding, null);
+        }
+
+        var bindBackObserver = new SourceGenXBindBindBackObserver<TSource>(
+            source,
+            bindBack,
+            rootObject,
+            targetObject,
+            avaloniaTarget,
+            converter as IValueConverter,
+            converterCulture,
+            converterParameter,
+            bindBackValueType,
+            delay,
+            updateSourceTrigger);
+        return new SourceGenPreparedXBindBinding(
+            InstancedBinding.TwoWay(forward.Source, bindBackObserver, priority),
+            bindBackObserver);
+    }
+
+    public static T? ResolveNamedElement<T>(
+        object? targetObject,
+        object? rootObject,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return default;
+        }
+
+        if (TryResolveNamedElement(targetObject, name, out var element) ||
+            TryResolveNamedElement(rootObject, name, out element))
+        {
+            if (element is T typedElement)
+            {
+                return typedElement;
+            }
+        }
+
+        return default;
+    }
+
     public static object? ProvideMarkupExtension(
         object extension,
         IServiceProvider? parentServiceProvider,
@@ -1526,6 +1816,128 @@ public static class SourceGenMarkupExtensionRuntime
             _ => throw new NotSupportedException(
                 $"Unsupported markup extension type '{extension.GetType().FullName}'.")
         };
+    }
+
+    private static IBinding CreateXBindChildBinding(
+        SourceGenBindingDependency dependency,
+        object rootObject,
+        object targetObject)
+    {
+        var normalizedPath = string.IsNullOrWhiteSpace(dependency.Path)
+            ? "."
+            : dependency.Path!.Trim();
+
+        return dependency.SourceKind switch
+        {
+            SourceGenBindingSourceKind.Root => new Binding(normalizedPath)
+            {
+                Source = rootObject
+            },
+            SourceGenBindingSourceKind.Target => new Binding(normalizedPath)
+            {
+                Source = targetObject
+            },
+            SourceGenBindingSourceKind.ElementName => new Binding(normalizedPath)
+            {
+                ElementName = dependency.ElementName
+            },
+            SourceGenBindingSourceKind.TemplatedParent => new Binding(normalizedPath)
+            {
+                RelativeSource = dependency.RelativeSource
+            },
+            SourceGenBindingSourceKind.FindAncestor => new Binding(normalizedPath)
+            {
+                RelativeSource = dependency.RelativeSource
+            },
+            SourceGenBindingSourceKind.ExplicitSource => new Binding(normalizedPath)
+            {
+                Source = dependency.Source
+            },
+            _ => new Binding(normalizedPath)
+        };
+    }
+
+    internal static bool TryResolveDependencySource(
+        SourceGenBindingDependency dependency,
+        object? targetObject,
+        object? anchorObject,
+        object? rootObject,
+        out object? value)
+    {
+        value = dependency.SourceKind switch
+        {
+            SourceGenBindingSourceKind.Root => rootObject,
+            SourceGenBindingSourceKind.Target => targetObject,
+            SourceGenBindingSourceKind.ElementName => ResolveNamedElement<object>(
+                targetObject,
+                rootObject,
+                dependency.ElementName ?? string.Empty),
+            SourceGenBindingSourceKind.TemplatedParent => TryResolveTemplatedParentDependencySource(
+                anchorObject ?? targetObject,
+                out var templatedParent)
+                ? templatedParent
+                : null,
+            SourceGenBindingSourceKind.FindAncestor => dependency.RelativeSource is not null &&
+                                                       TryResolveAncestorBindingSource(
+                                                           anchorObject ?? targetObject,
+                                                           dependency.RelativeSource,
+                                                           out var ancestorSource)
+                ? ancestorSource
+                : null,
+            SourceGenBindingSourceKind.ExplicitSource => dependency.Source,
+            _ => TryGetDataContext(targetObject) ?? TryGetDataContext(anchorObject) ?? TryGetDataContext(rootObject)
+        };
+
+        return value is not null;
+    }
+
+    public static bool TryResolveXBindDependency<T>(
+        SourceGenBindingDependency dependency,
+        object? targetObject,
+        object? anchorObject,
+        object? rootObject,
+        out T value)
+    {
+        value = default!;
+        if (!TryResolveDependencySource(dependency, targetObject, anchorObject, rootObject, out var resolved))
+        {
+            return false;
+        }
+
+        if (resolved is T typed)
+        {
+            value = typed;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveTemplatedParentDependencySource(object? anchor, out object? value)
+    {
+        if (anchor is StyledElement styledAnchor)
+        {
+            value = ResolveTemplatedParentAnchor(styledAnchor)?.TemplatedParent;
+            return value is not null;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static object? TryGetDataContext(object? value)
+    {
+        return value switch
+        {
+            IDataContextProvider provider => provider.DataContext,
+            _ => null
+        };
+    }
+
+    private static bool TryResolveNamedElement(object? scopeRoot, string name, out object? element)
+    {
+        element = SourceGenNameReferenceHelper.ResolveByName(scopeRoot, name);
+        return element is not null;
     }
 
     public static object? ProvideReference(

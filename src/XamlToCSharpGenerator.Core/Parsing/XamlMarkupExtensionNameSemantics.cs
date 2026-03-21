@@ -7,6 +7,7 @@ public enum XamlMarkupExtensionKind
 {
     Unknown = 0,
     Binding,
+    XBind,
     CompiledBinding,
     ReflectionBinding,
     EventBinding,
@@ -58,6 +59,8 @@ public static class XamlMarkupExtensionNameSemantics
         return token switch
         {
             "binding" => XamlMarkupExtensionKind.Binding,
+            "bind" => XamlMarkupExtensionKind.XBind,
+            "xbind" => XamlMarkupExtensionKind.XBind,
             "compiledbinding" => XamlMarkupExtensionKind.CompiledBinding,
             "reflectionbinding" => XamlMarkupExtensionKind.ReflectionBinding,
             "eventbinding" => XamlMarkupExtensionKind.EventBinding,

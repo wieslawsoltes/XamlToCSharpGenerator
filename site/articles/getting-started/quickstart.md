@@ -109,7 +109,7 @@ If any of those are missing, move to [Troubleshooting](../guides/troubleshooting
 
 Once the basic path works, use the sample catalog to validate more advanced features:
 
-- compiled bindings and shorthand expressions
+- compiled bindings, x:Bind, and shorthand expressions
 - inline C# and event code
 - selectors, control themes, and resource includes
 - language-service navigation and refactorings

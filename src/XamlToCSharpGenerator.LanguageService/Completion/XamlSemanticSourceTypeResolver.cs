@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -28,7 +30,7 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         if (!string.IsNullOrWhiteSpace(bindingMarkup.ElementName) &&
-            TryResolveNamedElementType(analysis, element.Document?.Root, bindingMarkup.ElementName!, out sourceTypeSymbol))
+            TryResolveNamedElementType(analysis, element, bindingMarkup.ElementName!, out sourceTypeSymbol))
         {
             return true;
         }
@@ -99,6 +101,89 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+    }
+
+    public static bool TryResolveXBindSourceType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        XBindMarkup xBindMarkup,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+
+        if (xBindMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.DataType))
+        {
+            var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+            var localType = ResolveTypeSymbol(analysis, localPrefixMap, xBindMarkup.DataType!);
+            if (localType is null)
+            {
+                return false;
+            }
+
+            sourceTypeSymbol = localType;
+            prefixMap = localPrefixMap;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.ElementName) &&
+            TryResolveNamedElementType(analysis, element, xBindMarkup.ElementName!, out sourceTypeSymbol))
+        {
+            return true;
+        }
+
+        if (xBindMarkup.RelativeSource is { } relativeSource)
+        {
+            if (string.Equals(relativeSource.Mode, "Self", StringComparison.OrdinalIgnoreCase) &&
+                TryResolveElementTypeSymbol(analysis, element, out sourceTypeSymbol))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(relativeSource.AncestorTypeToken))
+            {
+                var ancestorPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+                var ancestorType = ResolveTypeSymbol(analysis, ancestorPrefixMap, relativeSource.AncestorTypeToken!);
+                if (ancestorType is not null)
+                {
+                    sourceTypeSymbol = ancestorType;
+                    prefixMap = ancestorPrefixMap;
+                    return true;
+                }
+            }
+
+            if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.Source))
+        {
+            if (BindingEventMarkupParser.TryExtractReferenceElementName(
+                    xBindMarkup.Source,
+                    DefaultTryParseMarkupExtension,
+                    out var referenceElementName) &&
+                TryResolveNamedElementType(analysis, element, referenceElementName, out sourceTypeSymbol))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        if (IsInsideDataTemplate(element))
+        {
+            return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+        }
+
+        return TryResolveRootType(analysis, out sourceTypeSymbol);
     }
 
     public static bool TryResolveAmbientDataType(
@@ -223,6 +308,40 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         return null;
+    }
+
+    public static bool TryResolveRootType(
+        XamlAnalysisResult analysis,
+        out INamedTypeSymbol sourceTypeSymbol)
+    {
+        sourceTypeSymbol = null!;
+        var classFullName = analysis.ParsedDocument?.ClassFullName;
+        if (string.IsNullOrWhiteSpace(classFullName))
+        {
+            return false;
+        }
+
+        var resolvedType = ResolveTypeSymbolByFullTypeName(analysis.Compilation, classFullName);
+        if (resolvedType is null)
+        {
+            return false;
+        }
+
+        sourceTypeSymbol = resolvedType;
+        return true;
+    }
+
+    public static bool IsInsideDataTemplate(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (string.Equals(current.Name.LocalName, "DataTemplate", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static INamedTypeSymbol? ResolveTypeSymbolByFullTypeName(Compilation? compilation, string fullTypeName)
@@ -369,19 +488,36 @@ internal static class XamlSemanticSourceTypeResolver
         return null;
     }
 
-    private static bool TryResolveNamedElementType(
+    internal static bool TryResolveNamedElementType(
         XamlAnalysisResult analysis,
-        XElement? documentRoot,
+        XElement element,
         string elementName,
         out INamedTypeSymbol typeSymbol)
     {
         typeSymbol = null!;
+        var documentRoot = element.Document?.Root;
         if (documentRoot is null)
         {
             return false;
         }
 
-        foreach (var candidateElement in documentRoot.DescendantsAndSelf())
+        var currentScopeRoot = FindVisibleNameScopeRoot(element);
+        if (TryResolveNamedElementTypeInScope(analysis, currentScopeRoot, elementName, out typeSymbol))
+        {
+            return true;
+        }
+
+        return !ReferenceEquals(currentScopeRoot, documentRoot) &&
+               TryResolveNamedElementTypeInScope(analysis, documentRoot, elementName, out typeSymbol);
+    }
+
+    private static bool TryResolveNamedElementTypeInScope(
+        XamlAnalysisResult analysis,
+        XElement scopeRoot,
+        string elementName,
+        out INamedTypeSymbol typeSymbol)
+    {
+        foreach (var candidateElement in EnumerateVisibleNameScopeElements(scopeRoot, scopeRoot))
         {
             var nameAttribute = candidateElement.Attributes()
                 .FirstOrDefault(attribute =>
@@ -396,8 +532,61 @@ internal static class XamlSemanticSourceTypeResolver
             return TryResolveElementTypeSymbol(analysis, candidateElement, out typeSymbol);
         }
 
+        typeSymbol = null!;
         return false;
     }
+
+    private static IEnumerable<XElement> EnumerateVisibleNameScopeElements(XElement scopeRoot, XElement candidate)
+    {
+        yield return candidate;
+
+        foreach (var child in candidate.Elements())
+        {
+            if (!ReferenceEquals(child, scopeRoot) && IsNameScopeBoundaryElement(child))
+            {
+                continue;
+            }
+
+            foreach (var descendant in EnumerateVisibleNameScopeElements(scopeRoot, child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static XElement FindVisibleNameScopeRoot(XElement element)
+    {
+        var documentRoot = element.Document?.Root ?? element;
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, documentRoot) || IsNameScopeBoundaryElement(current))
+            {
+                return current;
+            }
+        }
+
+        return documentRoot;
+    }
+
+    private static bool IsNameScopeBoundaryElement(XElement element)
+    {
+        return element.Name.LocalName switch
+        {
+            "DataTemplate" => true,
+            "ControlTemplate" => true,
+            "ItemsPanelTemplate" => true,
+            "TreeDataTemplate" => true,
+            _ => false
+        };
+    }
+
+    private static bool DefaultTryParseMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
+    {
+        return DefaultMarkupParser.TryParseMarkupExtension(value, out markupExtension);
+    }
+
+    private static readonly MarkupExpressionParser DefaultMarkupParser = new(
+        new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
 
     private static bool TryResolveElementTypeInfo(
         XamlAnalysisResult analysis,

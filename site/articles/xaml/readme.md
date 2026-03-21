@@ -11,6 +11,7 @@ These pages document the language-level surface AXSG adds or strengthens on top 
 ### Binding and expression features
 
 - [Compiled Bindings](compiled-bindings/)
+- [x:Bind](xbind/)
 - [C# Expressions](csharp-expressions/)
 - [Inline C#](inline-csharp/)
 - [Event Bindings](event-bindings/)
@@ -26,13 +27,14 @@ These pages document the language-level surface AXSG adds or strengthens on top 
 ## How to use this section
 
 - Start with [Compiled Bindings](compiled-bindings/) if you are new to AXSG semantics.
-- Use [C# Expressions](csharp-expressions/) and [Inline C#](inline-csharp/) for the main language extensions.
+- Use [x:Bind](xbind/), [C# Expressions](csharp-expressions/), and [Inline C#](inline-csharp/) for the main language extensions.
 - Use the structural pages when you are working in themes, resources, includes, or selector-heavy XAML.
 - Use [Guides](../guides/) when you need an operational workflow instead of language semantics.
 
 ## Typical questions this section answers
 
 - when does AXSG require `x:DataType` and when can an explicit source provide type context?
+- when should I use `x:Bind` instead of `CompiledBinding`, expression syntax, or inline C#?
 - how do shorthand expressions, inline C#, and event lambdas differ?
 - how do property elements, `TemplateBinding`, resources, and URI values participate in navigation and diagnostics?
 - how do styles, themes, selectors, and control-theme override patterns behave under compilation?
