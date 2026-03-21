@@ -4,6 +4,7 @@ using System.Linq;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -111,6 +112,11 @@ internal static class XamlSemanticSourceTypeResolver
         sourceTypeSymbol = null!;
         prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
 
+        if (xBindMarkup.HasSourceConflict)
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(xBindMarkup.DataType))
         {
             var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
@@ -123,6 +129,57 @@ internal static class XamlSemanticSourceTypeResolver
             sourceTypeSymbol = localType;
             prefixMap = localPrefixMap;
             return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.ElementName) &&
+            TryResolveNamedElementType(analysis, element.Document?.Root, xBindMarkup.ElementName!, out sourceTypeSymbol))
+        {
+            return true;
+        }
+
+        if (xBindMarkup.RelativeSource is { } relativeSource)
+        {
+            if (string.Equals(relativeSource.Mode, "Self", StringComparison.OrdinalIgnoreCase) &&
+                TryResolveElementTypeSymbol(analysis, element, out sourceTypeSymbol))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(relativeSource.AncestorTypeToken))
+            {
+                var ancestorPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+                var ancestorType = ResolveTypeSymbol(analysis, ancestorPrefixMap, relativeSource.AncestorTypeToken!);
+                if (ancestorType is not null)
+                {
+                    sourceTypeSymbol = ancestorType;
+                    prefixMap = ancestorPrefixMap;
+                    return true;
+                }
+            }
+
+            if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
+            {
+                if (IsInsideDataTemplate(element))
+                {
+                    return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+                }
+
+                return TryResolveRootType(analysis, out sourceTypeSymbol);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.Source))
+        {
+            if (BindingEventMarkupParser.TryExtractReferenceElementName(
+                    xBindMarkup.Source,
+                    DefaultTryParseMarkupExtension,
+                    out var referenceElementName) &&
+                TryResolveNamedElementType(analysis, element.Document?.Root, referenceElementName, out sourceTypeSymbol))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         if (IsInsideDataTemplate(element))
@@ -464,6 +521,14 @@ internal static class XamlSemanticSourceTypeResolver
 
         return false;
     }
+
+    private static bool DefaultTryParseMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
+    {
+        return DefaultMarkupParser.TryParseMarkupExtension(value, out markupExtension);
+    }
+
+    private static readonly MarkupExpressionParser DefaultMarkupParser = new(
+        new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
 
     private static bool TryResolveElementTypeInfo(
         XamlAnalysisResult analysis,

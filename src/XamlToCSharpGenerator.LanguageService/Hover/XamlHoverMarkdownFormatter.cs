@@ -111,6 +111,7 @@ internal static class XamlHoverMarkdownFormatter
             "DataType" => "Overrides the x:Bind source type for the current scope.",
             "Converter" => "Applies a value converter to the resolved source value.",
             "ConverterCulture" => "Culture passed to the converter.",
+            "ConverterLanguage" => "Alias for ConverterCulture in x:Bind.",
             "ConverterParameter" => "Additional converter parameter value.",
             "StringFormat" or "Format" => "Formats the bound value before assigning it to the target.",
             "FallbackValue" or "Fallback" => "Value used when binding resolution fails.",
