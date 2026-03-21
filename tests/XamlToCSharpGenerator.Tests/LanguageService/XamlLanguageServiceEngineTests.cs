@@ -341,7 +341,7 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Equal(0, signatureHelp!.ActiveSignature);
         Assert.Equal(1, signatureHelp.ActiveParameter);
         var signature = Assert.Single(signatureHelp.Signatures);
-        Assert.Equal("x:Bind(path, Mode, BindBack, DataType, Converter, ConverterCulture, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)", signature.Label);
+        Assert.Equal("x:Bind(path, Mode, BindBack, ElementName, RelativeSource, Source, DataType, Converter, ConverterCulture, ConverterLanguage, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)", signature.Label);
     }
 
     [Fact]

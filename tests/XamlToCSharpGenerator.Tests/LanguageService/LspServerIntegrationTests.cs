@@ -880,7 +880,7 @@ public sealed class LspServerIntegrationTests
         var signatures = result.GetProperty("signatures");
         Assert.Equal(1, signatures.GetArrayLength());
         Assert.Equal(
-            "x:Bind(path, Mode, BindBack, DataType, Converter, ConverterCulture, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)",
+            "x:Bind(path, Mode, BindBack, ElementName, RelativeSource, Source, DataType, Converter, ConverterCulture, ConverterLanguage, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)",
             signatures[0].GetProperty("label").GetString());
     }
 
