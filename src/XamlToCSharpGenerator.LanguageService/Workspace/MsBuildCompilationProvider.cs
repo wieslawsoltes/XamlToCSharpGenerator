@@ -67,7 +67,16 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
     public void Invalidate(string filePath)
     {
-        var projectPath = ResolveProjectPath(filePath, workspaceRoot: null);
+        string? projectPath = null;
+        try
+        {
+            projectPath = ResolveProjectPath(filePath, workspaceRoot: null);
+        }
+        catch (Exception ex) when (IsIgnorableProjectPathResolutionException(ex))
+        {
+            projectPath = null;
+        }
+
         if (projectPath is not null)
         {
             _projectCompilationCache.TryRemove(NormalizePath(projectPath), out _);
@@ -341,6 +350,11 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
             return null;
         }
 
+        if (!Directory.Exists(currentDirectory))
+        {
+            return null;
+        }
+
         string? boundedWorkspaceRoot = null;
         if (!string.IsNullOrWhiteSpace(workspaceRoot))
         {
@@ -356,7 +370,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
         while (!string.IsNullOrWhiteSpace(currentDirectory))
         {
-            var projectFiles = Directory.GetFiles(currentDirectory, "*.csproj", SearchOption.TopDirectoryOnly);
+            var projectFiles = TryGetProjectFiles(currentDirectory, SearchOption.TopDirectoryOnly);
             if (projectFiles.Length > 0)
             {
                 return projectFiles[0];
@@ -385,11 +399,28 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
         if (boundedWorkspaceRoot is not null && Directory.Exists(boundedWorkspaceRoot))
         {
-            var projectFiles = Directory.GetFiles(boundedWorkspaceRoot, "*.csproj", SearchOption.AllDirectories);
+            var projectFiles = TryGetProjectFiles(boundedWorkspaceRoot, SearchOption.AllDirectories);
             return projectFiles.OrderBy(static path => path, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
         }
 
         return null;
+    }
+
+    private static string[] TryGetProjectFiles(string directoryPath, SearchOption searchOption)
+    {
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                return [];
+            }
+
+            return Directory.GetFiles(directoryPath, "*.csproj", searchOption);
+        }
+        catch (Exception ex) when (IsIgnorableProjectPathResolutionException(ex))
+        {
+            return [];
+        }
     }
 
     private static void RegisterMsBuildLocator()
@@ -442,6 +473,11 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     private static string NormalizePath(string path)
     {
         return UriPathHelper.NormalizeFilePath(path);
+    }
+
+    private static bool IsIgnorableProjectPathResolutionException(Exception ex)
+    {
+        return ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
     }
 
     private string? ResolveProjectPath(string filePath, string? workspaceRoot)

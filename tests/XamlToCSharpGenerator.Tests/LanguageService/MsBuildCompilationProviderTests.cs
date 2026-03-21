@@ -228,4 +228,21 @@ public sealed class MsBuildCompilationProviderTests
             }
         }
     }
+
+    [Fact]
+    public void Invalidate_DeletedProjectDirectory_DoesNotThrow()
+    {
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "axsg-msbuild-provider-deleted-dir-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(tempRoot);
+        var deletedProjectPath = Path.Combine(tempRoot, "DeletedProject.csproj");
+        using var provider = new MsBuildCompilationProvider();
+
+        Directory.Delete(tempRoot, recursive: true);
+
+        var exception = Record.Exception(() => provider.Invalidate(deletedProjectPath));
+        Assert.Null(exception);
+    }
 }

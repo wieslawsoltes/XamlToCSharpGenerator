@@ -64,7 +64,18 @@ internal sealed class AxsgLanguageServer : IDisposable
                 break;
             }
 
-            await HandleMessageAsync(message.RootElement, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await HandleMessageAsync(message.RootElement, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || _exitRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                await HandleUnhandledMessageExceptionAsync(message.RootElement, ex, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         await DrainInflightRequestsAsync().ConfigureAwait(false);
@@ -1567,6 +1578,61 @@ internal sealed class AxsgLanguageServer : IDisposable
         };
 
         return _writer.WriteAsync(response, cancellationToken);
+    }
+
+    private async Task HandleUnhandledMessageExceptionAsync(
+        JsonElement root,
+        Exception ex,
+        CancellationToken cancellationToken)
+    {
+        var method = root.TryGetProperty("method", out var methodElement) &&
+                     methodElement.ValueKind == JsonValueKind.String
+            ? methodElement.GetString()
+            : null;
+        var errorMessage = "Unhandled language server exception";
+        if (!string.IsNullOrWhiteSpace(method))
+        {
+            errorMessage += " while handling '" + method + "'";
+        }
+
+        errorMessage += ": " + ex.Message;
+        Console.Error.WriteLine(ex);
+
+        try
+        {
+            if (root.TryGetProperty("id", out var id) &&
+                id.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+            {
+                await SendErrorAsync(id, code: -32603, message: errorMessage, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await SendLogMessageAsync(
+                    type: 1,
+                    message: errorMessage,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // If the transport is already broken, there is nothing else to do here.
+        }
+    }
+
+    private Task SendLogMessageAsync(int type, string message, CancellationToken cancellationToken)
+    {
+        var notification = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["method"] = "window/logMessage",
+            ["params"] = new JsonObject
+            {
+                ["type"] = type,
+                ["message"] = message
+            }
+        };
+
+        return _writer.WriteAsync(notification, cancellationToken);
     }
 
     private static TextDocumentPositionRequest ParseTextDocumentPosition(JsonElement parameters)

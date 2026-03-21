@@ -747,6 +747,48 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task WatchedFileChanges_InvalidateFailure_DoesNotCrashServer()
+    {
+        var provider = new ThrowingInvalidateCompilationProvider(
+            CreateAdHocCompilation(
+                "namespace TestApp { public sealed class Placeholder { } }",
+                assemblyName: "WatchedFileException",
+                filePath: "/tmp/WatchedFileException.cs"));
+
+        await using var harness = await LspServerHarness.StartAsync(provider);
+        await harness.InitializeAsync();
+
+        await harness.SendNotificationAsync("workspace/didChangeWatchedFiles", new JsonObject
+        {
+            ["changes"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["uri"] = "file:///tmp/.tmp-tests/build-integration/missing/BuildIntegration.csproj",
+                    ["type"] = 3
+                }
+            }
+        });
+
+        using var logMessage = await harness.ReadNotificationAsync("window/logMessage");
+        var loggedMessage = logMessage.RootElement
+            .GetProperty("params")
+            .GetProperty("message")
+            .GetString();
+        Assert.Contains("workspace/didChangeWatchedFiles", loggedMessage, StringComparison.Ordinal);
+        Assert.Contains("Could not find a part of the path", loggedMessage, StringComparison.Ordinal);
+
+        await harness.SendRequestAsync(901, "workspace/symbol", new JsonObject
+        {
+            ["query"] = "Placeholder"
+        });
+
+        using var response = await harness.ReadResponseAsync(901);
+        Assert.True(response.RootElement.TryGetProperty("result", out var result));
+        Assert.Equal(JsonValueKind.Array, result.ValueKind);
+    }
+
+    [Fact]
     public async Task SignatureHelp_Request_ReturnsBindingSignature()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -5375,6 +5417,37 @@ public sealed class LspServerIntegrationTests
         public void Invalidate(string filePath)
         {
             Interlocked.Increment(ref _invalidated);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ThrowingInvalidateCompilationProvider : ICompilationProvider
+    {
+        private readonly Compilation _compilation;
+
+        public ThrowingInvalidateCompilationProvider(Compilation compilation)
+        {
+            _compilation = compilation;
+        }
+
+        public Task<CompilationSnapshot> GetCompilationAsync(
+            string filePath,
+            string? workspaceRoot,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CompilationSnapshot(
+                ProjectPath: workspaceRoot,
+                Project: null,
+                Compilation: _compilation,
+                Diagnostics: ImmutableArray<LanguageServiceDiagnostic>.Empty));
+        }
+
+        public void Invalidate(string filePath)
+        {
+            throw new DirectoryNotFoundException("Could not find a part of the path '" + filePath + "'.");
         }
 
         public void Dispose()
