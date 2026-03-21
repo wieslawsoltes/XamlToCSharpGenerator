@@ -3167,7 +3167,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string? explicitPropertyFieldName,
         out ResolvedPropertyAssignment? resolvedAssignment,
         bool isInsideDataTemplate = false,
-        string? xBindDefaultMode = null)
+        string? xBindDefaultMode = null,
+        XamlObjectNode? currentNode = null)
     {
         resolvedAssignment = null;
 
@@ -3226,7 +3227,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             explicitOwnerType: ownerType,
             explicitAvaloniaPropertyFieldName: explicitPropertyFieldName,
             isInsideDataTemplate: isInsideDataTemplate,
-            xBindDefaultMode: xBindDefaultMode);
+            xBindDefaultMode: xBindDefaultMode,
+            currentNode: currentNode);
     }
 
     private static bool TryBindAttachedStaticSetterAssignment(
@@ -3429,6 +3431,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         XamlDocumentModel document,
         GeneratorOptions options,
+        XamlObjectNode? currentNode,
         out ResolvedEventSubscription? subscription)
     {
         subscription = null;
@@ -3461,6 +3464,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             diagnostics,
             document,
             options,
+            currentNode,
             out subscription);
     }
 
@@ -3598,6 +3602,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         XamlDocumentModel document,
         GeneratorOptions options,
+        XamlObjectNode? currentNode,
         out ResolvedEventSubscription? subscription)
     {
         subscription = null;
@@ -3645,6 +3650,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 if (!TryBuildXBindEventBindingDefinition(
                         compilation,
                         document,
+                        currentNode ?? document.RootObject,
                         xBindEventMarkup,
                         eventName,
                         nodeDataType,
@@ -3854,6 +3860,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 if (!TryBuildXBindEventBindingDefinition(
                         compilation,
                         document,
+                        currentNode ?? document.RootObject,
                         xBindRoutedEventMarkup,
                         eventName,
                         nodeDataType,
@@ -5108,7 +5115,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? explicitOwnerType = null,
         string? explicitAvaloniaPropertyFieldName = null,
         bool isInsideDataTemplate = false,
-        string? xBindDefaultMode = null)
+        string? xBindDefaultMode = null,
+        XamlObjectNode? currentNode = null)
     {
         resolvedAssignment = null;
 
@@ -5131,8 +5139,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             if (!TryBuildXBindBindingExpression(
                     compilation,
                     document,
+                    currentNode ?? document.RootObject,
                     xBindMarkup,
-                    ambientSourceType: isInsideDataTemplate ? nodeDataType : rootTypeSymbol,
+                    ambientDataContextType: nodeDataType,
                     rootType: rootTypeSymbol,
                     targetType: setterTargetType ?? targetType,
                     bindingValueType: valueType,

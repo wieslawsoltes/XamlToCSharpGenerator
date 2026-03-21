@@ -197,7 +197,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         explicitPropertyFieldName: propertyAlias.AvaloniaPropertyFieldName,
                         out var attachedAssignment,
                         isInsideDataTemplate: scopeContext.IsInsideDataTemplate,
-                        xBindDefaultMode: scopeContext.XBindDefaultMode))
+                        xBindDefaultMode: scopeContext.XBindDefaultMode,
+                        currentNode: node))
                 {
                     if (attachedAssignment is not null)
                     {
@@ -254,6 +255,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         diagnostics,
                         document,
                         options,
+                        currentNode: node,
                         out var attachedEventSubscription))
                 {
                     if (attachedEventSubscription is not null)
@@ -547,7 +549,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                             out var xBindAssignment,
                             allowCompiledBindingRegistration: false,
                             isInsideDataTemplate: scopeContext.IsInsideDataTemplate,
-                            xBindDefaultMode: scopeContext.XBindDefaultMode))
+                            xBindDefaultMode: scopeContext.XBindDefaultMode,
+                            currentNode: node))
                     {
                         if (xBindAssignment is not null)
                         {
@@ -561,8 +564,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         TryBuildXBindBindingExpression(
                             compilation,
                             document,
+                            node,
                             xBindMarkup,
-                            ambientSourceType: scopeContext.IsInsideDataTemplate ? assignmentDataType : rootTypeSymbol,
+                            ambientDataContextType: assignmentDataType,
                             rootType: rootTypeSymbol,
                             targetType: currentSetterTargetType ?? symbol,
                             bindingValueType: property.Type,
@@ -1005,6 +1009,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     diagnostics,
                     document,
                     options,
+                    currentNode: node,
                     out var eventSubscription))
             {
                 if (eventSubscription is not null)
