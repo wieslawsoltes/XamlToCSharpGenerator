@@ -746,6 +746,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 forcedType: context.ClassSymbol,
                 rootTypeSymbol: context.ClassSymbol);
 
+            context.HasXBind = context.HasXBind || DocumentContainsXBind(context.Document);
             var typeSymbolCatalog = GetActiveTypeSymbolCatalog(context.Compilation);
             context.EmitNameScopeRegistration = typeSymbolCatalog?.GetOrDefault(TypeContractId.NameScope) is not null &&
                                                 typeSymbolCatalog.GetOrDefault(TypeContractId.StyledElement) is not null &&
@@ -774,6 +775,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     : ImmutableArray<string>.Empty,
                 EmitNameScopeRegistration: context.EmitNameScopeRegistration,
                 EmitStaticResourceResolver: context.EmitStaticResourceResolver,
+                HasXBind: context.HasXBind,
                 RootObject: root,
                 NamedElements: context.NamedElements.ToImmutable(),
                 Resources: context.Resources,
@@ -786,5 +788,55 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 HotDesignArtifactKind: hotDesignClassification.Kind,
                 HotDesignScopeHints: hotDesignClassification.ScopeHints);
         }
+    }
+
+    private static bool DocumentContainsXBind(XamlDocumentModel document)
+    {
+        return NodeContainsXBind(document.RootObject);
+    }
+
+    private static bool NodeContainsXBind(XamlObjectNode node)
+    {
+        if (XamlMarkupExtensionNameSemantics.Classify(node.XmlTypeName) == XamlMarkupExtensionKind.XBind)
+        {
+            return true;
+        }
+
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (TryParseXBindMarkup(assignment.Value, out _))
+            {
+                return true;
+            }
+        }
+
+        foreach (var constructorArgument in node.ConstructorArguments)
+        {
+            if (NodeContainsXBind(constructorArgument))
+            {
+                return true;
+            }
+        }
+
+        foreach (var child in node.ChildObjects)
+        {
+            if (NodeContainsXBind(child))
+            {
+                return true;
+            }
+        }
+
+        foreach (var propertyElement in node.PropertyElements)
+        {
+            foreach (var value in propertyElement.ObjectValues)
+            {
+                if (NodeContainsXBind(value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

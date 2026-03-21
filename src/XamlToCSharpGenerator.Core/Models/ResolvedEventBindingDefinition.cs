@@ -58,6 +58,7 @@ public sealed record ResolvedEventBindingDefinition(
     string? CompiledDataContextParameterPath,
     string? CompiledRootParameterPath,
     string? LambdaSourceTypeName,
+    string? LambdaSourceDependencyExpression,
     string? LambdaContextTargetTypeName,
     bool UsesInlineCodeContext,
     int Line,

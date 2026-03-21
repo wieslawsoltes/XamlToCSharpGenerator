@@ -10,7 +10,12 @@ using Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
 
-internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object?>
+internal interface ISourceGenXBindBindBackController : IDisposable
+{
+    void FlushExplicitPendingValue();
+}
+
+internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object?>, ISourceGenXBindBindBackController
 {
     private readonly SourceGenBindingDependency _source;
     private readonly Action<TSource, object?> _bindBack;
@@ -70,6 +75,15 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
     {
     }
 
+    public void Dispose()
+    {
+        if (_updateSourceTrigger == UpdateSourceTrigger.LostFocus &&
+            _target is InputElement inputElement)
+        {
+            inputElement.LostFocus -= OnTargetLostFocus;
+        }
+    }
+
     public void OnNext(object? value)
     {
         if (Volatile.Read(ref _isApplying) != 0)
@@ -109,12 +123,21 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
         FlushPendingValue();
     }
 
+    public void FlushExplicitPendingValue()
+    {
+        if (_updateSourceTrigger == UpdateSourceTrigger.Explicit)
+        {
+            FlushPendingValue();
+        }
+    }
+
     private bool TryResolveSource(out TSource source)
     {
         source = default!;
         if (!SourceGenMarkupExtensionRuntime.TryResolveDependencySource(
                 _source,
-                _targetObject ?? _target,
+                _targetObject,
+                _target,
                 _rootObject,
                 out var rawSource))
         {

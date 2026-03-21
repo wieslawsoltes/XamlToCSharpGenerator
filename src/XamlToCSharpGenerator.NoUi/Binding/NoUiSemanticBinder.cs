@@ -38,6 +38,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
             passTrace,
             EmitNameScopeRegistration: false,
             EmitStaticResourceResolver: false,
+            HasXBind: false,
             rootObject,
             NamedElements: ImmutableArray<ResolvedNamedElement>.Empty,
             Resources: ImmutableArray<ResolvedResourceDefinition>.Empty,

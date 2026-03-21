@@ -383,6 +383,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         public bool EmitStaticResourceResolver { get; set; }
 
+        public bool HasXBind { get; set; }
+
         public ResolvedViewModel? ViewModel { get; set; }
 
         public ResolvedTransformExtensions TransformExtensions { get; set; } = ResolvedTransformExtensions.Empty;

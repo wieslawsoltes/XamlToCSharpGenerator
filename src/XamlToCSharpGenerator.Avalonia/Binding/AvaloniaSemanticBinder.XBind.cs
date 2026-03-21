@@ -18,13 +18,22 @@ public sealed partial class AvaloniaSemanticBinder
         DataContext = 0,
         Root = 1,
         Target = 2,
-        ElementName = 3
+        ElementName = 3,
+        TemplatedParent = 4,
+        FindAncestor = 5,
+        ExplicitSource = 6
     }
 
     private readonly record struct XBindPathReference(
         XBindSourceReferenceKind Kind,
         string Path,
-        string? ElementName);
+        string? ElementName,
+        string? RelativeSourceExpression,
+        string? SourceExpression);
+
+    private readonly record struct XBindSourceConfiguration(
+        INamedTypeSymbol SourceType,
+        XBindPathReference SourceReference);
 
     private readonly record struct XBindLoweredExpression(
         string Expression,
@@ -38,14 +47,14 @@ public sealed partial class AvaloniaSemanticBinder
             INamedTypeSymbol sourceType,
             INamedTypeSymbol rootType,
             INamedTypeSymbol? targetType,
-            XBindSourceReferenceKind defaultSourceKind)
+            XBindPathReference defaultSourceReference)
         {
             Compilation = compilation;
             Document = document;
             SourceType = sourceType;
             RootType = rootType;
             TargetType = targetType;
-            DefaultSourceKind = defaultSourceKind;
+            DefaultSourceReference = defaultSourceReference;
         }
 
         public Compilation Compilation { get; }
@@ -58,7 +67,7 @@ public sealed partial class AvaloniaSemanticBinder
 
         public INamedTypeSymbol? TargetType { get; }
 
-        public XBindSourceReferenceKind DefaultSourceKind { get; }
+        public XBindPathReference DefaultSourceReference { get; }
     }
 
     private static bool TryBuildXBindBindingExpression(
@@ -112,6 +121,13 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
+        if (xBindMarkup.HasSourceConflict)
+        {
+            errorCode = "AXSG0111";
+            errorMessage = xBindMarkup.SourceConflictMessage ?? "x:Bind source configuration is invalid.";
+            return false;
+        }
+
         var effectiveMode = NormalizeXBindMode(xBindMarkup.Mode ?? defaultMode);
         if (!IsSupportedXBindMode(effectiveMode))
         {
@@ -127,16 +143,33 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        var defaultSourceKind = isInsideDataTemplate
-            ? XBindSourceReferenceKind.DataContext
-            : XBindSourceReferenceKind.Root;
+        var baseSourceReference = isInsideDataTemplate
+            ? new XBindPathReference(XBindSourceReferenceKind.DataContext, ".", null, null, null)
+            : new XBindPathReference(XBindSourceReferenceKind.Root, ".", null, null, null);
+        if (!TryResolveXBindSourceConfiguration(
+                compilation,
+                document,
+                xBindMarkup,
+                sourceType,
+                rootType,
+                targetType,
+                baseSourceReference,
+                out var sourceConfiguration,
+                out errorMessage))
+        {
+            errorCode = "AXSG0117";
+            errorMessage = "x:Bind source configuration is invalid: " + errorMessage;
+            return false;
+        }
+
+        sourceType = sourceConfiguration.SourceType;
         var loweringContext = new XBindLoweringContext(
             compilation,
             document,
             sourceType,
             rootType,
             targetType,
-            defaultSourceKind);
+            sourceConfiguration.SourceReference);
 
         XBindExpressionNode? xBindExpression = null;
         XBindLoweredExpression loweredExpression;
@@ -180,13 +213,15 @@ public sealed partial class AvaloniaSemanticBinder
         }
 
         resultTypeName = expressionAnalysis.ResultTypeSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var sourceReference = new XBindPathReference(defaultSourceKind, ".", ElementName: null);
+        var sourceReference = sourceConfiguration.SourceReference;
         var dependencies = xBindExpression is null
             ? ImmutableArray<XBindPathReference>.Empty
             : CollectXBindDependencies(xBindExpression, loweringContext)
                 .Where(candidate => !IsMainXBindSourceReference(candidate, sourceReference))
                 .OrderBy(static candidate => candidate.Kind)
                 .ThenBy(static candidate => candidate.ElementName, StringComparer.Ordinal)
+                .ThenBy(static candidate => candidate.RelativeSourceExpression, StringComparer.Ordinal)
+                .ThenBy(static candidate => candidate.SourceExpression, StringComparer.Ordinal)
                 .ThenBy(static candidate => candidate.Path, StringComparer.Ordinal)
                 .ToImmutableArray();
 
@@ -345,6 +380,271 @@ public sealed partial class AvaloniaSemanticBinder
         return true;
     }
 
+    private static bool TryResolveXBindSourceConfiguration(
+        Compilation compilation,
+        XamlDocumentModel document,
+        XBindMarkup xBindMarkup,
+        INamedTypeSymbol baseSourceType,
+        INamedTypeSymbol rootType,
+        INamedTypeSymbol? targetType,
+        XBindPathReference baseSourceReference,
+        out XBindSourceConfiguration sourceConfiguration,
+        out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        sourceConfiguration = new XBindSourceConfiguration(baseSourceType, baseSourceReference);
+        var hasExplicitDataType = !string.IsNullOrWhiteSpace(xBindMarkup.DataType);
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.ElementName))
+        {
+            if (!TryResolveXBindNamedElementType(
+                    compilation,
+                    document,
+                    xBindMarkup.ElementName!,
+                    out var namedElementType))
+            {
+                errorMessage = $"Named element '{xBindMarkup.ElementName}' could not be resolved.";
+                return false;
+            }
+
+            sourceConfiguration = new XBindSourceConfiguration(
+                hasExplicitDataType ? baseSourceType : namedElementType,
+                new XBindPathReference(
+                    XBindSourceReferenceKind.ElementName,
+                    ".",
+                    xBindMarkup.ElementName,
+                    null,
+                    null));
+            return true;
+        }
+
+        if (xBindMarkup.RelativeSource is { } relativeSource)
+        {
+            if (!TryBuildRelativeSourceExpression(relativeSource, compilation, document, out var relativeSourceExpression))
+            {
+                errorMessage = "RelativeSource could not be converted.";
+                return false;
+            }
+
+            if (string.Equals(relativeSource.Mode, "Self", StringComparison.OrdinalIgnoreCase))
+            {
+                if (targetType is null && !hasExplicitDataType)
+                {
+                    errorMessage = "RelativeSource Self requires a known target type or explicit DataType.";
+                    return false;
+                }
+
+                sourceConfiguration = new XBindSourceConfiguration(
+                    hasExplicitDataType ? baseSourceType : targetType!,
+                    new XBindPathReference(
+                        XBindSourceReferenceKind.Target,
+                        ".",
+                        null,
+                        null,
+                        null));
+                return true;
+            }
+
+            if (string.Equals(relativeSource.Mode, "TemplatedParent", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!hasExplicitDataType)
+                {
+                    errorMessage = "RelativeSource TemplatedParent requires explicit DataType for x:Bind.";
+                    return false;
+                }
+
+                sourceConfiguration = new XBindSourceConfiguration(
+                    baseSourceType,
+                    new XBindPathReference(
+                        XBindSourceReferenceKind.TemplatedParent,
+                        ".",
+                        null,
+                        relativeSourceExpression,
+                        null));
+                return true;
+            }
+
+            if (string.Equals(relativeSource.Mode, "DataContext", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceConfiguration = new XBindSourceConfiguration(
+                    baseSourceType,
+                    new XBindPathReference(
+                        XBindSourceReferenceKind.DataContext,
+                        ".",
+                        null,
+                        null,
+                        null));
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(relativeSource.AncestorTypeToken))
+            {
+                var ancestorType = ResolveTypeToken(
+                    compilation,
+                    document,
+                    relativeSource.AncestorTypeToken!,
+                    document.ClassNamespace);
+                if (ancestorType is null && !hasExplicitDataType)
+                {
+                    errorMessage = $"Ancestor type '{relativeSource.AncestorTypeToken}' could not be resolved.";
+                    return false;
+                }
+
+                sourceConfiguration = new XBindSourceConfiguration(
+                    hasExplicitDataType ? baseSourceType : ancestorType!,
+                    new XBindPathReference(
+                        XBindSourceReferenceKind.FindAncestor,
+                        ".",
+                        null,
+                        relativeSourceExpression,
+                        null));
+                return true;
+            }
+
+            if (!hasExplicitDataType)
+            {
+                errorMessage = $"RelativeSource mode '{relativeSource.Mode}' requires explicit DataType for x:Bind.";
+                return false;
+            }
+
+            sourceConfiguration = new XBindSourceConfiguration(
+                baseSourceType,
+                new XBindPathReference(
+                    XBindSourceReferenceKind.FindAncestor,
+                    ".",
+                    null,
+                    relativeSourceExpression,
+                    null));
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.Source))
+        {
+            if (TryExtractReferenceElementName(xBindMarkup.Source, out var referenceElementName))
+            {
+                if (!TryResolveXBindNamedElementType(
+                        compilation,
+                        document,
+                        referenceElementName,
+                        out var referenceElementType))
+                {
+                    errorMessage = $"Named source reference '{referenceElementName}' could not be resolved.";
+                    return false;
+                }
+
+                sourceConfiguration = new XBindSourceConfiguration(
+                    hasExplicitDataType ? baseSourceType : referenceElementType,
+                    new XBindPathReference(
+                        XBindSourceReferenceKind.ElementName,
+                        ".",
+                        referenceElementName,
+                        null,
+                        null));
+                return true;
+            }
+
+            if (!TryBuildXBindExplicitSourceExpression(
+                    compilation,
+                    document,
+                    xBindMarkup.Source,
+                    targetType,
+                    out var sourceExpression,
+                    out errorMessage))
+            {
+                return false;
+            }
+
+            var sourceType = baseSourceType;
+            if (!hasExplicitDataType &&
+                !TryInferXBindSourceTypeFromExpression(
+                    compilation,
+                    rootType,
+                    targetType,
+                    sourceExpression,
+                    out sourceType,
+                    out errorMessage))
+            {
+                return false;
+            }
+
+            sourceConfiguration = new XBindSourceConfiguration(
+                sourceType,
+                new XBindPathReference(
+                    XBindSourceReferenceKind.ExplicitSource,
+                    ".",
+                    null,
+                    null,
+                    sourceExpression));
+        }
+
+        return true;
+    }
+
+    private static bool TryBuildXBindExplicitSourceExpression(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string? rawSource,
+        INamedTypeSymbol? targetType,
+        out string sourceExpression,
+        out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        sourceExpression = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawSource))
+        {
+            errorMessage = "Source must not be empty.";
+            return false;
+        }
+
+        if (!TryConvertMarkupOptionValueExpression(
+                rawSource,
+                compilation.ObjectType,
+                compilation,
+                document,
+                targetType,
+                BindingPriorityScope.None,
+                out sourceExpression))
+        {
+            errorMessage = "Source could not be converted.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryInferXBindSourceTypeFromExpression(
+        Compilation compilation,
+        INamedTypeSymbol rootType,
+        INamedTypeSymbol? targetType,
+        string sourceExpression,
+        out INamedTypeSymbol sourceType,
+        out string errorMessage)
+    {
+        sourceType = null!;
+        errorMessage = string.Empty;
+        if (!CSharpInlineCodeAnalysisService.TryAnalyzeExpression(
+                compilation,
+                rootType,
+                rootType,
+                targetType,
+                sourceExpression,
+                out var expressionAnalysis,
+                out errorMessage))
+        {
+            errorMessage = "Source requires explicit DataType because its type could not be inferred. " + errorMessage;
+            return false;
+        }
+
+        if (expressionAnalysis.ResultTypeSymbol is not INamedTypeSymbol namedType)
+        {
+            errorMessage = "Source requires explicit DataType because its resolved type is not a named CLR type.";
+            return false;
+        }
+
+        sourceType = namedType;
+        return true;
+    }
+
     private static bool TryBuildXBindDelayExpression(
         Compilation compilation,
         XamlDocumentModel document,
@@ -457,6 +757,12 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
+        if (xBindMarkup.HasSourceConflict)
+        {
+            errorMessage = xBindMarkup.SourceConflictMessage ?? "x:Bind source configuration is invalid.";
+            return false;
+        }
+
         if (!XBindExpressionParser.TryParse(xBindMarkup.Path, out var xBindExpression, out var parseError) ||
             xBindExpression is null)
         {
@@ -464,15 +770,31 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
+        var baseSourceReference = isInsideDataTemplate
+            ? new XBindPathReference(XBindSourceReferenceKind.DataContext, ".", null, null, null)
+            : new XBindPathReference(XBindSourceReferenceKind.Root, ".", null, null, null);
+        if (!TryResolveXBindSourceConfiguration(
+                compilation,
+                document,
+                xBindMarkup,
+                sourceType,
+                rootType,
+                targetType,
+                baseSourceReference,
+                out var sourceConfiguration,
+                out errorMessage))
+        {
+            errorMessage = $"x:Bind event '{eventName}' source is invalid: {errorMessage}";
+            return false;
+        }
+
         var loweringContext = new XBindLoweringContext(
             compilation,
             document,
-            sourceType,
+            sourceConfiguration.SourceType,
             rootType,
             targetType,
-            isInsideDataTemplate
-                ? XBindSourceReferenceKind.DataContext
-                : XBindSourceReferenceKind.Root);
+            sourceConfiguration.SourceReference);
 
         if (!TryLowerXBindExpression(
                 xBindExpression,
@@ -508,7 +830,7 @@ public sealed partial class AvaloniaSemanticBinder
             var candidateLambda = "(" + lambdaParameterList + ") => " + candidateBody;
             if (CSharpInlineCodeAnalysisService.TryAnalyzeLambda(
                     compilation,
-                    sourceType,
+                    sourceConfiguration.SourceType,
                     rootType,
                     targetType,
                     namedDelegateType,
@@ -522,7 +844,7 @@ public sealed partial class AvaloniaSemanticBinder
 
             if (CSharpInlineCodeAnalysisService.TryAnalyzeLambda(
                     compilation,
-                    sourceType,
+                    sourceConfiguration.SourceType,
                     rootType,
                     targetType,
                     namedDelegateType,
@@ -544,14 +866,14 @@ public sealed partial class AvaloniaSemanticBinder
             return false;
         }
 
-        var sourceTypeName = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var sourceTypeName = sourceConfiguration.SourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var rootTypeName = rootType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var methodName = BuildGeneratedEventBindingMethodName(
             eventName,
             BuildInlineEventBindingStableKey(
                 analyzedLambdaExpression!,
                 namedDelegateType,
-                isInsideDataTemplate ? sourceType : null,
+                isInsideDataTemplate ? sourceConfiguration.SourceType : null,
                 rootType,
                 targetType,
                 isLambdaExpression: true));
@@ -561,25 +883,24 @@ public sealed partial class AvaloniaSemanticBinder
             DelegateTypeName: delegateTypeName,
             Parameters: delegateParameters,
             TargetKind: ResolvedEventBindingTargetKind.Lambda,
-            SourceMode: isInsideDataTemplate
-                ? ResolvedEventBindingSourceMode.DataContext
-                : ResolvedEventBindingSourceMode.Root,
+            SourceMode: ResolvedEventBindingSourceMode.Root,
             TargetPath: xBindMarkup.Path,
             ParameterPath: null,
             ParameterValueExpression: null,
             HasParameterValueExpression: false,
             PassEventArgs: false,
-            DataContextTypeName: isInsideDataTemplate ? sourceTypeName : null,
+            DataContextTypeName: null,
             RootTypeName: rootTypeName,
             CompiledDataContextTargetPath: null,
             CompiledRootTargetPath: null,
             CompiledDataContextMethodCall: null,
             CompiledRootMethodCall: null,
-            CompiledDataContextLambdaExpression: isInsideDataTemplate ? analyzedLambdaExpression : null,
-            CompiledRootLambdaExpression: isInsideDataTemplate ? null : analyzedLambdaExpression,
+            CompiledDataContextLambdaExpression: null,
+            CompiledRootLambdaExpression: analyzedLambdaExpression,
             CompiledDataContextParameterPath: null,
             CompiledRootParameterPath: null,
             LambdaSourceTypeName: sourceTypeName,
+            LambdaSourceDependencyExpression: BuildXBindPathReferenceExpression(sourceConfiguration.SourceReference),
             LambdaContextTargetTypeName: targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             UsesInlineCodeContext: true,
             Line: line,
@@ -610,7 +931,9 @@ public sealed partial class AvaloniaSemanticBinder
     {
         return candidate.Kind == sourceReference.Kind &&
                string.Equals(candidate.Path, sourceReference.Path, StringComparison.Ordinal) &&
-               string.Equals(candidate.ElementName, sourceReference.ElementName, StringComparison.Ordinal);
+               string.Equals(candidate.ElementName, sourceReference.ElementName, StringComparison.Ordinal) &&
+               string.Equals(candidate.RelativeSourceExpression, sourceReference.RelativeSourceExpression, StringComparison.Ordinal) &&
+               string.Equals(candidate.SourceExpression, sourceReference.SourceExpression, StringComparison.Ordinal);
     }
 
     private static bool TryBuildXBindBindBackExpression(
@@ -912,6 +1235,9 @@ public sealed partial class AvaloniaSemanticBinder
             XBindSourceReferenceKind.Root => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.Root",
             XBindSourceReferenceKind.Target => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.Target",
             XBindSourceReferenceKind.ElementName => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.ElementName",
+            XBindSourceReferenceKind.TemplatedParent => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.TemplatedParent",
+            XBindSourceReferenceKind.FindAncestor => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.FindAncestor",
+            XBindSourceReferenceKind.ExplicitSource => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.ExplicitSource",
             _ => "global::XamlToCSharpGenerator.Runtime.SourceGenBindingSourceKind.DataContext"
         };
 
@@ -921,6 +1247,10 @@ public sealed partial class AvaloniaSemanticBinder
                "\"" + Escape(reference.Path) + "\"" +
                ", " +
                (reference.ElementName is null ? "null" : "\"" + Escape(reference.ElementName) + "\"") +
+               ", " +
+               (reference.RelativeSourceExpression ?? "null") +
+               ", " +
+               (reference.SourceExpression ?? "null") +
                ")";
     }
 
@@ -1089,27 +1419,30 @@ public sealed partial class AvaloniaSemanticBinder
     {
         if (HasInstanceMember(loweringContext.SourceType, identifier))
         {
-            reference = new XBindPathReference(loweringContext.DefaultSourceKind, identifier, ElementName: null);
+            reference = loweringContext.DefaultSourceReference with
+            {
+                Path = identifier
+            };
             return true;
         }
 
         if (!SymbolEqualityComparer.Default.Equals(loweringContext.SourceType, loweringContext.RootType) &&
             HasInstanceMember(loweringContext.RootType, identifier))
         {
-            reference = new XBindPathReference(XBindSourceReferenceKind.Root, identifier, ElementName: null);
+            reference = new XBindPathReference(XBindSourceReferenceKind.Root, identifier, null, null, null);
             return true;
         }
 
         if (loweringContext.TargetType is not null &&
             HasInstanceMember(loweringContext.TargetType, identifier))
         {
-            reference = new XBindPathReference(XBindSourceReferenceKind.Target, identifier, ElementName: null);
+            reference = new XBindPathReference(XBindSourceReferenceKind.Target, identifier, null, null, null);
             return true;
         }
 
-        if (TryResolveXBindNamedElementType(loweringContext, identifier, out _))
+        if (TryResolveXBindNamedElementType(loweringContext.Compilation, loweringContext.Document, identifier, out _))
         {
-            reference = new XBindPathReference(XBindSourceReferenceKind.ElementName, ".", identifier);
+            reference = new XBindPathReference(XBindSourceReferenceKind.ElementName, ".", identifier, null, null);
             return true;
         }
 
@@ -1395,7 +1728,20 @@ public sealed partial class AvaloniaSemanticBinder
         string elementName,
         out INamedTypeSymbol typeSymbol)
     {
-        foreach (var namedElement in loweringContext.Document.NamedElements)
+        return TryResolveXBindNamedElementType(
+            loweringContext.Compilation,
+            loweringContext.Document,
+            elementName,
+            out typeSymbol);
+    }
+
+    private static bool TryResolveXBindNamedElementType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string elementName,
+        out INamedTypeSymbol typeSymbol)
+    {
+        foreach (var namedElement in document.NamedElements)
         {
             if (!string.Equals(namedElement.Name, elementName, StringComparison.Ordinal))
             {
@@ -1403,7 +1749,7 @@ public sealed partial class AvaloniaSemanticBinder
             }
 
             var resolvedType = ResolveTypeSymbol(
-                loweringContext.Compilation,
+                compilation,
                 namedElement.XmlNamespace,
                 namedElement.XmlTypeName);
             if (resolvedType is not null)

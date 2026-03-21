@@ -12,6 +12,7 @@ public sealed record ResolvedViewModel(
     ImmutableArray<string> PassExecutionTrace,
     bool EmitNameScopeRegistration,
     bool EmitStaticResourceResolver,
+    bool HasXBind,
     ResolvedObjectNode RootObject,
     ImmutableArray<ResolvedNamedElement> NamedElements,
     ImmutableArray<ResolvedResourceDefinition> Resources,

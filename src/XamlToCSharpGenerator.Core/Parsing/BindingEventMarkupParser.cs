@@ -12,6 +12,9 @@ public delegate bool TryConvertLiteralValueExpressionDelegate(string literalValu
 
 public static class BindingEventMarkupParser
 {
+    private static readonly MarkupExpressionParser DefaultMarkupParser = new(
+        new MarkupExpressionParserOptions(AllowLegacyInvalidNamedArgumentFallback: true));
+
     public static bool TryParseXBindMarkup(
         string value,
         TryParseMarkupExtensionDelegate tryParseMarkupExtension,
@@ -23,11 +26,19 @@ public static class BindingEventMarkupParser
             return false;
         }
 
-        return TryParseXBindMarkupCore(markup, out xBindMarkup);
+        return TryParseXBindMarkupCore(markup, tryParseMarkupExtension, out xBindMarkup);
     }
 
     public static bool TryParseXBindMarkupCore(
         MarkupExtensionInfo markup,
+        out XBindMarkup xBindMarkup)
+    {
+        return TryParseXBindMarkupCore(markup, tryParseMarkupExtension: null, out xBindMarkup);
+    }
+
+    public static bool TryParseXBindMarkupCore(
+        MarkupExtensionInfo markup,
+        TryParseMarkupExtensionDelegate? tryParseMarkupExtension,
         out XBindMarkup xBindMarkup)
     {
         xBindMarkup = default;
@@ -47,20 +58,30 @@ public static class BindingEventMarkupParser
             path = XamlQuotedValueSemantics.TrimAndUnquote(markup.PositionalArguments[0]);
         }
 
+        var nestedMarkupParser = tryParseMarkupExtension ?? TryParseNestedMarkupExtension;
         xBindMarkup = new XBindMarkup(
             path: path,
             mode: TryGetNamedMarkupArgument(markup, "Mode"),
             bindBack: TryGetNamedMarkupArgument(markup, "BindBack"),
+            elementName: TryGetNamedMarkupArgument(markup, "ElementName"),
+            relativeSource: markup.NamedArguments.TryGetValue("RelativeSource", out var relativeSourceValue) &&
+                            TryParseRelativeSourceMarkup(relativeSourceValue, nestedMarkupParser, out var relativeSourceMarkup)
+                ? relativeSourceMarkup
+                : null,
+            source: TryGetNamedMarkupArgument(markup, "Source"),
             dataType: TryGetNamedMarkupArgument(markup, "DataType"),
             converter: TryGetNamedMarkupArgument(markup, "Converter"),
-            converterCulture: TryGetNamedMarkupArgument(markup, "ConverterCulture"),
+            converterCulture: TryGetNamedMarkupArgument(markup, "ConverterCulture", "ConverterLanguage"),
             converterParameter: TryGetNamedMarkupArgument(markup, "ConverterParameter"),
             stringFormat: TryGetNamedMarkupArgument(markup, "StringFormat", "Format"),
             fallbackValue: TryGetNamedMarkupArgument(markup, "FallbackValue", "Fallback"),
             targetNullValue: TryGetNamedMarkupArgument(markup, "TargetNullValue", "NullValue"),
             delay: TryGetNamedMarkupArgument(markup, "Delay"),
             priority: TryGetNamedMarkupArgument(markup, "Priority", "BindingPriority"),
-            updateSourceTrigger: TryGetNamedMarkupArgument(markup, "UpdateSourceTrigger", "Trigger"));
+            updateSourceTrigger: TryGetNamedMarkupArgument(markup, "UpdateSourceTrigger", "Trigger"),
+            hasSourceConflict: false,
+            sourceConflictMessage: null);
+        xBindMarkup = NormalizeXBindSourceSyntax(xBindMarkup, nestedMarkupParser);
         return true;
     }
 
@@ -300,6 +321,92 @@ public static class BindingEventMarkupParser
         }
 
         return normalizedBindingMarkup;
+    }
+
+    public static bool HasExplicitXBindSource(XBindMarkup xBindMarkup)
+    {
+        return CountExplicitXBindSources(xBindMarkup) > 0;
+    }
+
+    public static int CountExplicitXBindSources(XBindMarkup xBindMarkup)
+    {
+        var sourceCount = 0;
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.ElementName))
+        {
+            sourceCount++;
+        }
+
+        if (xBindMarkup.RelativeSource is not null)
+        {
+            sourceCount++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.Source))
+        {
+            sourceCount++;
+        }
+
+        return sourceCount;
+    }
+
+    public static XBindMarkup CreateXBindSourceConflict(XBindMarkup xBindMarkup, string message)
+    {
+        return new XBindMarkup(
+            path: xBindMarkup.Path,
+            mode: xBindMarkup.Mode,
+            bindBack: xBindMarkup.BindBack,
+            elementName: xBindMarkup.ElementName,
+            relativeSource: xBindMarkup.RelativeSource,
+            source: xBindMarkup.Source,
+            dataType: xBindMarkup.DataType,
+            converter: xBindMarkup.Converter,
+            converterCulture: xBindMarkup.ConverterCulture,
+            converterParameter: xBindMarkup.ConverterParameter,
+            stringFormat: xBindMarkup.StringFormat,
+            fallbackValue: xBindMarkup.FallbackValue,
+            targetNullValue: xBindMarkup.TargetNullValue,
+            delay: xBindMarkup.Delay,
+            priority: xBindMarkup.Priority,
+            updateSourceTrigger: xBindMarkup.UpdateSourceTrigger,
+            hasSourceConflict: true,
+            sourceConflictMessage: message);
+    }
+
+    public static XBindMarkup NormalizeXBindSourceSyntax(
+        XBindMarkup xBindMarkup,
+        TryParseMarkupExtensionDelegate tryParseMarkupExtension)
+    {
+        if (CountExplicitXBindSources(xBindMarkup) > 1)
+        {
+            return CreateXBindSourceConflict(
+                xBindMarkup,
+                "Only one x:Bind source may be specified. Use only one of ElementName, RelativeSource, or Source.");
+        }
+
+        if (TryExtractReferenceElementName(xBindMarkup.Source, tryParseMarkupExtension, out var referenceElementName))
+        {
+            return new XBindMarkup(
+                path: xBindMarkup.Path,
+                mode: xBindMarkup.Mode,
+                bindBack: xBindMarkup.BindBack,
+                elementName: referenceElementName,
+                relativeSource: xBindMarkup.RelativeSource,
+                source: null,
+                dataType: xBindMarkup.DataType,
+                converter: xBindMarkup.Converter,
+                converterCulture: xBindMarkup.ConverterCulture,
+                converterParameter: xBindMarkup.ConverterParameter,
+                stringFormat: xBindMarkup.StringFormat,
+                fallbackValue: xBindMarkup.FallbackValue,
+                targetNullValue: xBindMarkup.TargetNullValue,
+                delay: xBindMarkup.Delay,
+                priority: xBindMarkup.Priority,
+                updateSourceTrigger: xBindMarkup.UpdateSourceTrigger,
+                hasSourceConflict: xBindMarkup.HasSourceConflict,
+                sourceConflictMessage: xBindMarkup.SourceConflictMessage);
+        }
+
+        return xBindMarkup;
     }
 
     private static int CountLeadingNotOperators(string path)
@@ -823,5 +930,10 @@ public static class BindingEventMarkupParser
             ancestorLevel: null,
             tree: null);
         return true;
+    }
+
+    private static bool TryParseNestedMarkupExtension(string value, out MarkupExtensionInfo markupExtension)
+    {
+        return DefaultMarkupParser.TryParseMarkupExtension(value, out markupExtension);
     }
 }

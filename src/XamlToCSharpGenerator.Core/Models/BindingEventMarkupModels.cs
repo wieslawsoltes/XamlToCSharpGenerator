@@ -152,6 +152,9 @@ public readonly struct XBindMarkup
         string path,
         string? mode,
         string? bindBack,
+        string? elementName,
+        RelativeSourceMarkup? relativeSource,
+        string? source,
         string? dataType,
         string? converter,
         string? converterCulture,
@@ -161,11 +164,16 @@ public readonly struct XBindMarkup
         string? targetNullValue,
         string? delay,
         string? priority,
-        string? updateSourceTrigger)
+        string? updateSourceTrigger,
+        bool hasSourceConflict,
+        string? sourceConflictMessage)
     {
         Path = path;
         Mode = mode;
         BindBack = bindBack;
+        ElementName = elementName;
+        RelativeSource = relativeSource;
+        Source = source;
         DataType = dataType;
         Converter = converter;
         ConverterCulture = converterCulture;
@@ -176,6 +184,8 @@ public readonly struct XBindMarkup
         Delay = delay;
         Priority = priority;
         UpdateSourceTrigger = updateSourceTrigger;
+        HasSourceConflict = hasSourceConflict;
+        SourceConflictMessage = sourceConflictMessage;
     }
 
     public string Path { get; }
@@ -183,6 +193,12 @@ public readonly struct XBindMarkup
     public string? Mode { get; }
 
     public string? BindBack { get; }
+
+    public string? ElementName { get; }
+
+    public RelativeSourceMarkup? RelativeSource { get; }
+
+    public string? Source { get; }
 
     public string? DataType { get; }
 
@@ -203,4 +219,8 @@ public readonly struct XBindMarkup
     public string? Priority { get; }
 
     public string? UpdateSourceTrigger { get; }
+
+    public bool HasSourceConflict { get; }
+
+    public string? SourceConflictMessage { get; }
 }
