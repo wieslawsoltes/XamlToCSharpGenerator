@@ -960,6 +960,12 @@ public static class CSharpInlineCodeAnalysisService
                 return base.VisitIdentifierName(node);
             }
 
+            if (node.Parent is MemberBindingExpressionSyntax memberBinding &&
+                memberBinding.Name == node)
+            {
+                return base.VisitIdentifierName(node);
+            }
+
             var rewriteTarget = ResolveTarget(name);
             if (rewriteTarget is null)
             {

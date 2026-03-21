@@ -159,6 +159,7 @@ public static class SemanticContractMaps
             typeContracts:
             [
                 Create(TypeContractId.SystemObject, false, "bcl", "System.Object"),
+                Create(TypeContractId.SystemActionOfT1T2, false, "bcl", "System.Action`2"),
                 Create(TypeContractId.SystemTaskOfT, false, "bcl", "System.Threading.Tasks.Task`1"),
                 Create(TypeContractId.SystemTask, false, "bcl", "System.Threading.Tasks.Task"),
                 Create(TypeContractId.SystemObservableOfT, false, "bcl", "System.IObservable`1"),
@@ -228,6 +229,7 @@ public static class SemanticContractMaps
             typeContracts:
             [
                 Create(TypeContractId.SystemObject, false, "bcl", "System.Object"),
+                Create(TypeContractId.SystemActionOfT1T2, false, "bcl", "System.Action`2"),
                 Create(TypeContractId.SystemTaskOfT, false, "bcl", "System.Threading.Tasks.Task`1"),
                 Create(TypeContractId.SystemTask, false, "bcl", "System.Threading.Tasks.Task"),
                 Create(TypeContractId.SystemObservableOfT, false, "bcl", "System.IObservable`1"),

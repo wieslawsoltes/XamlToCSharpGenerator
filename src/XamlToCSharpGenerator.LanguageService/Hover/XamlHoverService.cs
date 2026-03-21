@@ -209,7 +209,10 @@ public sealed class XamlHoverService
                 return true;
             case XamlBindingHoverTargetKind.Argument:
                 hover = new XamlHoverInfo(
-                    XamlHoverMarkdownFormatter.FormatBindingArgument(target.ArgumentName ?? string.Empty, target.IsCompiledBinding),
+                    XamlHoverMarkdownFormatter.FormatBindingArgument(
+                        target.ExtensionName ?? string.Empty,
+                        target.ArgumentName ?? string.Empty,
+                        target.IsCompiledBinding),
                     target.UsageRange);
                 return true;
             case XamlBindingHoverTargetKind.Property:
@@ -221,6 +224,16 @@ public sealed class XamlHoverService
                             : string.Create(CultureInfo.InvariantCulture, $"**Property**\n\n`{target.ArgumentName}`"),
                     target.UsageRange);
                 return true;
+            case XamlBindingHoverTargetKind.Field:
+                if (target.Symbol is not null)
+                {
+                    hover = new XamlHoverInfo(
+                        XamlHoverMarkdownFormatter.FormatSymbol("Field", target.Symbol),
+                        target.UsageRange);
+                    return true;
+                }
+
+                break;
             case XamlBindingHoverTargetKind.Method:
                 if (target.Symbol is not null)
                 {

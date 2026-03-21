@@ -231,6 +231,13 @@ public sealed class XamlDefinitionService
             {
                 return [CreateTypeDefinitionLocation(analysis, bindingTypeReference)];
             }
+
+            if ((bindingTarget.Kind == XamlBindingNavigationTargetKind.Property ||
+                 bindingTarget.Kind == XamlBindingNavigationTargetKind.Symbol) &&
+                bindingTarget.Symbol is not null)
+            {
+                return [CreateSymbolDefinitionLocation(analysis, bindingTarget.Symbol)];
+            }
         }
 
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);

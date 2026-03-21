@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Threading;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,6 +13,8 @@ using Avalonia.Data;
 using Avalonia.Data.Converters;
 using Avalonia.Data.Core;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -1251,6 +1254,564 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Empty(parentStackProvider.Parents);
     }
 
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_Root_Assignment_Does_Not_Reenter_BindBack()
+    {
+        var root = new XBindTwoWayLoopProbe("Catalog alias");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindTwoWayLoopProbe, XBindTwoWayLoopProbe, TextBox>(
+            static (source, _, _) => source.Alias,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindTwoWayLoopProbe.Alias), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.Alias = SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Catalog alias", target.Text);
+        Assert.InRange(root.AliasSetCount, 0, 1);
+
+        root.ResetAliasSetCount();
+        target.Text = "Updated alias";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Updated alias", root.Alias);
+        Assert.Equal(1, root.AliasSetCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_Explicit_BindBack_Normalization_Does_Not_Reenter()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Updated search  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Updated search", root.SearchDraft);
+        Assert.Equal("Updated search", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_Resolves_Named_Elements_From_Ancestor_NameScopes()
+    {
+        var nameScope = new NameScope();
+        var host = new StackPanel();
+        NameScope.SetNameScope(host, nameScope);
+
+        var editor = new TextBox();
+        var target = new TextBlock();
+        host.Children.Add(editor);
+        host.Children.Add(target);
+        nameScope.Register("Editor", editor);
+
+        var resolved = SourceGenMarkupExtensionRuntime.ResolveNamedElement<TextBox>(target, new object(), "Editor");
+
+        Assert.Same(editor, resolved);
+    }
+
+    [AvaloniaFact]
+    public void ApplyBinding_XBind_ElementNameBinding_Preserves_Attached_NameScope_Metadata()
+    {
+        var nameScope = new NameScope();
+        var host = new StackPanel();
+        NameScope.SetNameScope(host, nameScope);
+
+        var editor = new TextBox
+        {
+            Text = "Named scope text"
+        };
+        var target = new TextBlock();
+
+        host.Children.Add(editor);
+        host.Children.Add(target);
+        nameScope.Register("Editor", editor);
+
+        var binding = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(
+            SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<StackPanel, StackPanel, TextBlock>(
+                static (_, root, targetObject) => SourceGenMarkupExtensionRuntime.ResolveNamedElement<TextBox>(targetObject, root, "Editor")?.Text,
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+                dependencies:
+                [
+                    new SourceGenBindingDependency(SourceGenBindingSourceKind.ElementName, ".", "Editor"),
+                    new SourceGenBindingDependency(SourceGenBindingSourceKind.ElementName, "Text", "Editor")
+                ],
+                mode: BindingMode.OneWay,
+                bindBack: null,
+                bindBackValueType: null,
+                converter: null,
+                converterCulture: null,
+                converterParameter: null,
+                stringFormat: null,
+                fallbackValue: null,
+                targetNullValue: null,
+                delay: 0,
+                updateSourceTrigger: UpdateSourceTrigger.Default,
+                priority: BindingPriority.LocalValue,
+                parentServiceProvider: null,
+                rootObject: host,
+                intermediateRootObject: host,
+                targetObject: target,
+                targetProperty: TextBlock.TextProperty,
+                baseUri: "avares://Demo/MainView.axaml",
+                parentStack: [target, host]),
+            nameScope);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBlock.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Named scope text", target.Text);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_Converter_Sees_Raw_Evaluator_Result_Before_Target_Coercion()
+    {
+        var root = new XBindConverterProbe(41);
+        var target = new TextBlock();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindConverterProbe, XBindConverterProbe, TextBlock>(
+            static (source, _, _) => source.Count,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindConverterProbe.Count), null)
+            ],
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: new XBindRawValueAwareConverter(),
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBlock.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBlock.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("42", target.Text);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_BindBack_Honors_Delay()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 40,
+            updateSourceTrigger: UpdateSourceTrigger.PropertyChanged,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Updated search  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        WaitForDispatcherCondition(() => root.BindBackCount == 1, TimeSpan.FromSeconds(1));
+
+        Assert.Equal("Updated search", root.SearchDraft);
+        Assert.Equal("Updated search", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_BindBack_Honors_LostFocus_Trigger()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 250,
+            updateSourceTrigger: UpdateSourceTrigger.LostFocus,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Lost focus value  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        target.RaiseEvent(new RoutedEventArgs(InputElement.LostFocusEvent)
+        {
+            Source = target
+        });
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Lost focus value", root.SearchDraft);
+        Assert.Equal("Lost focus value", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void UpdateXBind_Flushes_Explicit_BindBack_Pending_Value()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Explicit,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Explicit update  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        SourceGenMarkupExtensionRuntime.UpdateXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Explicit update", root.SearchDraft);
+        Assert.Equal("Explicit update", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void StopTrackingXBind_Can_Be_Followed_By_InitializeXBind()
+    {
+        var root = new XBindTwoWayLoopProbe("Catalog alias");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindTwoWayLoopProbe, XBindTwoWayLoopProbe, TextBox>(
+            static (source, _, _) => source.Alias,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindTwoWayLoopProbe.Alias), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.Alias = SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Catalog alias", target.Text);
+
+        SourceGenMarkupExtensionRuntime.StopTrackingXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        root.Alias = "Updated alias";
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotEqual("Updated alias", target.Text);
+
+        SourceGenMarkupExtensionRuntime.InitializeXBind(root);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Updated alias", target.Text);
+    }
+
+    [AvaloniaFact]
+    public void StopTrackingXBind_Cancels_Deferred_Ancestor_Attachment()
+    {
+        var root = new UserControl
+        {
+            DataContext = new DeferredAnchorViewModel()
+        };
+        var panel = new StackPanel();
+        root.Content = panel;
+
+        var anchor = new Border();
+        var target = new DeferredAncestorBindingTarget();
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<UserControl, UserControl, DeferredAncestorBindingTarget>(
+            static (source, _, _) => ((DeferredAnchorViewModel)source.DataContext!).Message,
+            new SourceGenBindingDependency(
+                SourceGenBindingSourceKind.FindAncestor,
+                ".",
+                null,
+                new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(UserControl),
+                    AncestorLevel = 1
+                }),
+            dependencies: null,
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: DeferredAncestorBindingTarget.ValueProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, DeferredAncestorBindingTarget.ValueProperty, binding, anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        SourceGenMarkupExtensionRuntime.StopTrackingXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        var window = new Window
+        {
+            Content = root
+        };
+
+        try
+        {
+            panel.Children.Add(anchor);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Null(target.Value);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    [AvaloniaFact]
+    public void ResetXBind_Cancels_Deferred_Ancestor_Attachment()
+    {
+        var root = new UserControl
+        {
+            DataContext = new DeferredAnchorViewModel()
+        };
+        var panel = new StackPanel();
+        root.Content = panel;
+
+        var anchor = new Border();
+        var target = new DeferredAncestorBindingTarget();
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<UserControl, UserControl, DeferredAncestorBindingTarget>(
+            static (source, _, _) => ((DeferredAnchorViewModel)source.DataContext!).Message,
+            new SourceGenBindingDependency(
+                SourceGenBindingSourceKind.FindAncestor,
+                ".",
+                null,
+                new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(UserControl),
+                    AncestorLevel = 1
+                }),
+            dependencies: null,
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: DeferredAncestorBindingTarget.ValueProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, DeferredAncestorBindingTarget.ValueProperty, binding, anchor);
+        Dispatcher.UIThread.RunJobs();
+
+        SourceGenMarkupExtensionRuntime.ResetXBind(root);
+        Dispatcher.UIThread.RunJobs();
+
+        var window = new Window
+        {
+            Content = root
+        };
+
+        try
+        {
+            panel.Children.Add(anchor);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Null(target.Value);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    private static void WaitForDispatcherCondition(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.True(condition());
+    }
+
     private sealed class DictionaryServiceProvider : IServiceProvider
     {
         private readonly IReadOnlyDictionary<Type, object> _services;
@@ -1307,6 +1868,116 @@ public class SourceGenMarkupExtensionRuntimeTests
         private void SetValueCore(string? value)
         {
             SetAndRaise(ValueProperty, ref _value, value);
+        }
+    }
+
+    private sealed class XBindTwoWayLoopProbe : AvaloniaObject
+    {
+        public static readonly DirectProperty<XBindTwoWayLoopProbe, string?> AliasProperty =
+            AvaloniaProperty.RegisterDirect<XBindTwoWayLoopProbe, string?>(
+                nameof(Alias),
+                static target => target.Alias,
+                static (target, value) => target.Alias = value);
+
+        private readonly int _aliasSetLimit;
+        private string? _alias;
+
+        public XBindTwoWayLoopProbe(string? alias, int aliasSetLimit = 8)
+        {
+            _alias = alias;
+            _aliasSetLimit = aliasSetLimit;
+        }
+
+        public int AliasSetCount { get; private set; }
+
+        public string? Alias
+        {
+            get => _alias;
+            set
+            {
+                AliasSetCount++;
+                if (AliasSetCount > _aliasSetLimit)
+                {
+                    throw new InvalidOperationException("x:Bind bind-back re-entered the source setter.");
+                }
+
+                SetAndRaise(AliasProperty, ref _alias, value);
+            }
+        }
+
+        public void ResetAliasSetCount()
+        {
+            AliasSetCount = 0;
+        }
+    }
+
+    private sealed class XBindNormalizingLoopProbe : AvaloniaObject
+    {
+        public static readonly DirectProperty<XBindNormalizingLoopProbe, string?> SearchDraftProperty =
+            AvaloniaProperty.RegisterDirect<XBindNormalizingLoopProbe, string?>(
+                nameof(SearchDraft),
+                static target => target.SearchDraft,
+                static (target, value) => target.SearchDraft = value);
+
+        private readonly int _bindBackLimit;
+        private string? _searchDraft;
+
+        public XBindNormalizingLoopProbe(string? searchDraft, int bindBackLimit = 8)
+        {
+            _searchDraft = searchDraft;
+            _bindBackLimit = bindBackLimit;
+        }
+
+        public int BindBackCount { get; private set; }
+
+        public string? SearchDraft
+        {
+            get => _searchDraft;
+            set => SetAndRaise(SearchDraftProperty, ref _searchDraft, value);
+        }
+
+        public void ApplySearchDraft(string? value)
+        {
+            BindBackCount++;
+            if (BindBackCount > _bindBackLimit)
+            {
+                throw new InvalidOperationException("x:Bind explicit bind-back re-entered.");
+            }
+
+            SearchDraft = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        }
+
+        public void ResetBindBackCount()
+        {
+            BindBackCount = 0;
+        }
+    }
+
+    private sealed class XBindConverterProbe
+    {
+        public XBindConverterProbe(int count)
+        {
+            Count = count;
+        }
+
+        public int Count { get; }
+    }
+
+    private sealed class XBindRawValueAwareConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return value switch
+            {
+                int intValue => intValue + 1,
+                string stringValue => "wrong:" + stringValue,
+                _ => value
+            };
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return value;
         }
     }
 

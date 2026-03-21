@@ -145,3 +145,82 @@ public readonly struct BindingMarkup
 
     public string? SourceConflictMessage { get; }
 }
+
+public readonly struct XBindMarkup
+{
+    public XBindMarkup(
+        string path,
+        string? mode,
+        string? bindBack,
+        string? elementName,
+        RelativeSourceMarkup? relativeSource,
+        string? source,
+        string? dataType,
+        string? converter,
+        string? converterCulture,
+        string? converterParameter,
+        string? stringFormat,
+        string? fallbackValue,
+        string? targetNullValue,
+        string? delay,
+        string? priority,
+        string? updateSourceTrigger,
+        bool hasSourceConflict,
+        string? sourceConflictMessage)
+    {
+        Path = path;
+        Mode = mode;
+        BindBack = bindBack;
+        ElementName = elementName;
+        RelativeSource = relativeSource;
+        Source = source;
+        DataType = dataType;
+        Converter = converter;
+        ConverterCulture = converterCulture;
+        ConverterParameter = converterParameter;
+        StringFormat = stringFormat;
+        FallbackValue = fallbackValue;
+        TargetNullValue = targetNullValue;
+        Delay = delay;
+        Priority = priority;
+        UpdateSourceTrigger = updateSourceTrigger;
+        HasSourceConflict = hasSourceConflict;
+        SourceConflictMessage = sourceConflictMessage;
+    }
+
+    public string Path { get; }
+
+    public string? Mode { get; }
+
+    public string? BindBack { get; }
+
+    public string? ElementName { get; }
+
+    public RelativeSourceMarkup? RelativeSource { get; }
+
+    public string? Source { get; }
+
+    public string? DataType { get; }
+
+    public string? Converter { get; }
+
+    public string? ConverterCulture { get; }
+
+    public string? ConverterParameter { get; }
+
+    public string? StringFormat { get; }
+
+    public string? FallbackValue { get; }
+
+    public string? TargetNullValue { get; }
+
+    public string? Delay { get; }
+
+    public string? Priority { get; }
+
+    public string? UpdateSourceTrigger { get; }
+
+    public bool HasSourceConflict { get; }
+
+    public string? SourceConflictMessage { get; }
+}

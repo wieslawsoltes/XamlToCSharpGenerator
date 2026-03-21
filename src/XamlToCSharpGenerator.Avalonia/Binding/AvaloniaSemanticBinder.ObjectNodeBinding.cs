@@ -28,6 +28,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? NodeDataType,
         bool CompileBindingsEnabled,
         INamedTypeSymbol? RootTypeSymbol,
+        string XBindDefaultMode,
+        bool IsInsideDataTemplate,
         BindingScopeContext? Parent,
         string? ParentPropertyName);
 
@@ -80,12 +82,16 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         var compileBindingsEnabled = node.CompileBindings ?? inheritedCompileBindingsEnabled;
+        var inheritedXBindDefaultMode = parentScopeContext?.XBindDefaultMode ?? "OneTime";
+        var xBindDefaultMode = ResolveXBindDefaultMode(node, inheritedXBindDefaultMode);
         var scopeContext = new BindingScopeContext(
             node,
             symbol,
             inheritedDataType,
             compileBindingsEnabled,
             rootTypeSymbol,
+            xBindDefaultMode,
+            (parentScopeContext?.IsInsideDataTemplate ?? false) || IsDataTemplateNode(node),
             parentScopeContext,
             parentPropertyName);
         var nodeDataType = ResolveNodeDataType(
@@ -141,6 +147,22 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
+            if (IsXBindDefaultModeDirective(assignment))
+            {
+                if (!IsSupportedXBindMode(assignment.Value))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0115",
+                        $"x:DefaultBindMode '{assignment.Value}' is not supported. Use OneTime, OneWay, or TwoWay.",
+                        document.FilePath,
+                        assignment.Line,
+                        assignment.Column,
+                        options.StrictMode));
+                }
+
+                continue;
+            }
+
             var propertyAlias = ResolvePropertyAlias(symbol, assignment.PropertyName);
             var assignmentDataType = ResolveAssignmentBindingDataType(
                 assignment,
@@ -173,7 +195,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         explicitOwnerType: propertyAlias.AvaloniaPropertyOwnerType,
                         explicitPropertyName: propertyAlias.ResolvedPropertyName,
                         explicitPropertyFieldName: propertyAlias.AvaloniaPropertyFieldName,
-                        out var attachedAssignment))
+                        out var attachedAssignment,
+                        isInsideDataTemplate: scopeContext.IsInsideDataTemplate,
+                        xBindDefaultMode: scopeContext.XBindDefaultMode,
+                        currentNode: node))
                 {
                     if (attachedAssignment is not null)
                     {
@@ -226,9 +251,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                         compilation,
                         assignmentDataType,
                         rootTypeSymbol,
+                        scopeContext.IsInsideDataTemplate,
                         diagnostics,
                         document,
                         options,
+                        currentNode: node,
                         out var attachedEventSubscription))
                 {
                     if (attachedEventSubscription is not null)
@@ -490,6 +517,95 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     diagnostics.Add(new DiagnosticInfo(
                         expressionErrorCode,
                         message,
+                        document.FilePath,
+                        assignment.Line,
+                        assignment.Column,
+                        options.StrictMode));
+                    continue;
+                }
+
+                if (TryParseXBindMarkup(assignment.Value, out var xBindMarkup))
+                {
+                    var xBindErrorCode = "AXSG0117";
+                    var xBindErrorMessage = $"x:Bind expression '{xBindMarkup.Path}' could not be converted.";
+
+                    if (TryBindAvaloniaPropertyAssignment(
+                            symbol,
+                            typeName,
+                            normalizedPropertyName,
+                            assignment,
+                            compilation,
+                            document,
+                            options,
+                            diagnostics,
+                            compiledBindings,
+                            unsafeAccessors,
+                            compileBindingsEnabled,
+                            assignmentDataType,
+                            property.Type,
+                            currentBindingPriorityScope,
+                            currentSetterTargetType,
+                            rootTypeSymbol,
+                            out var xBindAssignment,
+                            allowCompiledBindingRegistration: false,
+                            isInsideDataTemplate: scopeContext.IsInsideDataTemplate,
+                            xBindDefaultMode: scopeContext.XBindDefaultMode,
+                            currentNode: node))
+                    {
+                        if (xBindAssignment is not null)
+                        {
+                            assignments.Add(xBindAssignment);
+                        }
+
+                        continue;
+                    }
+
+                    if (CanAssignBindingValue(property.Type, compilation) &&
+                        TryBuildXBindBindingExpression(
+                            compilation,
+                            document,
+                            node,
+                            xBindMarkup,
+                            ambientDataContextType: assignmentDataType,
+                            rootType: rootTypeSymbol,
+                            targetType: currentSetterTargetType ?? symbol,
+                            bindingValueType: property.Type,
+                            bindingPriorityScope: currentBindingPriorityScope,
+                            isInsideDataTemplate: scopeContext.IsInsideDataTemplate,
+                            defaultMode: scopeContext.XBindDefaultMode,
+                            out var xBindValueExpression,
+                            out _,
+                            out xBindErrorCode,
+                            out xBindErrorMessage))
+                    {
+                        assignments.Add(new ResolvedPropertyAssignment(
+                            PropertyName: property.Name,
+                            ValueExpression: xBindValueExpression,
+                            AvaloniaPropertyOwnerTypeName: null,
+                            AvaloniaPropertyFieldName: null,
+                            ClrPropertyOwnerTypeName: property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            ClrPropertyTypeName: property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            BindingPriorityExpression: null,
+                            Line: assignment.Line,
+                            Column: assignment.Column,
+                            Condition: assignment.Condition,
+                            ValueKind: ResolvedValueKind.Binding,
+                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                            PreserveBindingValue: HasAssignBindingAttribute(property),
+                            RequiresObjectInitializer: RequiresObjectInitializer(
+                                property,
+                                ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)),
+                            ClrSetterUnsafeAccessorMethodName: ResolveInitOnlySetterUnsafeAccessorMethodName(
+                                property,
+                                compilation,
+                                unsafeAccessors),
+                            IsInitOnlyClrProperty: property.SetMethod?.IsInitOnly == true));
+                        continue;
+                    }
+
+                    diagnostics.Add(new DiagnosticInfo(
+                        xBindErrorCode,
+                        xBindErrorMessage,
                         document.FilePath,
                         assignment.Line,
                         assignment.Column,
@@ -889,9 +1005,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     compilation,
                     assignmentDataType,
                     rootTypeSymbol,
+                    scopeContext.IsInsideDataTemplate,
                     diagnostics,
                     document,
                     options,
+                    currentNode: node,
                     out var eventSubscription))
             {
                 if (eventSubscription is not null)
@@ -2032,6 +2150,49 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return inheritedDataType;
+    }
+
+    private static string ResolveXBindDefaultMode(XamlObjectNode node, string inheritedMode)
+    {
+        foreach (var assignment in node.PropertyAssignments)
+        {
+            if (IsXBindDefaultModeDirective(assignment) &&
+                IsSupportedXBindMode(assignment.Value))
+            {
+                return NormalizeXBindMode(assignment.Value);
+            }
+        }
+
+        return inheritedMode;
+    }
+
+    private static bool IsXBindDefaultModeDirective(XamlPropertyAssignment assignment)
+    {
+        return string.Equals(assignment.XmlNamespace, Xaml2006.NamespaceName, StringComparison.Ordinal) &&
+               NormalizePropertyName(assignment.PropertyName).Equals("DefaultBindMode", StringComparison.Ordinal);
+    }
+
+    private static bool IsSupportedXBindMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeXBindMode(value);
+        return normalized is "OneTime" or "OneWay" or "TwoWay";
+    }
+
+    private static string NormalizeXBindMode(string? value)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        return normalized.ToLowerInvariant() switch
+        {
+            "onetime" => "OneTime",
+            "oneway" => "OneWay",
+            "twoway" => "TwoWay",
+            _ => normalized
+        };
     }
 
     private static INamedTypeSymbol? ResolveAssignmentBindingDataType(

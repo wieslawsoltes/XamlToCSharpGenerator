@@ -99,6 +99,12 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                 sourceBuilder.AppendLine(
                     $"        {namedElement.FieldModifier} {namedElement.TypeName} {SanitizeIdentifier(namedElement.Name)} = null!;");
             }
+
+            if (viewModel.HasXBind)
+            {
+                sourceBuilder.AppendLine("        private __SourceGenXBindBindings? __sourceGenBindings;");
+                sourceBuilder.AppendLine("        public __SourceGenXBindBindings Bindings => __sourceGenBindings ??= new __SourceGenXBindBindings(this);");
+            }
         }
 
         sourceBuilder.AppendLine($"        private const string __SourceGenDocumentUri = \"{escapedUri}\";");
@@ -284,6 +290,10 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine("        {");
             sourceBuilder.AppendLine("            __RegisterXamlSourceGenArtifacts();");
             sourceBuilder.AppendLine("            __TrackAndReconcileSourceGenHotReloadState(this);");
+            if (viewModel.HasXBind)
+            {
+                sourceBuilder.AppendLine("            global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResetXBind(this);");
+            }
             sourceBuilder.AppendLine("            __PopulateGeneratedObjectGraph(this, null, true);");
             sourceBuilder.AppendLine("            var __self = (object)this;");
             sourceBuilder.AppendLine("            if (__self is global::Avalonia.Layout.Layoutable __layoutable)");
@@ -431,6 +441,10 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
             sourceBuilder.AppendLine("                var __loadedWithSourceGen = false;");
             sourceBuilder.AppendLine("                if (loadXaml)");
             sourceBuilder.AppendLine("                {");
+            if (viewModel.HasXBind)
+            {
+                sourceBuilder.AppendLine("                    global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResetXBind(this);");
+            }
             sourceBuilder.AppendLine("                    __PopulateGeneratedObjectGraph(this, null);");
             sourceBuilder.AppendLine("                    __loadedWithSourceGen = true;");
             sourceBuilder.AppendLine("                }");
@@ -491,6 +505,36 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
 
             sourceBuilder.AppendLine("            }");
         }
+
+        if (viewModel.Document.IsClassBacked && viewModel.HasXBind)
+        {
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("        public sealed class __SourceGenXBindBindings");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine($"            private readonly {viewModel.RootObject.TypeName} __owner;");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine($"            internal __SourceGenXBindBindings({viewModel.RootObject.TypeName} owner)");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                __owner = owner;");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("            public void Initialize()");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.InitializeXBind(__owner);");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("            public void Update()");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.UpdateXBind(__owner);");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine("            public void StopTracking()");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine("                global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.StopTrackingXBind(__owner);");
+            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine("        }");
+        }
+
         sourceBuilder.AppendLine("    }");
         sourceBuilder.AppendLine("}");
 
@@ -4310,7 +4354,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         "                    ",
                         definition,
                         definition.CompiledDataContextLambdaExpression!,
-                        definition.DataContextTypeName!,
+                        definition.LambdaSourceTypeName ?? definition.DataContextTypeName!,
                         "__axsgDataContextTyped",
                         "this",
                         senderExpression);
@@ -4327,7 +4371,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         "                    ",
                         definition,
                         definition.CompiledRootLambdaExpression!,
-                        "global::System.Object",
+                        definition.LambdaSourceTypeName ?? definition.RootTypeName ?? "global::System.Object",
                         "__axsgRootTyped",
                         "__axsgRootTyped",
                         senderExpression);
@@ -4593,7 +4637,14 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string targetTypeName,
         string targetExpression)
     {
-        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        EmitResolvedEventLambdaSource(
+            sourceBuilder,
+            indent,
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetExpression);
         sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
         sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
         sourceBuilder.AppendLine(indent + definition.DelegateTypeName + " __axsgHandler = " + lambdaExpression + ";");
@@ -4613,11 +4664,51 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         string lambdaBodyCode,
         bool lambdaBodyIsBlock)
     {
-        sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+        EmitResolvedEventLambdaSource(
+            sourceBuilder,
+            indent,
+            definition,
+            sourceTypeName,
+            sourceExpression,
+            rootExpression,
+            targetExpression);
         sourceBuilder.AppendLine(indent + definition.RootTypeName + " root = " + rootExpression + ";");
         sourceBuilder.AppendLine(indent + targetTypeName + " target = " + targetExpression + ";");
         EmitLambdaParameterAliases(sourceBuilder, indent, definition, lambdaParameterNames);
         EmitLambdaBody(sourceBuilder, indent, lambdaBodyCode, lambdaBodyIsBlock);
+    }
+
+    private static void EmitResolvedEventLambdaSource(
+        StringBuilder sourceBuilder,
+        string indent,
+        ResolvedEventBindingDefinition definition,
+        string sourceTypeName,
+        string sourceExpression,
+        string rootExpression,
+        string targetExpression)
+    {
+        if (string.IsNullOrWhiteSpace(definition.LambdaSourceDependencyExpression))
+        {
+            sourceBuilder.AppendLine(indent + sourceTypeName + " source = " + sourceExpression + ";");
+            return;
+        }
+
+        sourceBuilder.AppendLine(
+            indent +
+            "if (!global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.TryResolveXBindDependency<" +
+            sourceTypeName +
+            ">(" +
+            definition.LambdaSourceDependencyExpression +
+            ", " +
+            targetExpression +
+            ", " +
+            targetExpression +
+            ", " +
+            rootExpression +
+            ", out var source))");
+        sourceBuilder.AppendLine(indent + "{");
+        sourceBuilder.AppendLine(indent + "    return;");
+        sourceBuilder.AppendLine(indent + "}");
     }
 
     private static void EmitLambdaParameterAliases(
