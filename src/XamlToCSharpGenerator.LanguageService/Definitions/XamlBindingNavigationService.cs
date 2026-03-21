@@ -6,6 +6,7 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
+using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Parsing;
 using XamlToCSharpGenerator.LanguageService.Symbols;
@@ -19,7 +20,8 @@ internal enum XamlBindingNavigationTargetKind
 {
     None = 0,
     Property,
-    Type
+    Type,
+    Symbol
 }
 
 internal enum XamlBindingHoverTargetKind
@@ -28,6 +30,7 @@ internal enum XamlBindingHoverTargetKind
     Extension,
     Argument,
     Property,
+    Field,
     Method,
     Type
 }
@@ -37,7 +40,8 @@ internal readonly record struct XamlBindingNavigationTarget(
     SourceRange UsageRange,
     AvaloniaTypeInfo? OwnerTypeInfo,
     AvaloniaPropertyInfo? PropertyInfo,
-    XamlResolvedTypeReference? TypeReference);
+    XamlResolvedTypeReference? TypeReference,
+    ISymbol? Symbol);
 
 internal readonly record struct XamlBindingHoverTarget(
     XamlBindingHoverTargetKind Kind,
@@ -56,6 +60,12 @@ internal readonly record struct XamlBindingInlayHintTarget(
     string SourceTypeName,
     string ResultTypeName,
     AvaloniaSymbolSourceLocation? ResultTypeLocation);
+
+internal readonly record struct ResolvedBindingPathSegment(
+    ISymbol Symbol,
+    ITypeSymbol ResultType,
+    AvaloniaTypeInfo? OwnerTypeInfo,
+    AvaloniaPropertyInfo? PropertyInfo);
 
 internal static class XamlBindingNavigationService
 {
@@ -104,7 +114,7 @@ internal static class XamlBindingNavigationService
                 CreateRange(context.SourceText, context.MarkupSpanInfo.ExtensionNameStart, context.MarkupSpanInfo.ExtensionNameLength),
                 context.MarkupSpanInfo.ExtensionName,
                 ArgumentName: null,
-                IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                IsCompiledBinding: IsCompiledBinding(context),
                 OwnerTypeInfo: null,
                 PropertyInfo: null,
                 TypeReference: null,
@@ -132,7 +142,7 @@ internal static class XamlBindingNavigationService
                 CreateRange(context.SourceText, argument.NameStart, argument.NameLength),
                 ExtensionName: context.MarkupSpanInfo.ExtensionName,
                 ArgumentName: argument.Name,
-                IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                IsCompiledBinding: IsCompiledBinding(context),
                 OwnerTypeInfo: null,
                 PropertyInfo: null,
                 TypeReference: null,
@@ -149,7 +159,7 @@ internal static class XamlBindingNavigationService
                     candidate.UsageRange,
                     ExtensionName: context.MarkupSpanInfo.ExtensionName,
                     ArgumentName: null,
-                    IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                    IsCompiledBinding: IsCompiledBinding(context),
                     OwnerTypeInfo: null,
                     PropertyInfo: null,
                     TypeReference: candidate.TypeReference,
@@ -282,9 +292,10 @@ internal static class XamlBindingNavigationService
             return false;
         }
 
-        var normalizedPath = string.IsNullOrWhiteSpace(context.BindingMarkup.Path)
+        var bindingPath = GetBindingPath(context);
+        var normalizedPath = string.IsNullOrWhiteSpace(bindingPath)
             ? "."
-            : context.BindingMarkup.Path.Trim();
+            : bindingPath.Trim();
         var sourceTypeName = sourceTypeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
         target = new XamlBindingInlayHintTarget(
             HintAnchorRange: context.AttributeValueRange,
@@ -311,6 +322,7 @@ internal static class XamlBindingNavigationService
         }
 
         ITypeSymbol currentType = sourceTypeSymbol;
+        var currentIsStatic = false;
         for (var index = 0; index < segmentTokens.Length; index++)
         {
             var segment = segmentTokens[index];
@@ -324,6 +336,20 @@ internal static class XamlBindingNavigationService
                 }
 
                 currentType = castType;
+                currentIsStatic = false;
+            }
+
+            if (segment.IsTypeReferenceSegment)
+            {
+                var typeReference = ResolveTypeSymbol(context.Analysis, currentPrefixMap, segment.TypeReferenceToken ?? segment.MemberName);
+                if (typeReference is null)
+                {
+                    return false;
+                }
+
+                currentType = typeReference;
+                currentIsStatic = true;
+                continue;
             }
 
             if (segment.IsAttachedProperty)
@@ -360,7 +386,7 @@ internal static class XamlBindingNavigationService
                         usageRange,
                         ExtensionName: context.MarkupSpanInfo.ExtensionName,
                         ArgumentName: "Path",
-                        IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
+                        IsCompiledBinding: IsCompiledBinding(context),
                         OwnerTypeInfo: attachedOwnerTypeInfo,
                         PropertyInfo: attachedPropertyInfo,
                         TypeReference: null,
@@ -369,6 +395,7 @@ internal static class XamlBindingNavigationService
                 }
 
                 currentType = attachedPropertyType;
+                currentIsStatic = false;
                 continue;
             }
 
@@ -382,68 +409,39 @@ internal static class XamlBindingNavigationService
                 normalizedPathStart + segment.MemberNameStart,
                 segment.MemberNameLength);
 
-            if (segment.IsMethodCall)
+            ResolvedBindingPathSegment? resolvedSegment = null;
+            if (IsXBind(context) &&
+                index == 0 &&
+                TryResolveXBindInitialSegment(
+                    context,
+                    segment,
+                    sourceTypeSymbol,
+                    currentPrefixMap,
+                    out var initialSegment,
+                    out var initialResultType,
+                    out currentIsStatic))
             {
-                var method = XamlClrMemberSymbolResolver.ResolveParameterlessMethod(currentNamedType, segment.MemberName);
-                if (method is null)
+                resolvedSegment = initialSegment;
+                currentType = initialResultType;
+            }
+            else
+            {
+                if (!TryResolveClrSegment(context, currentNamedType, currentIsStatic, segment, out var clrSegment))
                 {
                     return false;
                 }
 
-                if (ContainsOffset(memberRange, context.DocumentOffset, context.SourceText))
-                {
-                    target = new XamlBindingHoverTarget(
-                        XamlBindingHoverTargetKind.Method,
-                        memberRange,
-                        ExtensionName: context.MarkupSpanInfo.ExtensionName,
-                        ArgumentName: "Path",
-                        IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
-                        OwnerTypeInfo: null,
-                        PropertyInfo: null,
-                        TypeReference: null,
-                        Symbol: method);
-                    return true;
-                }
-
-                currentType = segment.HasIndexers
-                    ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(method.ReturnType) ?? method.ReturnType
-                    : method.ReturnType;
-                continue;
+                resolvedSegment = clrSegment;
+                currentType = clrSegment.ResultType;
+                currentIsStatic = false;
             }
 
-            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentNamedType, segment.MemberName);
-            if (resolvedProperty is null)
+            if (resolvedSegment is { } resolved &&
+                ContainsOffset(memberRange, context.DocumentOffset, context.SourceText))
             {
-                return false;
-            }
-
-            AvaloniaTypeInfo? ownerTypeInfo = null;
-            AvaloniaPropertyInfo? propertyInfo = null;
-            if (TryResolveTypeInfo(context.Analysis, currentNamedType, out ownerTypeInfo))
-            {
-                propertyInfo = ownerTypeInfo?.Properties.FirstOrDefault(property =>
-                    string.Equals(property.Name, resolvedProperty.Name, StringComparison.Ordinal) &&
-                    !property.IsAttached);
-            }
-
-            if (ContainsOffset(memberRange, context.DocumentOffset, context.SourceText))
-            {
-                target = new XamlBindingHoverTarget(
-                    XamlBindingHoverTargetKind.Property,
-                    memberRange,
-                    ExtensionName: context.MarkupSpanInfo.ExtensionName,
-                    ArgumentName: "Path",
-                    IsCompiledBinding: context.BindingMarkup.IsCompiledBinding,
-                    OwnerTypeInfo: ownerTypeInfo,
-                    PropertyInfo: propertyInfo,
-                    TypeReference: null,
-                    Symbol: resolvedProperty);
+                target = CreateHoverTarget(context, memberRange, resolved);
                 return true;
             }
-
-            currentType = segment.HasIndexers
-                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(resolvedProperty.Type) ?? resolvedProperty.Type
-                : resolvedProperty.Type;
         }
 
         return false;
@@ -451,7 +449,8 @@ internal static class XamlBindingNavigationService
 
     private static IEnumerable<XamlBindingNavigationTarget> EnumerateBindingTypeTargets(BindingContext context)
     {
-        if (context.BindingMarkup.RelativeSource is { AncestorTypeToken: { } ancestorTypeToken } &&
+        if (!IsXBind(context) &&
+            context.BindingMarkup.RelativeSource is { AncestorTypeToken: { } ancestorTypeToken } &&
             TryResolveArgumentSpan(context.MarkupSpanInfo.Arguments, "RelativeSource", out var relativeSourceArgumentSpan) &&
             TryParseMarkupExtensionSpan(relativeSourceArgumentSpan.ValueText, relativeSourceArgumentSpan.ValueStart, out var relativeSourceMarkupInfo))
         {
@@ -473,7 +472,8 @@ internal static class XamlBindingNavigationService
                         CreateRange(context.SourceText, argument.ValueStart, argument.ValueLength),
                         OwnerTypeInfo: null,
                         PropertyInfo: null,
-                        ancestorTypeReference);
+                        ancestorTypeReference,
+                        Symbol: null);
                 }
             }
         }
@@ -507,7 +507,8 @@ internal static class XamlBindingNavigationService
                         segment.CastTypeTokenLength),
                     OwnerTypeInfo: null,
                     PropertyInfo: null,
-                    castTypeReference);
+                    castTypeReference,
+                    Symbol: null);
             }
 
             if (segment.AttachedOwnerTypeToken is { Length: > 0 } &&
@@ -525,7 +526,28 @@ internal static class XamlBindingNavigationService
                         segment.AttachedOwnerTypeTokenLength),
                     OwnerTypeInfo: null,
                     PropertyInfo: null,
-                    attachedOwnerReference);
+                    attachedOwnerReference,
+                    Symbol: null);
+            }
+
+            if (segment.IsTypeReferenceSegment &&
+                segment.TypeReferenceToken is { Length: > 0 } typeReferenceToken &&
+                TryResolveTypeReference(
+                    context.Analysis,
+                    context.PrefixMap,
+                    typeReferenceToken,
+                    out var xBindTypeReference))
+            {
+                yield return new XamlBindingNavigationTarget(
+                    XamlBindingNavigationTargetKind.Type,
+                    CreateRange(
+                        context.SourceText,
+                        normalizedPathStart + segment.TypeReferenceTokenStart,
+                        segment.TypeReferenceTokenLength),
+                    OwnerTypeInfo: null,
+                    PropertyInfo: null,
+                    xBindTypeReference,
+                    Symbol: null);
             }
         }
     }
@@ -540,7 +562,8 @@ internal static class XamlBindingNavigationService
             yield break;
         }
 
-        var currentType = currentTypeSymbol;
+        ITypeSymbol currentType = currentTypeSymbol;
+        var currentIsStatic = false;
         for (var index = 0; index < segmentTokens.Length; index++)
         {
             var segment = segmentTokens[index];
@@ -554,6 +577,20 @@ internal static class XamlBindingNavigationService
                 }
 
                 currentType = castType;
+                currentIsStatic = false;
+            }
+
+            if (segment.IsTypeReferenceSegment)
+            {
+                var typeReference = ResolveTypeSymbol(context.Analysis, currentPrefixMap, segment.TypeReferenceToken ?? segment.MemberName);
+                if (typeReference is null)
+                {
+                    yield break;
+                }
+
+                currentType = typeReference;
+                currentIsStatic = true;
+                continue;
             }
 
             if (segment.IsAttachedProperty)
@@ -585,42 +622,57 @@ internal static class XamlBindingNavigationService
                         segment.MemberNameLength),
                     attachedOwnerTypeInfo,
                     attachedPropertyInfo,
-                    TypeReference: null);
+                    TypeReference: null,
+                    Symbol: null);
 
                 if (index < segmentTokens.Length - 1)
                 {
                     yield break;
                 }
 
+                currentIsStatic = false;
                 continue;
             }
 
-            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
-            if (resolvedProperty is null)
+            if (currentType is not INamedTypeSymbol currentNamedType)
             {
                 yield break;
             }
 
-            if (TryResolveTypeInfo(context.Analysis, currentType, out var ownerTypeInfo) &&
-                ownerTypeInfo?.Properties.FirstOrDefault(property =>
-                    string.Equals(property.Name, resolvedProperty.Name, StringComparison.Ordinal) &&
-                    !property.IsAttached) is { } propertyInfo)
+            ResolvedBindingPathSegment? resolvedSegment = null;
+            if (IsXBind(context) &&
+                index == 0 &&
+                TryResolveXBindInitialSegment(
+                    context,
+                    segment,
+                    currentTypeSymbol,
+                    currentPrefixMap,
+                    out var initialSegment,
+                    out var initialResultType,
+                    out currentIsStatic))
             {
-                yield return new XamlBindingNavigationTarget(
-                    XamlBindingNavigationTargetKind.Property,
-                    CreateRange(
-                        context.SourceText,
-                        normalizedPathStart + segment.MemberNameStart,
-                        segment.MemberNameLength),
-                    ownerTypeInfo,
-                    propertyInfo,
-                    TypeReference: null);
+                resolvedSegment = initialSegment;
+                currentType = initialResultType;
+            }
+            else
+            {
+                if (!TryResolveClrSegment(context, currentNamedType, currentIsStatic, segment, out var clrSegment))
+                {
+                    yield break;
+                }
+
+                resolvedSegment = clrSegment;
+                currentType = clrSegment.ResultType;
+                currentIsStatic = false;
             }
 
-            currentType = resolvedProperty.Type as INamedTypeSymbol;
-            if (currentType is null)
+            if (resolvedSegment is { } resolved)
             {
-                yield break;
+                yield return CreateNavigationTarget(
+                    context,
+                    normalizedPathStart,
+                    segment,
+                    resolved);
             }
 
             if ((segment.IsMethodCall || segment.HasIndexers) &&
@@ -629,6 +681,186 @@ internal static class XamlBindingNavigationService
                 yield break;
             }
         }
+    }
+
+    private static XamlBindingNavigationTarget CreateNavigationTarget(
+        BindingContext context,
+        int normalizedPathStart,
+        BindingPathSegmentToken segment,
+        ResolvedBindingPathSegment resolvedSegment)
+    {
+        var kind = resolvedSegment.Symbol is IPropertySymbol && resolvedSegment.PropertyInfo is not null
+            ? XamlBindingNavigationTargetKind.Property
+            : XamlBindingNavigationTargetKind.Symbol;
+
+        return new XamlBindingNavigationTarget(
+            kind,
+            CreateRange(
+                context.SourceText,
+                normalizedPathStart + segment.MemberNameStart,
+                segment.MemberNameLength),
+            resolvedSegment.OwnerTypeInfo,
+            resolvedSegment.PropertyInfo,
+            TypeReference: null,
+            resolvedSegment.Symbol);
+    }
+
+    private static XamlBindingHoverTarget CreateHoverTarget(
+        BindingContext context,
+        SourceRange usageRange,
+        ResolvedBindingPathSegment resolvedSegment)
+    {
+        var hoverKind = resolvedSegment.Symbol switch
+        {
+            IMethodSymbol => XamlBindingHoverTargetKind.Method,
+            IFieldSymbol => XamlBindingHoverTargetKind.Field,
+            _ => XamlBindingHoverTargetKind.Property
+        };
+
+        return new XamlBindingHoverTarget(
+            hoverKind,
+            usageRange,
+            ExtensionName: context.MarkupSpanInfo.ExtensionName,
+            ArgumentName: "Path",
+            IsCompiledBinding: IsCompiledBinding(context),
+            OwnerTypeInfo: resolvedSegment.OwnerTypeInfo,
+            PropertyInfo: resolvedSegment.PropertyInfo,
+            TypeReference: null,
+            Symbol: resolvedSegment.Symbol);
+    }
+
+    private static bool TryResolveXBindInitialSegment(
+        BindingContext context,
+        BindingPathSegmentToken segment,
+        INamedTypeSymbol sourceTypeSymbol,
+        ImmutableDictionary<string, string> prefixMap,
+        out ResolvedBindingPathSegment? resolvedSegment,
+        out ITypeSymbol resultType,
+        out bool staticOnly)
+    {
+        resolvedSegment = null;
+        resultType = sourceTypeSymbol;
+        staticOnly = false;
+
+        if (TryResolveClrSegment(context, sourceTypeSymbol, staticOnly: false, segment, out var sourceSegment))
+        {
+            resolvedSegment = sourceSegment;
+            resultType = sourceSegment.ResultType;
+            return true;
+        }
+
+        if (XamlSemanticSourceTypeResolver.TryResolveRootType(context.Analysis, out var rootType) &&
+            !SymbolEqualityComparer.Default.Equals(rootType, sourceTypeSymbol) &&
+            TryResolveClrSegment(context, rootType, staticOnly: false, segment, out var rootSegment))
+        {
+            resolvedSegment = rootSegment;
+            resultType = rootSegment.ResultType;
+            return true;
+        }
+
+        if (XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(context.Analysis, context.Element, out var targetType) &&
+            TryResolveClrSegment(context, targetType, staticOnly: false, segment, out var targetSegment))
+        {
+            resolvedSegment = targetSegment;
+            resultType = targetSegment.ResultType;
+            return true;
+        }
+
+        if (!segment.IsMethodCall &&
+            !segment.HasIndexers &&
+            TryResolveNamedElementType(context, segment.MemberName, out var namedElementType))
+        {
+            resultType = namedElementType;
+            return true;
+        }
+
+        if (!segment.IsMethodCall &&
+            !segment.HasIndexers &&
+            ResolveTypeSymbol(context.Analysis, prefixMap, segment.MemberName) is { } staticType)
+        {
+            resultType = staticType;
+            staticOnly = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveClrSegment(
+        BindingContext context,
+        INamedTypeSymbol currentType,
+        bool staticOnly,
+        BindingPathSegmentToken segment,
+        out ResolvedBindingPathSegment resolvedSegment)
+    {
+        resolvedSegment = default;
+
+        if (segment.IsMethodCall)
+        {
+            var method = XamlClrMemberSymbolResolver.ResolveMethod(
+                currentType,
+                segment.MemberName,
+                staticOnly,
+                segment.ArgumentCount,
+                allowVoidReturn: false);
+            if (method is null)
+            {
+                return false;
+            }
+
+            var resultType = segment.HasIndexers
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(method.ReturnType) ?? method.ReturnType
+                : method.ReturnType;
+            resolvedSegment = new ResolvedBindingPathSegment(
+                method,
+                resultType,
+                OwnerTypeInfo: null,
+                PropertyInfo: null);
+            return true;
+        }
+
+        var property = staticOnly
+            ? XamlClrMemberSymbolResolver.ResolveStaticProperty(currentType, segment.MemberName)
+            : XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
+        if (property is not null)
+        {
+            AvaloniaTypeInfo? ownerTypeInfo = null;
+            AvaloniaPropertyInfo? propertyInfo = null;
+            if (TryResolveTypeInfo(context.Analysis, currentType, out ownerTypeInfo))
+            {
+                propertyInfo = ownerTypeInfo?.Properties.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Name, property.Name, StringComparison.Ordinal) &&
+                    !candidate.IsAttached);
+            }
+
+            var propertyType = segment.HasIndexers
+                ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(property.Type) ?? property.Type
+                : property.Type;
+            resolvedSegment = new ResolvedBindingPathSegment(
+                property,
+                propertyType,
+                ownerTypeInfo,
+                propertyInfo);
+            return true;
+        }
+
+        var field = staticOnly
+            ? XamlClrMemberSymbolResolver.ResolveStaticField(currentType, segment.MemberName)
+            : XamlClrMemberSymbolResolver.ResolveInstanceField(currentType, segment.MemberName);
+        if (field is null)
+        {
+            return false;
+        }
+
+        var fieldType = segment.HasIndexers
+            ? XamlClrMemberSymbolResolver.ResolveIndexedElementType(field.Type) ?? field.Type
+            : field.Type;
+        resolvedSegment = new ResolvedBindingPathSegment(
+            field,
+            fieldType,
+            OwnerTypeInfo: null,
+            PropertyInfo: null);
+        return true;
     }
 
     private static bool TryResolveBindingResultType(
@@ -641,8 +873,9 @@ internal static class XamlBindingNavigationService
         resultTypeSymbol = sourceTypeSymbol;
         resultTypeName = sourceTypeSymbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
 
-        if (string.IsNullOrWhiteSpace(context.BindingMarkup.Path) ||
-            string.Equals(context.BindingMarkup.Path.Trim(), ".", StringComparison.Ordinal))
+        var bindingPath = GetBindingPath(context);
+        if (string.IsNullOrWhiteSpace(bindingPath) ||
+            string.Equals(bindingPath.Trim(), ".", StringComparison.Ordinal))
         {
             return true;
         }
@@ -668,8 +901,9 @@ internal static class XamlBindingNavigationService
             return false;
         }
 
-        var currentType = sourceTypeSymbol;
+        ITypeSymbol currentType = sourceTypeSymbol;
         ITypeSymbol? currentResult = sourceTypeSymbol;
+        var currentIsStatic = false;
 
         for (var index = 0; index < segmentTokens.Length; index++)
         {
@@ -685,11 +919,22 @@ internal static class XamlBindingNavigationService
 
                 currentType = castType;
                 currentResult = castType;
+                currentIsStatic = false;
             }
 
-            if (segment.IsMethodCall || segment.HasIndexers)
+            if (segment.IsTypeReferenceSegment)
             {
-                return false;
+                var typeReference = ResolveTypeSymbol(context.Analysis, currentPrefixMap, segment.TypeReferenceToken ?? segment.MemberName);
+                if (typeReference is null)
+                {
+                    return false;
+                }
+
+                currentType = typeReference;
+                currentResult = typeReference;
+                resultTypeName = typeReference.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+                currentIsStatic = true;
+                continue;
             }
 
             if (segment.IsAttachedProperty)
@@ -726,32 +971,64 @@ internal static class XamlBindingNavigationService
 
                 if (index < segmentTokens.Length - 1)
                 {
-                    currentType = currentResult as INamedTypeSymbol;
-                    if (currentType is null)
+                    var nextType = currentResult as INamedTypeSymbol;
+                    if (nextType is null)
                     {
                         return false;
                     }
+
+                    currentType = nextType;
                 }
 
                 continue;
             }
 
-            var resolvedProperty = XamlClrMemberSymbolResolver.ResolveInstanceProperty(currentType, segment.MemberName);
-            if (resolvedProperty is null)
+            if (currentType is not INamedTypeSymbol currentNamedType)
             {
                 return false;
             }
 
-            currentResult = resolvedProperty.Type;
-            resultTypeName = resolvedProperty.Type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-
-            if (index < segmentTokens.Length - 1)
+            if (IsXBind(context) &&
+                index == 0 &&
+                TryResolveXBindInitialSegment(
+                    context,
+                    segment,
+                    sourceTypeSymbol,
+                    currentPrefixMap,
+                    out var initialSegment,
+                    out var initialResultType,
+                    out currentIsStatic))
             {
-                currentType = resolvedProperty.Type as INamedTypeSymbol;
-                if (currentType is null)
+                currentResult = initialResultType;
+                currentType = initialResultType;
+                resultTypeName = initialResultType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+                if (segment.IsMethodCall || segment.HasIndexers)
                 {
                     return false;
                 }
+
+                continue;
+            }
+
+            if (!TryResolveClrSegment(context, currentNamedType, currentIsStatic, segment, out var resolvedSegment))
+            {
+                return false;
+            }
+
+            currentResult = resolvedSegment.ResultType;
+            currentType = resolvedSegment.ResultType;
+            resultTypeName = resolvedSegment.ResultType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+            currentIsStatic = false;
+
+            if (index < segmentTokens.Length - 1)
+            {
+                var nextType = resolvedSegment.ResultType as INamedTypeSymbol;
+                if (nextType is null)
+                {
+                    return false;
+                }
+
+                currentType = nextType;
             }
         }
 
@@ -766,6 +1043,16 @@ internal static class XamlBindingNavigationService
     {
         sourceTypeSymbol = null!;
         prefixMap = context.PrefixMap;
+
+        if (IsXBind(context))
+        {
+            return XamlSemanticSourceTypeResolver.TryResolveXBindSourceType(
+                context.Analysis,
+                context.Element,
+                context.XBindMarkup,
+                out sourceTypeSymbol,
+                out prefixMap);
+        }
 
         if (context.BindingMarkup.HasSourceConflict)
         {
@@ -850,7 +1137,8 @@ internal static class XamlBindingNavigationService
     {
         sourceTypeSymbol = null!;
         prefixMap = context.PrefixMap;
-        hasExplicitLocalDataType = !string.IsNullOrWhiteSpace(context.BindingMarkup.DataType);
+        var localDataType = GetBindingLocalDataType(context);
+        hasExplicitLocalDataType = !string.IsNullOrWhiteSpace(localDataType);
 
         if (!hasExplicitLocalDataType)
         {
@@ -858,7 +1146,7 @@ internal static class XamlBindingNavigationService
         }
 
         var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(context.Element);
-        var localType = ResolveTypeSymbol(context.Analysis, localPrefixMap, context.BindingMarkup.DataType!);
+        var localType = ResolveTypeSymbol(context.Analysis, localPrefixMap, localDataType!);
         if (localType is null)
         {
             return false;
@@ -1316,12 +1604,34 @@ internal static class XamlBindingNavigationService
         if (analysis.Compilation is null ||
             analysis.TypeIndex is null ||
             string.IsNullOrWhiteSpace(attribute.Value) ||
-            !BindingEventMarkupParser.TryParseBindingMarkup(
-                attribute.Value,
-                TryParseMarkupExtension,
-                out var bindingMarkup))
+            !TryParseMarkupExtension(attribute.Value, out var markup))
         {
             return false;
+        }
+
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
+        var bindingMarkup = default(BindingMarkup);
+        var xBindMarkup = default(XBindMarkup);
+        switch (extensionKind)
+        {
+            case XamlMarkupExtensionKind.Binding:
+            case XamlMarkupExtensionKind.CompiledBinding:
+            case XamlMarkupExtensionKind.ReflectionBinding:
+                if (!BindingEventMarkupParser.TryParseBindingMarkupCore(markup, extensionKind, TryParseMarkupExtension, out bindingMarkup))
+                {
+                    return false;
+                }
+
+                break;
+            case XamlMarkupExtensionKind.XBind:
+                if (!BindingEventMarkupParser.TryParseXBindMarkupCore(markup, out xBindMarkup))
+                {
+                    return false;
+                }
+
+                break;
+            default:
+                return false;
         }
 
         var valueStartOffset = TextCoordinateHelper.GetOffset(sourceText, attributeValueRange.Start);
@@ -1339,7 +1649,9 @@ internal static class XamlBindingNavigationService
             SourceText: sourceText,
             Element: element,
             Attribute: attribute,
+            ExtensionKind: extensionKind,
             BindingMarkup: bindingMarkup,
+            XBindMarkup: xBindMarkup,
             PrefixMap: XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element),
             AttributeValueRange: attributeValueRange,
             MarkupSpanInfo: markupSpanInfo,
@@ -1414,12 +1726,36 @@ internal static class XamlBindingNavigationService
         return normalizedPath.Length > 0;
     }
 
+    private static bool IsXBind(BindingContext context)
+    {
+        return context.ExtensionKind == XamlMarkupExtensionKind.XBind;
+    }
+
+    private static bool IsCompiledBinding(BindingContext context)
+    {
+        return !IsXBind(context) && context.BindingMarkup.IsCompiledBinding;
+    }
+
+    private static string GetBindingPath(BindingContext context)
+    {
+        return IsXBind(context)
+            ? context.XBindMarkup.Path
+            : context.BindingMarkup.Path;
+    }
+
+    private static string? GetBindingLocalDataType(BindingContext context)
+    {
+        return IsXBind(context)
+            ? context.XBindMarkup.DataType
+            : context.BindingMarkup.DataType;
+    }
+
     private static bool TryTokenizeBindingPath(
         string path,
         out ImmutableArray<BindingPathSegmentToken> segmentTokens)
     {
         segmentTokens = ImmutableArray<BindingPathSegmentToken>.Empty;
-        if (!CompiledBindingPathParser.TryParse(path, out _, out var leadingNotCount, out _))
+        if (!TryGetLeadingNotCount(path, out var leadingNotCount))
         {
             return false;
         }
@@ -1544,6 +1880,29 @@ internal static class XamlBindingNavigationService
         return true;
     }
 
+    private static bool TryGetLeadingNotCount(string path, out int leadingNotCount)
+    {
+        leadingNotCount = 0;
+        if (CompiledBindingPathParser.TryParse(path, out _, out leadingNotCount, out _))
+        {
+            return true;
+        }
+
+        while (leadingNotCount < path.Length &&
+               (path[leadingNotCount] == '!' || char.IsWhiteSpace(path[leadingNotCount])))
+        {
+            if (path[leadingNotCount] == '!')
+            {
+                leadingNotCount++;
+                continue;
+            }
+
+            leadingNotCount++;
+        }
+
+        return leadingNotCount < path.Length;
+    }
+
     private static bool TryParseBindingPathSegmentToken(
         string path,
         int segmentStart,
@@ -1599,12 +1958,17 @@ internal static class XamlBindingNavigationService
                 CastTypeToken: null,
                 CastTypeTokenStart: 0,
                 CastTypeTokenLength: 0,
+                TypeReferenceToken: null,
+                TypeReferenceTokenStart: 0,
+                TypeReferenceTokenLength: 0,
+                IsTypeReferenceSegment: false,
                 IsAttachedProperty: true,
                 AttachedOwnerTypeToken: attachedOwnerTypeToken,
                 AttachedOwnerTypeTokenStart: trimmedStart + ownerRawStart,
                 AttachedOwnerTypeTokenLength: ownerRawLength,
                 HasIndexers: segmentText.IndexOf('[', StringComparison.Ordinal) >= 0,
-                IsMethodCall: false);
+                IsMethodCall: false,
+                ArgumentCount: 0);
             return true;
         }
 
@@ -1645,6 +2009,32 @@ internal static class XamlBindingNavigationService
             }
         }
 
+        if (cursor < segmentText.Length &&
+            LooksLikeTypeReferenceToken(segmentText.Substring(cursor)))
+        {
+            token = new BindingPathSegmentToken(
+                Start: trimmedStart,
+                Length: trimmedEnd - trimmedStart,
+                MemberName: segmentText.Substring(cursor),
+                MemberNameStart: trimmedStart + cursor,
+                MemberNameLength: segmentText.Length - cursor,
+                CastTypeToken: castTypeToken,
+                CastTypeTokenStart: castTypeTokenStart,
+                CastTypeTokenLength: castTypeTokenLength,
+                TypeReferenceToken: segmentText.Substring(cursor),
+                TypeReferenceTokenStart: trimmedStart + cursor,
+                TypeReferenceTokenLength: segmentText.Length - cursor,
+                IsTypeReferenceSegment: true,
+                IsAttachedProperty: false,
+                AttachedOwnerTypeToken: null,
+                AttachedOwnerTypeTokenStart: 0,
+                AttachedOwnerTypeTokenLength: 0,
+                HasIndexers: false,
+                IsMethodCall: false,
+                ArgumentCount: 0);
+            return true;
+        }
+
         if (cursor >= segmentText.Length ||
             !MiniLanguageSyntaxFacts.IsIdentifierStart(segmentText[cursor]))
         {
@@ -1660,6 +2050,12 @@ internal static class XamlBindingNavigationService
 
         var memberName = segmentText.Substring(memberStart, cursor - memberStart);
         var isMethodCall = cursor < segmentText.Length && segmentText[cursor] == '(';
+        var argumentCount = 0;
+        if (isMethodCall &&
+            !TryCountInvocationArguments(segmentText, cursor, out argumentCount))
+        {
+            return false;
+        }
 
         if (requiresSegmentClosure)
         {
@@ -1683,12 +2079,72 @@ internal static class XamlBindingNavigationService
             CastTypeToken: castTypeToken,
             CastTypeTokenStart: castTypeTokenStart,
             CastTypeTokenLength: castTypeTokenLength,
+            TypeReferenceToken: null,
+            TypeReferenceTokenStart: 0,
+            TypeReferenceTokenLength: 0,
+            IsTypeReferenceSegment: false,
             IsAttachedProperty: false,
             AttachedOwnerTypeToken: null,
             AttachedOwnerTypeTokenStart: 0,
             AttachedOwnerTypeTokenLength: 0,
             HasIndexers: segmentText.IndexOf('[', StringComparison.Ordinal) >= 0,
-            IsMethodCall: isMethodCall);
+            IsMethodCall: isMethodCall,
+            ArgumentCount: argumentCount);
+        return true;
+    }
+
+    private static bool TryCountInvocationArguments(string segmentText, int openParenIndex, out int argumentCount)
+    {
+        argumentCount = 0;
+        var parseIndex = openParenIndex;
+        if (!TopLevelTextParser.TryReadBalancedContent(segmentText, ref parseIndex, '(', ')', out var argumentsText))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(argumentsText))
+        {
+            return true;
+        }
+
+        argumentCount = TopLevelTextParser.SplitTopLevelSegments(
+                argumentsText,
+                ',',
+                trimTokens: true,
+                removeEmpty: true)
+            .Length;
+        return true;
+    }
+
+    private static bool LooksLikeTypeReferenceToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        var colonIndex = token.IndexOf(':');
+        if (colonIndex <= 0 || colonIndex >= token.Length - 1)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < token.Length; index++)
+        {
+            var current = token[index];
+            if (current == ':')
+            {
+                continue;
+            }
+
+            if (current == '.' || MiniLanguageSyntaxFacts.IsIdentifierPart(current))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
         return true;
     }
 
@@ -1826,7 +2282,9 @@ internal static class XamlBindingNavigationService
         string SourceText,
         XElement Element,
         XAttribute Attribute,
+        XamlMarkupExtensionKind ExtensionKind,
         BindingMarkup BindingMarkup,
+        XBindMarkup XBindMarkup,
         ImmutableDictionary<string, string> PrefixMap,
         SourceRange AttributeValueRange,
         MarkupSpanInfo MarkupSpanInfo,
@@ -1841,10 +2299,15 @@ internal static class XamlBindingNavigationService
         string? CastTypeToken,
         int CastTypeTokenStart,
         int CastTypeTokenLength,
+        string? TypeReferenceToken,
+        int TypeReferenceTokenStart,
+        int TypeReferenceTokenLength,
+        bool IsTypeReferenceSegment,
         bool IsAttachedProperty,
         string? AttachedOwnerTypeToken,
         int AttachedOwnerTypeTokenStart,
         int AttachedOwnerTypeTokenLength,
         bool HasIndexers,
-        bool IsMethodCall);
+        bool IsMethodCall,
+        int ArgumentCount);
 }

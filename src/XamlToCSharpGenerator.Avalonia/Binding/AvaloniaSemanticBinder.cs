@@ -50,6 +50,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static readonly ImmutableHashSet<string> KnownMarkupExtensionNames = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         "Binding",
+        "Bind",
+        "x:Bind",
         "CompiledBinding",
         "ReflectionBinding",
         "StaticResource",

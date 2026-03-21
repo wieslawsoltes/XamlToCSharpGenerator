@@ -101,6 +101,38 @@ internal static class XamlSemanticSourceTypeResolver
         return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
     }
 
+    public static bool TryResolveXBindSourceType(
+        XamlAnalysisResult analysis,
+        XElement element,
+        XBindMarkup xBindMarkup,
+        out INamedTypeSymbol sourceTypeSymbol,
+        out ImmutableDictionary<string, string> prefixMap)
+    {
+        sourceTypeSymbol = null!;
+        prefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+
+        if (!string.IsNullOrWhiteSpace(xBindMarkup.DataType))
+        {
+            var localPrefixMap = XamlTypeReferenceNavigationResolver.BuildPrefixMapForElement(element);
+            var localType = ResolveTypeSymbol(analysis, localPrefixMap, xBindMarkup.DataType!);
+            if (localType is null)
+            {
+                return false;
+            }
+
+            sourceTypeSymbol = localType;
+            prefixMap = localPrefixMap;
+            return true;
+        }
+
+        if (IsInsideDataTemplate(element))
+        {
+            return TryResolveAmbientDataType(analysis, element, out sourceTypeSymbol, out prefixMap);
+        }
+
+        return TryResolveRootType(analysis, out sourceTypeSymbol);
+    }
+
     public static bool TryResolveAmbientDataType(
         XamlAnalysisResult analysis,
         XElement element,
@@ -223,6 +255,40 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         return null;
+    }
+
+    public static bool TryResolveRootType(
+        XamlAnalysisResult analysis,
+        out INamedTypeSymbol sourceTypeSymbol)
+    {
+        sourceTypeSymbol = null!;
+        var classFullName = analysis.ParsedDocument?.ClassFullName;
+        if (string.IsNullOrWhiteSpace(classFullName))
+        {
+            return false;
+        }
+
+        var resolvedType = ResolveTypeSymbolByFullTypeName(analysis.Compilation, classFullName);
+        if (resolvedType is null)
+        {
+            return false;
+        }
+
+        sourceTypeSymbol = resolvedType;
+        return true;
+    }
+
+    public static bool IsInsideDataTemplate(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (string.Equals(current.Name.LocalName, "DataTemplate", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static INamedTypeSymbol? ResolveTypeSymbolByFullTypeName(Compilation? compilation, string fullTypeName)

@@ -157,6 +157,11 @@ internal static class LanguageServiceTestCompilationFactory
 
                                   public class UserControl { }
                                   public class StackPanel { }
+                                  public class DataTemplate
+                                  {
+                                      public object? DataType { get; set; }
+                                  }
+
                                   public class Border
                                   {
                                       public object Child { get; set; } = new object();
@@ -202,6 +207,13 @@ internal static class LanguageServiceTestCompilationFactory
                                   public class CustomerViewModel
                                   {
                                       public string DisplayName { get; set; } = string.Empty;
+                                  }
+
+                                  public static class UiHelpers
+                                  {
+                                      public static string Prefix { get; set; } = "prefix";
+                                      public static CustomerViewModel SharedCustomer { get; } = new CustomerViewModel();
+                                      public static CustomerViewModel BuildCustomer(int id) => SharedCustomer;
                                   }
 
                                   public class MainWindowViewModel

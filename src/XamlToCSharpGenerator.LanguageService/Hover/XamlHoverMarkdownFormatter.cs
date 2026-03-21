@@ -67,6 +67,7 @@ internal static class XamlHoverMarkdownFormatter
         {
             XamlMarkupExtensionKind.Binding => "Reflection binding markup extension.",
             XamlMarkupExtensionKind.CompiledBinding => "Compiled binding markup extension.",
+            XamlMarkupExtensionKind.XBind => "x:Bind compiled binding markup extension.",
             XamlMarkupExtensionKind.ReflectionBinding => "Reflection binding markup extension.",
             XamlMarkupExtensionKind.StaticResource => "Static resource lookup markup extension.",
             XamlMarkupExtensionKind.DynamicResource => "Dynamic resource lookup markup extension.",
@@ -91,9 +92,14 @@ internal static class XamlHoverMarkdownFormatter
             $"**Markup Extension**\n\n`{extensionToken}`\n\nCLR type: `{resolvedTypeReference.Value.FullTypeName}`\n\n{description}");
     }
 
-    public static string FormatBindingArgument(string argumentName, bool isCompiledBinding)
+    public static string FormatBindingArgument(string extensionToken, string argumentName, bool isCompiledBinding)
     {
-        var bindingKind = isCompiledBinding ? "CompiledBinding" : "Binding";
+        var bindingKind = XamlMarkupExtensionNameSemantics.Classify(extensionToken) switch
+        {
+            XamlMarkupExtensionKind.XBind => "x:Bind",
+            XamlMarkupExtensionKind.CompiledBinding => "CompiledBinding",
+            _ => isCompiledBinding ? "CompiledBinding" : "Binding"
+        };
         var description = argumentName switch
         {
             "Path" => "Binding path resolved against the current binding source.",
@@ -101,6 +107,8 @@ internal static class XamlHoverMarkdownFormatter
             "RelativeSource" => "Uses a relative binding source such as Self or AncestorType.",
             "Source" => "Sets an explicit binding source object.",
             "Mode" => "Controls the binding update direction.",
+            "BindBack" => "Specifies the update callback used for TwoWay x:Bind.",
+            "DataType" => "Overrides the x:Bind source type for the current scope.",
             "Converter" => "Applies a value converter to the resolved source value.",
             "ConverterCulture" => "Culture passed to the converter.",
             "ConverterParameter" => "Additional converter parameter value.",

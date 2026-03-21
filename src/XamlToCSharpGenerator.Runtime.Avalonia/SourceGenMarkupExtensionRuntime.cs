@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using System.Xml.Linq;
 using Avalonia;
 using global::Avalonia.Controls;
 using global::Avalonia.Data;
+using global::Avalonia.Data.Converters;
 using global::Avalonia.Data.Core;
 using global::Avalonia.LogicalTree;
 using global::Avalonia.Markup.Xaml;
@@ -1440,9 +1442,6 @@ public static class SourceGenMarkupExtensionRuntime
         object? targetProperty,
         string? baseUri,
         IReadOnlyList<object>? parentStack)
-        where TSource : class
-        where TRoot : class
-        where TTarget : class
     {
         _ = CreateContextProvider(
             parentServiceProvider,
@@ -1487,6 +1486,125 @@ public static class SourceGenMarkupExtensionRuntime
         return multiBinding;
     }
 
+    public static object ProvideXBindExpressionBinding<TSource, TRoot, TTarget>(
+        Func<TSource, TRoot, TTarget, object?> evaluator,
+        SourceGenBindingDependency source,
+        IReadOnlyList<SourceGenBindingDependency>? dependencies,
+        BindingMode mode,
+        Action<TSource, object?>? bindBack,
+        Type? bindBackValueType,
+        object? converter,
+        CultureInfo? converterCulture,
+        object? converterParameter,
+        string? stringFormat,
+        object? fallbackValue,
+        object? targetNullValue,
+        BindingPriority priority,
+        IServiceProvider? parentServiceProvider,
+        object rootObject,
+        object intermediateRootObject,
+        object targetObject,
+        object? targetProperty,
+        string? baseUri,
+        IReadOnlyList<object>? parentStack)
+    {
+        var contextProvider = CreateContextProvider(
+            parentServiceProvider,
+            rootObject,
+            intermediateRootObject,
+            targetObject,
+            targetProperty,
+            baseUri,
+            parentStack);
+
+        var multiBinding = new MultiBinding
+        {
+            Converter = new SourceGenInlineCodeMultiValueConverter<TSource, TRoot, TTarget>(
+                evaluator,
+                rootObject,
+                targetObject,
+                converter as IValueConverter),
+            ConverterCulture = converterCulture,
+            ConverterParameter = converterParameter,
+            FallbackValue = fallbackValue ?? AvaloniaProperty.UnsetValue,
+            TargetNullValue = targetNullValue ?? AvaloniaProperty.UnsetValue,
+            StringFormat = stringFormat,
+            Mode = bindBack is null ? mode : BindingMode.OneWay,
+            Priority = priority
+        };
+
+        multiBinding.Bindings.Add(CreateXBindChildBinding(source, rootObject, targetObject));
+
+        if (dependencies is not null)
+        {
+            var seen = new HashSet<SourceGenBindingDependency>();
+            foreach (var dependency in dependencies)
+            {
+                if (!seen.Add(dependency))
+                {
+                    continue;
+                }
+
+                multiBinding.Bindings.Add(CreateXBindChildBinding(dependency, rootObject, targetObject));
+            }
+        }
+
+        if (bindBack is null || mode != BindingMode.TwoWay)
+        {
+            return multiBinding;
+        }
+
+        if (targetObject is not AvaloniaObject avaloniaTarget ||
+            targetProperty is not AvaloniaProperty avaloniaProperty)
+        {
+            return multiBinding;
+        }
+
+        var nameScope = contextProvider.GetService(typeof(INameScope)) as INameScope;
+        AttachBindingMetadata(multiBinding, nameScope, xmlNamespaces: null);
+
+        var anchor = ResolveBindingAnchor(targetObject, parentStack);
+        var forward = multiBinding.Initiate(avaloniaTarget, avaloniaProperty, anchor);
+        if (forward is null)
+        {
+            return multiBinding;
+        }
+
+        var bindBackObserver = new SourceGenXBindBindBackObserver<TSource>(
+            source,
+            bindBack,
+            rootObject,
+            targetObject,
+            avaloniaTarget,
+            converter as IValueConverter,
+            converterCulture,
+            converterParameter,
+            bindBackValueType);
+        return InstancedBinding.TwoWay(forward.Source, bindBackObserver, priority);
+    }
+
+    public static T? ResolveNamedElement<T>(
+        object? targetObject,
+        object? rootObject,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return default;
+        }
+
+        if (TryResolveNamedElement(targetObject, name, out var element) ||
+            TryResolveNamedElement(rootObject, name, out element))
+        {
+            if (element is T typedElement)
+            {
+                return typedElement;
+            }
+        }
+
+        return default;
+    }
+
     public static object? ProvideMarkupExtension(
         object extension,
         IServiceProvider? parentServiceProvider,
@@ -1526,6 +1644,75 @@ public static class SourceGenMarkupExtensionRuntime
             _ => throw new NotSupportedException(
                 $"Unsupported markup extension type '{extension.GetType().FullName}'.")
         };
+    }
+
+    private static IBinding CreateXBindChildBinding(
+        SourceGenBindingDependency dependency,
+        object rootObject,
+        object targetObject)
+    {
+        var normalizedPath = string.IsNullOrWhiteSpace(dependency.Path)
+            ? "."
+            : dependency.Path!.Trim();
+
+        return dependency.SourceKind switch
+        {
+            SourceGenBindingSourceKind.Root => new Binding(normalizedPath)
+            {
+                Source = rootObject
+            },
+            SourceGenBindingSourceKind.Target => new Binding(normalizedPath)
+            {
+                Source = targetObject
+            },
+            SourceGenBindingSourceKind.ElementName => new Binding(normalizedPath)
+            {
+                ElementName = dependency.ElementName
+            },
+            _ => new Binding(normalizedPath)
+        };
+    }
+
+    internal static bool TryResolveDependencySource(
+        SourceGenBindingDependency dependency,
+        object? targetObject,
+        object? rootObject,
+        out object? value)
+    {
+        value = dependency.SourceKind switch
+        {
+            SourceGenBindingSourceKind.Root => rootObject,
+            SourceGenBindingSourceKind.Target => targetObject,
+            SourceGenBindingSourceKind.ElementName => ResolveNamedElement<object>(
+                targetObject,
+                rootObject,
+                dependency.ElementName ?? string.Empty),
+            _ => TryGetDataContext(targetObject) ?? TryGetDataContext(rootObject)
+        };
+
+        return value is not null;
+    }
+
+    private static object? TryGetDataContext(object? value)
+    {
+        return value switch
+        {
+            IDataContextProvider provider => provider.DataContext,
+            _ => null
+        };
+    }
+
+    private static bool TryResolveNamedElement(object? scopeRoot, string name, out object? element)
+    {
+        element = null;
+        if (scopeRoot is StyledElement styledElement &&
+            NameScope.GetNameScope(styledElement) is { } nameScope)
+        {
+            element = nameScope.Find(name);
+            return element is not null;
+        }
+
+        return false;
     }
 
     public static object? ProvideReference(

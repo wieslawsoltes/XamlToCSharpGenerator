@@ -404,6 +404,13 @@ public sealed class XamlReferenceService
 
                 return CollectTypeAttributeValueReferences(analysis, bindingTypeReference);
             }
+
+            if ((bindingTarget.Kind == XamlBindingNavigationTargetKind.Property ||
+                 bindingTarget.Kind == XamlBindingNavigationTargetKind.Symbol) &&
+                bindingTarget.Symbol is not null)
+            {
+                return CollectExpressionSymbolReferences(analysis, bindingTarget.Symbol);
+            }
         }
 
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);

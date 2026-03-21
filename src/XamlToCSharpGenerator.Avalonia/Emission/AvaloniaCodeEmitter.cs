@@ -4310,7 +4310,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         "                    ",
                         definition,
                         definition.CompiledDataContextLambdaExpression!,
-                        definition.DataContextTypeName!,
+                        definition.LambdaSourceTypeName ?? definition.DataContextTypeName!,
                         "__axsgDataContextTyped",
                         "this",
                         senderExpression);
@@ -4327,7 +4327,7 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
                         "                    ",
                         definition,
                         definition.CompiledRootLambdaExpression!,
-                        "global::System.Object",
+                        definition.LambdaSourceTypeName ?? definition.RootTypeName ?? "global::System.Object",
                         "__axsgRootTyped",
                         "__axsgRootTyped",
                         senderExpression);

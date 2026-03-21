@@ -25,6 +25,7 @@ public sealed class XamlCompletionService
     [
         new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Avalonia binding"),
         new("CompiledBinding", "{CompiledBinding $0}", XamlCompletionItemKind.MarkupExtension, "Compiled binding"),
+        new("x:Bind", "{x:Bind $0}", XamlCompletionItemKind.MarkupExtension, "x:Bind compiled binding"),
         new("StaticResource", "{StaticResource $0}", XamlCompletionItemKind.MarkupExtension, "Static resource lookup"),
         new("DynamicResource", "{DynamicResource $0}", XamlCompletionItemKind.MarkupExtension, "Dynamic resource lookup"),
         new("TemplateBinding", "{TemplateBinding $0}", XamlCompletionItemKind.MarkupExtension, "Template binding"),

@@ -1251,6 +1251,94 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Empty(parentStackProvider.Parents);
     }
 
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_Root_Assignment_Does_Not_Reenter_BindBack()
+    {
+        var root = new XBindTwoWayLoopProbe("Catalog alias");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindTwoWayLoopProbe, XBindTwoWayLoopProbe, TextBox>(
+            static (source, _, _) => source.Alias,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindTwoWayLoopProbe.Alias), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.Alias = SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Catalog alias", target.Text);
+        Assert.InRange(root.AliasSetCount, 0, 1);
+
+        root.ResetAliasSetCount();
+        target.Text = "Updated alias";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Updated alias", root.Alias);
+        Assert.Equal(1, root.AliasSetCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_Explicit_BindBack_Normalization_Does_Not_Reenter()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Updated search  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Updated search", root.SearchDraft);
+        Assert.Equal("Updated search", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
     private sealed class DictionaryServiceProvider : IServiceProvider
     {
         private readonly IReadOnlyDictionary<Type, object> _services;
@@ -1307,6 +1395,88 @@ public class SourceGenMarkupExtensionRuntimeTests
         private void SetValueCore(string? value)
         {
             SetAndRaise(ValueProperty, ref _value, value);
+        }
+    }
+
+    private sealed class XBindTwoWayLoopProbe : AvaloniaObject
+    {
+        public static readonly DirectProperty<XBindTwoWayLoopProbe, string?> AliasProperty =
+            AvaloniaProperty.RegisterDirect<XBindTwoWayLoopProbe, string?>(
+                nameof(Alias),
+                static target => target.Alias,
+                static (target, value) => target.Alias = value);
+
+        private readonly int _aliasSetLimit;
+        private string? _alias;
+
+        public XBindTwoWayLoopProbe(string? alias, int aliasSetLimit = 8)
+        {
+            _alias = alias;
+            _aliasSetLimit = aliasSetLimit;
+        }
+
+        public int AliasSetCount { get; private set; }
+
+        public string? Alias
+        {
+            get => _alias;
+            set
+            {
+                AliasSetCount++;
+                if (AliasSetCount > _aliasSetLimit)
+                {
+                    throw new InvalidOperationException("x:Bind bind-back re-entered the source setter.");
+                }
+
+                SetAndRaise(AliasProperty, ref _alias, value);
+            }
+        }
+
+        public void ResetAliasSetCount()
+        {
+            AliasSetCount = 0;
+        }
+    }
+
+    private sealed class XBindNormalizingLoopProbe : AvaloniaObject
+    {
+        public static readonly DirectProperty<XBindNormalizingLoopProbe, string?> SearchDraftProperty =
+            AvaloniaProperty.RegisterDirect<XBindNormalizingLoopProbe, string?>(
+                nameof(SearchDraft),
+                static target => target.SearchDraft,
+                static (target, value) => target.SearchDraft = value);
+
+        private readonly int _bindBackLimit;
+        private string? _searchDraft;
+
+        public XBindNormalizingLoopProbe(string? searchDraft, int bindBackLimit = 8)
+        {
+            _searchDraft = searchDraft;
+            _bindBackLimit = bindBackLimit;
+        }
+
+        public int BindBackCount { get; private set; }
+
+        public string? SearchDraft
+        {
+            get => _searchDraft;
+            set => SetAndRaise(SearchDraftProperty, ref _searchDraft, value);
+        }
+
+        public void ApplySearchDraft(string? value)
+        {
+            BindBackCount++;
+            if (BindBackCount > _bindBackLimit)
+            {
+                throw new InvalidOperationException("x:Bind explicit bind-back re-entered.");
+            }
+
+            SearchDraft = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        }
+
+        public void ResetBindBackCount()
+        {
+            BindBackCount = 0;
         }
     }
 

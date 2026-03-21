@@ -546,6 +546,12 @@ public static class CSharpSourceContextExpressionBuilder
                 return base.VisitIdentifierName(node);
             }
 
+            if (node.Parent is MemberBindingExpressionSyntax memberBinding &&
+                memberBinding.Name == node)
+            {
+                return base.VisitIdentifierName(node);
+            }
+
             if (node.Parent is QualifiedNameSyntax or AliasQualifiedNameSyntax or NameColonSyntax)
             {
                 return base.VisitIdentifierName(node);

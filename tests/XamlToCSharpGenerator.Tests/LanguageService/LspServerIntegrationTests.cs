@@ -795,6 +795,54 @@ public sealed class LspServerIntegrationTests
     }
 
     [Fact]
+    public async Task SignatureHelp_Request_ReturnsXBindSignature()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/XBindSignatureHelpView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <TextBlock Text=\"{x:Bind Name, Mode=TwoWay}\" />\n" +
+            "</UserControl>";
+        var position = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("Mode", StringComparison.Ordinal) + 2);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(1901, "textDocument/signatureHelp", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = position.Line,
+                ["character"] = position.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(1901);
+        var result = response.RootElement.GetProperty("result");
+        Assert.Equal(0, result.GetProperty("activeSignature").GetInt32());
+        Assert.Equal(1, result.GetProperty("activeParameter").GetInt32());
+        var signatures = result.GetProperty("signatures");
+        Assert.Equal(1, signatures.GetArrayLength());
+        Assert.Equal(
+            "x:Bind(path, Mode, BindBack, DataType, Converter, ConverterCulture, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)",
+            signatures[0].GetProperty("label").GetString());
+    }
+
+    [Fact]
     public async Task DidOpen_InvalidXaml_PublishesDiagnostics()
     {
         await using var harness = await LspServerHarness.StartAsync();
@@ -1019,6 +1067,58 @@ public sealed class LspServerIntegrationTests
 
         Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "FirstName", StringComparison.Ordinal));
         Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "GetCustomer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_Request_ForXBindDataTemplatePath_ReturnsTemplateRootAndNamedMembers()
+    {
+        await using var harness = await LspServerHarness.StartAsync();
+        await harness.InitializeAsync();
+
+        const string uri = "file:///tmp/XBindTemplateCompletionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" " +
+                            "x:Class=\"TestApp.Controls.MainView\">\n" +
+                            "  <TextBlock x:Name=\"Editor\" Text=\"ready\"/>\n" +
+                            "  <DataTemplate x:DataType=\"vm:CustomerViewModel\">\n" +
+                            "    <TextBlock Text=\"{x:Bind }\"/>\n" +
+                            "  </DataTemplate>\n" +
+                            "</UserControl>";
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{x:Bind }", StringComparison.Ordinal) + "{x:Bind ".Length);
+
+        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri,
+                ["languageId"] = "axaml",
+                ["version"] = 1,
+                ["text"] = xaml
+            }
+        });
+
+        await harness.SendRequestAsync(2202, "textDocument/completion", new JsonObject
+        {
+            ["textDocument"] = new JsonObject
+            {
+                ["uri"] = uri
+            },
+            ["position"] = new JsonObject
+            {
+                ["line"] = bindingCaret.Line,
+                ["character"] = bindingCaret.Character
+            }
+        });
+
+        using var response = await harness.ReadResponseAsync(2202);
+        var items = response.RootElement
+            .GetProperty("result")
+            .GetProperty("items");
+
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "DisplayName", StringComparison.Ordinal));
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "RootOnly", StringComparison.Ordinal));
+        Assert.Contains(items.EnumerateArray(), item => string.Equals(item.GetProperty("label").GetString(), "Editor", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -319,6 +319,32 @@ public sealed class XamlLanguageServiceEngineTests
     }
 
     [Fact]
+    public async Task GetSignatureHelpAsync_ReturnsXBindSignatureAndActiveParameter()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/XBindSignatureHelpView.axaml";
+        const string xaml =
+            "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
+            "  <TextBlock Text=\"{x:Bind Name, Mode=TwoWay}\" />\n" +
+            "</UserControl>";
+        var position = GetPosition(xaml, xaml.IndexOf("Mode", StringComparison.Ordinal) + 2);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var signatureHelp = await engine.GetSignatureHelpAsync(
+            uri,
+            position,
+            new XamlLanguageServiceOptions("/tmp"),
+            CancellationToken.None);
+
+        Assert.NotNull(signatureHelp);
+        Assert.Equal(0, signatureHelp!.ActiveSignature);
+        Assert.Equal(1, signatureHelp.ActiveParameter);
+        var signature = Assert.Single(signatureHelp.Signatures);
+        Assert.Equal("x:Bind(path, Mode, BindBack, DataType, Converter, ConverterCulture, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)", signature.Label);
+    }
+
+    [Fact]
     public async Task Completion_InElementContext_ReturnsKnownTypes()
     {
         using var engine = new XamlLanguageServiceEngine(
@@ -426,6 +452,61 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.Contains(completions, item => string.Equals(item.Label, "FirstName", StringComparison.Ordinal));
         Assert.Contains(completions, item => string.Equals(item.Label, "GetCustomer", StringComparison.Ordinal));
         Assert.Contains(completions, item => item.Kind == XamlCompletionItemKind.Method && string.Equals(item.InsertText, "GetCustomer()", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_InXBindDataTemplatePathContext_ReturnsTemplateRootAndNamedElementMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/XBindTemplateCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" " +
+                            "x:Class=\"TestApp.Controls.MainView\">\n" +
+                            "  <TextBlock x:Name=\"Editor\" Text=\"ready\"/>\n" +
+                            "  <DataTemplate x:DataType=\"vm:CustomerViewModel\">\n" +
+                            "    <TextBlock Text=\"{x:Bind }\"/>\n" +
+                            "  </DataTemplate>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{x:Bind }", StringComparison.Ordinal) + "{x:Bind ".Length);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(bindingCaret.Line, bindingCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "DisplayName", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "RootOnly", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "Editor", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Completion_InXBindStaticMemberContext_ReturnsStaticMembers()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/XBindStaticCompletion.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:helpers=\"using:TestApp.Controls\" " +
+                            "x:Class=\"TestApp.Controls.MainView\">\n" +
+                            "  <TextBlock Text=\"{x:Bind helpers:UiHelpers.}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var bindingCaret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("helpers:UiHelpers.", StringComparison.Ordinal) + "helpers:UiHelpers.".Length);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(bindingCaret.Line, bindingCaret.Character),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "Prefix", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "SharedCustomer", StringComparison.Ordinal));
+        Assert.Contains(completions, item => string.Equals(item.Label, "BuildCustomer", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -882,6 +963,33 @@ public sealed class XamlLanguageServiceEngineTests
         Assert.NotNull(hover);
         Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
         Assert.Contains("CustomerViewModel.DisplayName", hover.Markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Hover_ForXBindRootMemberInsideDataTemplate_ReturnsPropertyDetails()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/HoverXBindRootMember.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:vm=\"using:TestApp.Controls\" " +
+                            "x:Class=\"TestApp.Controls.MainView\">\n" +
+                            "  <DataTemplate x:DataType=\"vm:CustomerViewModel\">\n" +
+                            "    <TextBlock Text=\"{x:Bind RootOnly}\"/>\n" +
+                            "  </DataTemplate>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var hover = await engine.GetHoverAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("RootOnly", StringComparison.Ordinal) + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Property", hover!.Markdown, StringComparison.Ordinal);
+        Assert.Contains("MainView.RootOnly", hover.Markdown, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2125,6 +2233,33 @@ public sealed class XamlLanguageServiceEngineTests
         var definitions = await engine.GetDefinitionsAsync(
             uri,
             GetPosition(xaml, displayNameOffset + 2),
+            new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.Contains(LanguageServiceTestCompilationFactory.SymbolSourceFilePath, definitions[0].Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Definition_ForXBindStaticProperty_ResolvesStaticPropertySource()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
+        const string uri = "file:///tmp/XBindStaticPropertyDefinitionView.axaml";
+        const string xaml = "<UserControl xmlns=\"https://github.com/avaloniaui\" " +
+                            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" " +
+                            "xmlns:helpers=\"using:TestApp.Controls\" " +
+                            "x:Class=\"TestApp.Controls.MainView\">\n" +
+                            "  <TextBlock Text=\"{x:Bind helpers:UiHelpers.Prefix}\"/>\n" +
+                            "</UserControl>";
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        var prefixOffset = xaml.IndexOf("Prefix", StringComparison.Ordinal);
+        Assert.True(prefixOffset >= 0, "Expected x:Bind static property token not found.");
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, prefixOffset + 2),
             new XamlLanguageServiceOptions("/tmp", IncludeSemanticDiagnostics: false),
             CancellationToken.None);
 

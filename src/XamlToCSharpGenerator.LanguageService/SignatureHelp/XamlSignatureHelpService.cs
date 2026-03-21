@@ -156,6 +156,21 @@ public sealed class XamlSignatureHelpService
             ("StringFormat", "Output string format."),
             ("FallbackValue", "Fallback value when binding fails."),
             ("TargetNullValue", "Value used when the binding result is null."));
+        Add(builder, "x:Bind", "x:Bind(path, Mode, BindBack, DataType, Converter, ConverterCulture, ConverterParameter, StringFormat, FallbackValue, TargetNullValue, Delay, Priority, UpdateSourceTrigger)",
+            "Compiled x:Bind markup extension.",
+            ("path", "The x:Bind path or function expression."),
+            ("Mode", "Binding mode. Defaults to OneTime unless overridden by x:DefaultBindMode."),
+            ("BindBack", "Explicit bind-back method for TwoWay bindings."),
+            ("DataType", "Optional explicit source type."),
+            ("Converter", "Value converter."),
+            ("ConverterCulture", "Converter culture."),
+            ("ConverterParameter", "Additional converter parameter."),
+            ("StringFormat", "Output string format."),
+            ("FallbackValue", "Fallback value when the binding fails."),
+            ("TargetNullValue", "Value used when the binding result is null."),
+            ("Delay", "Optional source update delay."),
+            ("Priority", "Binding priority."),
+            ("UpdateSourceTrigger", "Target-to-source update behavior."));
         Add(builder, "StaticResource", "StaticResource(key)", "Static resource lookup markup extension.",
             ("key", "The resource key to resolve."));
         Add(builder, "DynamicResource", "DynamicResource(key)", "Dynamic resource lookup markup extension.",

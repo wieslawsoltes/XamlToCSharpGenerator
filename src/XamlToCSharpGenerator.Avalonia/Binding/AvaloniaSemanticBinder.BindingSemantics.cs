@@ -29,6 +29,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return BindingEventMarkupParser.TryParseBindingMarkup(value, TryParseMarkupExtension, out bindingMarkup);
     }
 
+    private static bool TryParseXBindMarkup(string value, out XBindMarkup xBindMarkup)
+    {
+        return BindingEventMarkupParser.TryParseXBindMarkup(value, TryParseMarkupExtension, out xBindMarkup);
+    }
+
     private static bool TryParseReflectionBindingMarkup(string value, out BindingMarkup bindingMarkup)
     {
         return BindingEventMarkupParser.TryParseReflectionBindingMarkup(value, TryParseMarkupExtension, out bindingMarkup);
@@ -3160,7 +3165,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         INamedTypeSymbol? explicitOwnerType,
         string? explicitPropertyName,
         string? explicitPropertyFieldName,
-        out ResolvedPropertyAssignment? resolvedAssignment)
+        out ResolvedPropertyAssignment? resolvedAssignment,
+        bool isInsideDataTemplate = false,
+        string? xBindDefaultMode = null)
     {
         resolvedAssignment = null;
 
@@ -3217,7 +3224,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             out resolvedAssignment,
             allowCompiledBindingRegistration: true,
             explicitOwnerType: ownerType,
-            explicitAvaloniaPropertyFieldName: explicitPropertyFieldName);
+            explicitAvaloniaPropertyFieldName: explicitPropertyFieldName,
+            isInsideDataTemplate: isInsideDataTemplate,
+            xBindDefaultMode: xBindDefaultMode);
     }
 
     private static bool TryBindAttachedStaticSetterAssignment(
@@ -3416,6 +3425,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         INamedTypeSymbol? nodeDataType,
         INamedTypeSymbol? rootTypeSymbol,
+        bool isInsideDataTemplate,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         XamlDocumentModel document,
         GeneratorOptions options,
@@ -3447,6 +3457,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             compilation,
             nodeDataType,
             rootTypeSymbol,
+            isInsideDataTemplate,
             diagnostics,
             document,
             options,
@@ -3583,6 +3594,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         INamedTypeSymbol? nodeDataType,
         INamedTypeSymbol? rootTypeSymbol,
+        bool isInsideDataTemplate,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics,
         XamlDocumentModel document,
         GeneratorOptions options,
@@ -3625,6 +3637,47 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     Column: assignment.Column,
                     Condition: assignment.Condition,
                     EventBindingDefinition: inlineEventDefinition);
+                return true;
+            }
+
+            if (TryParseXBindMarkup(assignment.Value, out var xBindEventMarkup))
+            {
+                if (!TryBuildXBindEventBindingDefinition(
+                        compilation,
+                        document,
+                        xBindEventMarkup,
+                        eventName,
+                        nodeDataType,
+                        rootTypeSymbol,
+                        targetType,
+                        eventSymbol.Type,
+                        isInsideDataTemplate,
+                        assignment.Line,
+                        assignment.Column,
+                        out var xBindEventBindingDefinition,
+                        out var xBindEventError))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0600",
+                        xBindEventError,
+                        document.FilePath,
+                        assignment.Line,
+                        assignment.Column,
+                        options.StrictMode));
+                    return true;
+                }
+
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: xBindEventBindingDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.ClrEvent,
+                    RoutedEventOwnerTypeName: null,
+                    RoutedEventFieldName: null,
+                    RoutedEventHandlerTypeName: null,
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: xBindEventBindingDefinition);
                 return true;
             }
 
@@ -3793,6 +3846,47 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     Column: assignment.Column,
                     Condition: assignment.Condition,
                     EventBindingDefinition: inlineEventDefinition);
+                return true;
+            }
+
+            if (TryParseXBindMarkup(assignment.Value, out var xBindRoutedEventMarkup))
+            {
+                if (!TryBuildXBindEventBindingDefinition(
+                        compilation,
+                        document,
+                        xBindRoutedEventMarkup,
+                        eventName,
+                        nodeDataType,
+                        rootTypeSymbol,
+                        targetType,
+                        routedEventHandlerTypeSymbol,
+                        isInsideDataTemplate,
+                        assignment.Line,
+                        assignment.Column,
+                        out var xBindRoutedEventBindingDefinition,
+                        out var xBindRoutedEventError))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        "AXSG0600",
+                        xBindRoutedEventError,
+                        document.FilePath,
+                        assignment.Line,
+                        assignment.Column,
+                        options.StrictMode));
+                    return true;
+                }
+
+                subscription = new ResolvedEventSubscription(
+                    EventName: eventName,
+                    HandlerMethodName: xBindRoutedEventBindingDefinition!.GeneratedMethodName,
+                    Kind: ResolvedEventSubscriptionKind.RoutedEvent,
+                    RoutedEventOwnerTypeName: routedEventOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    RoutedEventFieldName: routedEventField.Name,
+                    RoutedEventHandlerTypeName: routedEventHandlerTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    Line: assignment.Line,
+                    Column: assignment.Column,
+                    Condition: assignment.Condition,
+                    EventBindingDefinition: xBindRoutedEventBindingDefinition);
                 return true;
             }
 
@@ -4200,6 +4294,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             CompiledRootLambdaExpression: compiledRootLambdaExpression,
             CompiledDataContextParameterPath: null,
             CompiledRootParameterPath: null,
+            LambdaSourceTypeName: null,
             LambdaContextTargetTypeName: targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             UsesInlineCodeContext: true,
             Line: line,
@@ -4482,6 +4577,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             CompiledRootLambdaExpression: null,
             CompiledDataContextParameterPath: compiledDataContextParameterPath,
             CompiledRootParameterPath: compiledRootParameterPath,
+            LambdaSourceTypeName: null,
             LambdaContextTargetTypeName: null,
             UsesInlineCodeContext: false,
             Line: assignment.Line,
@@ -5008,7 +5104,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         bool allowCompiledBindingRegistration = true,
         string? compiledBindingAccessorPlaceholderToken = null,
         INamedTypeSymbol? explicitOwnerType = null,
-        string? explicitAvaloniaPropertyFieldName = null)
+        string? explicitAvaloniaPropertyFieldName = null,
+        bool isInsideDataTemplate = false,
+        string? xBindDefaultMode = null)
     {
         resolvedAssignment = null;
 
@@ -5025,6 +5123,55 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var valueType = fallbackValueType ?? TryGetAvaloniaPropertyValueType(propertyField.Type);
         var preserveBindingValue = HasAssignBindingAttribute(
             FindProperty(explicitOwnerType ?? ownerType ?? targetType, propertyName));
+
+        if (TryParseXBindMarkup(assignment.Value, out var xBindMarkup))
+        {
+            if (!TryBuildXBindBindingExpression(
+                    compilation,
+                    document,
+                    xBindMarkup,
+                    ambientSourceType: isInsideDataTemplate ? nodeDataType : rootTypeSymbol,
+                    rootType: rootTypeSymbol,
+                    targetType: setterTargetType ?? targetType,
+                    bindingValueType: valueType,
+                    bindingPriorityScope,
+                    isInsideDataTemplate,
+                    xBindDefaultMode ?? "OneTime",
+                    out var xBindExpression,
+                    out _,
+                    out var xBindErrorCode,
+                    out var xBindErrorMessage))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    xBindErrorCode,
+                    xBindErrorMessage,
+                    document.FilePath,
+                    assignment.Line,
+                    assignment.Column,
+                    options.StrictMode));
+                return true;
+            }
+
+            resolvedAssignment = new ResolvedPropertyAssignment(
+                PropertyName: propertyName,
+                ValueExpression: xBindExpression,
+                AvaloniaPropertyOwnerTypeName: ownerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                AvaloniaPropertyFieldName: propertyField.Name,
+                ClrPropertyOwnerTypeName: null,
+                ClrPropertyTypeName: null,
+                BindingPriorityExpression: GetSetValueBindingPriorityExpression(
+                    targetType,
+                    propertyField,
+                    compilation,
+                    bindingPriorityScope),
+                Line: assignment.Line,
+                Column: assignment.Column,
+                Condition: assignment.Condition,
+                ValueKind: ResolvedValueKind.Binding,
+                ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true),
+                PreserveBindingValue: preserveBindingValue);
+            return true;
+        }
 
         if (TryParseInlineCSharpMarkupExtensionCode(assignment.Value, out var inlineCode))
         {

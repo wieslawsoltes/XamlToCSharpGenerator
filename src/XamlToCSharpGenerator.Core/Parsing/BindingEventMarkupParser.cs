@@ -12,6 +12,58 @@ public delegate bool TryConvertLiteralValueExpressionDelegate(string literalValu
 
 public static class BindingEventMarkupParser
 {
+    public static bool TryParseXBindMarkup(
+        string value,
+        TryParseMarkupExtensionDelegate tryParseMarkupExtension,
+        out XBindMarkup xBindMarkup)
+    {
+        xBindMarkup = default;
+        if (!tryParseMarkupExtension(value, out var markup))
+        {
+            return false;
+        }
+
+        return TryParseXBindMarkupCore(markup, out xBindMarkup);
+    }
+
+    public static bool TryParseXBindMarkupCore(
+        MarkupExtensionInfo markup,
+        out XBindMarkup xBindMarkup)
+    {
+        xBindMarkup = default;
+        var extensionKind = XamlMarkupExtensionNameSemantics.Classify(markup.Name);
+        if (extensionKind is not XamlMarkupExtensionKind.XBind)
+        {
+            return false;
+        }
+
+        var path = string.Empty;
+        if (markup.NamedArguments.TryGetValue("Path", out var explicitPath))
+        {
+            path = XamlQuotedValueSemantics.TrimAndUnquote(explicitPath);
+        }
+        else if (markup.PositionalArguments.Length > 0)
+        {
+            path = XamlQuotedValueSemantics.TrimAndUnquote(markup.PositionalArguments[0]);
+        }
+
+        xBindMarkup = new XBindMarkup(
+            path: path,
+            mode: TryGetNamedMarkupArgument(markup, "Mode"),
+            bindBack: TryGetNamedMarkupArgument(markup, "BindBack"),
+            dataType: TryGetNamedMarkupArgument(markup, "DataType"),
+            converter: TryGetNamedMarkupArgument(markup, "Converter"),
+            converterCulture: TryGetNamedMarkupArgument(markup, "ConverterCulture"),
+            converterParameter: TryGetNamedMarkupArgument(markup, "ConverterParameter"),
+            stringFormat: TryGetNamedMarkupArgument(markup, "StringFormat", "Format"),
+            fallbackValue: TryGetNamedMarkupArgument(markup, "FallbackValue", "Fallback"),
+            targetNullValue: TryGetNamedMarkupArgument(markup, "TargetNullValue", "NullValue"),
+            delay: TryGetNamedMarkupArgument(markup, "Delay"),
+            priority: TryGetNamedMarkupArgument(markup, "Priority", "BindingPriority"),
+            updateSourceTrigger: TryGetNamedMarkupArgument(markup, "UpdateSourceTrigger", "Trigger"));
+        return true;
+    }
+
     public static bool TryParseBindingMarkup(
         string value,
         TryParseMarkupExtensionDelegate tryParseMarkupExtension,

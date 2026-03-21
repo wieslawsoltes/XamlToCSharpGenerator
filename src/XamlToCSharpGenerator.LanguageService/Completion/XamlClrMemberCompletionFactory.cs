@@ -18,7 +18,10 @@ internal static class XamlClrMemberCompletionFactory
     public static ImmutableArray<XamlCompletionItem> CreateMemberCompletions(
         INamedTypeSymbol receiverType,
         string prefix,
-        XamlMemberCompletionMode mode)
+        XamlMemberCompletionMode mode,
+        bool staticOnly = false,
+        bool includeFieldsInBindingPath = false,
+        bool allowMethodsWithParameters = false)
     {
         if (receiverType is null)
         {
@@ -29,7 +32,7 @@ internal static class XamlClrMemberCompletionFactory
         var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var property in EnumerateProperties(receiverType))
+        foreach (var property in EnumerateProperties(receiverType, staticOnly))
         {
             if (!MatchesPrefix(property.Name, normalizedPrefix) || !seen.Add("P:" + property.Name))
             {
@@ -45,9 +48,9 @@ internal static class XamlClrMemberCompletionFactory
                 IsDeprecated(property)));
         }
 
-        if (mode == XamlMemberCompletionMode.Expression)
+        if (mode == XamlMemberCompletionMode.Expression || includeFieldsInBindingPath)
         {
-            foreach (var field in EnumerateFields(receiverType))
+            foreach (var field in EnumerateFields(receiverType, staticOnly))
             {
                 if (!MatchesPrefix(field.Name, normalizedPrefix) || !seen.Add("F:" + field.Name))
                 {
@@ -64,7 +67,7 @@ internal static class XamlClrMemberCompletionFactory
             }
         }
 
-        foreach (var method in EnumerateMethods(receiverType, mode))
+        foreach (var method in EnumerateMethods(receiverType, mode, staticOnly, allowMethodsWithParameters))
         {
             if (!MatchesPrefix(method.Name, normalizedPrefix) || !seen.Add("M:" + method.Name))
             {
@@ -83,13 +86,13 @@ internal static class XamlClrMemberCompletionFactory
         return builder.ToImmutable();
     }
 
-    private static IEnumerable<IPropertySymbol> EnumerateProperties(INamedTypeSymbol typeSymbol)
+    private static IEnumerable<IPropertySymbol> EnumerateProperties(INamedTypeSymbol typeSymbol, bool staticOnly)
     {
         foreach (var current in EnumerateTypeHierarchy(typeSymbol))
         {
             foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
             {
-                if (property.IsStatic ||
+                if (property.IsStatic != staticOnly ||
                     property.IsIndexer ||
                     property.GetMethod is null ||
                     property.GetMethod.MethodKind != MethodKind.PropertyGet)
@@ -102,13 +105,13 @@ internal static class XamlClrMemberCompletionFactory
         }
     }
 
-    private static IEnumerable<IFieldSymbol> EnumerateFields(INamedTypeSymbol typeSymbol)
+    private static IEnumerable<IFieldSymbol> EnumerateFields(INamedTypeSymbol typeSymbol, bool staticOnly)
     {
         foreach (var current in EnumerateTypeHierarchy(typeSymbol))
         {
             foreach (var field in current.GetMembers().OfType<IFieldSymbol>())
             {
-                if (field.IsStatic || field.IsImplicitlyDeclared)
+                if (field.IsStatic != staticOnly || field.IsImplicitlyDeclared)
                 {
                     continue;
                 }
@@ -120,13 +123,15 @@ internal static class XamlClrMemberCompletionFactory
 
     private static IEnumerable<IMethodSymbol> EnumerateMethods(
         INamedTypeSymbol typeSymbol,
-        XamlMemberCompletionMode mode)
+        XamlMemberCompletionMode mode,
+        bool staticOnly,
+        bool allowMethodsWithParameters)
     {
         foreach (var current in EnumerateTypeHierarchy(typeSymbol))
         {
             foreach (var method in current.GetMembers().OfType<IMethodSymbol>())
             {
-                if (method.IsStatic ||
+                if (method.IsStatic != staticOnly ||
                     method.IsImplicitlyDeclared ||
                     method.MethodKind != MethodKind.Ordinary ||
                     method.Name is "GetHashCode" or "ToString" or "Equals" or "GetType")
@@ -135,7 +140,7 @@ internal static class XamlClrMemberCompletionFactory
                 }
 
                 if (mode == XamlMemberCompletionMode.BindingPath &&
-                    (method.Parameters.Length > 0 || method.ReturnsVoid))
+                    ((!allowMethodsWithParameters && method.Parameters.Length > 0) || method.ReturnsVoid))
                 {
                     continue;
                 }
