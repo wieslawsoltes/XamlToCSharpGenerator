@@ -172,7 +172,7 @@ internal static class XamlBindingCompletionService
         xBindMarkup = default;
         pathPrefix = string.Empty;
 
-        if (!TryParseHeadSpan(innerText, out _, out var argumentsStartInInner))
+        if (!TryParseHeadSpan(innerText, out _, out var pathStartInInner, out var argumentsStartInInner))
         {
             return false;
         }
@@ -201,6 +201,15 @@ internal static class XamlBindingCompletionService
 
         if (TryResolveEditablePathContext(caretOffsetInValue, argumentSegments, out pathPrefix))
         {
+            return true;
+        }
+
+        var pathStartInValue = innerStartInValue + pathStartInInner;
+        var argumentsStartInValue = innerStartInValue + argumentsStartInInner;
+        if (caretOffsetInValue >= pathStartInValue &&
+            caretOffsetInValue < argumentsStartInValue)
+        {
+            pathPrefix = string.Empty;
             return true;
         }
 
@@ -500,7 +509,7 @@ internal static class XamlBindingCompletionService
         receiverType = sourceType;
         staticOnly = false;
         if (!isXBind &&
-            TryResolveNamedElementType(analysis, completedPath, out var namedElementType))
+            TryResolveNamedElementType(analysis, element, completedPath, out var namedElementType))
         {
             receiverType = namedElementType;
             return true;
@@ -635,7 +644,7 @@ internal static class XamlBindingCompletionService
 
         if (!segment.IsMethodCall &&
             !segment.HasIndexers &&
-            TryResolveNamedElementType(analysis, segment.MemberName, out var namedElementType))
+            TryResolveNamedElementType(analysis, element, segment.MemberName, out var namedElementType))
         {
             resultType = namedElementType;
             return true;
@@ -707,37 +716,11 @@ internal static class XamlBindingCompletionService
 
     private static bool TryResolveNamedElementType(
         XamlAnalysisResult analysis,
+        XElement element,
         string elementName,
         out INamedTypeSymbol typeSymbol)
     {
-        typeSymbol = null!;
-        var documentRoot = analysis.XmlDocument?.Root;
-        if (documentRoot is null)
-        {
-            return false;
-        }
-
-        foreach (var candidateElement in documentRoot.DescendantsAndSelf())
-        {
-            var nameAttribute = candidateElement.Attributes()
-                .FirstOrDefault(attribute =>
-                    string.Equals(attribute.Name.LocalName, "Name", StringComparison.Ordinal) &&
-                    !string.IsNullOrWhiteSpace(attribute.Value));
-            if (nameAttribute is null ||
-                !string.Equals(nameAttribute.Value, elementName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, candidateElement, out typeSymbol))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        return false;
+        return XamlSemanticSourceTypeResolver.TryResolveNamedElementType(analysis, element, elementName, out typeSymbol);
     }
 
     private static AvaloniaTypeInfo? ResolveTypeInfo(
@@ -1304,9 +1287,11 @@ internal static class XamlBindingCompletionService
     private static bool TryParseHeadSpan(
         string innerText,
         out string extensionName,
+        out int pathStartInInner,
         out int argumentsStartInInner)
     {
         extensionName = string.Empty;
+        pathStartInInner = 0;
         argumentsStartInInner = 0;
         if (!XamlMarkupArgumentSemantics.TryParseHead(innerText, out extensionName, out _))
         {
@@ -1321,6 +1306,7 @@ internal static class XamlBindingCompletionService
             headLength++;
         }
 
+        pathStartInInner = headLength;
         argumentsStartInInner = headLength;
         while (argumentsStartInInner < innerText.Length && char.IsWhiteSpace(innerText[argumentsStartInInner]))
         {

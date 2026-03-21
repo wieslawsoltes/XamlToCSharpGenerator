@@ -1193,34 +1193,11 @@ internal static class XamlBindingNavigationService
         string elementName,
         out INamedTypeSymbol typeSymbol)
     {
-        typeSymbol = null!;
-        var documentRoot = context.Element.Document?.Root;
-        if (documentRoot is null)
-        {
-            return false;
-        }
-
-        foreach (var candidateElement in documentRoot.DescendantsAndSelf())
-        {
-            var nameAttribute = candidateElement.Attributes()
-                .FirstOrDefault(attribute =>
-                    string.Equals(attribute.Name.LocalName, "Name", StringComparison.Ordinal) &&
-                    !string.IsNullOrWhiteSpace(attribute.Value));
-            if (nameAttribute is null ||
-                !string.Equals(nameAttribute.Value, elementName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!TryResolveElementTypeSymbol(context.Analysis, candidateElement, out typeSymbol))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        return false;
+        return XamlSemanticSourceTypeResolver.TryResolveNamedElementType(
+            context.Analysis,
+            context.Element,
+            elementName,
+            out typeSymbol);
     }
 
     private static bool TryResolveElementTypeSymbol(
