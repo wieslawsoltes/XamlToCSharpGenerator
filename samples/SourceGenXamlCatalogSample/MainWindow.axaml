@@ -88,6 +88,9 @@
       <TabItem Header="Bindings">
         <pages:BindingsPage DataContext="{Binding Bindings}" />
       </TabItem>
+      <TabItem Header="x:Bind">
+        <pages:XBindPage />
+      </TabItem>
       <TabItem Header="Relative Source">
         <pages:RelativeSourcePage DataContext="{Binding RelativeSource}" />
       </TabItem>

@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:pages="clr-namespace:SourceGenXamlCatalogSample.Pages"
+             x:Class="SourceGenXamlCatalogSample.Pages.XBindPage"
+             x:CompileBindings="True">
+  <UserControl.Resources>
+    <pages:XBindNameCaseConverter x:Key="NameCaseConverter" />
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Root scope, named elements, static members, and method calls" />
+          <TextBlock Text="These bindings resolve against the page root, read named elements, call root methods, and access static helpers entirely through generated typed code."
+                     TextWrapping="Wrap" />
+          <TextBox x:Name="Editor"
+                   Watermark="Named element source"
+                   Text="{x:Bind EditorDraft, Mode=TwoWay}" />
+          <TextBlock Text="{x:Bind pages:XBindSampleHelpers.Prefix, StringFormat='Static helper: {0}'}" />
+          <TextBlock Text="{x:Bind FormatPreview(Editor.Text, SelectedContact?.Name)}"
+                     TextWrapping="Wrap" />
+          <TextBlock Text="{x:Bind Contacts[0].Email, StringFormat='Indexer path: {0}'}" />
+          <TextBlock Text="{x:Bind SelectedContact?.Name, Converter={StaticResource NameCaseConverter}, ConverterCulture=tr-TR, ConverterParameter='via converter'}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6" x:DefaultBindMode="TwoWay">
+          <TextBlock FontWeight="SemiBold" Text="x:DefaultBindMode, assignable paths, and explicit BindBack" />
+          <TextBlock Text="The panel defaults x:Bind to TwoWay. The first editor updates an assignable root property without repeating Mode. The second editor uses an explicit BindBack callback with Delay, UpdateSourceTrigger, and Priority options."
+                     TextWrapping="Wrap" />
+          <TextBox Watermark="Default TwoWay root property"
+                   Text="{x:Bind Alias}" />
+          <TextBox Watermark="Explicit BindBack callback"
+                   Text="{x:Bind SearchDraft, BindBack=ApplySearchDraft, Delay=250, UpdateSourceTrigger=PropertyChanged, Priority=LocalValue}" />
+          <TextBlock Text="{x:Bind Alias, StringFormat='Alias via default mode: {0}'}" />
+          <TextBlock Text="{x:Bind SearchDraft, StringFormat='BindBack source: {0}'}" />
+          <TextBlock Text="{x:Bind LastBindBackMessage}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="DataTemplate scope, pathless x:Bind, root fallback, and null handling" />
+          <TextBlock Text="Inside the template the current item becomes the x:Bind source because x:DataType is declared. When the item type does not define a member, the generated code falls back to the page root."
+                     TextWrapping="Wrap" />
+          <ListBox ItemsSource="{x:Bind Contacts}"
+                   SelectedItem="{x:Bind SelectedContact, Mode=TwoWay, BindBack=ApplySelectedContact}"
+                   MinHeight="220">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="pages:XBindContact">
+                <Border Margin="0,0,0,6"
+                        Padding="10"
+                        CornerRadius="6"
+                        Background="#0F2D7FF9"
+                        BorderBrush="#332D7FF9"
+                        BorderThickness="1">
+                  <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold"
+                               Text="{x:Bind DisplayName}" />
+                    <TextBlock Classes="catalog-muted"
+                               Text="{x:Bind FormatTemplateSummary(Name, City)}"
+                               TextWrapping="Wrap" />
+                    <ContentControl Content="{x:Bind}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Text="{x:Bind SelectedContact?.Notes, TargetNullValue='No note for the current selection.', FallbackValue='Selection unavailable.'}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="x:Bind event handlers" />
+          <TextBlock Text="Events can point at root methods, match delegate signatures, or call invocation expressions that reuse other x:Bind features such as named-element lookup."
+                     TextWrapping="Wrap" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Content="Handle click"
+                    Margin="0,0,8,8"
+                    Click="{x:Bind HandlePrimaryClick}" />
+            <Button Content="Handle sender + args"
+                    Margin="0,0,8,8"
+                    Click="{x:Bind HandleDetailedClick}" />
+            <Button Content="Invoke method with Editor.Text"
+                    Margin="0,0,8,8"
+                    Click="{x:Bind CaptureEditorText(Editor.Text)}" />
+          </WrapPanel>
+          <TextBlock Text="{x:Bind ClickCount, StringFormat='x:Bind event count: {0}'}" />
+          <TextBlock Text="{x:Bind EventStatus}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
