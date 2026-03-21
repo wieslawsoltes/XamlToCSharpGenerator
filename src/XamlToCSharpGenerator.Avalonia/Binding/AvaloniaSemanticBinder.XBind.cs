@@ -238,6 +238,20 @@ public sealed partial class AvaloniaSemanticBinder
                 targetType,
                 out var targetNullValueExpression,
                 out errorMessage) ||
+            !TryBuildXBindDelayExpression(
+                compilation,
+                document,
+                xBindMarkup.Delay,
+                targetType,
+                out var delayExpression,
+                out errorMessage) ||
+            !TryBuildXBindUpdateSourceTriggerExpression(
+                compilation,
+                document,
+                xBindMarkup.UpdateSourceTrigger,
+                targetType,
+                out var updateSourceTriggerExpression,
+                out errorMessage) ||
             !TryBuildXBindPriorityExpression(
                 compilation,
                 document,
@@ -308,6 +322,10 @@ public sealed partial class AvaloniaSemanticBinder
             ", " +
             targetNullValueExpression +
             ", " +
+            delayExpression +
+            ", " +
+            updateSourceTriggerExpression +
+            ", " +
             priorityExpression +
             ", " +
             MarkupContextServiceProviderToken +
@@ -325,6 +343,56 @@ public sealed partial class AvaloniaSemanticBinder
             MarkupContextParentStackToken +
             ")";
         return true;
+    }
+
+    private static bool TryBuildXBindDelayExpression(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string? rawValue,
+        INamedTypeSymbol? setterTargetType,
+        out string expression,
+        out string errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            expression = "0";
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        return TryBuildXBindOptionExpression(
+            compilation,
+            document,
+            "Delay",
+            rawValue,
+            setterTargetType,
+            out expression,
+            out errorMessage);
+    }
+
+    private static bool TryBuildXBindUpdateSourceTriggerExpression(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string? rawValue,
+        INamedTypeSymbol? setterTargetType,
+        out string expression,
+        out string errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            expression = "global::Avalonia.Data.UpdateSourceTrigger.Default";
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        return TryBuildXBindOptionExpression(
+            compilation,
+            document,
+            "UpdateSourceTrigger",
+            rawValue,
+            setterTargetType,
+            out expression,
+            out errorMessage);
     }
 
     private static bool TryBuildXBindEventBindingDefinition(

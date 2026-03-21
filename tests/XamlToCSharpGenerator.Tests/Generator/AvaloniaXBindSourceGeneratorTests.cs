@@ -273,6 +273,109 @@ public class AvaloniaXBindSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_TwoWay_XBind_With_Delay_And_UpdateSourceTrigger()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public class Binding
+                {
+                    public int Delay { get; set; }
+                    public UpdateSourceTrigger UpdateSourceTrigger { get; set; }
+                    public BindingPriority Priority { get; set; }
+                }
+
+                public enum BindingMode
+                {
+                    OneTime,
+                    OneWay,
+                    TwoWay
+                }
+
+                public enum UpdateSourceTrigger
+                {
+                    Default,
+                    PropertyChanged,
+                    LostFocus,
+                    Explicit
+                }
+
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+
+                public interface IValueConverter { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace XamlToCSharpGenerator.Runtime
+            {
+                public static class SourceGenMarkupExtensionRuntime
+                {
+                    public static T ResolveNamedElement<T>(object target, object root, string name) => default!;
+                    public static T CoerceMarkupExtensionValue<T>(object value) => default!;
+                }
+            }
+
+            namespace Demo.Controls
+            {
+                public class BindingTarget : global::Avalonia.Controls.Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty MyPropertyProperty = new();
+                    public string? MyProperty { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string? SearchText { get; set; }
+                    public void ApplySearchText(string value) { }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo.Controls"
+                         x:Class="Demo.MainView">
+                <local:BindingTarget MyProperty="{x:Bind SearchText, Mode=TwoWay, BindBack=ApplySearchText, Delay=250, UpdateSourceTrigger=PropertyChanged}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("ProvideXBindExpressionBinding<global::Demo.MainView, global::Demo.MainView, global::Demo.Controls.BindingTarget>", generated);
+        Assert.Contains(", 250, global::Avalonia.Data.UpdateSourceTrigger.PropertyChanged, global::Avalonia.Data.BindingPriority.LocalValue,", generated);
+    }
+
+    [Fact]
     public void Generates_Pathless_XBind_For_Current_Source_Object()
     {
         const string code = """

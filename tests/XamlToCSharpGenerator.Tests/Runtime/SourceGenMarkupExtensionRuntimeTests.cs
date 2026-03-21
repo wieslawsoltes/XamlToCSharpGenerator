@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Threading;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,6 +13,8 @@ using Avalonia.Data;
 using Avalonia.Data.Converters;
 using Avalonia.Data.Core;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -1273,6 +1276,8 @@ public class SourceGenMarkupExtensionRuntimeTests
             stringFormat: null,
             fallbackValue: null,
             targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
             priority: BindingPriority.LocalValue,
             parentServiceProvider: null,
             rootObject: root,
@@ -1318,6 +1323,8 @@ public class SourceGenMarkupExtensionRuntimeTests
             stringFormat: null,
             fallbackValue: null,
             targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
             priority: BindingPriority.LocalValue,
             parentServiceProvider: null,
             rootObject: root,
@@ -1337,6 +1344,179 @@ public class SourceGenMarkupExtensionRuntimeTests
         Assert.Equal("Updated search", root.SearchDraft);
         Assert.Equal("Updated search", target.Text);
         Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_Resolves_Named_Elements_From_Ancestor_NameScopes()
+    {
+        var nameScope = new NameScope();
+        var host = new StackPanel();
+        NameScope.SetNameScope(host, nameScope);
+
+        var editor = new TextBox();
+        var target = new TextBlock();
+        host.Children.Add(editor);
+        host.Children.Add(target);
+        nameScope.Register("Editor", editor);
+
+        var resolved = SourceGenMarkupExtensionRuntime.ResolveNamedElement<TextBox>(target, new object(), "Editor");
+
+        Assert.Same(editor, resolved);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_Converter_Sees_Raw_Evaluator_Result_Before_Target_Coercion()
+    {
+        var root = new XBindConverterProbe(41);
+        var target = new TextBlock();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindConverterProbe, XBindConverterProbe, TextBlock>(
+            static (source, _, _) => source.Count,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindConverterProbe.Count), null)
+            ],
+            mode: BindingMode.OneWay,
+            bindBack: null,
+            bindBackValueType: null,
+            converter: new XBindRawValueAwareConverter(),
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 0,
+            updateSourceTrigger: UpdateSourceTrigger.Default,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBlock.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBlock.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("42", target.Text);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_BindBack_Honors_Delay()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 40,
+            updateSourceTrigger: UpdateSourceTrigger.PropertyChanged,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Updated search  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        WaitForDispatcherCondition(() => root.BindBackCount == 1, TimeSpan.FromSeconds(1));
+
+        Assert.Equal("Updated search", root.SearchDraft);
+        Assert.Equal("Updated search", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    [AvaloniaFact]
+    public void ProvideXBindExpressionBinding_TwoWay_BindBack_Honors_LostFocus_Trigger()
+    {
+        var root = new XBindNormalizingLoopProbe(" initial search ");
+        var target = new TextBox();
+
+        var binding = SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<XBindNormalizingLoopProbe, XBindNormalizingLoopProbe, TextBox>(
+            static (source, _, _) => source.SearchDraft,
+            new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+            dependencies:
+            [
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, nameof(XBindNormalizingLoopProbe.SearchDraft), null)
+            ],
+            mode: BindingMode.TwoWay,
+            bindBack: static (source, value) => source.ApplySearchDraft(SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<string>(value)),
+            bindBackValueType: typeof(string),
+            converter: null,
+            converterCulture: null,
+            converterParameter: null,
+            stringFormat: null,
+            fallbackValue: null,
+            targetNullValue: null,
+            delay: 250,
+            updateSourceTrigger: UpdateSourceTrigger.LostFocus,
+            priority: BindingPriority.LocalValue,
+            parentServiceProvider: null,
+            rootObject: root,
+            intermediateRootObject: root,
+            targetObject: target,
+            targetProperty: TextBox.TextProperty,
+            baseUri: "avares://Demo/MainView.axaml",
+            parentStack: null);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBox.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        root.ResetBindBackCount();
+        target.Text = "  Lost focus value  ";
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(" initial search ", root.SearchDraft);
+        Assert.Equal(0, root.BindBackCount);
+
+        target.RaiseEvent(new RoutedEventArgs(InputElement.LostFocusEvent)
+        {
+            Source = target
+        });
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Lost focus value", root.SearchDraft);
+        Assert.Equal("Lost focus value", target.Text);
+        Assert.Equal(1, root.BindBackCount);
+    }
+
+    private static void WaitForDispatcherCondition(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.True(condition());
     }
 
     private sealed class DictionaryServiceProvider : IServiceProvider
@@ -1477,6 +1657,34 @@ public class SourceGenMarkupExtensionRuntimeTests
         public void ResetBindBackCount()
         {
             BindBackCount = 0;
+        }
+    }
+
+    private sealed class XBindConverterProbe
+    {
+        public XBindConverterProbe(int count)
+        {
+            Count = count;
+        }
+
+        public int Count { get; }
+    }
+
+    private sealed class XBindRawValueAwareConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return value switch
+            {
+                int intValue => intValue + 1,
+                string stringValue => "wrong:" + stringValue,
+                _ => value
+            };
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            return value;
         }
     }
 

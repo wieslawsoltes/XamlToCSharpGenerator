@@ -36,17 +36,17 @@ internal sealed class SourceGenInlineCodeMultiValueConverter<TSource, TRoot, TTa
 
         try
         {
-            var evaluatedValue = SourceGenExpressionMultiValueConverter<TSource>.CoerceEvaluatedValue(
-                _evaluator(typedSource, typedRoot, typedTarget),
-                targetType,
-                culture);
+            var evaluatedValue = _evaluator(typedSource, typedRoot, typedTarget);
 
-            if (_postConverter is null)
+            if (_postConverter is not null)
             {
-                return evaluatedValue;
+                evaluatedValue = _postConverter.Convert(evaluatedValue, targetType, parameter, culture);
             }
 
-            return _postConverter.Convert(evaluatedValue, targetType, parameter, culture);
+            return SourceGenExpressionMultiValueConverter<TSource>.CoerceEvaluatedValue(
+                evaluatedValue,
+                targetType,
+                culture);
         }
         catch
         {

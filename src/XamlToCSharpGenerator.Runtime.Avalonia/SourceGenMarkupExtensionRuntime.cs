@@ -1499,6 +1499,8 @@ public static class SourceGenMarkupExtensionRuntime
         string? stringFormat,
         object? fallbackValue,
         object? targetNullValue,
+        int delay,
+        UpdateSourceTrigger updateSourceTrigger,
         BindingPriority priority,
         IServiceProvider? parentServiceProvider,
         object rootObject,
@@ -1579,7 +1581,9 @@ public static class SourceGenMarkupExtensionRuntime
             converter as IValueConverter,
             converterCulture,
             converterParameter,
-            bindBackValueType);
+            bindBackValueType,
+            delay,
+            updateSourceTrigger);
         return InstancedBinding.TwoWay(forward.Source, bindBackObserver, priority);
     }
 
@@ -1704,15 +1708,8 @@ public static class SourceGenMarkupExtensionRuntime
 
     private static bool TryResolveNamedElement(object? scopeRoot, string name, out object? element)
     {
-        element = null;
-        if (scopeRoot is StyledElement styledElement &&
-            NameScope.GetNameScope(styledElement) is { } nameScope)
-        {
-            element = nameScope.Find(name);
-            return element is not null;
-        }
-
-        return false;
+        element = SourceGenNameReferenceHelper.ResolveByName(scopeRoot, name);
+        return element is not null;
     }
 
     public static object? ProvideReference(

@@ -1,8 +1,12 @@
 using System;
 using System.Globalization;
 using System.Threading;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Data.Converters;
+using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
 
@@ -17,6 +21,11 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
     private readonly CultureInfo? _converterCulture;
     private readonly object? _converterParameter;
     private readonly Type? _bindBackValueType;
+    private readonly int _delay;
+    private readonly UpdateSourceTrigger _updateSourceTrigger;
+    private object? _pendingValue;
+    private bool _hasPendingValue;
+    private int _delayVersion;
     private int _isApplying;
 
     public SourceGenXBindBindBackObserver(
@@ -28,7 +37,9 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
         IValueConverter? converter,
         CultureInfo? converterCulture,
         object? converterParameter,
-        Type? bindBackValueType)
+        Type? bindBackValueType,
+        int delay,
+        UpdateSourceTrigger updateSourceTrigger)
     {
         _source = source;
         _bindBack = bindBack ?? throw new ArgumentNullException(nameof(bindBack));
@@ -39,6 +50,16 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
         _converterCulture = converterCulture;
         _converterParameter = converterParameter;
         _bindBackValueType = bindBackValueType;
+        _delay = Math.Max(0, delay);
+        _updateSourceTrigger = updateSourceTrigger == UpdateSourceTrigger.Default
+            ? UpdateSourceTrigger.PropertyChanged
+            : updateSourceTrigger;
+
+        if (_updateSourceTrigger == UpdateSourceTrigger.LostFocus &&
+            _target is InputElement inputElement)
+        {
+            inputElement.LostFocus += OnTargetLostFocus;
+        }
     }
 
     public void OnCompleted()
@@ -51,26 +72,41 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
 
     public void OnNext(object? value)
     {
-        if (Interlocked.Exchange(ref _isApplying, 1) != 0)
+        if (Volatile.Read(ref _isApplying) != 0)
         {
             return;
         }
 
         try
         {
-            if (TryResolveSource(out var source))
+            var convertedValue = ConvertBack(value);
+
+            switch (_updateSourceTrigger)
             {
-                _bindBack(source, ConvertBack(value));
+                case UpdateSourceTrigger.Explicit:
+                    StorePendingValue(convertedValue);
+                    break;
+                case UpdateSourceTrigger.LostFocus:
+                    StorePendingValue(convertedValue);
+                    break;
+                case UpdateSourceTrigger.PropertyChanged when _delay > 0:
+                    StorePendingValue(convertedValue);
+                    ScheduleDelayedFlush();
+                    break;
+                default:
+                    ApplyBindBack(convertedValue);
+                    break;
             }
         }
         catch
         {
             // Keep bind-back failures non-fatal to match binding engine resilience.
         }
-        finally
-        {
-            Volatile.Write(ref _isApplying, 0);
-        }
+    }
+
+    private void OnTargetLostFocus(object? sender, EventArgs e)
+    {
+        FlushPendingValue();
     }
 
     private bool TryResolveSource(out TSource source)
@@ -92,6 +128,77 @@ internal sealed class SourceGenXBindBindBackObserver<TSource> : IObserver<object
         }
 
         return false;
+    }
+
+    private void StorePendingValue(object? value)
+    {
+        _pendingValue = value;
+        _hasPendingValue = true;
+    }
+
+    private void ScheduleDelayedFlush()
+    {
+        var version = Interlocked.Increment(ref _delayVersion);
+        _ = FlushPendingValueAsync(version);
+    }
+
+    private async Task FlushPendingValueAsync(int version)
+    {
+        try
+        {
+            await Task.Delay(_delay).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (version != Volatile.Read(ref _delayVersion))
+            {
+                return;
+            }
+
+            FlushPendingValue();
+        });
+    }
+
+    private void FlushPendingValue()
+    {
+        if (!_hasPendingValue)
+        {
+            return;
+        }
+
+        var pendingValue = _pendingValue;
+        _pendingValue = null;
+        _hasPendingValue = false;
+        ApplyBindBack(pendingValue);
+    }
+
+    private void ApplyBindBack(object? value)
+    {
+        if (Interlocked.Exchange(ref _isApplying, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (TryResolveSource(out var source))
+            {
+                _bindBack(source, value);
+            }
+        }
+        catch
+        {
+            // Keep bind-back failures non-fatal to match binding engine resilience.
+        }
+        finally
+        {
+            Volatile.Write(ref _isApplying, 0);
+        }
     }
 
     private object? ConvertBack(object? value)
