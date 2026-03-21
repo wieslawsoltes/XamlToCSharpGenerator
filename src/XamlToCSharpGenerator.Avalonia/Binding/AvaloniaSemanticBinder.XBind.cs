@@ -717,7 +717,7 @@ public sealed partial class AvaloniaSemanticBinder
         analyzedLambdaExpression = string.Empty;
         errorMessage = string.Empty;
 
-        var actionType = compilation.GetTypeByMetadataName("System.Action`2");
+        var actionType = GetActiveTypeSymbolCatalog(compilation).GetOrDefault(TypeContractId.SystemActionOfT1T2);
         if (actionType is null)
         {
             errorMessage = "System.Action<T1, T2> could not be resolved.";
