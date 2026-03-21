@@ -18,6 +18,7 @@ These guides are task-oriented. Start here when you know what you want to do but
 ### Language features and editor workflows
 
 - [VS Code](../vscode/)
+- [x:Bind](xbind/)
 - [C# Expressions](csharp-expressions/)
 - [Inline C# Code](inline-csharp-code/)
 - [Navigation and Refactorings](navigation-and-refactorings/)
@@ -47,9 +48,10 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 1. [Package Selection and Integration](package-selection-and-integration/)
 2. [Avalonia Name Generator and InitializeComponent Modes](avalonia-name-generator-and-initializecomponent-modes/)
-3. [C# Expressions](csharp-expressions/)
-4. [Inline C# Code](inline-csharp-code/)
-5. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
+3. [x:Bind](xbind/)
+4. [C# Expressions](csharp-expressions/)
+5. [Inline C# Code](inline-csharp-code/)
+6. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 
 ### Editor or tooling integration
 

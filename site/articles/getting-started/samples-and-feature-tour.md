@@ -10,7 +10,7 @@ AXSG ships sample applications that exercise the compiler, runtime, hot reload p
 
 | Sample | Path | Use it for |
 | --- | --- | --- |
-| Source-generated catalog | `samples/SourceGenXamlCatalogSample` | language features, bindings, inline C#, templates, styles, runtime loader, and hot reload |
+| Source-generated catalog | `samples/SourceGenXamlCatalogSample` | language features, bindings, x:Bind, inline C#, templates, styles, runtime loader, and hot reload |
 | Control catalog | `samples/ControlCatalog` | larger Avalonia app integration, theme overrides, selector-heavy styling, and broad control coverage |
 | iOS hot reload host | `samples/ControlCatalog.iOS` | AXSG + `dotnet watch` simulator/device validation for the control catalog |
 | NoUi framework pilot | `samples/NoUiFrameworkPilotSample` | framework-host reuse outside Avalonia |
@@ -22,7 +22,7 @@ All sample paths are shown relative to the repository root.
 
 Start in `samples/SourceGenXamlCatalogSample` when you need to see a feature in isolation:
 
-- bindings and compiled bindings
+- bindings, compiled bindings, and x:Bind
 - C# expressions and shorthand expressions
 - inline C# and `<![CDATA[ ... ]]>`
 - event bindings and inline lambdas

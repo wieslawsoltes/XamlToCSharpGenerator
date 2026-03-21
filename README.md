@@ -122,6 +122,7 @@ The remaining NuGet packages exist for advanced composition:
 
 - Source-generated Avalonia XAML backend selected with `AvaloniaXamlCompilerBackend=SourceGen`
 - Compiled-binding-first workflow with semantic type analysis
+- Full `x:Bind` support with typed source resolution, generated event handlers, bind-back, and lifecycle helpers
 - C# expression bindings with explicit, implicit, shorthand, interpolation, and formatting forms
 - Inline C# code via `{CSharp Code=...}`, `<CSharp>...</CSharp>`, and `<![CDATA[ ... ]]>` content blocks
 - Inline event handlers, including lambda expressions and multi-line statement bodies
@@ -139,6 +140,8 @@ For feature-specific details:
 
 - configuration model: [`site/articles/reference/configuration-model.md`](site/articles/reference/configuration-model.md)
 - configuration migration: [`site/articles/reference/configuration-migration.md`](site/articles/reference/configuration-migration.md)
+- x:Bind: [`site/articles/xaml/xbind.md`](site/articles/xaml/xbind.md)
+- x:Bind guide/spec: [`site/articles/guides/xbind.md`](site/articles/guides/xbind.md)
 - C# expressions: [`site/articles/xaml/csharp-expressions.md`](site/articles/xaml/csharp-expressions.md)
 - inline C# code blocks: [`site/articles/guides/inline-csharp-code.md`](site/articles/guides/inline-csharp-code.md)
 - iOS hot reload: [`site/articles/guides/hot-reload-ios.md`](site/articles/guides/hot-reload-ios.md)

@@ -7,7 +7,7 @@ og_type: website
 <div class="axsg-hero">
   <div class="axsg-eyebrow"><i class="bi bi-code-square" aria-hidden="true"></i> Avalonia XAML Compiler and Tooling</div>
   <h1>XamlToCSharpGenerator</h1>
-  <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler.</p>
+  <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler.</p>
   <div class="axsg-hero-actions">
     <a class="btn btn-primary btn-lg" href="articles/getting-started/overview"><i class="bi bi-rocket-takeoff" aria-hidden="true"></i> Start Getting Started</a>
     <a class="btn btn-outline-secondary btn-lg" href="articles/reference/package-guides/"><i class="bi bi-box-seam" aria-hidden="true"></i> Browse Packages</a>
@@ -29,6 +29,10 @@ og_type: website
   <a class="axsg-link-card" href="articles/xaml/csharp-expressions">
     <span class="axsg-link-card-title"><i class="bi bi-braces" aria-hidden="true"></i> C# Expressions</span>
     <p>Use shorthand expressions, interpolation, typed sources, and expression-aware tooling inside valid XAML.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/xaml/xbind">
+    <span class="axsg-link-card-title"><i class="bi bi-link-45deg" aria-hidden="true"></i> x:Bind</span>
+    <p>Use source-generated typed bindings with root access, template-item binding, bind-back, and x:Bind-aware editor tooling.</p>
   </a>
   <a class="axsg-link-card" href="articles/xaml/inline-csharp">
     <span class="axsg-link-card-title"><i class="bi bi-filetype-cs" aria-hidden="true"></i> Inline C#</span>
@@ -57,7 +61,7 @@ og_type: website
   </a>
   <a class="axsg-link-card" href="articles/xaml">
     <span class="axsg-link-card-title"><i class="bi bi-filetype-xml" aria-hidden="true"></i> XAML Usage</span>
-    <p>Compiled bindings, shorthand expressions, inline C#, templates, styles, control themes, and theme resources.</p>
+    <p>Compiled bindings, x:Bind, shorthand expressions, inline C#, templates, styles, control themes, and theme resources.</p>
   </a>
   <a class="axsg-link-card" href="articles/architecture">
     <span class="axsg-link-card-title"><i class="bi bi-cpu" aria-hidden="true"></i> Architecture</span>
