@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="XAML Features | XamlToCSharpGenerator">
-<meta name="twitter:description" content="XAML Features These pages document the language-level surface AXSG adds or strengthens on top of standard Avalonia XAML. Use this section when you care about authoring semantics rather than package boundaries. Feature groups Binding and expression features Compiled Bindings C# Expressions Inline C# Event Bindings Structural and configuration features Conditional XAML Resources, Includes, and URIs Property Elements, TemplateBinding, and Attached Properties Global XML Namespaces and Project Configuration Styles, Templates, and...">
+<meta name="twitter:description" content="XAML Features These pages document the language-level surface AXSG adds or strengthens on top of standard Avalonia XAML. Use this section when you care about authoring semantics rather than package boundaries. Feature groups Binding and expression features Compiled Bindings x:Bind C# Expressions Inline C# Event Bindings Structural and configuration features Conditional XAML Resources, Includes, and URIs Property Elements, TemplateBinding, and Attached Properties Global XML Namespaces and Project Configuration...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="XAML Features | XamlToCSharpGenerator">
 <meta property="og:title" content="XAML Features | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="XAML Features These pages document the language-level surface AXSG adds or strengthens on top of standard Avalonia XAML. Use this section when you care about authoring semantics rather than package boundaries. Feature groups Binding and expression features Compiled Bindings C# Expressions Inline C# Event Bindings Structural and configuration features Conditional XAML Resources, Includes, and URIs Property Elements, TemplateBinding, and Attached Properties Global XML Namespaces and Project Configuration Styles, Templates, and...">
+<meta property="og:description" content="XAML Features These pages document the language-level surface AXSG adds or strengthens on top of standard Avalonia XAML. Use this section when you care about authoring semantics rather than package boundaries. Feature groups Binding and expression features Compiled Bindings x:Bind C# Expressions Inline C# Event Bindings Structural and configuration features Conditional XAML Resources, Includes, and URIs Property Elements, TemplateBinding, and Attached Properties Global XML Namespaces and Project Configuration...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="XAML Features | XamlToCSharpGenerator">
   </head>
@@ -147,6 +147,7 @@
 <h3 id="binding-and-expression-features">Binding and expression features</h3>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/xaml/compiled-bindings">Compiled Bindings</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/xbind">x:Bind</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/xaml/csharp-expressions">C# Expressions</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/xaml/inline-csharp">Inline C#</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/xaml/event-bindings">Event Bindings</a></li>
@@ -162,13 +163,14 @@
 <h2 id="how-to-use-this-section">How to use this section</h2>
 <ul>
 <li>Start with <a href="/XamlToCSharpGenerator/articles/xaml/compiled-bindings">Compiled Bindings</a> if you are new to AXSG semantics.</li>
-<li>Use <a href="/XamlToCSharpGenerator/articles/xaml/csharp-expressions">C# Expressions</a> and <a href="/XamlToCSharpGenerator/articles/xaml/inline-csharp">Inline C#</a> for the main language extensions.</li>
+<li>Use <a href="/XamlToCSharpGenerator/articles/xaml/xbind">x:Bind</a>, <a href="/XamlToCSharpGenerator/articles/xaml/csharp-expressions">C# Expressions</a>, and <a href="/XamlToCSharpGenerator/articles/xaml/inline-csharp">Inline C#</a> for the main language extensions.</li>
 <li>Use the structural pages when you are working in themes, resources, includes, or selector-heavy XAML.</li>
 <li>Use <a href="/XamlToCSharpGenerator/articles/guides">Guides</a> when you need an operational workflow instead of language semantics.</li>
 </ul>
 <h2 id="typical-questions-this-section-answers">Typical questions this section answers</h2>
 <ul>
 <li>when does AXSG require <code>x:DataType</code> and when can an explicit source provide type context?</li>
+<li>when should I use <code>x:Bind</code> instead of <code>CompiledBinding</code>, expression syntax, or inline C#?</li>
 <li>how do shorthand expressions, inline C#, and event lambdas differ?</li>
 <li>how do property elements, <code>TemplateBinding</code>, resources, and URI values participate in navigation and diagnostics?</li>
 <li>how do styles, themes, selectors, and control-theme override patterns behave under compilation?</li>

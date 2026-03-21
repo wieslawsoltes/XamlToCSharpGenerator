@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>x:Bind | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="x:Bind | XamlToCSharpGenerator">
+<meta name="twitter:description" content="x:Bind in XAML Purpose AXSG supports WinUI-style x:Bind for Avalonia through source generation, typed semantic binding, generated runtime helpers, and language-service support. Use x:Bind when you want: compile-time validation of members, methods, and source scopes direct access to root members and typed template items source-aware binding to named elements, ancestors, self, templated parent, or explicit source expressions stronger editor tooling than plain runtime path bindings...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="x:Bind | XamlToCSharpGenerator">
+<meta property="og:title" content="x:Bind | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="x:Bind in XAML Purpose AXSG supports WinUI-style x:Bind for Avalonia through source generation, typed semantic binding, generated runtime helpers, and language-service support. Use x:Bind when you want: compile-time validation of members, methods, and source scopes direct access to root members and typed template items source-aware binding to named elements, ancestors, self, templated parent, or explicit source expressions stronger editor tooling than plain runtime path bindings...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="x:Bind | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="xbind-in-xaml">x:Bind in XAML</h1>
+<h2 id="purpose">Purpose</h2>
+<p>AXSG supports WinUI-style <code>x:Bind</code> for Avalonia through source generation, typed semantic
+binding, generated runtime helpers, and language-service support.</p>
+<p>Use <code>x:Bind</code> when you want:</p>
+<ul>
+<li>compile-time validation of members, methods, and source scopes</li>
+<li>direct access to root members and typed template items</li>
+<li>source-aware binding to named elements, ancestors, self, templated parent, or explicit
+source expressions</li>
+<li>stronger editor tooling than plain runtime path bindings</li>
+<li>generated <code>TwoWay</code>/<code>BindBack</code> behavior without reflection</li>
+</ul>
+<p>This is an Avalonia-adapted <code>x:Bind</code> model. It follows the WinUI/UWP/Uno concept closely,
+but the runtime integration is implemented on top of Avalonia bindings and generated
+helpers.</p>
+<h2 id="requirements">Requirements</h2>
+<ul>
+<li>The root must be <code>x:Class</code>-backed.</li>
+<li>Template scopes should declare <code>x:DataType</code>.</li>
+<li>The compiler must be able to resolve the source type, either from scope or from explicit
+<code>DataType=</code>.</li>
+</ul>
+<h2 id="full-syntax">Full syntax</h2>
+<pre><code class="language-xaml">{x:Bind path,
+         Mode=OneWay|TwoWay|OneTime,
+         BindBack=MethodOrSetterCompatibleExpression,
+         ElementName=SomeControl,
+         RelativeSource={RelativeSource Self|TemplatedParent|FindAncestor,...},
+         Source={x:Static ...}|{x:Reference ...}|SomeExpression,
+         DataType=local:SomeType,
+         Converter={StaticResource SomeConverter},
+         ConverterCulture='en-US',
+         ConverterLanguage='en-US',
+         ConverterParameter=SomeValue,
+         StringFormat='Value: {0}',
+         FallbackValue='...',
+         TargetNullValue='...',
+         Delay=250,
+         Priority=LocalValue,
+         UpdateSourceTrigger=PropertyChanged|LostFocus|Explicit}
+</code></pre>
+<p><code>ConverterLanguage</code> is accepted as an alias of <code>ConverterCulture</code>.</p>
+<h2 id="supported-forms">Supported forms</h2>
+<h3 id="root-members-and-methods">Root members and methods</h3>
+<pre><code class="language-xaml">&lt;TextBlock Text=&quot;{x:Bind Title}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind FormatTitle(Title)}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind BuildSummary(FirstName, LastName, Count)}&quot; /&gt;
+</code></pre>
+<h3 id="template-item-binding">Template-item binding</h3>
+<pre><code class="language-xaml">&lt;ItemsControl ItemsSource=&quot;{x:Bind Items}&quot;&gt;
+  &lt;ItemsControl.ItemTemplate&gt;
+    &lt;DataTemplate x:DataType=&quot;vm:ItemViewModel&quot;&gt;
+      &lt;TextBlock Text=&quot;{x:Bind Name}&quot; /&gt;
+    &lt;/DataTemplate&gt;
+  &lt;/ItemsControl.ItemTemplate&gt;
+&lt;/ItemsControl&gt;
+</code></pre>
+<h3 id="named-elements">Named elements</h3>
+<pre><code class="language-xaml">&lt;TextBox x:Name=&quot;Editor&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind Text, ElementName=Editor}&quot; /&gt;
+</code></pre>
+<h3 id="relative-sources">Relative sources</h3>
+<pre><code class="language-xaml">&lt;TextBlock Tag=&quot;{x:Bind Tag, RelativeSource={RelativeSource Self}}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind Title, RelativeSource={RelativeSource TemplatedParent}, DataType=local:ParentView}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind DataContext.Title, RelativeSource={RelativeSource FindAncestor, AncestorType=local:ShellView}}&quot; /&gt;
+</code></pre>
+<h3 id="explicit-source">Explicit <code>Source=</code></h3>
+<pre><code class="language-xaml">&lt;TextBlock Text=&quot;{x:Bind Value, Source={x:Static local:BindingSources.Current}, DataType=local:StaticSource}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind Text, Source={x:Reference Editor}}&quot; /&gt;
+</code></pre>
+<h3 id="static-members-indexers-pathless-bind">Static members, indexers, pathless bind</h3>
+<pre><code class="language-xaml">&lt;TextBlock Text=&quot;{x:Bind helpers:UiHelpers.Prefix}&quot; /&gt;
+&lt;TextBlock Text=&quot;{x:Bind Items[SelectedIndex].Name}&quot; /&gt;
+&lt;ContentPresenter Content=&quot;{x:Bind}&quot; /&gt;
+</code></pre>
+<h3 id="event-handlers">Event handlers</h3>
+<pre><code class="language-xaml">&lt;Button Click=&quot;{x:Bind HandlePrimaryClick}&quot; /&gt;
+&lt;Button Click=&quot;{x:Bind CaptureEditorText(Editor.Text)}&quot; /&gt;
+&lt;Button Click=&quot;{x:Bind Perform(), ElementName=ActionButton}&quot; /&gt;
+</code></pre>
+<h2 id="source-resolution-model">Source-resolution model</h2>
+<p><code>x:Bind</code> source selection is expression-based and compiler-resolved.</p>
+<p>Resolution order is:</p>
+<ol>
+<li>explicit <code>ElementName</code>, <code>RelativeSource</code>, or <code>Source</code></li>
+<li>typed template source when inside a typed template</li>
+<li>root object when outside a typed template</li>
+</ol>
+<p>Supported source kinds in the current implementation:</p>
+<ul>
+<li>root object</li>
+<li>typed template/data-context source</li>
+<li>named element</li>
+<li>target object (<code>RelativeSource Self</code>)</li>
+<li>templated parent (<code>RelativeSource TemplatedParent</code>)</li>
+<li>ancestor lookup (<code>RelativeSource FindAncestor</code>)</li>
+<li>explicit source expression (<code>Source=...</code>)</li>
+</ul>
+<p><code>DataType=</code> can override the semantic source type when the runtime source is known but the
+compiler cannot infer a useful CLR type from the source expression alone.</p>
+<h2 id="twoway-and-bind-back-semantics">TwoWay and bind-back semantics</h2>
+<p>Simple <code>TwoWay</code>:</p>
+<pre><code class="language-xaml">&lt;TextBox Text=&quot;{x:Bind Alias, Mode=TwoWay}&quot; /&gt;
+</code></pre>
+<p>Explicit bind-back method:</p>
+<pre><code class="language-xaml">&lt;TextBox Text=&quot;{x:Bind SearchDraft, Mode=TwoWay, BindBack=ApplySearchDraft}&quot; /&gt;
+</code></pre>
+<p>Key behavior:</p>
+<ul>
+<li>the forward path is generated from the evaluated <code>x:Bind</code> expression</li>
+<li>the reverse path is generated separately through the bind-back contract</li>
+<li>this is not just a plain Avalonia runtime setter shortcut</li>
+</ul>
+<h2 id="delay-and-update-source-trigger">Delay and update source trigger</h2>
+<p>AXSG supports Avalonia-oriented <code>Delay</code> and <code>UpdateSourceTrigger</code> options on <code>x:Bind</code>.</p>
+<p>Example:</p>
+<pre><code class="language-xaml">&lt;TextBox Text=&quot;{x:Bind SearchDraft,
+                        Mode=TwoWay,
+                        BindBack=ApplySearchDraft,
+                        Delay=250,
+                        UpdateSourceTrigger=Explicit}&quot; /&gt;
+</code></pre>
+<p><code>UpdateSourceTrigger=Explicit</code> stores pending bind-back values until you flush them:</p>
+<pre><code class="language-csharp">Bindings.Update();
+</code></pre>
+<p>or:</p>
+<pre><code class="language-csharp">SourceGenMarkupExtensionRuntime.UpdateXBind(this);
+</code></pre>
+<h2 id="generated-lifecycle-surface">Generated lifecycle surface</h2>
+<p>For class-backed roots that use <code>x:Bind</code>, AXSG emits:</p>
+<pre><code class="language-csharp">Bindings.Initialize();
+Bindings.Update();
+Bindings.StopTracking();
+</code></pre>
+<p>Intended usage:</p>
+<ul>
+<li><code>Initialize()</code> reattaches generated x:Bind tracking</li>
+<li><code>Update()</code> flushes pending explicit values and refreshes active x:Bind bindings</li>
+<li><code>StopTracking()</code> detaches generated x:Bind subscriptions</li>
+</ul>
+<h2 id="converters-and-formatting">Converters and formatting</h2>
+<p>Supported conversion and formatting options:</p>
+<ul>
+<li><code>Converter</code></li>
+<li><code>ConverterCulture</code></li>
+<li><code>ConverterLanguage</code></li>
+<li><code>ConverterParameter</code></li>
+<li><code>StringFormat</code></li>
+<li><code>FallbackValue</code></li>
+<li><code>TargetNullValue</code></li>
+</ul>
+<p>These are part of generated runtime descriptors and are applied before final target
+assignment/coercion.</p>
+<h2 id="diagnostics">Diagnostics</h2>
+<p>Representative x:Bind diagnostics include:</p>
+<ul>
+<li>missing <code>x:Class</code> root for generated <code>x:Bind</code></li>
+<li>unresolved named elements or source expressions</li>
+<li>unsupported mode values</li>
+<li>invalid event expression for the target delegate</li>
+<li>unresolved members, methods, or type tokens</li>
+</ul>
+<h2 id="language-service-support">Language-service support</h2>
+<p><code>x:Bind</code> participates in:</p>
+<ul>
+<li>completion</li>
+<li>hover</li>
+<li>go to definition</li>
+<li>find references</li>
+<li>rename propagation</li>
+<li>signature help</li>
+</ul>
+<p>The language service understands:</p>
+<ul>
+<li>root vs template source scope</li>
+<li><code>ElementName</code>, <code>RelativeSource</code>, and <code>Source</code></li>
+<li>inline <code>DataType=</code></li>
+<li>converter and formatting options</li>
+</ul>
+<h2 id="runtime-and-hot-reload">Runtime and hot reload</h2>
+<p><code>x:Bind</code> is compiled into generated evaluators and reflection-free runtime descriptors.</p>
+<p>Hot reload uses the generated object-graph path and resets generated x:Bind state when the
+root graph is repopulated.</p>
+<h2 id="how-xbind-compares-to-avalonia-bindings">How x:Bind compares to Avalonia bindings</h2>
+<p>Compared with normal Avalonia <code>{Binding}</code> / <code>{CompiledBinding}</code>:</p>
+<ul>
+<li><code>x:Bind</code> is expression-oriented, not just path-oriented</li>
+<li><code>x:Bind</code> can call methods and use static members directly</li>
+<li>default source semantics are root/template-item oriented instead of ordinary
+data-context-only lookup</li>
+<li><code>TwoWay</code> reverse flow uses generated bind-back plumbing</li>
+</ul>
+<p>Compared with inline C#:</p>
+<ul>
+<li><code>x:Bind</code> is the better fit for binding-like expressions and event call expressions</li>
+<li>inline C# is better when you need multi-statement logic or explicit code blocks</li>
+</ul>
+<h2 id="current-intentional-gaps">Current intentional gaps</h2>
+<p>Not currently part of the validated surface:</p>
+<ul>
+<li>WinUI <code>x:Load</code> integration</li>
+<li>Uno-style POCO-target <code>x:Bind</code> outside Avalonia binding application</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/xbind">x:Bind feature overview</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/compiled-bindings">Compiled Bindings</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/inline-csharp-code">Inline C# Code</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/xaml/event-bindings">Event Bindings</a></li>
+<li>the detailed implementation/spec notes are mirrored in the repository <code>plan/</code> folder for engineering work</li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>
