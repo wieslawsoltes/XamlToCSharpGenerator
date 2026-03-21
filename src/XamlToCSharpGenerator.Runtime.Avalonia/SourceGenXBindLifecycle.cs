@@ -2,8 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Avalonia;
+using Avalonia.Controls;
 
 namespace XamlToCSharpGenerator.Runtime;
+
+internal readonly record struct SourceGenAttachedBindingMetadata(
+    INameScope? NameScope,
+    IReadOnlyDictionary<string, string>? XmlNamespaces);
 
 internal readonly record struct SourceGenPreparedXBindBinding(
     object Binding,
@@ -12,18 +17,31 @@ internal readonly record struct SourceGenPreparedXBindBinding(
 internal sealed class SourceGenProvidedXBindBinding
 {
     private readonly object _rootObject;
-    private readonly Func<SourceGenPreparedXBindBinding> _factory;
+    private readonly Func<SourceGenAttachedBindingMetadata, SourceGenPreparedXBindBinding> _factory;
     private AvaloniaObject? _target;
     private AvaloniaProperty? _property;
     private object? _anchor;
     private IDisposable? _bindingSubscription;
     private ISourceGenXBindBindBackController? _bindBackController;
     private bool _isApplied;
+    private SourceGenAttachedBindingMetadata _attachedMetadata;
 
-    public SourceGenProvidedXBindBinding(object rootObject, Func<SourceGenPreparedXBindBinding> factory)
+    public SourceGenProvidedXBindBinding(object rootObject, Func<SourceGenAttachedBindingMetadata, SourceGenPreparedXBindBinding> factory)
     {
         _rootObject = rootObject ?? throw new ArgumentNullException(nameof(rootObject));
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+    }
+
+    internal void AttachMetadata(INameScope? nameScope, IReadOnlyDictionary<string, string>? xmlNamespaces)
+    {
+        if (nameScope is null && xmlNamespaces is null)
+        {
+            return;
+        }
+
+        _attachedMetadata = new SourceGenAttachedBindingMetadata(
+            nameScope ?? _attachedMetadata.NameScope,
+            xmlNamespaces ?? _attachedMetadata.XmlNamespaces);
     }
 
     internal void Apply(AvaloniaObject target, AvaloniaProperty property, object? anchor)
@@ -87,7 +105,7 @@ internal sealed class SourceGenProvidedXBindBinding
         _bindBackController?.Dispose();
         _bindBackController = null;
 
-        var preparedBinding = _factory();
+        var preparedBinding = _factory(_attachedMetadata);
         _bindBackController = preparedBinding.BindBackController;
         _bindingSubscription = SourceGenMarkupExtensionRuntime.ApplyBindingCore(
             _target,

@@ -347,6 +347,12 @@ public static class SourceGenMarkupExtensionRuntime
             return;
         }
 
+        if (binding is SourceGenProvidedXBindBinding xBindBinding)
+        {
+            xBindBinding.AttachMetadata(nameScope, xmlNamespaces);
+            return;
+        }
+
         if (binding is Binding dataBinding)
         {
             if (xmlNamespaces is not null && xmlNamespaces.Count > 0)
@@ -1617,7 +1623,7 @@ public static class SourceGenMarkupExtensionRuntime
     {
         return new SourceGenProvidedXBindBinding(
             rootObject,
-            () => CreatePreparedXBindBinding(
+            metadata => CreatePreparedXBindBinding(
                 evaluator,
                 source,
                 dependencies,
@@ -1639,7 +1645,9 @@ public static class SourceGenMarkupExtensionRuntime
                 targetObject,
                 targetProperty,
                 baseUri,
-                parentStack));
+                parentStack,
+                metadata.NameScope,
+                metadata.XmlNamespaces));
     }
 
     private static SourceGenPreparedXBindBinding CreatePreparedXBindBinding<TSource, TRoot, TTarget>(
@@ -1664,7 +1672,9 @@ public static class SourceGenMarkupExtensionRuntime
         object targetObject,
         object? targetProperty,
         string? baseUri,
-        IReadOnlyList<object>? parentStack)
+        IReadOnlyList<object>? parentStack,
+        INameScope? attachedNameScope,
+        IReadOnlyDictionary<string, string>? attachedXmlNamespaces)
     {
         var contextProvider = CreateContextProvider(
             parentServiceProvider,
@@ -1707,6 +1717,9 @@ public static class SourceGenMarkupExtensionRuntime
             }
         }
 
+        var nameScope = attachedNameScope ?? contextProvider.GetService(typeof(INameScope)) as INameScope;
+        AttachBindingMetadata(multiBinding, nameScope, attachedXmlNamespaces);
+
         if (bindBack is null || mode != BindingMode.TwoWay)
         {
             return new SourceGenPreparedXBindBinding(multiBinding, null);
@@ -1717,9 +1730,6 @@ public static class SourceGenMarkupExtensionRuntime
         {
             return new SourceGenPreparedXBindBinding(multiBinding, null);
         }
-
-        var nameScope = contextProvider.GetService(typeof(INameScope)) as INameScope;
-        AttachBindingMetadata(multiBinding, nameScope, xmlNamespaces: null);
 
         var anchor = ResolveBindingAnchor(targetObject, parentStack);
         var forward = multiBinding.Initiate(avaloniaTarget, avaloniaProperty, anchor);

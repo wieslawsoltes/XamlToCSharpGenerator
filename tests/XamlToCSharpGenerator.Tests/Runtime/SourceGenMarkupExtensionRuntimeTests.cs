@@ -1365,6 +1365,59 @@ public class SourceGenMarkupExtensionRuntimeTests
     }
 
     [AvaloniaFact]
+    public void ApplyBinding_XBind_ElementNameBinding_Preserves_Attached_NameScope_Metadata()
+    {
+        var nameScope = new NameScope();
+        var host = new StackPanel();
+        NameScope.SetNameScope(host, nameScope);
+
+        var editor = new TextBox
+        {
+            Text = "Named scope text"
+        };
+        var target = new TextBlock();
+
+        host.Children.Add(editor);
+        host.Children.Add(target);
+        nameScope.Register("Editor", editor);
+
+        var binding = SourceGenMarkupExtensionRuntime.AttachBindingNameScope(
+            SourceGenMarkupExtensionRuntime.ProvideXBindExpressionBinding<StackPanel, StackPanel, TextBlock>(
+                static (_, root, targetObject) => SourceGenMarkupExtensionRuntime.ResolveNamedElement<TextBox>(targetObject, root, "Editor")?.Text,
+                new SourceGenBindingDependency(SourceGenBindingSourceKind.Root, ".", null),
+                dependencies:
+                [
+                    new SourceGenBindingDependency(SourceGenBindingSourceKind.ElementName, ".", "Editor"),
+                    new SourceGenBindingDependency(SourceGenBindingSourceKind.ElementName, "Text", "Editor")
+                ],
+                mode: BindingMode.OneWay,
+                bindBack: null,
+                bindBackValueType: null,
+                converter: null,
+                converterCulture: null,
+                converterParameter: null,
+                stringFormat: null,
+                fallbackValue: null,
+                targetNullValue: null,
+                delay: 0,
+                updateSourceTrigger: UpdateSourceTrigger.Default,
+                priority: BindingPriority.LocalValue,
+                parentServiceProvider: null,
+                rootObject: host,
+                intermediateRootObject: host,
+                targetObject: target,
+                targetProperty: TextBlock.TextProperty,
+                baseUri: "avares://Demo/MainView.axaml",
+                parentStack: [target, host]),
+            nameScope);
+
+        SourceGenMarkupExtensionRuntime.ApplyBinding(target, TextBlock.TextProperty, binding, target);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Named scope text", target.Text);
+    }
+
+    [AvaloniaFact]
     public void ProvideXBindExpressionBinding_Converter_Sees_Raw_Evaluator_Result_Before_Target_Coercion()
     {
         var root = new XBindConverterProbe(41);
