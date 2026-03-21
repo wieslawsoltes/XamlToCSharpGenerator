@@ -1,5 +1,4 @@
 using System;
-using System.Buffers;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -23,29 +22,22 @@ public class JsonRpcMessageReader
             return null;
         }
 
-        var rented = ArrayPool<byte>.Shared.Rent(contentLength);
-        try
+        byte[] owned = new byte[contentLength];
+        var read = 0;
+        while (read < contentLength)
         {
-            var read = 0;
-            while (read < contentLength)
+            var chunk = await _stream.ReadAsync(
+                owned.AsMemory(read, contentLength - read),
+                cancellationToken).ConfigureAwait(false);
+            if (chunk == 0)
             {
-                var chunk = await _stream.ReadAsync(
-                    rented.AsMemory(read, contentLength - read),
-                    cancellationToken).ConfigureAwait(false);
-                if (chunk == 0)
-                {
-                    return null;
-                }
-
-                read += chunk;
+                return null;
             }
 
-            return JsonDocument.Parse(rented.AsMemory(0, contentLength));
+            read += chunk;
         }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(rented);
-        }
+
+        return JsonDocument.Parse(owned);
     }
 
     private async Task<int> ReadContentLengthAsync(CancellationToken cancellationToken)
