@@ -426,16 +426,25 @@ public static class SourceGenMarkupExtensionRuntime
 
         if (value is IBinding binding)
         {
-            IDisposable? bindingExpression = null;
+            var bindingHandle = new SourceGenBindingApplicationHandle();
 
             bool TryApplyBindingNow(
                 string stage,
-                bool captureBindingExpression,
                 out InvalidOperationException? deferredException,
                 out DeferredBindingFailureReason deferredReason)
             {
                 deferredException = null;
                 deferredReason = DeferredBindingFailureReason.None;
+                if (bindingHandle.IsDisposed)
+                {
+                    return false;
+                }
+
+                if (bindingHandle.HasAttachedBinding)
+                {
+                    return true;
+                }
+
                 if (TryBind(
                         avaloniaObject,
                         property,
@@ -444,9 +453,9 @@ public static class SourceGenMarkupExtensionRuntime
                         out var appliedBindingExpression,
                         out deferredException))
                 {
-                    if (captureBindingExpression)
+                    if (!bindingHandle.TrySetBindingExpression(appliedBindingExpression))
                     {
-                        bindingExpression = appliedBindingExpression;
+                        return false;
                     }
 
                     if (!string.Equals(stage, "immediate", StringComparison.Ordinal) ||
@@ -466,26 +475,42 @@ public static class SourceGenMarkupExtensionRuntime
                 return false;
             }
 
-            if (TryApplyBindingNow("immediate", captureBindingExpression: true, out _, out var initialDeferredReason))
+            if (TryApplyBindingNow("immediate", out _, out var initialDeferredReason))
             {
-                return bindingExpression;
+                return bindingHandle;
             }
 
             void AttachDeferredRetryHooks(StyledElement observedElement, Visual? observedVisual, string ownerKind)
             {
-                void TryApplyAndDetachHandlers()
+                void DetachHandlers()
                 {
-                    if (!TryApplyBindingNow("event/" + ownerKind, captureBindingExpression: false, out _, out _))
-                    {
-                        return;
-                    }
-
                     observedElement.PropertyChanged -= OnPropertyChanged;
                     observedElement.AttachedToLogicalTree -= OnAttachedToLogicalTree;
                     if (observedVisual is not null)
                     {
                         observedVisual.AttachedToVisualTree -= OnAttachedToVisualTree;
                     }
+                }
+
+                if (!bindingHandle.TryRegisterCleanup(DetachHandlers))
+                {
+                    return;
+                }
+
+                void TryApplyAndDetachHandlers()
+                {
+                    if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
+                    {
+                        DetachHandlers();
+                        return;
+                    }
+
+                    if (!TryApplyBindingNow("event/" + ownerKind, out _, out _))
+                    {
+                        return;
+                    }
+
+                    DetachHandlers();
                 }
 
                 void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
@@ -530,10 +555,10 @@ public static class SourceGenMarkupExtensionRuntime
 
             if (ShouldScheduleTimedBindingRetry(avaloniaObject, binding, anchor, initialDeferredReason))
             {
-                ScheduleBindingRetry(avaloniaObject, property, binding, anchor);
+                ScheduleBindingRetry(avaloniaObject, property, binding, anchor, bindingHandle);
             }
 
-            return null;
+            return bindingHandle;
         }
 
         avaloniaObject.SetValue(property, value);
@@ -991,7 +1016,12 @@ public static class SourceGenMarkupExtensionRuntime
         return true;
     }
 
-    private static void ScheduleBindingRetry(AvaloniaObject target, AvaloniaProperty property, IBinding binding, object? anchor)
+    private static void ScheduleBindingRetry(
+        AvaloniaObject target,
+        AvaloniaProperty property,
+        IBinding binding,
+        object? anchor,
+        SourceGenBindingApplicationHandle bindingHandle)
     {
         var fallbackSynchronizationContext = SynchronizationContext.Current as AvaloniaSynchronizationContext;
 
@@ -1003,10 +1033,25 @@ public static class SourceGenMarkupExtensionRuntime
 
         void TryApply(int attempt)
         {
+            if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
+            {
+                return;
+            }
+
             if (!SourceGenDispatcherRuntime.TryPost(() =>
             {
-                if (TryBind(target, property, binding, anchor, out _, out var deferredException))
+                if (bindingHandle.IsDisposed || bindingHandle.HasAttachedBinding)
                 {
+                    return;
+                }
+
+                if (TryBind(target, property, binding, anchor, out var bindingExpression, out var deferredException))
+                {
+                    if (!bindingHandle.TrySetBindingExpression(bindingExpression))
+                    {
+                        return;
+                    }
+
                     TraceBinding($"Applied binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}): {DescribeBindingTarget(target, property)}.");
                     return;
                 }
@@ -1017,7 +1062,9 @@ public static class SourceGenMarkupExtensionRuntime
                     TraceBinding($"Deferred binding (retry {attempt + 1}/{MaxDeferredBindingRetryCount}/{deferredReason}): {DescribeBindingTarget(target, property)}. {deferredException.Message}");
                 }
 
-                if (attempt + 1 < MaxDeferredBindingRetryCount)
+                if (!bindingHandle.IsDisposed &&
+                    !bindingHandle.HasAttachedBinding &&
+                    attempt + 1 < MaxDeferredBindingRetryCount)
                 {
                     var nextAttempt = attempt + 1;
                     var delayMilliseconds = Math.Min(16 * nextAttempt, 120);
@@ -1035,7 +1082,9 @@ public static class SourceGenMarkupExtensionRuntime
                 }
             }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Background, fallbackSynchronizationContext))
             {
-                if (attempt + 1 >= MaxDeferredBindingRetryCount)
+                if (bindingHandle.IsDisposed ||
+                    bindingHandle.HasAttachedBinding ||
+                    attempt + 1 >= MaxDeferredBindingRetryCount)
                 {
                     return;
                 }

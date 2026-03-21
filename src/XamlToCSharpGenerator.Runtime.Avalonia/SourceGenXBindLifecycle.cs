@@ -53,7 +53,11 @@ internal sealed class SourceGenProvidedXBindBinding
 
     internal void StopTracking()
     {
-        var hadBindingSubscription = _bindingSubscription is not null;
+        var hadBindingSubscription = _bindingSubscription switch
+        {
+            SourceGenBindingApplicationHandle applicationHandle => applicationHandle.HasAttachedBinding,
+            _ => _bindingSubscription is not null
+        };
         _bindingSubscription?.Dispose();
         _bindingSubscription = null;
 
