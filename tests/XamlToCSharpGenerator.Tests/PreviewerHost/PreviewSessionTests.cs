@@ -113,6 +113,16 @@ public sealed class PreviewSessionTests
     }
 
     [Fact]
+    public void BuildProjectHostFallbackDesignUnavailableMessage_Explains_Fallback_Limitations()
+    {
+        string message = PreviewSession.BuildProjectHostFallbackDesignUnavailableMessage();
+
+        Assert.Contains("project host fallback", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bundled AXSG designer host", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AXSG Inspector", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CompleteInitialPreviewStartupAsync_Waits_For_Preview_Url_Before_Sending_Initial_Update()
     {
         var steps = new List<string>();
