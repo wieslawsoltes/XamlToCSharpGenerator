@@ -1241,7 +1241,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             if (!string.IsNullOrWhiteSpace(contentPropertyName) &&
-                normalizedPropertyName.Equals(contentPropertyName, StringComparison.Ordinal))
+                normalizedPropertyName.Equals("Content", StringComparison.Ordinal))
             {
                 explicitAttachment = ResolvedChildAttachmentMode.Content;
                 explicitContentPropertyName = contentPropertyName;
