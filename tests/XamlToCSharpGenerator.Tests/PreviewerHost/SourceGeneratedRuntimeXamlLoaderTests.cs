@@ -495,14 +495,27 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     [Fact]
     public void PreviewHostDependencyPreloader_Loads_Runtime_Dependencies_From_Source_Assembly_Deps()
     {
-        PreviewHostDependencyPreloader.PreloadManagedDependencies(typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location);
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
 
-        Assert.Contains(
-            AppDomain.CurrentDomain.GetAssemblies(),
-            assembly => string.Equals(
-                assembly.GetName().Name,
-                "Humanizer",
-                StringComparison.Ordinal));
+        try
+        {
+            (string _, string dependencyAssemblyName, string sourceAssemblyPath) =
+                CreatePreviewDependencyPreloadArtifacts(tempRoot);
+
+            IReadOnlyList<string> dependencyPaths = PreviewHostDependencyPreloader.GetManagedDependencyPaths(sourceAssemblyPath);
+
+            Assert.Contains(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileName(dependencyPath),
+                    dependencyAssemblyName + ".dll",
+                    StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -510,93 +523,35 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
-        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
 
         try
         {
-            var sourceAssemblyName = "AxsgPreviewRoot_" + Guid.NewGuid().ToString("N");
-            var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
-            var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
-            var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
-            var depsJsonPath = Path.ChangeExtension(sourceAssemblyPath, ".deps.json")
-                ?? throw new InvalidOperationException("Failed to create deps.json path.");
+            (string sourceAssemblyName, string dependencyAssemblyName, string sourceAssemblyPath) =
+                CreatePreviewDependencyPreloadArtifacts(tempRoot);
 
-            EmitAssemblyToFile(
-                sourceAssemblyName,
-                """
-                namespace PreviewSource;
-
-                public sealed class PreviewShell
-                {
-                }
-                """,
-                sourceAssemblyPath);
-            EmitAssemblyToFile(
-                dependencyAssemblyName,
-                """
-                namespace PreviewDependency;
-
-                public sealed class PreviewService
-                {
-                }
-                """,
-                dependencyAssemblyPath);
-
-            File.WriteAllText(
-                depsJsonPath,
-                $$"""
-                {
-                  "targets": {
-                    ".NETCoreApp,Version=v8.0": {
-                      "{{sourceAssemblyName}}/1.0.0": {
-                        "runtime": {
-                          "{{sourceAssemblyName}}.dll": {},
-                          "{{dependencyAssemblyName}}.dll": {}
-                        }
-                      }
-                    }
-                  }
-                }
-                """);
-
-            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
-                PreviewCompilerMode.Avalonia,
-                null,
-                null,
-                sourceAssemblyPath,
-                Path.Combine(tempRoot, "View.axaml"),
-                "/Views/View.axaml",
-                null,
-                null,
-                null));
-            PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
+            IReadOnlyList<string> dependencyPaths = PreviewHostDependencyPreloader.GetManagedDependencyPaths(sourceAssemblyPath);
 
             Assert.DoesNotContain(
-                AppDomain.CurrentDomain.GetAssemblies(),
-                assembly => string.Equals(
-                    assembly.GetName().Name,
-                    sourceAssemblyName,
-                    StringComparison.Ordinal));
-
-            PreviewHostDependencyPreloader.PreloadManagedDependencies(sourceAssemblyPath);
-
-            Assert.DoesNotContain(
-                AppDomain.CurrentDomain.GetAssemblies(),
-                assembly => string.Equals(
-                    assembly.GetName().Name,
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileNameWithoutExtension(dependencyPath),
                     sourceAssemblyName,
                     StringComparison.Ordinal));
             Assert.Contains(
-                AppDomain.CurrentDomain.GetAssemblies(),
-                assembly => string.Equals(
-                    assembly.GetName().Name,
-                    dependencyAssemblyName,
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileName(dependencyPath),
+                    dependencyAssemblyName + ".dll",
+                    StringComparison.Ordinal));
+            Assert.DoesNotContain(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileNameWithoutExtension(dependencyPath),
+                    sourceAssemblyName,
                     StringComparison.Ordinal));
         }
         finally
         {
-            PreviewHostRuntimeState.Configure(previousOptions);
-            PreviewHostAssemblyResolution.Configure(previousOptions);
             Directory.Delete(tempRoot, recursive: true);
         }
     }
@@ -989,6 +944,80 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
             emitResult.Success,
             "Failed to emit test assembly '" + assemblyName + "': " +
             string.Join(Environment.NewLine, emitResult.Diagnostics));
+    }
+
+    private static (string SourceAssemblyName, string DependencyAssemblyName, string SourceAssemblyPath)
+        CreatePreviewDependencyPreloadArtifacts(string tempRoot)
+    {
+        var sourceAssemblyName = "AxsgPreviewRoot_" + Guid.NewGuid().ToString("N");
+        var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
+        var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+        var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
+        var depsJsonPath = Path.ChangeExtension(sourceAssemblyPath, ".deps.json")
+            ?? throw new InvalidOperationException("Failed to create deps.json path.");
+
+        EmitAssemblyToFile(
+            sourceAssemblyName,
+            """
+            namespace PreviewSource;
+
+            public sealed class PreviewShell
+            {
+            }
+            """,
+            sourceAssemblyPath);
+        EmitAssemblyToFile(
+            dependencyAssemblyName,
+            """
+            namespace PreviewDependency;
+
+            public sealed class PreviewService
+            {
+            }
+            """,
+            dependencyAssemblyPath);
+
+        File.WriteAllText(
+            depsJsonPath,
+            $$"""
+            {
+              "runtimeTarget": {
+                "name": ".NETCoreApp,Version=v10.0",
+                "signature": ""
+              },
+              "targets": {
+                ".NETCoreApp,Version=v10.0": {
+                  "{{sourceAssemblyName}}/1.0.0": {
+                    "dependencies": {
+                      "{{dependencyAssemblyName}}": "1.0.0"
+                    },
+                    "runtime": {
+                      "{{sourceAssemblyName}}.dll": {}
+                    }
+                  },
+                  "{{dependencyAssemblyName}}/1.0.0": {
+                    "runtime": {
+                      "{{dependencyAssemblyName}}.dll": {}
+                    }
+                  }
+                }
+              },
+              "libraries": {
+                "{{sourceAssemblyName}}/1.0.0": {
+                  "type": "project",
+                  "serviceable": false,
+                  "sha512": ""
+                },
+                "{{dependencyAssemblyName}}/1.0.0": {
+                  "type": "project",
+                  "serviceable": false,
+                  "sha512": ""
+                }
+              }
+            }
+            """);
+
+        return (sourceAssemblyName, dependencyAssemblyName, sourceAssemblyPath);
     }
 
     private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()

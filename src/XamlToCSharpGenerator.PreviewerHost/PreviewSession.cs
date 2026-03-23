@@ -173,7 +173,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                     lastException = ex;
                     Log?.Invoke(
                         "[previewer] preview startup lost the HTML port binding race; retrying with a new reserved port.");
-                    await CleanupStartupAttemptAsync().ConfigureAwait(false);
+                    await CleanupStartupAttemptAsync(resetDesignCommandState: false).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -685,11 +685,15 @@ internal sealed class PreviewSession : IPreviewHostSession
         return previewUrl;
     }
 
-    private async Task CleanupStartupAttemptAsync()
+    private async Task CleanupStartupAttemptAsync(bool resetDesignCommandState = true)
     {
         _sessionStarted = false;
-        _designCommandsAvailable = false;
-        _designCommandsUnavailableMessage = null;
+        if (resetDesignCommandState)
+        {
+            _designCommandsAvailable = false;
+            _designCommandsUnavailableMessage = null;
+        }
+
         PublishPendingHotReloadFailure("Preview session stopped before hot reload completed.");
 
         if (_designClient is not null)
