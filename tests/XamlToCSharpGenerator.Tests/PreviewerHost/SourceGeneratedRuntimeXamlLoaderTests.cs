@@ -492,6 +492,55 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
+    [Fact]
+    public void PreviewHostDependencyPreloader_Loads_Runtime_Dependencies_From_Source_Assembly_Deps()
+    {
+        PreviewHostDependencyPreloader.PreloadManagedDependencies(typeof(SourceGeneratedRuntimeXamlLoaderTests).Assembly.Location);
+
+        Assert.Contains(
+            AppDomain.CurrentDomain.GetAssemblies(),
+            assembly => string.Equals(
+                assembly.GetName().Name,
+                "Humanizer",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ResolvePreviewLocalAssembly_Throws_Clear_Error_When_Source_Assembly_Is_Invalid()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+
+        try
+        {
+            string invalidAssemblyPath = Path.Combine(tempRoot, "InvalidPreviewAssembly.dll");
+            File.WriteAllText(invalidAssemblyPath, "not a managed assembly");
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                invalidAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null,
+                null));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => SourceGeneratedRuntimeXamlLoaderInstaller.ResolvePreviewLocalAssembly(localAssembly: null));
+
+            Assert.Contains("Failed to load preview source assembly", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("InvalidPreviewAssembly.dll", exception.Message, StringComparison.Ordinal);
+            Assert.NotNull(exception.InnerException);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     [AvaloniaFact]
     public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
     {

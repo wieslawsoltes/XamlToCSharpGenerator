@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
-using System.Text.Json;
 using System.Xml.Linq;
 using global::Avalonia;
 using global::Avalonia.Controls;
@@ -472,78 +471,6 @@ internal sealed class SourceGeneratedRuntimeXamlLoader
 
     private static void PreloadDepsAssemblies(Assembly? targetAssembly)
     {
-        var assemblyLocation = targetAssembly?.Location;
-        if (string.IsNullOrWhiteSpace(assemblyLocation))
-        {
-            return;
-        }
-
-        var depsJsonFile = Path.ChangeExtension(assemblyLocation, ".deps.json");
-        if (!File.Exists(depsJsonFile))
-        {
-            var sameDirectory = Path.GetDirectoryName(depsJsonFile);
-            if (string.IsNullOrWhiteSpace(sameDirectory) || !Directory.Exists(sameDirectory))
-            {
-                return;
-            }
-
-            var fallbackDepsFiles = Directory.GetFiles(sameDirectory, "*.deps.json");
-            if (fallbackDepsFiles.Length != 1)
-            {
-                return;
-            }
-
-            depsJsonFile = fallbackDepsFiles[0];
-        }
-
-        try
-        {
-            using var stream = File.OpenRead(depsJsonFile);
-            using var depsDocument = JsonDocument.Parse(stream);
-            if (!depsDocument.RootElement.TryGetProperty("targets", out var targetsElement) ||
-                targetsElement.ValueKind != JsonValueKind.Object)
-            {
-                return;
-            }
-
-            foreach (var target in targetsElement.EnumerateObject())
-            {
-                if (target.Value.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                foreach (var library in target.Value.EnumerateObject())
-                {
-                    if (!library.Value.TryGetProperty("runtime", out var runtimeElement) ||
-                        runtimeElement.ValueKind != JsonValueKind.Object)
-                    {
-                        continue;
-                    }
-
-                    foreach (var runtimeAsset in runtimeElement.EnumerateObject())
-                    {
-                        var assemblyName = Path.GetFileNameWithoutExtension(runtimeAsset.Name);
-                        if (string.IsNullOrWhiteSpace(assemblyName))
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            _ = Assembly.Load(new AssemblyName(assemblyName));
-                        }
-                        catch
-                        {
-                            // Best effort preload.
-                        }
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // Best effort preload.
-        }
+        PreviewHostDependencyPreloader.PreloadManagedDependencies(targetAssembly?.Location);
     }
 }
