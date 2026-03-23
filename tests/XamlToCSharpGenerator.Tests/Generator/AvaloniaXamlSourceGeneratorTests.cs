@@ -21556,6 +21556,7 @@ public class AvaloniaXamlSourceGeneratorTests
             .GetAssemblies()
             .Where(static assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))
             .Select(static assembly => assembly.Location)
+            .Where(static location => File.Exists(location))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(static location => MetadataReference.CreateFromFile(location))
             .ToArray();
