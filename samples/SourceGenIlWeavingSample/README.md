@@ -1,0 +1,26 @@
+# SourceGen IL Weaving Sample
+
+This sample intentionally keeps legacy `AvaloniaXamlLoader.Load(...)` calls in code-behind while the AXSG backend is active.
+
+It exists to verify that AXSG IL weaving rewrites:
+
+- `AvaloniaXamlLoader.Load(this)`
+- `AvaloniaXamlLoader.Load(serviceProvider, this)`
+
+The sample also enables AXSG hot reload bootstrap so integration tests can confirm that woven initialization still registers tracked documents.
+
+Disable weaving for a build with:
+
+```xml
+<PropertyGroup>
+  <XamlSourceGenIlWeavingEnabled>false</XamlSourceGenIlWeavingEnabled>
+</PropertyGroup>
+```
+
+The Avalonia-prefixed alias also works:
+
+```xml
+<PropertyGroup>
+  <AvaloniaSourceGenIlWeavingEnabled>false</AvaloniaSourceGenIlWeavingEnabled>
+</PropertyGroup>
+```

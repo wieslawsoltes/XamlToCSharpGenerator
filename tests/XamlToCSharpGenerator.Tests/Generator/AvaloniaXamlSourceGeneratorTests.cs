@@ -43,7 +43,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("__RegisterXamlSourceGenArtifacts", generated);
         Assert.Contains("__PopulateGeneratedObjectGraph", generated);
         Assert.Contains("__BuildGeneratedObjectGraph", generated);
-        Assert.Contains("__PopulateGeneratedObjectGraph(this, null);", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
         Assert.Contains("XamlResourceRegistry.Register", generated);
         Assert.Contains("XamlTemplateRegistry.Register", generated);
         Assert.Contains("AcceptButton =", generated);
@@ -654,7 +654,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("partial class MainView", generated);
-        Assert.Contains("__PopulateGeneratedObjectGraph(this, null);", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
     }
 
     [Fact]
@@ -696,7 +696,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = updatedCompilation.SyntaxTrees.Last().ToString();
         Assert.Contains("namespace Demo.Views", generated);
         Assert.Contains("partial class MainView", generated);
-        Assert.Contains("__PopulateGeneratedObjectGraph(this, null);", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
     }
 
     [Fact]
@@ -1384,7 +1384,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("internal static void __InitializeXamlSourceGenArtifacts()", generated);
         Assert.Contains("__RegisterXamlSourceGenArtifacts();", generated);
         Assert.Contains("SourceGenArtifactRegistryRuntime.ResetDocumentRegistries(", generated);
-        Assert.Contains("__TrackAndReconcileSourceGenHotReloadState(this);", generated);
+        Assert.Contains("__TrackAndReconcileSourceGenHotReloadState(__self);", generated);
         Assert.Contains("XamlSourceGenHotReloadStateTracker.Reconcile", generated);
         Assert.Contains("XamlSourceGenHotReloadManager.Register", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions", generated);
@@ -20576,7 +20576,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("\"Hello\"", generated);
         Assert.Contains("if (!__rootConstructedWithInitializer) __AXSG_UnsafeAccessor_", generated);
         Assert.Contains("private static extern void __AXSG_UnsafeAccessor_", generated);
-        Assert.Contains("__PopulateGeneratedObjectGraph(this, null);", generated);
+        Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
         Assert.Contains("__PopulateGeneratedObjectGraph(__root, null, __rootConstructedWithInitializer: true);", generated);
     }
 

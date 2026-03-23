@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:SourceGenIlWeavingSample"
+        x:Class="SourceGenIlWeavingSample.MainWindow"
+        Width="520"
+        Height="280"
+        Title="AXSG IL Weaving">
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock x:Name="StatusText"
+               FontSize="20"
+               FontWeight="SemiBold"
+               Text="Woven Loader Active" />
+    <TextBlock Text="This window keeps the legacy loader call in code-behind and relies on AXSG IL weaving."
+               TextWrapping="Wrap" />
+    <local:ServiceProviderPanel />
+  </StackPanel>
+</Window>
