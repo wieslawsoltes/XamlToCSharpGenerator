@@ -32,6 +32,7 @@ These guides are task-oriented. Start here when you know what you want to do but
 ### Runtime and hot reload workflows
 
 - [Avalonia Name Generator and InitializeComponent Modes](avalonia-name-generator-and-initializecomponent-modes/)
+- [Avalonia Loader Migration and IL Weaving](avalonia-loader-il-weaving/)
 - [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 - [iOS Hot Reload](hot-reload-ios/)
 - [Runtime Loader and Fallback](runtime-loader-and-fallback/)
@@ -48,10 +49,11 @@ These guides are task-oriented. Start here when you know what you want to do but
 
 1. [Package Selection and Integration](package-selection-and-integration/)
 2. [Avalonia Name Generator and InitializeComponent Modes](avalonia-name-generator-and-initializecomponent-modes/)
-3. [x:Bind](xbind/)
-4. [C# Expressions](csharp-expressions/)
-5. [Inline C# Code](inline-csharp-code/)
-6. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
+3. [Avalonia Loader Migration and IL Weaving](avalonia-loader-il-weaving/)
+4. [x:Bind](xbind/)
+5. [C# Expressions](csharp-expressions/)
+6. [Inline C# Code](inline-csharp-code/)
+7. [Hot Reload and Hot Design](hot-reload-and-hot-design/)
 
 ### Editor or tooling integration
 

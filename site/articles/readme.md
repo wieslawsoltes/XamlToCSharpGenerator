@@ -50,6 +50,7 @@ Start with:
 - [Compiled Bindings](xaml/compiled-bindings/)
 - [C# Expressions](xaml/csharp-expressions/)
 - [Inline C#](xaml/inline-csharp/)
+- [Avalonia Loader Migration and IL Weaving](guides/avalonia-loader-il-weaving/)
 - [VS Code](vscode/)
 - [Hot Reload and Hot Design](guides/hot-reload-and-hot-design/)
 - [VS Code and Language Service](guides/vscode-language-service/)

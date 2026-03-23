@@ -70,12 +70,16 @@ The most important Avalonia-facing switches are:
 | `EnableAvaloniaXamlCompilation` | MSBuild property | Controls Avalonia's XamlIl compilation path. AXSG build integration disables it when SourceGen is active. |
 | `AvaloniaNameGeneratorIsEnabled` | MSBuild property | Controls Avalonia's legacy name generator path. This is not the AXSG-generated `InitializeComponent` switch. |
 | `AXAML_SOURCEGEN_BACKEND` | compilation symbol | Defined when AXSG is the active backend. Use it to guard fallback `AvaloniaXamlLoader.Load(this)` code. |
+| `XamlSourceGenIlWeavingEnabled` / `AvaloniaSourceGenIlWeavingEnabled` | MSBuild property | Enables AXSG post-compile rewriting of supported `AvaloniaXamlLoader.Load(...)` call sites to generated AXSG initializer helpers. |
+| `XamlSourceGenIlWeavingStrict` / `AvaloniaSourceGenIlWeavingStrict` | MSBuild property | Fails the build when AXSG matches a supported loader call on a source-generated type but cannot find the generated initializer helper to rewrite to. |
+| `XamlSourceGenIlWeavingVerbose` / `AvaloniaSourceGenIlWeavingVerbose` | MSBuild property | Emits inspection, match, and rewrite counts for the weaving pass. |
 
 For normal AXSG app configuration, do not try to express those as JSON config-file keys. Set them in the project file instead.
 
 For a full explanation of the name-generator and `InitializeComponent` compatibility matrix, see:
 
 - [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
+- [Avalonia Loader Migration and IL Weaving](../guides/avalonia-loader-il-weaving/)
 
 ## Top-level schema
 

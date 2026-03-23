@@ -4,7 +4,7 @@ title: "Class-backed XAML and InitializeComponent Internals"
 
 # Class-backed XAML and InitializeComponent Internals
 
-This article explains how AXSG handles class-backed XAML, why it generates `InitializeComponent`, how that interacts with hand-written Avalonia code-behind, and why mixed-backend projects often keep a guarded `AvaloniaXamlLoader.Load(this)` fallback.
+This article explains how AXSG handles class-backed XAML, why it generates `InitializeComponent`, how that interacts with hand-written Avalonia code-behind, and how AXSG IL weaving changes the migration path for legacy `AvaloniaXamlLoader.Load(...)` wrappers.
 
 ## Scope
 
@@ -46,7 +46,7 @@ public MainWindow()
 
 That call is fine because the generated method has an optional parameter. With no competing hand-written overload, `InitializeComponent();` naturally binds to the generated method.
 
-## Where migrations go wrong
+## Where migrations went wrong before IL weaving
 
 Older Avalonia code-behind often contains:
 
@@ -78,7 +78,29 @@ That means:
 
 This is the key overload-resolution detail most integrations miss.
 
-## Why `AXAML_SOURCEGEN_BACKEND` exists
+## How IL weaving changes migration behavior
+
+AXSG now ships a post-compile IL weaving pass that can rewrite supported legacy loader calls on the current instance:
+
+- `AvaloniaXamlLoader.Load(this)`
+- `AvaloniaXamlLoader.Load(serviceProvider, this)`
+
+Those calls are rewritten to AXSG-generated `__InitializeXamlSourceGenComponent(...)` helper overloads on the same type.
+
+That means a source file can still contain:
+
+```csharp
+private void InitializeComponent()
+{
+    AvaloniaXamlLoader.Load(this);
+}
+```
+
+and, when AXSG IL weaving is enabled, the compiled app no longer uses Avalonia's runtime loader for that call site. It lands on AXSG's generated initialization body instead.
+
+This is a migration bridge. It does not make every possible `AvaloniaXamlLoader` call compatible, and it does not replace the cleaner end-state of removing the wrapper entirely.
+
+## Why `AXAML_SOURCEGEN_BACKEND` still exists
 
 AXSG's build integration defines the `AXAML_SOURCEGEN_BACKEND` conditional symbol when the project is using the AXSG backend. That lets a single code-behind file support both paths:
 
@@ -126,17 +148,20 @@ Keep the guarded fallback when:
 - some target frameworks use AXSG and others do not
 - downstream consumers may still compile the same code against standard Avalonia loader behavior
 
-This is the safer default for reusable libraries.
+If the repo is AXSG-only and you just want to reduce migration friction, AXSG IL weaving is usually simpler than maintaining conditional fallback blocks everywhere.
 
 ## Relationship to `AvaloniaXamlLoader`
 
-`Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this)` is not inherently wrong. It is simply the non-AXSG initialization path.
+`Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this)` is not inherently wrong. It is simply Avalonia's legacy loader entry point.
 
 The problem is not the method itself. The problem is leaving a parameterless `InitializeComponent()` wrapper around it in the same class when AXSG is active, because that steals the constructor call from the generated AXSG method.
+
+AXSG IL weaving fixes that for supported same-instance call shapes by rewriting the wrapper body after compile. If weaving is disabled or the call shape is unsupported, the old overload-resolution problem still applies.
 
 If you need the build-property and compatibility matrix behind that rule, use:
 
 - [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
+- [Avalonia Loader Migration and IL Weaving](../guides/avalonia-loader-il-weaving/)
 
 ## Relationship to `.UseAvaloniaSourceGeneratedXaml()`
 
@@ -150,13 +175,14 @@ You still want both in a normal AXSG app:
 1. generated class-backed initialization
 2. AXSG runtime bootstrap on `AppBuilder`
 
-Do not treat the generated `InitializeComponent` method as a replacement for runtime bootstrap.
+Do not treat the generated `InitializeComponent` method or the IL weaving bridge as a replacement for runtime bootstrap.
 
 ## Behavior matrix
 
 | Project shape | Hand-written fallback | Recommended state |
 | --- | --- | --- |
 | Sourcegen-only app | `private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }` | remove it |
+| Sourcegen-only app with IL weaving migration bridge | same fallback | allowed temporarily when `XamlSourceGenIlWeavingEnabled=true`; preferred end-state is still removal |
 | Mixed-backend app | same fallback | wrap it in `#if !AXAML_SOURCEGEN_BACKEND` |
 | Shared library with multiple TFMs/backends | same fallback | keep the guarded version |
 | AXSG-enabled app with no manual fallback yet | none | leave constructor as `InitializeComponent();` |
@@ -174,13 +200,15 @@ Typical signs that the fallback is still intercepting AXSG:
 1. Confirm the project sets `AvaloniaXamlCompilerBackend=SourceGen`.
 2. Confirm the app uses `.UseAvaloniaSourceGeneratedXaml()`.
 3. Inspect the code-behind file for a parameterless `InitializeComponent()`.
-4. Inspect generated output under `obj/...` and confirm AXSG emitted `InitializeComponent(bool loadXaml = true)`.
-5. If the project still needs non-AXSG support, switch the fallback to `#if !AXAML_SOURCEGEN_BACKEND`.
+4. If the file still calls `AvaloniaXamlLoader.Load(...)`, confirm `XamlSourceGenIlWeavingEnabled=true` and the call uses a supported direct same-instance shape.
+5. Inspect generated output under `obj/...` and confirm AXSG emitted `InitializeComponent(bool loadXaml = true)` and `__InitializeXamlSourceGenComponent(...)`.
+6. If the project still needs non-AXSG support, switch the fallback to `#if !AXAML_SOURCEGEN_BACKEND`.
 
 ## Related docs
 
 - [InitializeComponent and Loader Fallback](../getting-started/initializecomponent-and-loader-fallback/)
 - [Avalonia Name Generator and InitializeComponent Modes](../guides/avalonia-name-generator-and-initializecomponent-modes/)
+- [Avalonia Loader Migration and IL Weaving](../guides/avalonia-loader-il-weaving/)
 - [Installation](../getting-started/installation/)
 - [Quickstart](../getting-started/quickstart/)
 - [Package Selection and Integration](../guides/package-selection-and-integration/)
