@@ -20,11 +20,22 @@
           Pack="true"
           PackagePath="buildTransitive/Mono.Cecil.dll"
           Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\Mono.Cecil.Pdb.dll"
+          Pack="true"
+          PackagePath="buildTransitive/Mono.Cecil.Pdb.dll"
+          Visible="false" />
   </ItemGroup>
 
   <Target Name="BuildBundledBuildAssets" BeforeTargets="_GetPackageFiles;Pack">
     <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
+             Targets="Restore"
+             BuildInParallel="false"
+             RemoveProperties="TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false;GenerateDocumentationFile=false" />
+    <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
              Targets="Build"
+             BuildInParallel="false"
+             RemoveProperties="TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false" />
   </Target>
 </Project>
