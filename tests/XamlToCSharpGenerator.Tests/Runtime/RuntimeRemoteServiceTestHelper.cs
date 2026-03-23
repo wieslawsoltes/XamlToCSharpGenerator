@@ -20,5 +20,6 @@ internal static class RuntimeRemoteServiceTestHelper
         XamlSourceGenArtifactRefreshRegistry.Clear();
         XamlSourceGenTypeUriRegistry.Clear();
         XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+        GeneratedArtifactTestRestore.RestoreAllLoadedGeneratedArtifacts();
     }
 }
