@@ -34,6 +34,92 @@ internal sealed class AvaloniaLoaderCallWeaver
             throw new FileNotFoundException("Assembly to weave was not found.", configuration.AssemblyPath);
         }
 
+        var backend = DetermineBackend(configuration);
+        return backend switch
+        {
+            AvaloniaLoaderWeaverBackend.Metadata => RewriteWithMetadataPlan(configuration),
+            _ => RewriteWithLegacyCecilScan(configuration)
+        };
+    }
+
+    private static AvaloniaLoaderWeaverBackend DetermineBackend(AvaloniaLoaderCallWeaverConfiguration configuration)
+    {
+        var backend = configuration.Backend?.Trim();
+        if (string.IsNullOrWhiteSpace(backend))
+        {
+            return AvaloniaLoaderWeaverBackend.Metadata;
+        }
+
+        if (string.Equals(backend, "Metadata", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(backend, "SystemReflectionMetadata", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvaloniaLoaderWeaverBackend.Metadata;
+        }
+
+        if (string.Equals(backend, "Cecil", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(backend, "MonoCecil", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvaloniaLoaderWeaverBackend.Cecil;
+        }
+
+        throw new InvalidOperationException(
+            "Unsupported IL weaving backend '" + configuration.Backend +
+            "'. Supported values are 'Metadata' and 'Cecil'.");
+    }
+
+    private static AvaloniaLoaderCallWeaverResult RewriteWithMetadataPlan(AvaloniaLoaderCallWeaverConfiguration configuration)
+    {
+        var scanResult = new AvaloniaLoaderMetadataScanner().Scan(configuration.AssemblyPath);
+        var accumulator = new AvaloniaLoaderCallWeaverAccumulator
+        {
+            InspectedTypeCount = scanResult.InspectedTypeCount,
+            MatchedLoaderCallCount = scanResult.MatchedLoaderCallCount
+        };
+
+        if (scanResult.MethodMatches.Count == 0)
+        {
+            return accumulator.ToResult();
+        }
+
+        var symbolHandling = DetermineSymbolHandling(configuration);
+        var readerParameters = CreateReaderParameters(symbolHandling);
+
+        using var assembly = AssemblyDefinition.ReadAssembly(configuration.AssemblyPath, readerParameters);
+        var methodsByToken = EnumerateTypes(assembly.MainModule.Types)
+            .SelectMany(static type => type.Methods)
+            .ToDictionary(static method => method.MetadataToken.ToInt32());
+        var initializerCache = new Dictionary<string, AvaloniaLoaderGeneratedInitializerCacheEntry>(StringComparer.Ordinal);
+
+        foreach (var methodMatch in scanResult.MethodMatches)
+        {
+            if (!methodsByToken.TryGetValue(methodMatch.MethodMetadataToken, out var method))
+            {
+                continue;
+            }
+
+            RewriteMethodFromMetadataPlan(method, methodMatch, initializerCache, accumulator);
+        }
+
+        var result = accumulator.ToResult();
+        if (result.FatalErrorMessages.Count > 0 ||
+            (configuration.FailOnMissingGeneratedInitializer && result.MissingInitializerMessages.Count > 0) ||
+            result.RewrittenCallCount == 0)
+        {
+            return result;
+        }
+
+        var writerParameters = CreateWriterParameters(symbolHandling);
+        if (!TryConfigureStrongName(configuration, assembly, writerParameters, accumulator))
+        {
+            return accumulator.ToResult();
+        }
+
+        assembly.Write(configuration.AssemblyPath, writerParameters);
+        return accumulator.ToResult();
+    }
+
+    private static AvaloniaLoaderCallWeaverResult RewriteWithLegacyCecilScan(AvaloniaLoaderCallWeaverConfiguration configuration)
+    {
         var symbolHandling = DetermineSymbolHandling(configuration);
         var readerParameters = CreateReaderParameters(symbolHandling);
 
@@ -115,6 +201,64 @@ internal sealed class AvaloniaLoaderCallWeaver
         foreach (var nestedType in type.NestedTypes)
         {
             RewriteType(nestedType, accumulator);
+        }
+    }
+
+    private static void RewriteMethodFromMetadataPlan(
+        MethodDefinition method,
+        AvaloniaLoaderMethodMatch methodMatch,
+        Dictionary<string, AvaloniaLoaderGeneratedInitializerCacheEntry> initializerCache,
+        AvaloniaLoaderCallWeaverAccumulator accumulator)
+    {
+        var methodBody = method.Body;
+        var instructions = methodBody.Instructions;
+        var declaringType = method.DeclaringType;
+        var cacheKey = declaringType.FullName;
+        if (!initializerCache.TryGetValue(cacheKey, out var initializerCacheEntry))
+        {
+            initializerCacheEntry = new AvaloniaLoaderGeneratedInitializerCacheEntry(
+                FindGeneratedInitializer(declaringType, hasServiceProvider: false),
+                FindGeneratedInitializer(declaringType, hasServiceProvider: true),
+                declaringType.Methods.Any(static candidate => candidate.Name == SourceGeneratedPopulateMethodName));
+            initializerCache[cacheKey] = initializerCacheEntry;
+        }
+
+        foreach (var callSite in methodMatch.CallSites)
+        {
+            var instruction = instructions.FirstOrDefault(candidate => candidate.Offset == callSite.IlOffset);
+            if (instruction is null ||
+                instruction.OpCode != OpCodes.Call ||
+                instruction.Operand is not MethodReference calledMethod ||
+                !TryMatchAvaloniaLoaderCall(calledMethod, out var actualHasServiceProvider) ||
+                actualHasServiceProvider != callSite.HasServiceProvider)
+            {
+                continue;
+            }
+
+            var instructionIndex = instructions.IndexOf(instruction);
+            if (!MatchThisCall(instructions, instructionIndex - 1))
+            {
+                continue;
+            }
+
+            var replacementMethod = callSite.HasServiceProvider
+                ? initializerCacheEntry.WithServiceProvider
+                : initializerCacheEntry.WithoutServiceProvider;
+            if (replacementMethod is null)
+            {
+                if (initializerCacheEntry.HasSourceGeneratedPopulateMethod)
+                {
+                    accumulator.MissingInitializerMessages.Add(
+                        "Found '" + AvaloniaLoaderTypeName + ".Load' call in '" + method.FullName +
+                        "' but the AXSG-generated initializer overload '" + GeneratedInitializerMethodName +
+                        "' was not emitted for '" + declaringType.FullName + "'.");
+                }
+
+                continue;
+            }
+
+            instruction.Operand = replacementMethod;
+            accumulator.RewrittenCallCount++;
         }
     }
 
@@ -204,6 +348,19 @@ internal sealed class AvaloniaLoaderCallWeaver
         }
 
         return false;
+    }
+
+    private static IEnumerable<TypeDefinition> EnumerateTypes(IEnumerable<TypeDefinition> rootTypes)
+    {
+        foreach (var rootType in rootTypes)
+        {
+            yield return rootType;
+
+            foreach (var nestedType in EnumerateTypes(rootType.NestedTypes))
+            {
+                yield return nestedType;
+            }
+        }
     }
 
     private sealed class AvaloniaLoaderCallWeaverAccumulator
@@ -345,6 +502,11 @@ internal sealed class AvaloniaLoaderCallWeaver
 
         return Path.GetFullPath(keyFilePath);
     }
+
+    private sealed record AvaloniaLoaderGeneratedInitializerCacheEntry(
+        MethodDefinition? WithoutServiceProvider,
+        MethodDefinition? WithServiceProvider,
+        bool HasSourceGeneratedPopulateMethod);
 }
 
 internal sealed record AvaloniaLoaderCallWeaverResult(
@@ -361,11 +523,18 @@ internal sealed record AvaloniaLoaderCallWeaverConfiguration(
     string? DebugType,
     string? AssemblyOriginatorKeyFile,
     string? KeyContainerName,
-    string? ProjectDirectory);
+    string? ProjectDirectory,
+    string? Backend);
 
 internal enum AvaloniaLoaderSymbolHandling
 {
     None,
     SidecarPdb,
     EmbeddedPortablePdb
+}
+
+internal enum AvaloniaLoaderWeaverBackend
+{
+    Metadata,
+    Cecil
 }

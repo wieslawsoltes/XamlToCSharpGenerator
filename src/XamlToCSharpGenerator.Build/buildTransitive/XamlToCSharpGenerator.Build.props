@@ -29,9 +29,12 @@
     <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == ''">true</XamlSourceGenIlWeavingStrict>
     <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == '' and '$(AvaloniaSourceGenIlWeavingVerbose)' != ''">$(AvaloniaSourceGenIlWeavingVerbose)</XamlSourceGenIlWeavingVerbose>
     <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == ''">false</XamlSourceGenIlWeavingVerbose>
+    <XamlSourceGenIlWeavingBackend Condition="'$(XamlSourceGenIlWeavingBackend)' == '' and '$(AvaloniaSourceGenIlWeavingBackend)' != ''">$(AvaloniaSourceGenIlWeavingBackend)</XamlSourceGenIlWeavingBackend>
+    <XamlSourceGenIlWeavingBackend Condition="'$(XamlSourceGenIlWeavingBackend)' == ''">Metadata</XamlSourceGenIlWeavingBackend>
     <AvaloniaSourceGenIlWeavingEnabled Condition="'$(AvaloniaSourceGenIlWeavingEnabled)' == ''">$(XamlSourceGenIlWeavingEnabled)</AvaloniaSourceGenIlWeavingEnabled>
     <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
     <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
+    <AvaloniaSourceGenIlWeavingBackend Condition="'$(AvaloniaSourceGenIlWeavingBackend)' == ''">$(XamlSourceGenIlWeavingBackend)</AvaloniaSourceGenIlWeavingBackend>
     <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenHotDesignEnabled Condition="'$(AvaloniaSourceGenHotDesignEnabled)' == ''">false</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
@@ -86,9 +89,11 @@
     <CompilerVisibleProperty Include="XamlSourceGenIlWeavingEnabled" />
     <CompilerVisibleProperty Include="XamlSourceGenIlWeavingStrict" />
     <CompilerVisibleProperty Include="XamlSourceGenIlWeavingVerbose" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingStrict" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingVerbose" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />

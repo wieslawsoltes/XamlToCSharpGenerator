@@ -24,6 +24,26 @@
           Pack="true"
           PackagePath="buildTransitive/Mono.Cecil.Pdb.dll"
           Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Buffers.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Buffers.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Collections.Immutable.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Collections.Immutable.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Memory.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Memory.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Reflection.Metadata.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Reflection.Metadata.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Runtime.CompilerServices.Unsafe.dll"
+          Visible="false" />
   </ItemGroup>
 
   <Target Name="BuildBundledBuildAssets" BeforeTargets="_GetPackageFiles;Pack">

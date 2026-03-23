@@ -38,6 +38,48 @@ public class SourceGenIlWeavingSampleBuildTests
     }
 
     [Fact]
+    public void Sample_Build_Can_Use_Legacy_Cecil_Backend()
+    {
+        var artifact = SourceGenIlWeavingSampleBuildHarness.BuildWithProperties(
+            "sourcegen-il-weaving-cecil-backend",
+            ("XamlSourceGenIlWeavingBackend", "Cecil"));
+
+        try
+        {
+            using var assembly = AssemblyDefinition.ReadAssembly(artifact.AssemblyPath);
+
+            AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+                assembly,
+                "SourceGenIlWeavingSample.App",
+                "Initialize",
+                explicitParameterCount: 0,
+                expectedInitializerParameterTypes: ["SourceGenIlWeavingSample.App"]);
+            AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+                assembly,
+                "SourceGenIlWeavingSample.MainWindow",
+                ".ctor",
+                explicitParameterCount: 0,
+                expectedInitializerParameterTypes: ["SourceGenIlWeavingSample.MainWindow"]);
+            AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+                assembly,
+                "SourceGenIlWeavingSample.ServiceProviderPanel",
+                ".ctor",
+                explicitParameterCount: 1,
+                expectedInitializerParameterTypes:
+                [
+                    "System.IServiceProvider",
+                    "SourceGenIlWeavingSample.ServiceProviderPanel"
+                ]);
+
+            AvaloniaLoaderCallAssertions.AssertNoAvaloniaLoaderCallsRemain(assembly, "SourceGenIlWeavingSample");
+        }
+        finally
+        {
+            BuildTestWorkspacePaths.TryDeleteDirectory(artifact.WorkspaceDirectory);
+        }
+    }
+
+    [Fact]
     public void Sample_Build_Can_Disable_Il_Weaving_Via_MsBuild_Flag()
     {
         var artifact = SourceGenIlWeavingSampleBuildHarness.BuildWithProperties(

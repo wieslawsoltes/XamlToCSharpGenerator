@@ -21,6 +21,8 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
 
     public string ProjectDirectory { get; set; } = string.Empty;
 
+    public string Backend { get; set; } = string.Empty;
+
     public bool Verbose { get; set; }
 
     public override bool Execute()
@@ -36,7 +38,8 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
                     DebugType,
                     AssemblyOriginatorKeyFile,
                     KeyContainerName,
-                    ProjectDirectory));
+                    ProjectDirectory,
+                    Backend));
 
             foreach (var errorMessage in result.FatalErrorMessages)
             {

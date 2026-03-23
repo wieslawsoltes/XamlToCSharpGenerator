@@ -53,6 +53,11 @@ public class PackageIntegrationTests
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/Mono.Cecil.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/Mono.Cecil.Pdb.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/System.Buffers.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/System.Collections.Immutable.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/System.Memory.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/System.Reflection.Metadata.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/System.Runtime.CompilerServices.Unsafe.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Generator.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Core.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Compiler.dll");
@@ -151,6 +156,41 @@ public class PackageIntegrationTests
     public void TopLevel_Package_Consumer_Build_Rewrites_Avalonia_Loader_Calls()
     {
         using var artifact = BuildTopLevelPackageConsumer("package-il-weaving-consumer");
+        using var assembly = AssemblyDefinition.ReadAssembly(artifact.AssemblyPath);
+
+        AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+            assembly,
+            "PackageIlWeavingConsumer.App",
+            "Initialize",
+            explicitParameterCount: 0,
+            expectedInitializerParameterTypes: ["PackageIlWeavingConsumer.App"]);
+        AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+            assembly,
+            "PackageIlWeavingConsumer.MainWindow",
+            ".ctor",
+            explicitParameterCount: 0,
+            expectedInitializerParameterTypes: ["PackageIlWeavingConsumer.MainWindow"]);
+        AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+            assembly,
+            "PackageIlWeavingConsumer.ServiceProviderPanel",
+            ".ctor",
+            explicitParameterCount: 1,
+            expectedInitializerParameterTypes:
+            [
+                "System.IServiceProvider",
+                "PackageIlWeavingConsumer.ServiceProviderPanel"
+            ]);
+
+        AvaloniaLoaderCallAssertions.AssertNoAvaloniaLoaderCallsRemain(assembly, "PackageIlWeavingConsumer");
+        Assert.Contains("[AXSG.Build] IL weaving inspected", artifact.BuildOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TopLevel_Package_Consumer_Build_Can_Use_Legacy_Cecil_Backend()
+    {
+        using var artifact = BuildTopLevelPackageConsumer(
+            "package-il-weaving-consumer-cecil-backend",
+            ("XamlSourceGenIlWeavingBackend", "Cecil"));
         using var assembly = AssemblyDefinition.ReadAssembly(artifact.AssemblyPath);
 
         AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(

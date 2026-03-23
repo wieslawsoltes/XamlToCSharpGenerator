@@ -9,8 +9,10 @@ namespace XamlToCSharpGenerator.Tests.Build;
 [Collection("BuildSerial")]
 public class AvaloniaLoaderCallWeaverTests
 {
-    [Fact]
-    public void NonStrict_Mode_Preserves_Successful_Rewrites_When_One_Helper_Is_Missing()
+    [Theory]
+    [InlineData("Metadata")]
+    [InlineData("Cecil")]
+    public void NonStrict_Mode_Preserves_Successful_Rewrites_When_One_Helper_Is_Missing(string backend)
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var workspaceDirectory = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "il-weaver-best-effort");
@@ -32,7 +34,8 @@ public class AvaloniaLoaderCallWeaverTests
                     DebugType: null,
                     AssemblyOriginatorKeyFile: null,
                     KeyContainerName: null,
-                    ProjectDirectory: workspaceDirectory));
+                    ProjectDirectory: workspaceDirectory,
+                    Backend: backend));
 
             Assert.Empty(result.FatalErrorMessages);
             Assert.Single(result.MissingInitializerMessages);
