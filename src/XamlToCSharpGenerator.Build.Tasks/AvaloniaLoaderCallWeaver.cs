@@ -82,7 +82,7 @@ internal sealed class AvaloniaLoaderCallWeaver
         }
 
         var symbolHandling = DetermineSymbolHandling(configuration);
-        var readerParameters = CreateReaderParameters(symbolHandling);
+        var readerParameters = CreateReaderParameters(configuration, symbolHandling);
 
         using var assembly = AssemblyDefinition.ReadAssembly(configuration.AssemblyPath, readerParameters);
         var methodsByToken = EnumerateTypes(assembly.MainModule.Types)
@@ -121,7 +121,7 @@ internal sealed class AvaloniaLoaderCallWeaver
     private static AvaloniaLoaderCallWeaverResult RewriteWithLegacyCecilScan(AvaloniaLoaderCallWeaverConfiguration configuration)
     {
         var symbolHandling = DetermineSymbolHandling(configuration);
-        var readerParameters = CreateReaderParameters(symbolHandling);
+        var readerParameters = CreateReaderParameters(configuration, symbolHandling);
 
         using var assembly = AssemblyDefinition.ReadAssembly(configuration.AssemblyPath, readerParameters);
         var accumulator = new AvaloniaLoaderCallWeaverAccumulator();
@@ -386,13 +386,16 @@ internal sealed class AvaloniaLoaderCallWeaver
         }
     }
 
-    private static ReaderParameters CreateReaderParameters(AvaloniaLoaderSymbolHandling symbolHandling)
+    private static ReaderParameters CreateReaderParameters(
+        AvaloniaLoaderCallWeaverConfiguration configuration,
+        AvaloniaLoaderSymbolHandling symbolHandling)
     {
         return new ReaderParameters
         {
             InMemory = true,
             ReadSymbols = symbolHandling != AvaloniaLoaderSymbolHandling.None,
-            SymbolReaderProvider = CreateSymbolReaderProvider(symbolHandling)
+            SymbolReaderProvider = CreateSymbolReaderProvider(symbolHandling),
+            AssemblyResolver = CreateAssemblyResolver(configuration)
         };
     }
 
@@ -423,6 +426,51 @@ internal sealed class AvaloniaLoaderCallWeaver
             AvaloniaLoaderSymbolHandling.SidecarPdb => new PdbWriterProvider(),
             _ => null
         };
+    }
+
+    private static IAssemblyResolver CreateAssemblyResolver(AvaloniaLoaderCallWeaverConfiguration configuration)
+    {
+        var resolver = new DefaultAssemblyResolver();
+        var searchDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        AddSearchDirectory(searchDirectories, Path.GetDirectoryName(configuration.AssemblyPath));
+        AddSearchDirectory(searchDirectories, configuration.ProjectDirectory);
+
+        if (configuration.ReferencePaths is not null)
+        {
+            foreach (var referencePath in configuration.ReferencePaths)
+            {
+                if (string.IsNullOrWhiteSpace(referencePath))
+                {
+                    continue;
+                }
+
+                if (Directory.Exists(referencePath))
+                {
+                    AddSearchDirectory(searchDirectories, referencePath);
+                    continue;
+                }
+
+                AddSearchDirectory(searchDirectories, Path.GetDirectoryName(referencePath));
+            }
+        }
+
+        foreach (var searchDirectory in searchDirectories)
+        {
+            resolver.AddSearchDirectory(searchDirectory);
+        }
+
+        return resolver;
+    }
+
+    private static void AddSearchDirectory(HashSet<string> searchDirectories, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        {
+            return;
+        }
+
+        searchDirectories.Add(Path.GetFullPath(path));
     }
 
     private static AvaloniaLoaderSymbolHandling DetermineSymbolHandling(AvaloniaLoaderCallWeaverConfiguration configuration)
@@ -531,6 +579,7 @@ internal sealed record AvaloniaLoaderCallWeaverConfiguration(
     bool PublicSign,
     bool DelaySign,
     string? ProjectDirectory,
+    IReadOnlyList<string>? ReferencePaths,
     string? Backend);
 
 internal enum AvaloniaLoaderSymbolHandling

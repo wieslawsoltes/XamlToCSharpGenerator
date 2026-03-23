@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Mono.Cecil;
 using XamlToCSharpGenerator.Build.Tasks;
 
@@ -37,6 +40,7 @@ public class AvaloniaLoaderCallWeaverTests
                     PublicSign: false,
                     DelaySign: false,
                     ProjectDirectory: workspaceDirectory,
+                    ReferencePaths: null,
                     Backend: backend));
 
             Assert.Empty(result.FatalErrorMessages);
@@ -67,6 +71,121 @@ public class AvaloniaLoaderCallWeaverTests
                     "System.IServiceProvider",
                     "SourceGenIlWeavingSample.ServiceProviderPanel"
                 ]);
+        }
+        finally
+        {
+            BuildTestWorkspacePaths.TryDeleteDirectory(workspaceDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("Metadata")]
+    [InlineData("Cecil")]
+    public void Rewrite_Resolves_External_References_From_MsBuild_Reference_Paths(string backend)
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var workspaceDirectory = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "il-weaver-resolver");
+
+        try
+        {
+            var sourceDirectory = Path.Combine(workspaceDirectory, "source");
+            var referenceDirectory = Path.Combine(workspaceDirectory, "references");
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(referenceDirectory);
+
+            var dependencyAssemblyPath = Path.Combine(referenceDirectory, "ExternalDependency.dll");
+            var loaderAssemblyPath = Path.Combine(referenceDirectory, "Avalonia.Markup.Xaml.dll");
+            var targetAssemblyPath = Path.Combine(sourceDirectory, "SampleApp.dll");
+
+            EmitAssemblyToFile(
+                dependencyAssemblyPath,
+                """
+                namespace ExternalDependency;
+
+                public enum ExternalKind
+                {
+                    None = 0,
+                    Primary = 1
+                }
+                """);
+            EmitAssemblyToFile(
+                loaderAssemblyPath,
+                """
+                using System;
+
+                namespace Avalonia.Markup.Xaml;
+
+                public static class AvaloniaXamlLoader
+                {
+                    public static void Load(object target)
+                    {
+                    }
+
+                    public static void Load(IServiceProvider services, object target)
+                    {
+                    }
+                }
+                """);
+            EmitAssemblyToFile(
+                targetAssemblyPath,
+                """
+                using Avalonia.Markup.Xaml;
+                using ExternalDependency;
+
+                namespace SampleApp;
+
+                public partial class SampleView
+                {
+                    public SampleView()
+                    {
+                        AvaloniaXamlLoader.Load(this);
+                    }
+
+                    public void Configure(ExternalKind kind = ExternalKind.Primary)
+                    {
+                    }
+
+                    private static void __InitializeXamlSourceGenComponent(SampleView self)
+                    {
+                    }
+                }
+                """,
+                [
+                    MetadataReference.CreateFromFile(loaderAssemblyPath),
+                    MetadataReference.CreateFromFile(dependencyAssemblyPath)
+                ]);
+
+            var weaver = new AvaloniaLoaderCallWeaver();
+            var result = weaver.Rewrite(
+                new AvaloniaLoaderCallWeaverConfiguration(
+                    targetAssemblyPath,
+                    FailOnMissingGeneratedInitializer: true,
+                    DebugSymbols: false,
+                    DebugType: null,
+                    AssemblyOriginatorKeyFile: null,
+                    KeyContainerName: null,
+                    PublicSign: false,
+                    DelaySign: false,
+                    ProjectDirectory: workspaceDirectory,
+                    ReferencePaths:
+                    [
+                        loaderAssemblyPath,
+                        dependencyAssemblyPath
+                    ],
+                    Backend: backend));
+
+            Assert.Empty(result.FatalErrorMessages);
+            Assert.Empty(result.MissingInitializerMessages);
+            Assert.Equal(1, result.RewrittenCallCount);
+
+            using var assembly = AssemblyDefinition.ReadAssembly(targetAssemblyPath);
+
+            AvaloniaLoaderCallAssertions.AssertMethodCallsGeneratedInitializer(
+                assembly,
+                "SampleApp.SampleView",
+                ".ctor",
+                explicitParameterCount: 0,
+                expectedInitializerParameterTypes: ["SampleApp.SampleView"]);
         }
         finally
         {
@@ -144,5 +263,36 @@ public class AvaloniaLoaderCallWeaverTests
 
         method.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));
         return method;
+    }
+
+    private static void EmitAssemblyToFile(
+        string outputPath,
+        string source,
+        IReadOnlyList<MetadataReference>? additionalReferences = null)
+    {
+        string assemblyName = Path.GetFileNameWithoutExtension(outputPath);
+        var syntaxTree = CSharpSyntaxTree.ParseText(source, path: assemblyName + ".cs");
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IServiceProvider).Assembly.Location)
+        };
+
+        if (additionalReferences is not null)
+        {
+            references.AddRange(additionalReferences);
+        }
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var emitResult = compilation.Emit(outputPath);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit test assembly '" + assemblyName + "': " +
+            string.Join(Environment.NewLine, emitResult.Diagnostics));
     }
 }

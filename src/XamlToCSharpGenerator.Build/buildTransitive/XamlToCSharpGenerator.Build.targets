@@ -444,6 +444,7 @@
                                     PublicSign="$(PublicSign)"
                                     DelaySign="$(DelaySign)"
                                     ProjectDirectory="$(MSBuildProjectDirectory)"
+                                    ReferencePaths="@(ReferencePath);@(ReferenceCopyLocalPaths)"
                                     Backend="$(XamlSourceGenIlWeavingBackend)"
                                     Verbose="$(XamlSourceGenIlWeavingVerbose)" />
   </Target>

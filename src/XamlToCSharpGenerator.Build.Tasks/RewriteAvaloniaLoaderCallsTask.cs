@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
@@ -25,6 +26,8 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
 
     public string ProjectDirectory { get; set; } = string.Empty;
 
+    public ITaskItem[]? ReferencePaths { get; set; }
+
     public string Backend { get; set; } = string.Empty;
 
     public bool Verbose { get; set; }
@@ -45,6 +48,7 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
                     PublicSign,
                     DelaySign,
                     ProjectDirectory,
+                    ReferencePaths?.Select(static item => item.ItemSpec).ToArray(),
                     Backend));
 
             foreach (var errorMessage in result.FatalErrorMessages)
