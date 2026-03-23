@@ -47,7 +47,7 @@ The unified model layers on top of this compatibility surface.
 | `AvaloniaSourceGenMetricsEnabled` | `emitter.metricsEnabled` |
 | `AvaloniaSourceGenMetricsDetailed` | `emitter.metricsDetailed` |
 
-`AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled`, `AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled`, `XamlSourceGenIlWeavingEnabled`, `XamlSourceGenIlWeavingStrict`, `XamlSourceGenIlWeavingVerbose`, and their `AvaloniaSourceGenIlWeaving*` aliases remain MSBuild-only build/watch integration switches. They intentionally do not map to unified configuration-file keys because they control build host behavior rather than compiler configuration-file semantics.
+`AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled`, `AvaloniaSourceGenIosDotNetWatchXamlBuildTriggersEnabled`, `XamlSourceGenIlWeavingEnabled`, `XamlSourceGenIlWeavingStrict`, `XamlSourceGenIlWeavingVerbose`, `XamlSourceGenIlWeavingBackend`, and their `AvaloniaSourceGenIlWeaving*` aliases remain MSBuild-only build/watch integration switches. They intentionally do not map to unified configuration-file keys because they control build host behavior rather than compiler configuration-file semantics.
 
 ## Transform-rule migration
 

@@ -330,6 +330,8 @@ These switches control AXSG's build-time compatibility pass that rewrites suppor
 | `AvaloniaSourceGenIlWeavingStrict` | mirrors `XamlSourceGenIlWeavingStrict` | Compatibility alias. |
 | `XamlSourceGenIlWeavingVerbose` | `false` | Logs inspection, match, and rewrite counts for the IL-weaving pass. |
 | `AvaloniaSourceGenIlWeavingVerbose` | mirrors `XamlSourceGenIlWeavingVerbose` | Compatibility alias. |
+| `XamlSourceGenIlWeavingBackend` | `Metadata` | Selects the weave scan backend. `Metadata` uses `System.Reflection.Metadata` for the fast scan path. `Cecil` keeps the legacy all-Cecil scan path. |
+| `AvaloniaSourceGenIlWeavingBackend` | mirrors `XamlSourceGenIlWeavingBackend` | Compatibility alias. |
 
 These are MSBuild-only build integration properties. They do not map to `xaml-sourcegen.config.json`. Use them when migrating legacy `App.axaml.cs` and class-backed view code that still calls `AvaloniaXamlLoader.Load(this)` or `AvaloniaXamlLoader.Load(serviceProvider, this)`.
 

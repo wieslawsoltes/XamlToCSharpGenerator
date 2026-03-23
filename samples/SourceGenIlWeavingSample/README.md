@@ -26,3 +26,13 @@ The Avalonia-prefixed alias also works:
   <AvaloniaSourceGenIlWeavingEnabled>false</AvaloniaSourceGenIlWeavingEnabled>
 </PropertyGroup>
 ```
+
+Select the scan backend explicitly with:
+
+```xml
+<PropertyGroup>
+  <XamlSourceGenIlWeavingBackend>Metadata</XamlSourceGenIlWeavingBackend>
+</PropertyGroup>
+```
+
+Use `Metadata` for the default `System.Reflection.Metadata` scan path or `Cecil` to force the legacy Mono.Cecil scan path.

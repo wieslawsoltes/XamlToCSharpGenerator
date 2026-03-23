@@ -73,6 +73,7 @@ The most important Avalonia-facing switches are:
 | `XamlSourceGenIlWeavingEnabled` / `AvaloniaSourceGenIlWeavingEnabled` | MSBuild property | Enables AXSG post-compile rewriting of supported `AvaloniaXamlLoader.Load(...)` call sites to generated AXSG initializer helpers. |
 | `XamlSourceGenIlWeavingStrict` / `AvaloniaSourceGenIlWeavingStrict` | MSBuild property | Fails the build when AXSG matches a supported loader call on a source-generated type but cannot find the generated initializer helper to rewrite to. |
 | `XamlSourceGenIlWeavingVerbose` / `AvaloniaSourceGenIlWeavingVerbose` | MSBuild property | Emits inspection, match, and rewrite counts for the weaving pass. |
+| `XamlSourceGenIlWeavingBackend` / `AvaloniaSourceGenIlWeavingBackend` | MSBuild property | Selects the IL-weaving scan backend. `Metadata` uses `System.Reflection.Metadata` and `Cecil` keeps the legacy Mono.Cecil scan path. |
 
 For normal AXSG app configuration, do not try to express those as JSON config-file keys. Set them in the project file instead.
 

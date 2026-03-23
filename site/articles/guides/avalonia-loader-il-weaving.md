@@ -141,6 +141,8 @@ These switches are MSBuild-only build-integration properties. They do not map to
 | `AvaloniaSourceGenIlWeavingStrict` | mirrors `XamlSourceGenIlWeavingStrict` | Compatibility alias. |
 | `XamlSourceGenIlWeavingVerbose` | `false` | Prints inspection, match, and rewrite counts for the pass. |
 | `AvaloniaSourceGenIlWeavingVerbose` | mirrors `XamlSourceGenIlWeavingVerbose` | Compatibility alias. |
+| `XamlSourceGenIlWeavingBackend` | `Metadata` | Selects the scan backend for the weaving pass. `Metadata` uses `System.Reflection.Metadata`; `Cecil` keeps the legacy Mono.Cecil scan path. |
+| `AvaloniaSourceGenIlWeavingBackend` | mirrors `XamlSourceGenIlWeavingBackend` | Compatibility alias. |
 
 Example:
 
@@ -149,6 +151,7 @@ Example:
   <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
   <XamlSourceGenIlWeavingEnabled>true</XamlSourceGenIlWeavingEnabled>
   <XamlSourceGenIlWeavingVerbose>true</XamlSourceGenIlWeavingVerbose>
+  <XamlSourceGenIlWeavingBackend>Metadata</XamlSourceGenIlWeavingBackend>
 </PropertyGroup>
 ```
 
