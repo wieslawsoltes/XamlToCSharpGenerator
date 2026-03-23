@@ -506,6 +506,102 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [Fact]
+    public void PreviewHostDependencyPreloader_Does_Not_Load_Source_Assembly_From_Its_Own_Deps_File()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+
+        try
+        {
+            var sourceAssemblyName = "AxsgPreviewRoot_" + Guid.NewGuid().ToString("N");
+            var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
+            var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+            var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
+            var depsJsonPath = Path.ChangeExtension(sourceAssemblyPath, ".deps.json")
+                ?? throw new InvalidOperationException("Failed to create deps.json path.");
+
+            EmitAssemblyToFile(
+                sourceAssemblyName,
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                namespace PreviewDependency;
+
+                public sealed class PreviewService
+                {
+                }
+                """,
+                dependencyAssemblyPath);
+
+            File.WriteAllText(
+                depsJsonPath,
+                $$"""
+                {
+                  "targets": {
+                    ".NETCoreApp,Version=v8.0": {
+                      "{{sourceAssemblyName}}/1.0.0": {
+                        "runtime": {
+                          "{{sourceAssemblyName}}.dll": {},
+                          "{{dependencyAssemblyName}}.dll": {}
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
+
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                sourceAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null,
+                null));
+            PreviewHostAssemblyResolution.Configure(PreviewHostRuntimeState.Current);
+
+            Assert.DoesNotContain(
+                AppDomain.CurrentDomain.GetAssemblies(),
+                assembly => string.Equals(
+                    assembly.GetName().Name,
+                    sourceAssemblyName,
+                    StringComparison.Ordinal));
+
+            PreviewHostDependencyPreloader.PreloadManagedDependencies(sourceAssemblyPath);
+
+            Assert.DoesNotContain(
+                AppDomain.CurrentDomain.GetAssemblies(),
+                assembly => string.Equals(
+                    assembly.GetName().Name,
+                    sourceAssemblyName,
+                    StringComparison.Ordinal));
+            Assert.Contains(
+                AppDomain.CurrentDomain.GetAssemblies(),
+                assembly => string.Equals(
+                    assembly.GetName().Name,
+                    dependencyAssemblyName,
+                    StringComparison.Ordinal));
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            PreviewHostAssemblyResolution.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ResolvePreviewLocalAssembly_Throws_Clear_Error_When_Source_Assembly_Is_Invalid()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

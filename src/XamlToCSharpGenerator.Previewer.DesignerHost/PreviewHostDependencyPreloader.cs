@@ -18,6 +18,12 @@ internal static class PreviewHostDependencyPreloader
             return;
         }
 
+        string rootAssemblySimpleName = Path.GetFileNameWithoutExtension(normalizedAssemblyPath);
+        if (string.IsNullOrWhiteSpace(rootAssemblySimpleName))
+        {
+            return;
+        }
+
         string depsJsonFile = Path.ChangeExtension(normalizedAssemblyPath, ".deps.json")
             ?? string.Empty;
         if (!File.Exists(depsJsonFile))
@@ -65,7 +71,8 @@ internal static class PreviewHostDependencyPreloader
                     foreach (JsonProperty runtimeAsset in runtimeElement.EnumerateObject())
                     {
                         string assemblyName = Path.GetFileNameWithoutExtension(runtimeAsset.Name);
-                        if (string.IsNullOrWhiteSpace(assemblyName))
+                        if (string.IsNullOrWhiteSpace(assemblyName) ||
+                            string.Equals(assemblyName, rootAssemblySimpleName, StringComparison.OrdinalIgnoreCase))
                         {
                             continue;
                         }
