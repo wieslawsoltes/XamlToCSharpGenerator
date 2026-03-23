@@ -10,6 +10,16 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
 
     public bool FailOnMissingGeneratedInitializer { get; set; } = true;
 
+    public bool DebugSymbols { get; set; } = true;
+
+    public string DebugType { get; set; } = string.Empty;
+
+    public string AssemblyOriginatorKeyFile { get; set; } = string.Empty;
+
+    public string KeyContainerName { get; set; } = string.Empty;
+
+    public string ProjectDirectory { get; set; } = string.Empty;
+
     public bool Verbose { get; set; }
 
     public override bool Execute()
@@ -17,9 +27,22 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
         try
         {
             var weaver = new AvaloniaLoaderCallWeaver();
-            var result = weaver.Rewrite(AssemblyPath);
+            var result = weaver.Rewrite(
+                new AvaloniaLoaderCallWeaverConfiguration(
+                    AssemblyPath,
+                    FailOnMissingGeneratedInitializer,
+                    DebugSymbols,
+                    DebugType,
+                    AssemblyOriginatorKeyFile,
+                    KeyContainerName,
+                    ProjectDirectory));
 
-            foreach (var errorMessage in result.ErrorMessages)
+            foreach (var errorMessage in result.FatalErrorMessages)
+            {
+                Log.LogError(errorMessage);
+            }
+
+            foreach (var errorMessage in result.MissingInitializerMessages)
             {
                 if (FailOnMissingGeneratedInitializer)
                 {

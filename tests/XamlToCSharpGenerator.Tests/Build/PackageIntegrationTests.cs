@@ -7,12 +7,17 @@ using System.Linq;
 using System.Text;
 using System.Xml.Linq;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 
 namespace XamlToCSharpGenerator.Tests.Build;
 
 [Collection("BuildSerial")]
 public class PackageIntegrationTests
 {
+    private const string TestSigningKeyFileName = "test-key.snk";
+    private const string TestSigningKeyBase64 =
+        "BwIAAAAkAABSU0EyAAQAAAEAAQDDBWf/5tzwNqatta2E9Dfl8C75JPFNQezAR6zcMrvWkeWhVuGQa9p4EBILIBwRqNIND9uNW/0rJcYca5JsaleC8KDyah3dYs2ZugMogQrVXuk2Mu3WrLcbBLRKCWKXsC/nPWSkd03l8J5JLNLqvPhXgMoOs6PZ9RbLatuOeccvlIu+u3LPAQ82hBv02SCffSKFEXuHcRqQeeawvXLucoqNXCPJj7luSvp2S1wfMgfNmX0wzJuUNCH3xjW/aCNLCJapNIZm/30TNe9pk+UGtNxlO8INlaX6sMRbA/6OyhyaeMxMdHPNK5nModzFZhEwkUMD8bqj+ctI5PHgkd/sv9n8b/dvFvH3MzfNf68nNZ3OGXpSKLgCTXAq5Y8k1tI7+i+5exXR6Y47FjCN4cRsZRqFO0gFpO44jJIg3Heon0ScZzlgk29YnxO4bh/zWZAZJ866QrkxSgN/In6PwxtlVY0D/tMKAsN2qtN5rIpecsNjGwnzumn7uhlpqORiTbOSnCzoLlOqUYzEYh+ykDAM/Vxi8Gf7zdaHG+U5+IBgmjdO0Rj9V3t3ro0tMhyHqQUdnCjLeLnYrWZqlU+h6koLYd+AEbBUjVZ26JlQBgd+0jyVUhB6lrz3oj+FQ+eyB7Kn+DgfkkDRjOuypJIK0tqPLVWWezoFtilaaNOhoGbsm+KgnG1wtRSKWDkWO0mgY69+6uFBr2a/oaWVYWM/gxr1cKRHVFlnGkpCmXO2s0CxqgnWKf3dv5ghJ2iOd5o4Mq2ACW4=";
+
     [Fact]
     public void TopLevel_Package_Packs_And_Contains_Expected_Assets()
     {
@@ -47,6 +52,7 @@ public class PackageIntegrationTests
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/XamlToCSharpGenerator.targets");
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/Mono.Cecil.dll");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "buildTransitive/Mono.Cecil.Pdb.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Generator.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Core.dll");
             Assert.Contains(archive.Entries, entry => entry.FullName == "analyzers/dotnet/cs/XamlToCSharpGenerator.Compiler.dll");
@@ -208,6 +214,65 @@ public class PackageIntegrationTests
         Assert.DoesNotContain("[AXSG.Build] IL weaving inspected", artifact.BuildOutput, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void TopLevel_Package_Consumer_Build_Rewrites_Signed_Assemblies()
+    {
+        using var artifact = BuildTopLevelPackageConsumer(
+            "package-il-weaving-consumer-signed",
+            ("SignAssembly", "true"),
+            ("AssemblyOriginatorKeyFile", TestSigningKeyFileName));
+        using var assembly = AssemblyDefinition.ReadAssembly(artifact.AssemblyPath);
+
+        AvaloniaLoaderCallAssertions.AssertNoAvaloniaLoaderCallsRemain(assembly, "PackageIlWeavingConsumer");
+        Assert.True(assembly.Name.HasPublicKey);
+        Assert.NotEmpty(assembly.Name.PublicKey);
+        AssertStrongNameVerifies(artifact.AssemblyPath);
+    }
+
+    [Fact]
+    public void TopLevel_Package_Consumer_Build_Rewrites_PublicSigned_Assemblies()
+    {
+        using var artifact = BuildTopLevelPackageConsumer(
+            "package-il-weaving-consumer-public-signed",
+            ("SignAssembly", "true"),
+            ("PublicSign", "true"),
+            ("AssemblyOriginatorKeyFile", TestSigningKeyFileName));
+        using var assembly = AssemblyDefinition.ReadAssembly(artifact.AssemblyPath);
+
+        AvaloniaLoaderCallAssertions.AssertNoAvaloniaLoaderCallsRemain(assembly, "PackageIlWeavingConsumer");
+        Assert.True(assembly.Name.HasPublicKey);
+        Assert.NotEmpty(assembly.Name.PublicKey);
+    }
+
+    [Fact]
+    public void TopLevel_Package_Consumer_Build_Preserves_Embedded_Pdb_Symbols()
+    {
+        using var artifact = BuildTopLevelPackageConsumer(
+            "package-il-weaving-consumer-embedded-pdb",
+            ("DebugType", "embedded"),
+            ("DebugSymbols", "true"));
+
+        var pdbPath = Path.ChangeExtension(artifact.AssemblyPath, ".pdb");
+        Assert.False(File.Exists(pdbPath), artifact.BuildOutput);
+
+        using var assembly = AssemblyDefinition.ReadAssembly(
+            artifact.AssemblyPath,
+            new ReaderParameters
+            {
+                ReadSymbols = true,
+                SymbolReaderProvider = new EmbeddedPortablePdbReaderProvider()
+            });
+
+        AvaloniaLoaderCallAssertions.AssertNoAvaloniaLoaderCallsRemain(assembly, "PackageIlWeavingConsumer");
+
+        var mainWindowConstructor = assembly.MainModule.Types
+            .Single(type => string.Equals(type.FullName, "PackageIlWeavingConsumer.MainWindow", StringComparison.Ordinal))
+            .Methods
+            .Single(method => string.Equals(method.Name, ".ctor", StringComparison.Ordinal));
+
+        Assert.True(mainWindowConstructor.DebugInformation.HasSequencePoints);
+    }
+
     private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
     {
         var startInfo = new ProcessStartInfo
@@ -300,6 +365,8 @@ public class PackageIntegrationTests
         var nuGetConfigPath = Path.Combine(consumerDirectory, "NuGet.Config");
         var propertyOverrides = string.Concat(msbuildProperties.Select(static property =>
             $"\n    <{property.Name}>{property.Value}</{property.Name}>"));
+
+        WriteRequestedSigningAssets(consumerDirectory, msbuildProperties);
 
         File.WriteAllText(projectPath, $$"""
 <Project Sdk="Microsoft.NET.Sdk">
@@ -458,6 +525,58 @@ public partial class ServiceProviderPanel : UserControl
     }
 }
 """);
+
+    }
+
+    private static void WriteRequestedSigningAssets(
+        string consumerDirectory,
+        IReadOnlyList<(string Name, string Value)> msbuildProperties)
+    {
+        foreach (var property in msbuildProperties)
+        {
+            if (!string.Equals(property.Name, "AssemblyOriginatorKeyFile", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var keyPath = Path.IsPathRooted(property.Value)
+                ? property.Value
+                : Path.Combine(consumerDirectory, property.Value);
+            var keyDirectory = Path.GetDirectoryName(keyPath);
+            if (!string.IsNullOrWhiteSpace(keyDirectory))
+            {
+                Directory.CreateDirectory(keyDirectory);
+            }
+
+            File.WriteAllBytes(keyPath, Convert.FromBase64String(TestSigningKeyBase64));
+        }
+    }
+
+    private static void AssertStrongNameVerifies(string assemblyPath)
+    {
+        var toolPath = FindStrongNameTool();
+        if (string.IsNullOrWhiteSpace(toolPath))
+        {
+            return;
+        }
+
+        var verification = RunProcess(
+            Path.GetDirectoryName(assemblyPath)!,
+            toolPath,
+            $"-q -vf \"{assemblyPath}\"");
+
+        Assert.True(verification.ExitCode == 0, verification.Output);
+    }
+
+    private static string? FindStrongNameTool()
+    {
+        var monoSn = "/Library/Frameworks/Mono.framework/Versions/Current/Commands/sn";
+        if (File.Exists(monoSn))
+        {
+            return monoSn;
+        }
+
+        return null;
     }
 
     private static string CreateUniquePackageVersion()

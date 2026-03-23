@@ -27,6 +27,10 @@
           Pack="true"
           PackagePath="buildTransitive/Mono.Cecil.dll"
           Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\Mono.Cecil.Pdb.dll"
+          Pack="true"
+          PackagePath="buildTransitive/Mono.Cecil.Pdb.dll"
+          Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

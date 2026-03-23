@@ -6,9 +6,11 @@ namespace XamlToCSharpGenerator.Tests.Build;
 
 internal static class SourceGenIlWeavingSampleBuildHarness
 {
+    private static readonly Lazy<string> DebugAssemblyPath = new(BuildDebugAssemblyPath);
+
     public static string GetDebugAssemblyPath()
     {
-        return BuildDebugAssemblyPath();
+        return DebugAssemblyPath.Value;
     }
 
     public static SourceGenIlWeavingSampleBuildArtifact BuildWithProperties(

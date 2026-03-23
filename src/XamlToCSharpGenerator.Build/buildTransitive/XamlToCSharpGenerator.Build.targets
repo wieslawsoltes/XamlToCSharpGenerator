@@ -431,6 +431,11 @@
 
     <RewriteAvaloniaLoaderCallsTask AssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                                     FailOnMissingGeneratedInitializer="$(XamlSourceGenIlWeavingStrict)"
+                                    DebugSymbols="$(DebugSymbols)"
+                                    DebugType="$(DebugType)"
+                                    AssemblyOriginatorKeyFile="$(AssemblyOriginatorKeyFile)"
+                                    KeyContainerName="$(KeyContainerName)"
+                                    ProjectDirectory="$(MSBuildProjectDirectory)"
                                     Verbose="$(XamlSourceGenIlWeavingVerbose)" />
   </Target>
 </Project>

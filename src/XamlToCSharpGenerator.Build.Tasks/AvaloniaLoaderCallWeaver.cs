@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Cecil.Pdb;
 using Mono.Collections.Generic;
 
 namespace XamlToCSharpGenerator.Build.Tasks;
@@ -16,28 +17,27 @@ internal sealed class AvaloniaLoaderCallWeaver
     private const string ServiceProviderTypeName = "System.IServiceProvider";
     private const string ObjectTypeName = "System.Object";
 
-    public AvaloniaLoaderCallWeaverResult Rewrite(string assemblyPath)
+    public AvaloniaLoaderCallWeaverResult Rewrite(AvaloniaLoaderCallWeaverConfiguration configuration)
     {
-        if (string.IsNullOrWhiteSpace(assemblyPath))
+        if (configuration is null)
         {
-            throw new ArgumentException("Assembly path must not be null or whitespace.", nameof(assemblyPath));
+            throw new ArgumentNullException(nameof(configuration));
         }
 
-        if (!File.Exists(assemblyPath))
+        if (string.IsNullOrWhiteSpace(configuration.AssemblyPath))
         {
-            throw new FileNotFoundException("Assembly to weave was not found.", assemblyPath);
+            throw new ArgumentException("Assembly path must not be null or whitespace.", nameof(configuration));
         }
 
-        var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
-        var readSymbols = File.Exists(pdbPath);
-        var readerParameters = new ReaderParameters
+        if (!File.Exists(configuration.AssemblyPath))
         {
-            InMemory = true,
-            ReadSymbols = readSymbols,
-            SymbolReaderProvider = readSymbols ? new PortablePdbReaderProvider() : null
-        };
+            throw new FileNotFoundException("Assembly to weave was not found.", configuration.AssemblyPath);
+        }
 
-        using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, readerParameters);
+        var symbolHandling = DetermineSymbolHandling(configuration);
+        var readerParameters = CreateReaderParameters(symbolHandling);
+
+        using var assembly = AssemblyDefinition.ReadAssembly(configuration.AssemblyPath, readerParameters);
         var accumulator = new AvaloniaLoaderCallWeaverAccumulator();
 
         foreach (var type in assembly.MainModule.Types)
@@ -46,19 +46,21 @@ internal sealed class AvaloniaLoaderCallWeaver
         }
 
         var result = accumulator.ToResult();
-        if (result.ErrorMessages.Count > 0 || result.RewrittenCallCount == 0)
+        if (result.FatalErrorMessages.Count > 0 ||
+            (configuration.FailOnMissingGeneratedInitializer && result.MissingInitializerMessages.Count > 0) ||
+            result.RewrittenCallCount == 0)
         {
             return result;
         }
 
-        var writerParameters = new WriterParameters
+        var writerParameters = CreateWriterParameters(symbolHandling);
+        if (!TryConfigureStrongName(configuration, assembly, writerParameters, accumulator))
         {
-            WriteSymbols = readSymbols,
-            SymbolWriterProvider = readSymbols ? new PortablePdbWriterProvider() : null
-        };
+            return accumulator.ToResult();
+        }
 
-        assembly.Write(assemblyPath, writerParameters);
-        return result;
+        assembly.Write(configuration.AssemblyPath, writerParameters);
+        return accumulator.ToResult();
     }
 
     private static void RewriteType(TypeDefinition type, AvaloniaLoaderCallWeaverAccumulator accumulator)
@@ -96,7 +98,7 @@ internal sealed class AvaloniaLoaderCallWeaver
                 {
                     if (hasSourceGeneratedPopulateMethod)
                     {
-                        accumulator.ErrorMessages.Add(
+                        accumulator.MissingInitializerMessages.Add(
                             "Found '" + AvaloniaLoaderTypeName + ".Load' call in '" + method.FullName +
                             "' but the AXSG-generated initializer overload '" + GeneratedInitializerMethodName +
                             "' was not emitted for '" + type.FullName + "'.");
@@ -212,7 +214,9 @@ internal sealed class AvaloniaLoaderCallWeaver
 
         public int RewrittenCallCount { get; set; }
 
-        public List<string> ErrorMessages { get; } = [];
+        public List<string> MissingInitializerMessages { get; } = [];
+
+        public List<string> FatalErrorMessages { get; } = [];
 
         public AvaloniaLoaderCallWeaverResult ToResult()
         {
@@ -220,8 +224,126 @@ internal sealed class AvaloniaLoaderCallWeaver
                 InspectedTypeCount,
                 MatchedLoaderCallCount,
                 RewrittenCallCount,
-                ErrorMessages);
+                MissingInitializerMessages,
+                FatalErrorMessages);
         }
+    }
+
+    private static ReaderParameters CreateReaderParameters(AvaloniaLoaderSymbolHandling symbolHandling)
+    {
+        return new ReaderParameters
+        {
+            InMemory = true,
+            ReadSymbols = symbolHandling != AvaloniaLoaderSymbolHandling.None,
+            SymbolReaderProvider = CreateSymbolReaderProvider(symbolHandling)
+        };
+    }
+
+    private static WriterParameters CreateWriterParameters(AvaloniaLoaderSymbolHandling symbolHandling)
+    {
+        return new WriterParameters
+        {
+            WriteSymbols = symbolHandling != AvaloniaLoaderSymbolHandling.None,
+            SymbolWriterProvider = CreateSymbolWriterProvider(symbolHandling)
+        };
+    }
+
+    private static ISymbolReaderProvider? CreateSymbolReaderProvider(AvaloniaLoaderSymbolHandling symbolHandling)
+    {
+        return symbolHandling switch
+        {
+            AvaloniaLoaderSymbolHandling.EmbeddedPortablePdb => new EmbeddedPortablePdbReaderProvider(),
+            AvaloniaLoaderSymbolHandling.SidecarPdb => new PdbReaderProvider(),
+            _ => null
+        };
+    }
+
+    private static ISymbolWriterProvider? CreateSymbolWriterProvider(AvaloniaLoaderSymbolHandling symbolHandling)
+    {
+        return symbolHandling switch
+        {
+            AvaloniaLoaderSymbolHandling.EmbeddedPortablePdb => new EmbeddedPortablePdbWriterProvider(),
+            AvaloniaLoaderSymbolHandling.SidecarPdb => new PdbWriterProvider(),
+            _ => null
+        };
+    }
+
+    private static AvaloniaLoaderSymbolHandling DetermineSymbolHandling(AvaloniaLoaderCallWeaverConfiguration configuration)
+    {
+        if (!configuration.DebugSymbols)
+        {
+            return AvaloniaLoaderSymbolHandling.None;
+        }
+
+        var debugType = configuration.DebugType ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(debugType) &&
+            debugType.IndexOf("embedded", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return AvaloniaLoaderSymbolHandling.EmbeddedPortablePdb;
+        }
+
+        var pdbPath = Path.ChangeExtension(configuration.AssemblyPath, ".pdb");
+        return File.Exists(pdbPath)
+            ? AvaloniaLoaderSymbolHandling.SidecarPdb
+            : AvaloniaLoaderSymbolHandling.None;
+    }
+
+    private static bool TryConfigureStrongName(
+        AvaloniaLoaderCallWeaverConfiguration configuration,
+        AssemblyDefinition assembly,
+        WriterParameters writerParameters,
+        AvaloniaLoaderCallWeaverAccumulator accumulator)
+    {
+        if (!assembly.Name.HasPublicKey)
+        {
+            return true;
+        }
+
+        var keyFilePath = ResolveKeyFilePath(configuration.ProjectDirectory, configuration.AssemblyOriginatorKeyFile);
+        if (!string.IsNullOrWhiteSpace(keyFilePath))
+        {
+            if (!File.Exists(keyFilePath))
+            {
+                accumulator.FatalErrorMessages.Add(
+                    "Refused to rewrite signed assembly '" + configuration.AssemblyPath +
+                    "' because the strong-name key file '" + keyFilePath + "' was not found.");
+                return false;
+            }
+
+            writerParameters.StrongNameKeyBlob = File.ReadAllBytes(keyFilePath);
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuration.KeyContainerName))
+        {
+            writerParameters.StrongNameKeyContainer = configuration.KeyContainerName;
+            return true;
+        }
+
+        accumulator.FatalErrorMessages.Add(
+            "Refused to rewrite signed assembly '" + configuration.AssemblyPath +
+            "' because no strong-name key file or key container was provided to re-sign the rewritten output.");
+        return false;
+    }
+
+    private static string? ResolveKeyFilePath(string? projectDirectory, string? keyFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(keyFilePath))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(keyFilePath))
+        {
+            return keyFilePath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return Path.GetFullPath(Path.Combine(projectDirectory, keyFilePath));
+        }
+
+        return Path.GetFullPath(keyFilePath);
     }
 }
 
@@ -229,4 +351,21 @@ internal sealed record AvaloniaLoaderCallWeaverResult(
     int InspectedTypeCount,
     int MatchedLoaderCallCount,
     int RewrittenCallCount,
-    IReadOnlyList<string> ErrorMessages);
+    IReadOnlyList<string> MissingInitializerMessages,
+    IReadOnlyList<string> FatalErrorMessages);
+
+internal sealed record AvaloniaLoaderCallWeaverConfiguration(
+    string AssemblyPath,
+    bool FailOnMissingGeneratedInitializer,
+    bool DebugSymbols,
+    string? DebugType,
+    string? AssemblyOriginatorKeyFile,
+    string? KeyContainerName,
+    string? ProjectDirectory);
+
+internal enum AvaloniaLoaderSymbolHandling
+{
+    None,
+    SidecarPdb,
+    EmbeddedPortablePdb
+}
