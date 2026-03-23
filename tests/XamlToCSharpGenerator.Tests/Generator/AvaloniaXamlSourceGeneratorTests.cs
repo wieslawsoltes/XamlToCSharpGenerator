@@ -20814,7 +20814,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("AcceptButton = null!;", generated);
         Assert.DoesNotContain("AcceptButton?;", generated, StringComparison.Ordinal);
-        Assert.Contains("AcceptButton = this.FindNameScope()?.Find<global::Avalonia.Controls.Button>(\"AcceptButton\")!;", generated);
+        Assert.Contains("AcceptButton = __self.FindNameScope()?.Find<global::Avalonia.Controls.Button>(\"AcceptButton\")!;", generated);
     }
 
     [Fact]
