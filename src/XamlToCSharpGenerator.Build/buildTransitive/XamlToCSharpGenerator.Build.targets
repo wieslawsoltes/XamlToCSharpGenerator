@@ -29,6 +29,7 @@
     <AvaloniaSourceGenIlWeavingEnabled Condition="'$(AvaloniaSourceGenIlWeavingEnabled)' == ''">$(XamlSourceGenIlWeavingEnabled)</AvaloniaSourceGenIlWeavingEnabled>
     <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
     <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
+    <_XamlSourceGenNestedBuildRemoveProperties Condition="'$(_XamlSourceGenNestedBuildRemoveProperties)' == ''">TargetFramework;TargetFrameworks;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir</_XamlSourceGenNestedBuildRemoveProperties>
     <_XamlSourceGenPackagedIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenPackagedIlWeaverTaskAssemblyPath>
     <_XamlSourceGenLocalIlWeaverProjectPath Condition="'$(_XamlSourceGenLocalIlWeaverProjectPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj'))</_XamlSourceGenLocalIlWeaverProjectPath>
     <_XamlSourceGenLocalIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenLocalIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenLocalIlWeaverTaskAssemblyPath>
@@ -413,12 +414,14 @@
              Targets="Restore"
              BuildInParallel="false"
              Condition="!Exists('$(_XamlSourceGenLocalIlWeaverAssetsPath)')"
+             RemoveProperties="$(_XamlSourceGenNestedBuildRemoveProperties)"
              Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
 
     <MSBuild Projects="$(_XamlSourceGenLocalIlWeaverProjectPath)"
              Targets="Build"
              BuildInParallel="false"
-             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
+             RemoveProperties="$(_XamlSourceGenNestedBuildRemoveProperties)"
+             Properties="Configuration=$(Configuration)" />
   </Target>
 
   <Target Name="XamlToCSharpGenerator_WeaveAvaloniaLoaderCalls"
