@@ -179,7 +179,7 @@ If the app still behaves like classic Avalonia loading, check:
 
 Rewritten call sites land on the same generated AXSG initializer helpers used by the normal class-backed path, so hot reload and hot design registration stay intact.
 
-The sample app at [`samples/SourceGenIlWeavingSample`](../../../samples/SourceGenIlWeavingSample/README.md) covers:
+The sample app at [`samples/SourceGenIlWeavingSample`](https://github.com/wieslawsoltes/XamlToCSharpGenerator/tree/main/samples/SourceGenIlWeavingSample) covers:
 
 - `App` initialization through `AvaloniaXamlLoader.Load(this)`
 - view initialization through `AvaloniaXamlLoader.Load(this)`
