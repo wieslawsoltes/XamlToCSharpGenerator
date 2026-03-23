@@ -9,6 +9,8 @@ It exists to verify that AXSG IL weaving rewrites:
 
 The sample also enables AXSG hot reload bootstrap so integration tests can confirm that woven initialization still registers tracked documents.
 
+On macOS, the sample disables the IDE polling fallback when a debugger is attached. That avoids a debugger/runtime instability in interactive debug sessions while keeping normal sample runs and automated coverage on the woven path.
+
 Disable weaving for a build with:
 
 ```xml
