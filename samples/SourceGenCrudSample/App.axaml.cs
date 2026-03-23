@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using SourceGenCrudSample.ViewModels;
+using Avalonia.Markup.Xaml;
 
 namespace SourceGenCrudSample;
 
@@ -8,7 +9,7 @@ public partial class App : Application
 {
     public override void Initialize()
     {
-        InitializeComponent();
+        AvaloniaXamlLoader.Load(this);
     }
 
     public override void OnFrameworkInitializationCompleted()

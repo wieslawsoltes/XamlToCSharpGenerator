@@ -30,7 +30,7 @@ namespace Avalonia.Themes.Fluent
         /// <param name="sp">The parent's service provider.</param>
         public FluentTheme(IServiceProvider? sp = null)
         {
-            InitializeComponent();
+            AvaloniaXamlLoader.Load(this);
             
             _compactStyles = ResolveCompactStyles(GetAndRemove("CompactStyles"));
 
