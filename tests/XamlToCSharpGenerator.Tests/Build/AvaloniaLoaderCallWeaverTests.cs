@@ -34,6 +34,8 @@ public class AvaloniaLoaderCallWeaverTests
                     DebugType: null,
                     AssemblyOriginatorKeyFile: null,
                     KeyContainerName: null,
+                    PublicSign: false,
+                    DelaySign: false,
                     ProjectDirectory: workspaceDirectory,
                     Backend: backend));
 

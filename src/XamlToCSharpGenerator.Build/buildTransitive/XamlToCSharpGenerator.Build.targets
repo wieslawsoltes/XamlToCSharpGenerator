@@ -32,7 +32,7 @@
     <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
     <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
     <AvaloniaSourceGenIlWeavingBackend Condition="'$(AvaloniaSourceGenIlWeavingBackend)' == ''">$(XamlSourceGenIlWeavingBackend)</AvaloniaSourceGenIlWeavingBackend>
-    <_XamlSourceGenNestedBuildRemoveProperties Condition="'$(_XamlSourceGenNestedBuildRemoveProperties)' == ''">TargetFramework;TargetFrameworks;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir</_XamlSourceGenNestedBuildRemoveProperties>
+    <_XamlSourceGenNestedBuildRemoveProperties Condition="'$(_XamlSourceGenNestedBuildRemoveProperties)' == ''">TargetFramework;TargetFrameworks;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir;RuntimeIdentifier</_XamlSourceGenNestedBuildRemoveProperties>
     <_XamlSourceGenPackagedIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenPackagedIlWeaverTaskAssemblyPath>
     <_XamlSourceGenLocalIlWeaverProjectPath Condition="'$(_XamlSourceGenLocalIlWeaverProjectPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj'))</_XamlSourceGenLocalIlWeaverProjectPath>
     <_XamlSourceGenLocalIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenLocalIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenLocalIlWeaverTaskAssemblyPath>
@@ -441,6 +441,8 @@
                                     DebugType="$(DebugType)"
                                     AssemblyOriginatorKeyFile="$(AssemblyOriginatorKeyFile)"
                                     KeyContainerName="$(KeyContainerName)"
+                                    PublicSign="$(PublicSign)"
+                                    DelaySign="$(DelaySign)"
                                     ProjectDirectory="$(MSBuildProjectDirectory)"
                                     Backend="$(XamlSourceGenIlWeavingBackend)"
                                     Verbose="$(XamlSourceGenIlWeavingVerbose)" />

@@ -456,6 +456,11 @@ internal sealed class AvaloniaLoaderCallWeaver
             return true;
         }
 
+        if (configuration.PublicSign || configuration.DelaySign)
+        {
+            return true;
+        }
+
         var keyFilePath = ResolveKeyFilePath(configuration.ProjectDirectory, configuration.AssemblyOriginatorKeyFile);
         if (!string.IsNullOrWhiteSpace(keyFilePath))
         {
@@ -523,6 +528,8 @@ internal sealed record AvaloniaLoaderCallWeaverConfiguration(
     string? DebugType,
     string? AssemblyOriginatorKeyFile,
     string? KeyContainerName,
+    bool PublicSign,
+    bool DelaySign,
     string? ProjectDirectory,
     string? Backend);
 

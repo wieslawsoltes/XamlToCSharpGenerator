@@ -7,6 +7,7 @@
     <PackageId>XamlToCSharpGenerator.Build</PackageId>
     <Description>MSBuild backend switch and compiler integration props/targets for source-generated Avalonia XAML.</Description>
     <PackageTags>$(PackageTags);avalonia;build;msbuild;sdk</PackageTags>
+    <BundledBuildAssetNestedBuildRemoveProperties>TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir;RuntimeIdentifier</BundledBuildAssetNestedBuildRemoveProperties>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,12 +51,12 @@
     <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
              Targets="Restore"
              BuildInParallel="false"
-             RemoveProperties="TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework"
+             RemoveProperties="$(BundledBuildAssetNestedBuildRemoveProperties)"
              Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false;GenerateDocumentationFile=false" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
              Targets="Build"
              BuildInParallel="false"
-             RemoveProperties="TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework"
+             RemoveProperties="$(BundledBuildAssetNestedBuildRemoveProperties)"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false" />
   </Target>
 </Project>

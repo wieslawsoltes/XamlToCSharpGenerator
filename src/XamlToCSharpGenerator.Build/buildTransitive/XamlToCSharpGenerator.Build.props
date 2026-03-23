@@ -23,18 +23,6 @@
     <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
     <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
     <AvaloniaSourceGenIdeHotReloadEnabled Condition="'$(AvaloniaSourceGenIdeHotReloadEnabled)' == ''">true</AvaloniaSourceGenIdeHotReloadEnabled>
-    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == '' and '$(AvaloniaSourceGenIlWeavingEnabled)' != ''">$(AvaloniaSourceGenIlWeavingEnabled)</XamlSourceGenIlWeavingEnabled>
-    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == ''">true</XamlSourceGenIlWeavingEnabled>
-    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == '' and '$(AvaloniaSourceGenIlWeavingStrict)' != ''">$(AvaloniaSourceGenIlWeavingStrict)</XamlSourceGenIlWeavingStrict>
-    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == ''">true</XamlSourceGenIlWeavingStrict>
-    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == '' and '$(AvaloniaSourceGenIlWeavingVerbose)' != ''">$(AvaloniaSourceGenIlWeavingVerbose)</XamlSourceGenIlWeavingVerbose>
-    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == ''">false</XamlSourceGenIlWeavingVerbose>
-    <XamlSourceGenIlWeavingBackend Condition="'$(XamlSourceGenIlWeavingBackend)' == '' and '$(AvaloniaSourceGenIlWeavingBackend)' != ''">$(AvaloniaSourceGenIlWeavingBackend)</XamlSourceGenIlWeavingBackend>
-    <XamlSourceGenIlWeavingBackend Condition="'$(XamlSourceGenIlWeavingBackend)' == ''">Metadata</XamlSourceGenIlWeavingBackend>
-    <AvaloniaSourceGenIlWeavingEnabled Condition="'$(AvaloniaSourceGenIlWeavingEnabled)' == ''">$(XamlSourceGenIlWeavingEnabled)</AvaloniaSourceGenIlWeavingEnabled>
-    <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
-    <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
-    <AvaloniaSourceGenIlWeavingBackend Condition="'$(AvaloniaSourceGenIlWeavingBackend)' == ''">$(XamlSourceGenIlWeavingBackend)</AvaloniaSourceGenIlWeavingBackend>
     <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenHotDesignEnabled Condition="'$(AvaloniaSourceGenHotDesignEnabled)' == ''">false</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>

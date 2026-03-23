@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace XamlToCSharpGenerator.Tests.Build;
@@ -438,10 +439,13 @@ public class BuildIntegrationTests
             var restorePath = EnsureTrailingSeparator(Path.Combine(tempDir, "obj", "restore"));
             var intermediatePath = EnsureTrailingSeparator(Path.Combine(tempDir, "obj", "sourcegen"));
             var outputPath = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "sourcegen"));
+            var projectOutputPath = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "project-output"));
+            var projectOutDir = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "project-outdir"));
+            var runtimeIdentifier = GetCurrentTestRuntimeIdentifier();
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:VerifyLocalIlWeaverBuild -m:1 /nodeReuse:false -p:MSBuildProjectExtensionsPath=\"{restorePath}\" -p:BaseIntermediateOutputPath=\"{intermediatePath}\" -p:BaseOutputPath=\"{outputPath}\"",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:VerifyLocalIlWeaverBuild -m:1 /nodeReuse:false -p:MSBuildProjectExtensionsPath=\"{restorePath}\" -p:BaseIntermediateOutputPath=\"{intermediatePath}\" -p:BaseOutputPath=\"{outputPath}\" -p:OutputPath=\"{projectOutputPath}\" -p:OutDir=\"{projectOutDir}\" -p:RuntimeIdentifier={runtimeIdentifier}",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -488,6 +492,73 @@ public class BuildIntegrationTests
                 // Best effort restore of test fixture state.
             }
 
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best effort cleanup in tests.
+            }
+        }
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Project_File_Avalonia_IlWeaving_Aliases_Override_Canonical_Defaults()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
+        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-ilweaving-alias-evaluation");
+
+        try
+        {
+            var projectFile = Path.Combine(tempDir, "IlWeavingAliasEvaluation.csproj");
+            File.WriteAllText(projectFile, $$"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="{{NormalizeForMsBuild(propsPath)}}" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AvaloniaSourceGenIlWeavingEnabled>false</AvaloniaSourceGenIlWeavingEnabled>
+    <AvaloniaSourceGenIlWeavingStrict>false</AvaloniaSourceGenIlWeavingStrict>
+    <AvaloniaSourceGenIlWeavingVerbose>true</AvaloniaSourceGenIlWeavingVerbose>
+    <AvaloniaSourceGenIlWeavingBackend>Cecil</AvaloniaSourceGenIlWeavingBackend>
+  </PropertyGroup>
+
+  <Import Project="{{NormalizeForMsBuild(targetsPath)}}" />
+
+  <Target Name="PrintWeavingState">
+    <Message Importance="high"
+             Text="WEAVE|$(XamlSourceGenIlWeavingEnabled)|$(XamlSourceGenIlWeavingStrict)|$(XamlSourceGenIlWeavingVerbose)|$(XamlSourceGenIlWeavingBackend)|$(AvaloniaSourceGenIlWeavingEnabled)|$(AvaloniaSourceGenIlWeavingStrict)|$(AvaloniaSourceGenIlWeavingVerbose)|$(AvaloniaSourceGenIlWeavingBackend)" />
+  </Target>
+</Project>
+""");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:PrintWeavingState -m:1 /nodeReuse:false",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir
+            };
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+
+            var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            var output = await stdoutTask + await stderrTask;
+            Assert.True(process.ExitCode == 0, output);
+            Assert.Contains("WEAVE|false|false|true|Cecil|false|false|true|Cecil", output, StringComparison.Ordinal);
+        }
+        finally
+        {
             try
             {
                 BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
@@ -866,5 +937,20 @@ public class BuildIntegrationTests
 
         var targetFiles = Directory.GetFiles(watchRoot, "DotNetWatch.targets", SearchOption.AllDirectories);
         return Assert.Single(targetFiles);
+    }
+
+    private static string GetCurrentTestRuntimeIdentifier()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        }
+
+        return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
     }
 }

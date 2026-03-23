@@ -19,6 +19,10 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
 
     public string KeyContainerName { get; set; } = string.Empty;
 
+    public bool PublicSign { get; set; }
+
+    public bool DelaySign { get; set; }
+
     public string ProjectDirectory { get; set; } = string.Empty;
 
     public string Backend { get; set; } = string.Empty;
@@ -38,6 +42,8 @@ public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.T
                     DebugType,
                     AssemblyOriginatorKeyFile,
                     KeyContainerName,
+                    PublicSign,
+                    DelaySign,
                     ProjectDirectory,
                     Backend));
 
