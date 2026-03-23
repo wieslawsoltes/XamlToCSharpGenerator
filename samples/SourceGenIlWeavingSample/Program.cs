@@ -15,13 +15,12 @@ internal static class Program
 
     public static AppBuilder BuildAvaloniaApp()
     {
-        var enableIdePollingFallback = !(OperatingSystem.IsMacOS() && Debugger.IsAttached);
+        var enableIdePollingFallback = !Debugger.IsAttached;
 
         return AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .LogToTrace()
             .UseAvaloniaSourceGeneratedXaml()
-            // macOS debugger sessions are unstable when the sample's IDE polling fallback timer is active.
             .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: enableIdePollingFallback, pollingIntervalMs: 1000);
     }
 }

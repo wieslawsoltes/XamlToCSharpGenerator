@@ -1,4 +1,5 @@
-﻿using Android.App;
+﻿using System.Diagnostics;
+using Android.App;
 using Android.Content.PM;
 using Android.OS;
 using Avalonia;
@@ -23,7 +24,7 @@ namespace ControlCatalog.Android
                  .UseAvaloniaSourceGeneratedXaml()
                  .UseAvaloniaSourceGeneratedStudioFromEnvironment()
 #if DEBUG
-                 .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000)
+                 .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: !Debugger.IsAttached, pollingIntervalMs: 1000)
 #endif
                  .AfterSetup(_ =>
                  {

@@ -1,6 +1,7 @@
 using Foundation;
 using UIKit;
 using System;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.iOS;
@@ -23,7 +24,7 @@ namespace ControlCatalog
                 .UseAvaloniaSourceGeneratedXaml()
                 .UseAvaloniaSourceGeneratedStudioFromEnvironment()
 #if DEBUG
-                .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000)
+                .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: !Debugger.IsAttached, pollingIntervalMs: 1000)
 #endif
                 .AfterSetup(_ =>
                 {
