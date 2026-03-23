@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="SourceGenIlWeavingSample.ServiceProviderPanel">
   <Border Padding="12"
-          Background="#1E2A38"
+          Background="WhiteSmoke"
           CornerRadius="8">
     <TextBlock x:Name="ServiceProviderStatus"
                Text="Service Provider Loader Active" />
