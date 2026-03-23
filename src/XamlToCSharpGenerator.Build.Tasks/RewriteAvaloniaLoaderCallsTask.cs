@@ -1,0 +1,54 @@
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
+
+namespace XamlToCSharpGenerator.Build.Tasks;
+
+public sealed class RewriteAvaloniaLoaderCallsTask : Microsoft.Build.Utilities.Task
+{
+    [Required]
+    public string AssemblyPath { get; set; } = string.Empty;
+
+    public bool FailOnMissingGeneratedInitializer { get; set; } = true;
+
+    public bool Verbose { get; set; }
+
+    public override bool Execute()
+    {
+        try
+        {
+            var weaver = new AvaloniaLoaderCallWeaver();
+            var result = weaver.Rewrite(AssemblyPath);
+
+            foreach (var errorMessage in result.ErrorMessages)
+            {
+                if (FailOnMissingGeneratedInitializer)
+                {
+                    Log.LogError(errorMessage);
+                }
+                else
+                {
+                    Log.LogWarning(errorMessage);
+                }
+            }
+
+            if (Verbose || result.RewrittenCallCount > 0)
+            {
+                var importance = result.RewrittenCallCount > 0 ? MessageImportance.High : MessageImportance.Low;
+                Log.LogMessage(
+                    importance,
+                    "[AXSG.Build] IL weaving inspected {0} type(s), matched {1} AvaloniaXamlLoader call(s), and rewrote {2} call(s) in '{3}'.",
+                    result.InspectedTypeCount,
+                    result.MatchedLoaderCallCount,
+                    result.RewrittenCallCount,
+                    AssemblyPath);
+            }
+
+            return !Log.HasLoggedErrors;
+        }
+        catch (Exception exception)
+        {
+            Log.LogErrorFromException(exception, showStackTrace: true, showDetail: true, file: AssemblyPath);
+            return false;
+        }
+    }
+}

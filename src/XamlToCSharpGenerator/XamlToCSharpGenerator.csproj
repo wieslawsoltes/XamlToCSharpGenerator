@@ -19,6 +19,14 @@
           Pack="true"
           PackagePath="buildTransitive/XamlToCSharpGenerator.targets"
           Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Build.Tasks.dll"
+          Pack="true"
+          PackagePath="buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\Mono.Cecil.dll"
+          Pack="true"
+          PackagePath="buildTransitive/Mono.Cecil.dll"
+          Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -124,6 +132,9 @@
   </ItemGroup>
 
   <Target Name="BuildBundledAssets" BeforeTargets="_GetPackageFiles;Pack">
+    <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false" />
     <MSBuild Projects="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />

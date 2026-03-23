@@ -437,73 +437,35 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         if (viewModel.Document.IsClassBacked)
         {
             sourceBuilder.AppendLine("        public void InitializeComponent(bool loadXaml = true)");
-            sourceBuilder.AppendLine("            {");
-            sourceBuilder.AppendLine("                var __loadedWithSourceGen = false;");
-            sourceBuilder.AppendLine("                if (loadXaml)");
-            sourceBuilder.AppendLine("                {");
-            if (viewModel.HasXBind)
-            {
-                sourceBuilder.AppendLine("                    global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResetXBind(this);");
-            }
-            sourceBuilder.AppendLine("                    __PopulateGeneratedObjectGraph(this, null);");
-            sourceBuilder.AppendLine("                    __loadedWithSourceGen = true;");
-            sourceBuilder.AppendLine("                }");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine("            __InitializeXamlSourceGenComponent(this, null, loadXaml);");
+            sourceBuilder.AppendLine("        }");
             sourceBuilder.AppendLine();
-            sourceBuilder.AppendLine("                if (!__loadedWithSourceGen)");
-            sourceBuilder.AppendLine("                {");
-            foreach (var namedElement in viewModel.NamedElements)
-            {
-                sourceBuilder.AppendLine(
-                    $"                    {SanitizeIdentifier(namedElement.Name)} = this.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\")!;");
-            }
-            sourceBuilder.AppendLine("                }");
+            sourceBuilder.AppendLine(
+                $"        internal static void __InitializeXamlSourceGenComponent({viewModel.RootObject.TypeName} __self)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine("            __InitializeXamlSourceGenComponent(__self, null, true);");
+            sourceBuilder.AppendLine("        }");
             sourceBuilder.AppendLine();
-            if (viewModel.EnableHotReload || viewModel.EnableHotDesign)
-            {
-                var escapedSourcePath = Escape(viewModel.Document.FilePath);
-                sourceBuilder.AppendLine("                if (__loadedWithSourceGen)");
-                sourceBuilder.AppendLine("                {");
-                sourceBuilder.AppendLine("                    __TrackAndReconcileSourceGenHotReloadState(this);");
-
-                if (viewModel.EnableHotReload)
-                {
-                    sourceBuilder.AppendLine(
-                        $"                    global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.Register(this, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions");
-                    sourceBuilder.AppendLine("                    {");
-                    sourceBuilder.AppendLine($"                        BuildUri = \"{escapedUri}\",");
-                    sourceBuilder.AppendLine($"                        SourcePath = \"{escapedSourcePath}\",");
-                    sourceBuilder.AppendLine("                        CaptureState = static __instance =>");
-                    sourceBuilder.AppendLine("                            __instance is global::Avalonia.StyledElement __styledElement");
-                    sourceBuilder.AppendLine("                                ? __styledElement.DataContext");
-                    sourceBuilder.AppendLine("                                : null,");
-                    sourceBuilder.AppendLine("                        RestoreState = static (__instance, __state) =>");
-                    sourceBuilder.AppendLine("                        {");
-                    sourceBuilder.AppendLine("                            if (__instance is global::Avalonia.StyledElement __styledElement &&");
-                    sourceBuilder.AppendLine("                                __styledElement.DataContext is null)");
-                    sourceBuilder.AppendLine("                            {");
-                    sourceBuilder.AppendLine("                                __styledElement.DataContext = __state;");
-                    sourceBuilder.AppendLine("                            }");
-                    sourceBuilder.AppendLine("                        }");
-                    sourceBuilder.AppendLine("                    });");
-                }
-
-                if (viewModel.EnableHotDesign)
-                {
-                    sourceBuilder.AppendLine(
-                        $"                    global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotDesignManager.Register(this, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignRegistrationOptions");
-                    sourceBuilder.AppendLine("                    {");
-                    sourceBuilder.AppendLine($"                        BuildUri = \"{escapedUri}\",");
-                    sourceBuilder.AppendLine($"                        SourcePath = \"{escapedSourcePath}\",");
-                    sourceBuilder.AppendLine($"                        DocumentRole = {hotDesignDocumentRoleExpression},");
-                    sourceBuilder.AppendLine($"                        ArtifactKind = {hotDesignArtifactKindExpression},");
-                    sourceBuilder.AppendLine($"                        ScopeHints = {hotDesignScopeHintsExpression}");
-                    sourceBuilder.AppendLine("                    });");
-                }
-
-                sourceBuilder.AppendLine("                }");
-            }
-
-            sourceBuilder.AppendLine("            }");
+            sourceBuilder.AppendLine(
+                $"        internal static void __InitializeXamlSourceGenComponent(global::System.IServiceProvider? __serviceProvider, {viewModel.RootObject.TypeName} __self)");
+            sourceBuilder.AppendLine("        {");
+            sourceBuilder.AppendLine("            __InitializeXamlSourceGenComponent(__self, __serviceProvider, true);");
+            sourceBuilder.AppendLine("        }");
+            sourceBuilder.AppendLine();
+            sourceBuilder.AppendLine(
+                $"        private static void __InitializeXamlSourceGenComponent({viewModel.RootObject.TypeName} __self, global::System.IServiceProvider? __serviceProvider, bool loadXaml)");
+            sourceBuilder.AppendLine("        {");
+            EmitInitializeComponentBody(
+                sourceBuilder,
+                viewModel,
+                "__self",
+                "__serviceProvider",
+                escapedUri,
+                hotDesignDocumentRoleExpression,
+                hotDesignArtifactKindExpression,
+                hotDesignScopeHintsExpression);
+            sourceBuilder.AppendLine("        }");
         }
 
         if (viewModel.Document.IsClassBacked && viewModel.HasXBind)
@@ -542,6 +504,86 @@ public sealed class AvaloniaCodeEmitter : IXamlCodeEmitter
         var source = sourceBuilder.ToString();
         source = RewriteCompiledBindingExpressionInvocations(source, compiledBindingAccessorEmissionPlan);
         return (hintName, source);
+    }
+
+    private static void EmitInitializeComponentBody(
+        StringBuilder sourceBuilder,
+        ResolvedViewModel viewModel,
+        string selfExpression,
+        string serviceProviderExpression,
+        string escapedUri,
+        string hotDesignDocumentRoleExpression,
+        string hotDesignArtifactKindExpression,
+        string hotDesignScopeHintsExpression)
+    {
+        sourceBuilder.AppendLine("            var __loadedWithSourceGen = false;");
+        sourceBuilder.AppendLine("            if (loadXaml)");
+        sourceBuilder.AppendLine("            {");
+        if (viewModel.HasXBind)
+        {
+            sourceBuilder.AppendLine(
+                $"                global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ResetXBind({selfExpression});");
+        }
+        sourceBuilder.AppendLine(
+            $"                __PopulateGeneratedObjectGraph({selfExpression}, {serviceProviderExpression});");
+        sourceBuilder.AppendLine("                __loadedWithSourceGen = true;");
+        sourceBuilder.AppendLine("            }");
+        sourceBuilder.AppendLine();
+        sourceBuilder.AppendLine("            if (!__loadedWithSourceGen)");
+        sourceBuilder.AppendLine("            {");
+        foreach (var namedElement in viewModel.NamedElements)
+        {
+            sourceBuilder.AppendLine(
+                $"                {selfExpression}.{SanitizeIdentifier(namedElement.Name)} = {selfExpression}.FindNameScope()?.Find<{namedElement.TypeName}>(\"{Escape(namedElement.Name)}\")!;");
+        }
+        sourceBuilder.AppendLine("            }");
+        sourceBuilder.AppendLine();
+
+        if (viewModel.EnableHotReload || viewModel.EnableHotDesign)
+        {
+            var escapedSourcePath = Escape(viewModel.Document.FilePath);
+            sourceBuilder.AppendLine("            if (__loadedWithSourceGen)");
+            sourceBuilder.AppendLine("            {");
+            sourceBuilder.AppendLine(
+                $"                __TrackAndReconcileSourceGenHotReloadState({selfExpression});");
+
+            if (viewModel.EnableHotReload)
+            {
+                sourceBuilder.AppendLine(
+                    $"                global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.Register({selfExpression}, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadRegistrationOptions");
+                sourceBuilder.AppendLine("                {");
+                sourceBuilder.AppendLine($"                    BuildUri = \"{escapedUri}\",");
+                sourceBuilder.AppendLine($"                    SourcePath = \"{escapedSourcePath}\",");
+                sourceBuilder.AppendLine("                    CaptureState = static __instance =>");
+                sourceBuilder.AppendLine("                        __instance is global::Avalonia.StyledElement __styledElement");
+                sourceBuilder.AppendLine("                            ? __styledElement.DataContext");
+                sourceBuilder.AppendLine("                            : null,");
+                sourceBuilder.AppendLine("                    RestoreState = static (__instance, __state) =>");
+                sourceBuilder.AppendLine("                    {");
+                sourceBuilder.AppendLine("                        if (__instance is global::Avalonia.StyledElement __styledElement &&");
+                sourceBuilder.AppendLine("                            __styledElement.DataContext is null)");
+                sourceBuilder.AppendLine("                        {");
+                sourceBuilder.AppendLine("                            __styledElement.DataContext = __state;");
+                sourceBuilder.AppendLine("                        }");
+                sourceBuilder.AppendLine("                    }");
+                sourceBuilder.AppendLine("                });");
+            }
+
+            if (viewModel.EnableHotDesign)
+            {
+                sourceBuilder.AppendLine(
+                    $"                global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotDesignManager.Register({selfExpression}, static __instance => (({viewModel.RootObject.TypeName})__instance).__ApplySourceGenHotReload(), new global::XamlToCSharpGenerator.Runtime.SourceGenHotDesignRegistrationOptions");
+                sourceBuilder.AppendLine("                {");
+                sourceBuilder.AppendLine($"                    BuildUri = \"{escapedUri}\",");
+                sourceBuilder.AppendLine($"                    SourcePath = \"{escapedSourcePath}\",");
+                sourceBuilder.AppendLine($"                    DocumentRole = {hotDesignDocumentRoleExpression},");
+                sourceBuilder.AppendLine($"                    ArtifactKind = {hotDesignArtifactKindExpression},");
+                sourceBuilder.AppendLine($"                    ScopeHints = {hotDesignScopeHintsExpression}");
+                sourceBuilder.AppendLine("                });");
+            }
+
+            sourceBuilder.AppendLine("            }");
+        }
     }
 
     private static int EstimateSourceCapacity(ResolvedViewModel viewModel)

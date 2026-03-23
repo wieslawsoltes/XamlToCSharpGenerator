@@ -20,6 +20,21 @@
     <AvaloniaSourceGenConfigurationPrecedence Condition="'$(AvaloniaSourceGenConfigurationPrecedence)' == '' and '$(XamlSourceGenConfigurationPrecedence)' != ''">$(XamlSourceGenConfigurationPrecedence)</AvaloniaSourceGenConfigurationPrecedence>
     <AvaloniaXamlCompilerBackend>$(XamlSourceGenBackend)</AvaloniaXamlCompilerBackend>
     <AvaloniaSourceGenCompilerEnabled>$(XamlSourceGenEnabled)</AvaloniaSourceGenCompilerEnabled>
+    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == '' and '$(AvaloniaSourceGenIlWeavingEnabled)' != ''">$(AvaloniaSourceGenIlWeavingEnabled)</XamlSourceGenIlWeavingEnabled>
+    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == ''">true</XamlSourceGenIlWeavingEnabled>
+    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == '' and '$(AvaloniaSourceGenIlWeavingStrict)' != ''">$(AvaloniaSourceGenIlWeavingStrict)</XamlSourceGenIlWeavingStrict>
+    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == ''">true</XamlSourceGenIlWeavingStrict>
+    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == '' and '$(AvaloniaSourceGenIlWeavingVerbose)' != ''">$(AvaloniaSourceGenIlWeavingVerbose)</XamlSourceGenIlWeavingVerbose>
+    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == ''">false</XamlSourceGenIlWeavingVerbose>
+    <AvaloniaSourceGenIlWeavingEnabled Condition="'$(AvaloniaSourceGenIlWeavingEnabled)' == ''">$(XamlSourceGenIlWeavingEnabled)</AvaloniaSourceGenIlWeavingEnabled>
+    <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
+    <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
+    <_XamlSourceGenPackagedIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenPackagedIlWeaverTaskAssemblyPath>
+    <_XamlSourceGenLocalIlWeaverProjectPath Condition="'$(_XamlSourceGenLocalIlWeaverProjectPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj'))</_XamlSourceGenLocalIlWeaverProjectPath>
+    <_XamlSourceGenLocalIlWeaverTaskAssemblyPath Condition="'$(_XamlSourceGenLocalIlWeaverTaskAssemblyPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Build.Tasks.dll'))</_XamlSourceGenLocalIlWeaverTaskAssemblyPath>
+    <_XamlSourceGenLocalIlWeaverAssetsPath Condition="'$(_XamlSourceGenLocalIlWeaverAssetsPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\XamlToCSharpGenerator.Build.Tasks\obj\project.assets.json'))</_XamlSourceGenLocalIlWeaverAssetsPath>
+    <XamlSourceGenIlWeaverTaskAssemblyPath Condition="'$(XamlSourceGenIlWeaverTaskAssemblyPath)' == '' and Exists('$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)')">$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)</XamlSourceGenIlWeaverTaskAssemblyPath>
+    <XamlSourceGenIlWeaverTaskAssemblyPath Condition="'$(XamlSourceGenIlWeaverTaskAssemblyPath)' == '' and Exists('$(_XamlSourceGenLocalIlWeaverProjectPath)')">$(_XamlSourceGenLocalIlWeaverTaskAssemblyPath)</XamlSourceGenIlWeaverTaskAssemblyPath>
     <_XamlSourceGenIsIosTarget>false</_XamlSourceGenIsIosTarget>
     <_XamlSourceGenIsIosTarget Condition="'$(TargetPlatformIdentifier)' == 'iOS' or '$(TargetPlatformIdentifier)' == 'ios'">true</_XamlSourceGenIsIosTarget>
     <_XamlSourceGenIsIosTarget Condition="'$(_XamlSourceGenIsIosTarget)' != 'true' and '$(TargetFramework)' != '' and $([System.String]::Copy('$(TargetFramework)').Contains('-ios'))">true</_XamlSourceGenIsIosTarget>
@@ -57,6 +72,10 @@
     <_XamlSourceGenHasDotNetWatchProxy>false</_XamlSourceGenHasDotNetWatchProxy>
     <_XamlSourceGenHasDotNetWatchProxy Condition="'$(AvaloniaSourceGenIosDotNetWatchProxyPath)' != '' and Exists('$(AvaloniaSourceGenIosDotNetWatchProxyPath)')">true</_XamlSourceGenHasDotNetWatchProxy>
   </PropertyGroup>
+
+  <UsingTask TaskName="XamlToCSharpGenerator.Build.Tasks.RewriteAvaloniaLoaderCallsTask"
+             AssemblyFile="$(XamlSourceGenIlWeaverTaskAssemblyPath)"
+             Condition="'$(XamlSourceGenIlWeaverTaskAssemblyPath)' != ''" />
 
   <Target Name="XamlToCSharpGenerator_PrepareIosMlaunchWrapper"
           BeforeTargets="_ComputeMlaunchRunArguments;ComputeMlaunchRunArguments"
@@ -386,5 +405,32 @@
       <!-- dotnet-watch auto-adds embedded resources to its watch list; AXSG runtime source polling owns XAML reloads instead. -->
       <Watch Remove="@(_XamlToCSharpGeneratorXamlDistinct->'%(FullPath)')" />
     </ItemGroup>
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_BuildLocalIlWeaverTask"
+          Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(XamlSourceGenIlWeavingEnabled)' == 'true' and !Exists('$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)') and Exists('$(_XamlSourceGenLocalIlWeaverProjectPath)')">
+    <MSBuild Projects="$(_XamlSourceGenLocalIlWeaverProjectPath)"
+             Targets="Restore"
+             BuildInParallel="false"
+             Condition="!Exists('$(_XamlSourceGenLocalIlWeaverAssetsPath)')"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
+
+    <MSBuild Projects="$(_XamlSourceGenLocalIlWeaverProjectPath)"
+             Targets="Build"
+             BuildInParallel="false"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
+  </Target>
+
+  <Target Name="XamlToCSharpGenerator_WeaveAvaloniaLoaderCalls"
+          AfterTargets="CoreCompile"
+          BeforeTargets="CopyFilesToOutputDirectory"
+          DependsOnTargets="XamlToCSharpGenerator_BuildLocalIlWeaverTask"
+          Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(XamlSourceGenIlWeavingEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true' and '@(IntermediateAssembly)' != ''">
+    <Error Condition="!Exists('$(XamlSourceGenIlWeaverTaskAssemblyPath)')"
+           Text="[AXSG.Build] IL weaver task assembly was not found at '$(XamlSourceGenIlWeaverTaskAssemblyPath)'." />
+
+    <RewriteAvaloniaLoaderCallsTask AssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+                                    FailOnMissingGeneratedInitializer="$(XamlSourceGenIlWeavingStrict)"
+                                    Verbose="$(XamlSourceGenIlWeavingVerbose)" />
   </Target>
 </Project>

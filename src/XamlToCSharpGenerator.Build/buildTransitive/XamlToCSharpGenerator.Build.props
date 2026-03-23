@@ -23,6 +23,15 @@
     <AvaloniaSourceGenHotReloadEnabled Condition="'$(AvaloniaSourceGenHotReloadEnabled)' == ''">true</AvaloniaSourceGenHotReloadEnabled>
     <AvaloniaSourceGenHotReloadErrorResilienceEnabled Condition="'$(AvaloniaSourceGenHotReloadErrorResilienceEnabled)' == ''">true</AvaloniaSourceGenHotReloadErrorResilienceEnabled>
     <AvaloniaSourceGenIdeHotReloadEnabled Condition="'$(AvaloniaSourceGenIdeHotReloadEnabled)' == ''">true</AvaloniaSourceGenIdeHotReloadEnabled>
+    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == '' and '$(AvaloniaSourceGenIlWeavingEnabled)' != ''">$(AvaloniaSourceGenIlWeavingEnabled)</XamlSourceGenIlWeavingEnabled>
+    <XamlSourceGenIlWeavingEnabled Condition="'$(XamlSourceGenIlWeavingEnabled)' == ''">true</XamlSourceGenIlWeavingEnabled>
+    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == '' and '$(AvaloniaSourceGenIlWeavingStrict)' != ''">$(AvaloniaSourceGenIlWeavingStrict)</XamlSourceGenIlWeavingStrict>
+    <XamlSourceGenIlWeavingStrict Condition="'$(XamlSourceGenIlWeavingStrict)' == ''">true</XamlSourceGenIlWeavingStrict>
+    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == '' and '$(AvaloniaSourceGenIlWeavingVerbose)' != ''">$(AvaloniaSourceGenIlWeavingVerbose)</XamlSourceGenIlWeavingVerbose>
+    <XamlSourceGenIlWeavingVerbose Condition="'$(XamlSourceGenIlWeavingVerbose)' == ''">false</XamlSourceGenIlWeavingVerbose>
+    <AvaloniaSourceGenIlWeavingEnabled Condition="'$(AvaloniaSourceGenIlWeavingEnabled)' == ''">$(XamlSourceGenIlWeavingEnabled)</AvaloniaSourceGenIlWeavingEnabled>
+    <AvaloniaSourceGenIlWeavingStrict Condition="'$(AvaloniaSourceGenIlWeavingStrict)' == ''">$(XamlSourceGenIlWeavingStrict)</AvaloniaSourceGenIlWeavingStrict>
+    <AvaloniaSourceGenIlWeavingVerbose Condition="'$(AvaloniaSourceGenIlWeavingVerbose)' == ''">$(XamlSourceGenIlWeavingVerbose)</AvaloniaSourceGenIlWeavingVerbose>
     <AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled Condition="'$(AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled)' == ''">false</AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled>
     <AvaloniaSourceGenHotDesignEnabled Condition="'$(AvaloniaSourceGenHotDesignEnabled)' == ''">false</AvaloniaSourceGenHotDesignEnabled>
     <AvaloniaSourceGenTracePasses Condition="'$(AvaloniaSourceGenTracePasses)' == ''">false</AvaloniaSourceGenTracePasses>
@@ -74,6 +83,12 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIdeHotReloadEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingStrict" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingVerbose" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingStrict" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingVerbose" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />
