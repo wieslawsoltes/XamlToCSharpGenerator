@@ -868,8 +868,12 @@ public sealed partial class AvaloniaSemanticBinder
 
     private static bool RequiresObjectInitializer(IPropertySymbol property, ResolvedValueRequirements valueRequirements)
     {
-        return property.SetMethod?.IsInitOnly == true &&
-               !valueRequirements.RequiresMarkupContext;
+        if (valueRequirements.RequiresMarkupContext)
+        {
+            return false;
+        }
+
+        return property.SetMethod?.IsInitOnly == true || property.IsRequired;
     }
 
     private static bool IsCultureAwareParseParameter(ITypeSymbol type)

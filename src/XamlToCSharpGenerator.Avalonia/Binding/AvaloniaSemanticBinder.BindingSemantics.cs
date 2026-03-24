@@ -2507,7 +2507,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         if (conversionTargetType.SpecialType == SpecialType.System_String)
         {
             resolution = new SetterValueResolutionResult(
-                Expression: "\"" + Escape(rawValue) + "\"",
+                Expression: "\"" + Escape(MarkupExpressionEnvelopeSemantics.UnescapeEscapedLiteral(rawValue)) + "\"",
                 ValueKind: ResolvedValueKind.Literal,
                 RequiresStaticResourceResolver: false,
                 ValueRequirements: ResolvedValueRequirements.None);
@@ -2555,7 +2555,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 column,
                 false));
             resolution = new SetterValueResolutionResult(
-                Expression: "\"" + Escape(rawValue) + "\"",
+                Expression: "\"" + Escape(MarkupExpressionEnvelopeSemantics.UnescapeEscapedLiteral(rawValue)) + "\"",
                 ValueKind: ResolvedValueKind.Literal,
                 RequiresStaticResourceResolver: false,
                 ValueRequirements: ResolvedValueRequirements.None);
@@ -2621,7 +2621,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return valueType is not null;
     }
 
-    private static (ResolvedChildAttachmentMode Mode, string? ContentPropertyName) DetermineChildAttachment(INamedTypeSymbol? symbol)
+    private static (ResolvedChildAttachmentMode Mode, string? ContentPropertyName) DetermineChildAttachment(
+        INamedTypeSymbol? symbol,
+        Compilation? compilation = null,
+        XamlDocumentModel? document = null)
     {
         if (symbol is null)
         {
@@ -2630,7 +2633,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         var contentPropertyName = FindContentPropertyName(symbol);
         var contentProperty = !string.IsNullOrWhiteSpace(contentPropertyName)
-            ? FindProperty(symbol, contentPropertyName!)
+            ? FindBindableProperty(symbol, contentPropertyName!, compilation, document)
             : null;
         if (contentProperty is not null &&
             CanUseContentPropertyForAttachment(contentProperty))
@@ -2643,7 +2646,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return (ResolvedChildAttachmentMode.Content, contentProperty.Name);
         }
 
-        var implicitContentProperty = FindProperty(symbol, "Content");
+        var implicitContentProperty = FindBindableProperty(symbol, "Content", compilation, document);
         if (implicitContentProperty is not null &&
             CanUseContentPropertyForAttachment(implicitContentProperty))
         {
@@ -2655,12 +2658,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return (ResolvedChildAttachmentMode.DirectAdd, null);
         }
 
-        if (CanAddToCollectionProperty(symbol, "Children"))
+        if (CanAddToCollectionProperty(symbol, "Children", compilation, document))
         {
             return (ResolvedChildAttachmentMode.ChildrenCollection, null);
         }
 
-        if (CanAddToCollectionProperty(symbol, "Items"))
+        if (CanAddToCollectionProperty(symbol, "Items", compilation, document))
         {
             return (ResolvedChildAttachmentMode.ItemsCollection, null);
         }
@@ -2678,14 +2681,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return (ResolvedChildAttachmentMode.None, null);
     }
 
-    private static string? ResolveContentPropertyTypeName(INamedTypeSymbol? ownerType, string? contentPropertyName)
+    private static string? ResolveContentPropertyTypeName(
+        INamedTypeSymbol? ownerType,
+        string? contentPropertyName,
+        Compilation? compilation = null,
+        XamlDocumentModel? document = null)
     {
         if (ownerType is null || string.IsNullOrWhiteSpace(contentPropertyName))
         {
             return null;
         }
 
-        return FindProperty(ownerType, contentPropertyName!)?
+        return FindBindableProperty(ownerType, contentPropertyName!, compilation, document)?
             .Type
             .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     }
@@ -2887,14 +2894,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return values;
         }
 
-        var (attachmentMode, contentPropertyName) = DetermineChildAttachment(namedTargetType);
+        var (attachmentMode, contentPropertyName) = DetermineChildAttachment(namedTargetType, compilation, document);
         if (attachmentMode == ResolvedChildAttachmentMode.None)
         {
             return values;
         }
 
         var contentPropertyTypeName = attachmentMode == ResolvedChildAttachmentMode.Content
-            ? ResolveContentPropertyTypeName(namedTargetType, contentPropertyName)
+            ? ResolveContentPropertyTypeName(namedTargetType, contentPropertyName, compilation, document)
             : null;
 
         if (values.Length == 1)
@@ -2942,9 +2949,13 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return ImmutableArray.Create(container);
     }
 
-    private static bool CanAddToCollectionProperty(INamedTypeSymbol type, string propertyName)
+    private static bool CanAddToCollectionProperty(
+        INamedTypeSymbol type,
+        string propertyName,
+        Compilation? compilation = null,
+        XamlDocumentModel? document = null)
     {
-        var property = FindProperty(type, propertyName);
+        var property = FindBindableProperty(type, propertyName, compilation, document);
         if (property is null)
         {
             return false;
@@ -2962,6 +2973,21 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return HasDirectAddMethod(namedType);
+    }
+
+    private static IPropertySymbol? FindBindableProperty(
+        INamedTypeSymbol type,
+        string propertyName,
+        Compilation? compilation = null,
+        XamlDocumentModel? document = null)
+    {
+        if (compilation is null || document is null)
+        {
+            return FindProperty(type, propertyName);
+        }
+
+        var accessibilityWithin = GetGeneratedCodeAccessibilityWithinSymbol(compilation, document);
+        return FindAccessibleProperty(compilation, accessibilityWithin, type, propertyName, out _);
     }
 
     private static bool ShouldUseCollectionAddForContentProperty(
@@ -3185,8 +3211,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             }
 
             attachedPropertyName = normalizedPropertyName;
-            ownerType = ResolveTypeSymbol(compilation, assignment.XmlNamespace, ownerToken)
-                        ?? ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace);
+            ownerType = ResolveOwnerQualifiedMemberOwnerType(
+                compilation,
+                document,
+                ownerToken,
+                assignment.XmlNamespace);
         }
 
         if (ownerType is null)
@@ -3485,8 +3514,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return false;
         }
 
-        ownerType = ResolveTypeSymbol(compilation, assignment.XmlNamespace, ownerToken) ??
-                    ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace);
+        ownerType = ResolveOwnerQualifiedMemberOwnerType(
+            compilation,
+            document,
+            ownerToken,
+            assignment.XmlNamespace);
         if (ownerType is null)
         {
             return false;
@@ -3494,6 +3526,24 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         memberName = normalizedMemberName;
         return true;
+    }
+
+    private static INamedTypeSymbol? ResolveOwnerQualifiedMemberOwnerType(
+        Compilation compilation,
+        XamlDocumentModel document,
+        string ownerToken,
+        string? xmlNamespace)
+    {
+        if (!string.IsNullOrWhiteSpace(xmlNamespace))
+        {
+            var namespacedType = ResolveTypeSymbol(compilation, xmlNamespace!, ownerToken);
+            if (namespacedType is not null)
+            {
+                return namespacedType;
+            }
+        }
+
+        return ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace);
     }
 
     private static bool TryFindAttachedSetterMethod(
@@ -7379,6 +7429,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return true;
         }
 
+        value = MarkupExpressionEnvelopeSemantics.UnescapeEscapedLiteral(value);
         var escaped = Escape(value);
 
         var fullyQualifiedTypeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);

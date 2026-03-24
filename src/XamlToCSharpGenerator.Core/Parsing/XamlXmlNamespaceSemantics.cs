@@ -9,7 +9,16 @@ public static class XamlXmlNamespaceSemantics
 
     public static bool TryExtractClrNamespace(string xmlNamespace, out string clrNamespace)
     {
+        return TryExtractClrNamespaceReference(xmlNamespace, out clrNamespace, out _);
+    }
+
+    public static bool TryExtractClrNamespaceReference(
+        string xmlNamespace,
+        out string clrNamespace,
+        out string? assemblySimpleName)
+    {
         clrNamespace = string.Empty;
+        assemblySimpleName = null;
         if (string.IsNullOrWhiteSpace(xmlNamespace))
         {
             return false;
@@ -31,12 +40,30 @@ public static class XamlXmlNamespaceSemantics
             return false;
         }
 
-        if (XamlTokenSplitSemantics.TrySplitAtFirstSeparator(namespacePayload, ';', out var extractedNamespace, out _))
+        foreach (var rawSegment in namespacePayload.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
         {
-            namespacePayload = extractedNamespace;
+            var segment = rawSegment.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            if (clrNamespace.Length == 0)
+            {
+                clrNamespace = segment;
+                continue;
+            }
+
+            if (segment.StartsWith("assembly=", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidateAssemblyName = segment.Substring("assembly=".Length).Trim();
+                if (candidateAssemblyName.Length > 0)
+                {
+                    assemblySimpleName = candidateAssemblyName;
+                }
+            }
         }
 
-        clrNamespace = namespacePayload.Trim();
         return clrNamespace.Length > 0;
     }
 
