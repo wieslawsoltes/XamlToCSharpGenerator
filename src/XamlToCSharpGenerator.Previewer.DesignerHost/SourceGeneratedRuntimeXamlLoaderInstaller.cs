@@ -103,20 +103,21 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
             return localAssembly ?? Assembly.GetEntryAssembly();
         }
 
-        string assemblyName = Path.GetFileNameWithoutExtension(sourceAssemblyPath);
+        string normalizedSourceAssemblyPath = Path.GetFullPath(sourceAssemblyPath);
+        string assemblyName = Path.GetFileNameWithoutExtension(normalizedSourceAssemblyPath);
+        AssemblyName? sourceAssemblyIdentity = TryGetAssemblyIdentity(normalizedSourceAssemblyPath);
         if (localAssembly is not null &&
-            AssemblyMatchesPreviewSource(localAssembly, sourceAssemblyPath, assemblyName))
+            AssemblyMatchesPreviewSource(localAssembly, normalizedSourceAssemblyPath, assemblyName, sourceAssemblyIdentity))
         {
             return localAssembly;
         }
 
         if (!string.IsNullOrWhiteSpace(assemblyName) &&
-            TryResolveLoadedAssembly(sourceAssemblyPath, assemblyName, out Assembly? loadedAssembly))
+            TryResolveLoadedAssembly(normalizedSourceAssemblyPath, assemblyName, sourceAssemblyIdentity, out Assembly? loadedAssembly))
         {
             return loadedAssembly;
         }
 
-        string normalizedSourceAssemblyPath = Path.GetFullPath(sourceAssemblyPath);
         try
         {
             return Assembly.LoadFrom(normalizedSourceAssemblyPath);
@@ -178,23 +179,46 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         return baseUri;
     }
 
-    private static bool AssemblyMatchesPreviewSource(Assembly assembly, string sourceAssemblyPath, string sourceAssemblyName)
+    private static bool AssemblyMatchesPreviewSource(
+        Assembly assembly,
+        string sourceAssemblyPath,
+        string sourceAssemblyName,
+        AssemblyName? sourceAssemblyIdentity)
     {
         ArgumentNullException.ThrowIfNull(assembly);
 
         try
         {
             string? assemblyLocation = assembly.Location;
-            if (string.IsNullOrWhiteSpace(assemblyLocation))
+            if (!string.IsNullOrWhiteSpace(assemblyLocation) &&
+                string.Equals(
+                    Path.GetFullPath(assemblyLocation),
+                    sourceAssemblyPath,
+                    StringComparison.OrdinalIgnoreCase))
             {
-                return !string.IsNullOrWhiteSpace(sourceAssemblyName) &&
-                       string.Equals(assembly.GetName().Name, sourceAssemblyName, StringComparison.OrdinalIgnoreCase);
+                return true;
             }
+        }
+        catch
+        {
+            // Fall back to identity-based checks below.
+        }
 
-            return string.Equals(
-                Path.GetFullPath(assemblyLocation),
-                Path.GetFullPath(sourceAssemblyPath),
-                StringComparison.OrdinalIgnoreCase);
+        if (sourceAssemblyIdentity is not null &&
+            AssemblyMatchesPreviewIdentity(assembly, sourceAssemblyIdentity))
+        {
+            return true;
+        }
+
+        if (sourceAssemblyIdentity is not null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return !string.IsNullOrWhiteSpace(sourceAssemblyName) &&
+                   string.Equals(assembly.GetName().Name, sourceAssemblyName, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
@@ -202,13 +226,21 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
         }
     }
 
-    private static bool TryResolveLoadedAssembly(string sourceAssemblyPath, string assemblyName, out Assembly? assembly)
+    private static bool TryResolveLoadedAssembly(
+        string sourceAssemblyPath,
+        string assemblyName,
+        AssemblyName? sourceAssemblyIdentity,
+        out Assembly? assembly)
     {
         foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
             {
-                if (AssemblyMatchesPreviewSource(loadedAssembly, sourceAssemblyPath, assemblyName))
+                if (AssemblyMatchesPreviewSource(
+                        loadedAssembly,
+                        sourceAssemblyPath,
+                        assemblyName,
+                        sourceAssemblyIdentity))
                 {
                     assembly = loadedAssembly;
                     return true;
@@ -222,6 +254,37 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
 
         assembly = null;
         return false;
+    }
+
+    private static AssemblyName? TryGetAssemblyIdentity(string sourceAssemblyPath)
+    {
+        try
+        {
+            return AssemblyName.GetAssemblyName(sourceAssemblyPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool AssemblyMatchesPreviewIdentity(Assembly assembly, AssemblyName sourceAssemblyIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        ArgumentNullException.ThrowIfNull(sourceAssemblyIdentity);
+
+        try
+        {
+            AssemblyName loadedAssemblyIdentity = assembly.GetName();
+            return string.Equals(
+                loadedAssemblyIdentity.FullName,
+                sourceAssemblyIdentity.FullName,
+                StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool ResolveUseCompiledBindingsByDefault(bool configuredValue, Assembly? localAssembly)
