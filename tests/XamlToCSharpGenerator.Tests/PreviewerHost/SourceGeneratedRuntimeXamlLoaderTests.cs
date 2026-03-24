@@ -672,6 +672,68 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
+    [Fact]
+    public void ResolvePreviewLocalAssembly_Reuses_Already_Loaded_Source_Assembly_When_Identity_Matches()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+
+        try
+        {
+            string assemblyName = "AxsgPreviewLoaded_" + Guid.NewGuid().ToString("N");
+            string loadedAssemblyPath = Path.Combine(tempRoot, "loaded", assemblyName + ".dll");
+            string previewAssemblyPath = Path.Combine(tempRoot, "preview", assemblyName + ".dll");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(loadedAssemblyPath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(previewAssemblyPath)!);
+
+            EmitAssemblyToFile(
+                assemblyName,
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                loadedAssemblyPath);
+            EmitAssemblyToFile(
+                assemblyName,
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                    public int Version => 2;
+                }
+                """,
+                previewAssemblyPath);
+
+            Assembly loadedAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(loadedAssemblyPath);
+
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                previewAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null,
+                null));
+
+            Assembly? resolvedAssembly = SourceGeneratedRuntimeXamlLoaderInstaller.ResolvePreviewLocalAssembly(localAssembly: null);
+
+            Assert.Same(loadedAssembly, resolvedAssembly);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     [AvaloniaFact]
     public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
     {
