@@ -18,7 +18,7 @@ public static class XamlSourceGenStudioHost
     private static SourceGenStudioOptions ActiveOptions = new();
     private static StudioIndicatorWindow? IndicatorWindow;
     private static StudioDashboardWindow? DashboardWindow;
-    private static XamlSourceGenStudioShellViewModel? ShellViewModel;
+    private static XamlSourceGenStudioShellState? ShellViewModel;
     private static readonly Dictionary<Window, StudioOverlayAttachment> OverlayAttachments = new();
     private static readonly HashSet<Window> TrackedWindows = new();
     private static DispatcherTimer? OverlayRefreshTimer;
@@ -56,7 +56,7 @@ public static class XamlSourceGenStudioHost
             Started = true;
             XamlSourceGenStudioManager.Enable(ActiveOptions);
             XamlSourceGenStudioManager.StartSession();
-            ShellViewModel = new XamlSourceGenStudioShellViewModel(ActiveOptions);
+            ShellViewModel = new XamlSourceGenStudioShellState(ActiveOptions);
             XamlSourceGenStudioManager.StudioStatusChanged += OnStudioStatusChanged;
             RemoteDesignServer = new XamlSourceGenStudioRemoteDesignServer(ActiveOptions);
             remoteDesignServer = RemoteDesignServer;
@@ -93,7 +93,7 @@ public static class XamlSourceGenStudioHost
 
     public static void Stop()
     {
-        XamlSourceGenStudioShellViewModel? shellViewModel;
+        XamlSourceGenStudioShellState? shellViewModel;
         XamlSourceGenStudioRemoteDesignServer? remoteDesignServer;
         lock (Sync)
         {
@@ -136,7 +136,7 @@ public static class XamlSourceGenStudioHost
 
     public static void OpenStudioWindow()
     {
-        XamlSourceGenStudioShellViewModel? shellViewModel;
+        XamlSourceGenStudioShellState? shellViewModel;
         lock (Sync)
         {
             if (!Started || !ActiveOptions.EnableExternalWindow)
@@ -516,7 +516,7 @@ public static class XamlSourceGenStudioHost
 
     private sealed class StudioDashboardWindow : Window
     {
-        public StudioDashboardWindow(XamlSourceGenStudioShellViewModel? shellViewModel)
+        public StudioDashboardWindow(XamlSourceGenStudioShellState? shellViewModel)
         {
             Width = 1280;
             Height = 840;
@@ -534,7 +534,7 @@ public static class XamlSourceGenStudioHost
                 return;
             }
 
-            Content = new XamlSourceGenStudioShellView
+            Content = new XamlSourceGenStudioShellPanel
             {
                 DataContext = shellViewModel
             };
