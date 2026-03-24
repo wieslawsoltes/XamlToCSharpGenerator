@@ -67,6 +67,7 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
         var condition = XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
             element.Name.NamespaceName,
             conditionalNamespacesByRawUri);
+        var typeArguments = ResolveTypeArguments(element);
         var lineInfo = (IXmlLineInfo)element;
         var line = lineInfo.HasLineInfo() ? lineInfo.LineNumber : 1;
         var column = lineInfo.HasLineInfo() ? lineInfo.LinePosition : 1;
@@ -82,7 +83,8 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
                 Condition: condition,
                 RawXaml: rawXaml,
                 Line: line,
-                Column: column));
+                Column: column,
+                TypeArguments: typeArguments));
         }
 
         if (IsTemplateElement(element.Name.LocalName))
@@ -160,6 +162,25 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
             element.Name.LocalName,
             "Setters",
             ownerToken: scope.Name.LocalName);
+    }
+
+    private static ImmutableArray<string> ResolveTypeArguments(XElement element)
+    {
+        foreach (var attribute in element.Attributes())
+        {
+            if (!string.Equals(
+                    attribute.Name.NamespaceName,
+                    "http://schemas.microsoft.com/winfx/2006/xaml",
+                    StringComparison.Ordinal) ||
+                !string.Equals(attribute.Name.LocalName, "TypeArguments", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return XamlTypeArgumentListSemantics.Parse(attribute.Value);
+        }
+
+        return ImmutableArray<string>.Empty;
     }
 
     private static void AddSetterDefinition(

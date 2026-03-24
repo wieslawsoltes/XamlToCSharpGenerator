@@ -1181,18 +1181,7 @@ public sealed class RuntimeMcpServerIntegrationTests
 
     private static void ResetRuntimeState()
     {
-        XamlSourceGenHotReloadManager.ResetTestHooks();
-        XamlSourceGenHotReloadManager.DisableIdePollingFallback();
-        XamlSourceGenHotDesignManager.Disable();
-        XamlSourceGenHotDesignManager.ClearRegistrations();
-        XamlSourceGenHotDesignManager.ResetAppliersToDefaults();
-        XamlSourceGenHotReloadManager.ClearRegistrations();
-        XamlSourceGenHotReloadManager.ResetHandlersToDefaults();
-        XamlSourceGenStudioManager.Disable();
-        XamlIncludeGraphRegistry.Clear();
-        XamlSourceGenArtifactRefreshRegistry.Clear();
-        XamlSourceGenTypeUriRegistry.Clear();
-        XamlSourceGenHotDesignCoreTools.ResetWorkspace();
+        RuntimeRemoteServiceTestHelper.ResetRuntimeState();
     }
 
     private sealed class RuntimeMcpHotReloadTarget;

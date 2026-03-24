@@ -9,7 +9,7 @@ using XamlToCSharpGenerator.Runtime;
 namespace XamlToCSharpGenerator.Tests.Runtime;
 
 [Collection("RuntimeStateful")]
-public class XamlSourceGenStudioShellViewModelTests
+public class XamlSourceGenStudioShellStateTests
 {
     [Fact]
     public void TryHandleLiveSurfacePointerPressed_Selects_Element_By_Name_In_Design_Mode()
@@ -37,7 +37,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             Assert.Equal(SourceGenHotDesignHitTestMode.Logical, viewModel.HitTestMode);
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
             {
@@ -82,7 +82,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             viewModel.WorkspaceMode = SourceGenHotDesignWorkspaceMode.Interactive;
 
             var handled = viewModel.TryHandleLiveSurfacePointerPressed(new Button
@@ -148,7 +148,7 @@ public class XamlSourceGenStudioShellViewModelTests
             XamlSourceGenHotDesignCoreTools.SelectDocument(appBuildUri);
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             Assert.Equal(appBuildUri, viewModel.ActiveBuildUri);
             Assert.Equal(appBuildUri, viewModel.SelectedScope?.BuildUri);
             Assert.Equal("Preview pending.", viewModel.PreviewStatus);
@@ -221,7 +221,7 @@ public class XamlSourceGenStudioShellViewModelTests
             XamlSourceGenHotDesignCoreTools.SelectDocument(viewBuildUri);
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             Assert.Equal(viewBuildUri, viewModel.ActiveBuildUri);
 
             var templateDocument = Assert.Single(viewModel.TemplateDocuments, document =>
@@ -246,7 +246,7 @@ public class XamlSourceGenStudioShellViewModelTests
     {
         ResetRuntimeState();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions
         {
             CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.PreviewOnly
         });
@@ -306,7 +306,7 @@ public class XamlSourceGenStudioShellViewModelTests
             XamlSourceGenHotDesignCoreTools.SelectDocument(viewBuildUri);
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
 
             Assert.Equal(new Uri(Path.GetFullPath(viewSourcePath)).AbsoluteUri, viewModel.CanvasEditorDocumentUri);
             Assert.Equal(projectRoot, viewModel.CanvasEditorWorkspaceRoot);
@@ -346,7 +346,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             var buttonNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/0");
 
             viewModel.SelectedElement = buttonNode;
@@ -399,7 +399,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             var buttonNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/0");
             Assert.Equal(viewBuildUri, buttonNode.SourceBuildUri);
 
@@ -446,7 +446,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             viewModel.UpdateLiveElementTree(new StackPanel
             {
                 Name = "RootPanel",
@@ -483,7 +483,7 @@ public class XamlSourceGenStudioShellViewModelTests
         ResetRuntimeState();
         XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         viewModel.UpdateLiveElementTree(new StackPanel
         {
             Children =
@@ -535,7 +535,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             viewModel.UpdateLiveElementTree(new StackPanel
             {
                 Children =
@@ -608,7 +608,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             var statusTextNode = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
             viewModel.SelectedElement = statusTextNode;
             viewModel.SelectedProperty = Assert.Single(viewModel.Properties, property => property.Name == "Text");
@@ -658,7 +658,7 @@ public class XamlSourceGenStudioShellViewModelTests
         ResetRuntimeState();
         XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         viewModel.HitTestMode = SourceGenHotDesignHitTestMode.Visual;
 
         var runtimeOnlyLiveNode = new SourceGenHotDesignElementNode(
@@ -726,7 +726,7 @@ public class XamlSourceGenStudioShellViewModelTests
         ResetRuntimeState();
         XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         viewModel.UpdateLiveElementTree(new StackPanel
         {
             Children =
@@ -782,7 +782,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             viewModel.UpdateLiveElementTree(new StackPanel
             {
                 Name = "RootPanel",
@@ -839,7 +839,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             var documentChanges = 0;
             var elementChanges = 0;
             var displayElementChanges = 0;
@@ -929,7 +929,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(new SourceGenStudioOptions());
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+            using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
             Assert.Equal(buildUri, viewModel.ActiveBuildUri);
             Assert.Equal("Preview pending.", viewModel.PreviewStatus);
             Assert.Equal(0, previewCreateCount);
@@ -980,7 +980,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(studioOptions);
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            using var viewModel = new XamlSourceGenStudioShellState(studioOptions);
             viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0/1");
             viewModel.PropertyName = "Text";
             viewModel.PropertyValue = "Updated";
@@ -1035,7 +1035,7 @@ public class XamlSourceGenStudioShellViewModelTests
 
             XamlSourceGenStudioManager.Enable(studioOptions);
 
-            using var viewModel = new XamlSourceGenStudioShellViewModel(studioOptions);
+            using var viewModel = new XamlSourceGenStudioShellState(studioOptions);
             viewModel.SelectedElement = FindById(Assert.Single(viewModel.DisplayElements), "0/0");
             viewModel.NewElementName = "Border";
 

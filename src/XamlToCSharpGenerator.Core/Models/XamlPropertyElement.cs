@@ -4,6 +4,7 @@ namespace XamlToCSharpGenerator.Core.Models;
 
 public sealed record XamlPropertyElement(
     string PropertyName,
+    string XmlNamespace,
     ImmutableArray<XamlObjectNode> ObjectValues,
     int Line,
     int Column,

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia;
 using XamlToCSharpGenerator.Runtime;
 
@@ -15,6 +16,8 @@ internal static class Program
 
     public static AppBuilder BuildAvaloniaApp()
     {
+        var enableIdePollingFallback = !Debugger.IsAttached;
+
         var builder = AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .LogToTrace()
@@ -23,7 +26,7 @@ internal static class Program
             {
                 options.TraceDiagnostics = true;
             })
-            .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: true, pollingIntervalMs: 1000);
+            .UseAvaloniaSourceGeneratedXamlIdeHotReloadFallback(enable: enableIdePollingFallback, pollingIntervalMs: 1000);
 
         if (!IsStudioEnabled())
         {

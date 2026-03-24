@@ -52,16 +52,18 @@ private void InitializeComponent()
 }
 ```
 
-do not leave that method unconditional after enabling AXSG. AXSG generates `InitializeComponent(bool loadXaml = true)` for class-backed XAML, and the hand-written parameterless overload will intercept `InitializeComponent();` calls in constructors.
+AXSG generates `InitializeComponent(bool loadXaml = true)` for class-backed XAML, and the hand-written parameterless overload will intercept `InitializeComponent();` calls in constructors.
 
 Use one of these approaches:
 
 - remove the manual method in sourcegen-only projects
+- keep the supported loader call and rely on AXSG IL weaving during migration
 - wrap it in `#if !AXAML_SOURCEGEN_BACKEND` for mixed-backend or multi-target projects
 
 The full behavior, including overload resolution and build constants, is documented in:
 
 - [InitializeComponent and Loader Fallback](initializecomponent-and-loader-fallback/)
+- [Avalonia Loader Migration and IL Weaving](../guides/avalonia-loader-il-weaving/)
 
 ## 5. Annotate binding scopes
 

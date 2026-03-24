@@ -1,3 +1,4 @@
+using System.Reflection;
 using XamlToCSharpGenerator.PreviewerHost;
 using XamlToCSharpGenerator.RemoteProtocol.Preview;
 
@@ -113,6 +114,16 @@ public sealed class PreviewSessionTests
     }
 
     [Fact]
+    public void BuildProjectHostFallbackDesignUnavailableMessage_Explains_Fallback_Limitations()
+    {
+        string message = PreviewSession.BuildProjectHostFallbackDesignUnavailableMessage();
+
+        Assert.Contains("project host fallback", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bundled AXSG designer host", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AXSG Inspector", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CompleteInitialPreviewStartupAsync_Waits_For_Preview_Url_Before_Sending_Initial_Update()
     {
         var steps = new List<string>();
@@ -143,6 +154,32 @@ public sealed class PreviewSessionTests
         Assert.Equal(["bootstrap", "update"], steps);
     }
 
+    [Fact]
+    public async Task CleanupStartupAttemptAsync_Preserves_Design_Command_State_When_Retrying()
+    {
+        var session = new PreviewSession();
+        SetPrivateField(session, "_designCommandsAvailable", true);
+        SetPrivateField(session, "_designCommandsUnavailableMessage", "should-stay");
+
+        await InvokeCleanupStartupAttemptAsync(session, resetDesignCommandState: false);
+
+        Assert.True(GetPrivateField<bool>(session, "_designCommandsAvailable"));
+        Assert.Equal("should-stay", GetPrivateField<string?>(session, "_designCommandsUnavailableMessage"));
+    }
+
+    [Fact]
+    public async Task CleanupStartupAttemptAsync_Clears_Design_Command_State_When_Reset_Is_Requested()
+    {
+        var session = new PreviewSession();
+        SetPrivateField(session, "_designCommandsAvailable", true);
+        SetPrivateField(session, "_designCommandsUnavailableMessage", "clear-me");
+
+        await InvokeCleanupStartupAttemptAsync(session, resetDesignCommandState: true);
+
+        Assert.False(GetPrivateField<bool>(session, "_designCommandsAvailable"));
+        Assert.Null(GetPrivateField<string?>(session, "_designCommandsUnavailableMessage"));
+    }
+
     private static AxsgPreviewHostStartRequest CreateStartRequest(
         string previewerToolPath,
         string runtimeConfigPath,
@@ -162,5 +199,37 @@ public sealed class PreviewSessionTests
             800,
             600,
             1);
+    }
+
+    private static async Task InvokeCleanupStartupAttemptAsync(
+        PreviewSession session,
+        bool resetDesignCommandState)
+    {
+        MethodInfo method = typeof(PreviewSession).GetMethod(
+                "CleanupStartupAttemptAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("CleanupStartupAttemptAsync method was not found.");
+
+        Task cleanupTask = Assert.IsAssignableFrom<Task>(method.Invoke(session, [resetDesignCommandState]));
+        await cleanupTask;
+    }
+
+    private static void SetPrivateField<T>(PreviewSession session, string fieldName, T value)
+    {
+        FieldInfo field = typeof(PreviewSession).GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Field '" + fieldName + "' was not found.");
+        field.SetValue(session, value);
+    }
+
+    private static T GetPrivateField<T>(PreviewSession session, string fieldName)
+    {
+        FieldInfo field = typeof(PreviewSession).GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Field '" + fieldName + "' was not found.");
+        object? value = field.GetValue(session);
+        return value is null ? default! : Assert.IsType<T>(value);
     }
 }

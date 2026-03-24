@@ -266,10 +266,13 @@ public sealed class XamlLanguageServiceEngineTests
     [Fact]
     public async Task GetWorkspaceSymbolsAsync_ReturnsMatchingSymbolsAcrossOpenDocuments()
     {
+        var temporaryDirectory = Path.Combine(Path.GetTempPath(), "axsg-workspace-symbols-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporaryDirectory);
+
         using var engine = new XamlLanguageServiceEngine(
             new InMemoryCompilationProvider(LanguageServiceTestCompilationFactory.CreateCompilation()));
-        const string firstUri = "file:///tmp/WorkspaceSymbolOne.axaml";
-        const string secondUri = "file:///tmp/WorkspaceSymbolTwo.axaml";
+        var firstUri = UriPathHelper.ToDocumentUri(Path.Combine(temporaryDirectory, "WorkspaceSymbolOne.axaml"));
+        var secondUri = UriPathHelper.ToDocumentUri(Path.Combine(temporaryDirectory, "WorkspaceSymbolTwo.axaml"));
         const string firstXaml =
             "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
             "  <Grid x:Name=\"LayoutRoot\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" />\n" +
@@ -279,17 +282,24 @@ public sealed class XamlLanguageServiceEngineTests
             "  <StackPanel />\n" +
             "</UserControl>";
 
-        await engine.OpenDocumentAsync(firstUri, firstXaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
-        await engine.OpenDocumentAsync(secondUri, secondXaml, version: 1, new XamlLanguageServiceOptions("/tmp"), CancellationToken.None);
+        try
+        {
+            await engine.OpenDocumentAsync(firstUri, firstXaml, version: 1, new XamlLanguageServiceOptions(temporaryDirectory), CancellationToken.None);
+            await engine.OpenDocumentAsync(secondUri, secondXaml, version: 1, new XamlLanguageServiceOptions(temporaryDirectory), CancellationToken.None);
 
-        var symbols = await engine.GetWorkspaceSymbolsAsync(
-            "LayoutRoot",
-            new XamlLanguageServiceOptions("/tmp"),
-            CancellationToken.None);
+            var symbols = await engine.GetWorkspaceSymbolsAsync(
+                "LayoutRoot",
+                new XamlLanguageServiceOptions(temporaryDirectory),
+                CancellationToken.None);
 
-        var symbol = Assert.Single(symbols);
-        Assert.Equal(firstUri, symbol.Uri);
-        Assert.Contains("LayoutRoot", symbol.Name, StringComparison.Ordinal);
+            var symbol = Assert.Single(symbols);
+            Assert.Equal(firstUri, symbol.Uri);
+            Assert.Contains("LayoutRoot", symbol.Name, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
     }
 
     [Fact]

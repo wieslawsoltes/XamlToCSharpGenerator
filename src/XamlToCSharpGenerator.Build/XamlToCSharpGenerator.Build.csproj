@@ -7,10 +7,56 @@
     <PackageId>XamlToCSharpGenerator.Build</PackageId>
     <Description>MSBuild backend switch and compiler integration props/targets for source-generated Avalonia XAML.</Description>
     <PackageTags>$(PackageTags);avalonia;build;msbuild;sdk</PackageTags>
+    <BundledBuildAssetNestedBuildRemoveProperties>TargetFramework;TargetFrameworks;BundledAnalyzerTargetFramework;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir;RuntimeIdentifier</BundledBuildAssetNestedBuildRemoveProperties>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="buildTransitive\XamlToCSharpGenerator.Build.props" Pack="true" PackagePath="buildTransitive/XamlToCSharpGenerator.Build.props" />
     <None Include="buildTransitive\XamlToCSharpGenerator.Build.targets" Pack="true" PackagePath="buildTransitive/XamlToCSharpGenerator.Build.targets" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Build.Tasks.dll"
+          Pack="true"
+          PackagePath="buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\Mono.Cecil.dll"
+          Pack="true"
+          PackagePath="buildTransitive/Mono.Cecil.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\Mono.Cecil.Pdb.dll"
+          Pack="true"
+          PackagePath="buildTransitive/Mono.Cecil.Pdb.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Buffers.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Buffers.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Collections.Immutable.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Collections.Immutable.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Memory.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Memory.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Reflection.Metadata.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Reflection.Metadata.dll"
+          Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Build.Tasks\bin\$(Configuration)\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll"
+          Pack="true"
+          PackagePath="buildTransitive/System.Runtime.CompilerServices.Unsafe.dll"
+          Visible="false" />
   </ItemGroup>
+
+  <Target Name="BuildBundledBuildAssets" BeforeTargets="_GetPackageFiles;Pack">
+    <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
+             Targets="Restore"
+             BuildInParallel="false"
+             RemoveProperties="$(BundledBuildAssetNestedBuildRemoveProperties)"
+             Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false;GenerateDocumentationFile=false" />
+    <MSBuild Projects="..\XamlToCSharpGenerator.Build.Tasks\XamlToCSharpGenerator.Build.Tasks.csproj"
+             Targets="Build"
+             BuildInParallel="false"
+             RemoveProperties="$(BundledBuildAssetNestedBuildRemoveProperties)"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false" />
+  </Target>
 </Project>

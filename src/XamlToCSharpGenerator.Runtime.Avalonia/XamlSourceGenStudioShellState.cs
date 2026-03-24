@@ -15,7 +15,7 @@ using global::Avalonia.Threading;
 
 namespace XamlToCSharpGenerator.Runtime;
 
-internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged, IDisposable
+internal sealed class XamlSourceGenStudioShellState : INotifyPropertyChanged, IDisposable
 {
     private readonly SourceGenStudioOptions _options;
     private readonly StudioRelayCommand _refreshCommand;
@@ -85,7 +85,7 @@ internal sealed class XamlSourceGenStudioShellViewModel : INotifyPropertyChanged
     private SourceGenHotDesignHitTestMode _hitTestMode = SourceGenHotDesignHitTestMode.Logical;
     private readonly HashSet<string> _pinnedPropertyKeys = new(StringComparer.OrdinalIgnoreCase);
 
-    public XamlSourceGenStudioShellViewModel(SourceGenStudioOptions options)
+    public XamlSourceGenStudioShellState(SourceGenStudioOptions options)
     {
         _options = options.Clone();
         WorkspaceModes = Enum.GetValues<SourceGenHotDesignWorkspaceMode>();

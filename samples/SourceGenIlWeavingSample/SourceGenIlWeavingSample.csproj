@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\src\XamlToCSharpGenerator.Build\buildTransitive\XamlToCSharpGenerator.Build.props" />
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+    <AssemblyName>SourceGenIlWeavingSample</AssemblyName>
+    <RootNamespace>SourceGenIlWeavingSample</RootNamespace>
+    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
+    <AvaloniaSourceGenUseCompiledBindingsByDefault>true</AvaloniaSourceGenUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Update="App.axaml;MainWindow.axaml;ServiceProviderPanel.axaml"
+                  SubType="Designer"
+                  Visible="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Runtime\XamlToCSharpGenerator.Runtime.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Generator\XamlToCSharpGenerator.Generator.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" WatchOnly="true" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\XamlToCSharpGenerator.Build\buildTransitive\XamlToCSharpGenerator.Build.targets" />
+</Project>

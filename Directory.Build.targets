@@ -1,4 +1,8 @@
 <Project>
+  <PropertyGroup>
+    <_XamlToCSharpGeneratorNestedBuildRemoveProperties Condition="'$(_XamlToCSharpGeneratorNestedBuildRemoveProperties)' == ''">TargetFramework;TargetFrameworks;MSBuildProjectExtensionsPath;BaseIntermediateOutputPath;BaseOutputPath;IntermediateOutputPath;OutputPath;OutDir</_XamlToCSharpGeneratorNestedBuildRemoveProperties>
+  </PropertyGroup>
+
   <Target Name="XamlToCSharpGenerator_GetLocalAnalyzerWatchFiles"
           Returns="@(_XamlToCSharpGeneratorLocalAnalyzerWatchFile)">
     <ItemGroup>
@@ -60,14 +64,14 @@
     <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
              Targets="Restore"
              BuildInParallel="true"
-             RemoveProperties="TargetFramework;TargetFrameworks"
+             RemoveProperties="$(_XamlToCSharpGeneratorNestedBuildRemoveProperties)"
              Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
              Properties="Configuration=$(Configuration);DesignTimeBuild=false;BuildingProject=false" />
 
     <MSBuild Projects="@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)"
              Targets="Build"
              BuildInParallel="true"
-             RemoveProperties="TargetFramework;TargetFrameworks"
+             RemoveProperties="$(_XamlToCSharpGeneratorNestedBuildRemoveProperties)"
              Condition="'@(_XamlToCSharpGeneratorBuildLocalAnalyzerProject)' != ''"
              Properties="Configuration=$(Configuration)" />
 

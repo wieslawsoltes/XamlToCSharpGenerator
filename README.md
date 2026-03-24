@@ -130,6 +130,7 @@ The remaining NuGet packages exist for advanced composition:
 - Global XML namespace imports and implicit namespace conventions
 - Conditional XAML pruning
 - Runtime loading for URI and inline XAML scenarios
+- Build-time IL weaving for legacy `AvaloniaXamlLoader.Load(...)` migration, including service-provider overload support and AXSG-initializer rewrites
 - Hot reload, iOS hot reload transport support, and hot design tooling
 - Shared XAML language-service core with references/definitions/hover/inlay hints/rename
 - Inline C# language-service support with semantic highlighting, completion, references, and declarations in both attribute and element-content forms
@@ -144,6 +145,7 @@ For feature-specific details:
 - x:Bind guide/spec: [`site/articles/guides/xbind.md`](site/articles/guides/xbind.md)
 - C# expressions: [`site/articles/xaml/csharp-expressions.md`](site/articles/xaml/csharp-expressions.md)
 - inline C# code blocks: [`site/articles/guides/inline-csharp-code.md`](site/articles/guides/inline-csharp-code.md)
+- Avalonia loader migration and IL weaving: [`site/articles/guides/avalonia-loader-il-weaving.md`](site/articles/guides/avalonia-loader-il-weaving.md)
 - iOS hot reload: [`site/articles/guides/hot-reload-ios.md`](site/articles/guides/hot-reload-ios.md)
 - MCP hosts and live tooling: [`site/articles/guides/mcp-servers-and-live-tooling.md`](site/articles/guides/mcp-servers-and-live-tooling.md)
 - workspace MCP language tools: [`site/articles/guides/workspace-mcp-language-tools.md`](site/articles/guides/workspace-mcp-language-tools.md)
@@ -315,6 +317,23 @@ These properties are exported through `XamlToCSharpGenerator.Build.props` and ar
 | `AvaloniaSourceGenTransformRules` | empty | Adds transform rules to the unified configuration model. |
 
 When `DotNetWatchBuild=true` and AXSG IDE hot reload is active, AXSG suppresses XAML entries from the SDK watch/build-trigger inputs by default so theme and resource-dictionary edits flow through AXSG runtime reload instead of Roslyn EnC rebuilds. Set `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled=true` only when you explicitly want the SDK `dotnet watch` XAML trigger behavior back.
+
+### IL weaving MSBuild properties
+
+These switches control AXSG's build-time compatibility pass that rewrites supported `AvaloniaXamlLoader.Load(...)` call sites to generated AXSG initializer helpers.
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `XamlSourceGenIlWeavingEnabled` | `true` | Canonical switch for build-time rewriting of supported legacy loader calls. |
+| `AvaloniaSourceGenIlWeavingEnabled` | mirrors `XamlSourceGenIlWeavingEnabled` | Compatibility alias for the canonical switch. |
+| `XamlSourceGenIlWeavingStrict` | `true` | Fails the build when a matched loader call on a source-generated type cannot be rewritten to a generated initializer. |
+| `AvaloniaSourceGenIlWeavingStrict` | mirrors `XamlSourceGenIlWeavingStrict` | Compatibility alias. |
+| `XamlSourceGenIlWeavingVerbose` | `false` | Logs inspection, match, and rewrite counts for the IL-weaving pass. |
+| `AvaloniaSourceGenIlWeavingVerbose` | mirrors `XamlSourceGenIlWeavingVerbose` | Compatibility alias. |
+| `XamlSourceGenIlWeavingBackend` | `Metadata` | Selects the weave scan backend. `Metadata` uses `System.Reflection.Metadata` for the fast scan path. `Cecil` keeps the legacy all-Cecil scan path. |
+| `AvaloniaSourceGenIlWeavingBackend` | mirrors `XamlSourceGenIlWeavingBackend` | Compatibility alias. |
+
+These are MSBuild-only build integration properties. They do not map to `xaml-sourcegen.config.json`. Use them when migrating legacy `App.axaml.cs` and class-backed view code that still calls `AvaloniaXamlLoader.Load(this)` or `AvaloniaXamlLoader.Load(serviceProvider, this)`.
 
 ### Build-host and configuration alias properties
 

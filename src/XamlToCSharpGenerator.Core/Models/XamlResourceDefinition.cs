@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace XamlToCSharpGenerator.Core.Models;
 
 public sealed record XamlResourceDefinition(
@@ -7,4 +9,5 @@ public sealed record XamlResourceDefinition(
     string RawXaml,
     int Line,
     int Column,
-    ConditionalXamlExpression? Condition = null);
+    ConditionalXamlExpression? Condition = null,
+    ImmutableArray<string> TypeArguments = default);

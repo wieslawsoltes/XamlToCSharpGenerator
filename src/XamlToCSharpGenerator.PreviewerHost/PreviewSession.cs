@@ -37,6 +37,8 @@ internal sealed class PreviewSession : IPreviewHostSession
     private Task? _readLoopTask;
     private AvaloniaDesignerTransport? _transport;
     private StudioRemoteDesignClient? _designClient;
+    private bool _designCommandsAvailable;
+    private string? _designCommandsUnavailableMessage;
     private string? _sourceAssemblyPath;
     private string? _xamlFileProjectPath;
     private double? _previewWidth;
@@ -72,6 +74,10 @@ internal sealed class PreviewSession : IPreviewHostSession
             _previewWidth = request.PreviewWidth;
             _previewHeight = request.PreviewHeight;
             _previewScale = request.PreviewScale;
+            _designCommandsAvailable = UsesAxsgPreviewerArguments(request);
+            _designCommandsUnavailableMessage = _designCommandsAvailable
+                ? null
+                : BuildProjectHostFallbackDesignUnavailableMessage();
             ResetHostDiagnostics();
 
             Exception? lastException = null;
@@ -125,11 +131,19 @@ internal sealed class PreviewSession : IPreviewHostSession
                         linkedCancellationToken.Token,
                         "Timed out waiting for the Avalonia preview session to start.").ConfigureAwait(false);
 
-                    _designClient = await StudioRemoteDesignClient.ConnectAsync(
-                        DefaultDesignHost,
-                        designPort,
-                        _startupTimeout,
-                        linkedCancellationToken.Token).ConfigureAwait(false);
+                    if (_designCommandsAvailable)
+                    {
+                        _designClient = await StudioRemoteDesignClient.ConnectAsync(
+                            DefaultDesignHost,
+                            designPort,
+                            _startupTimeout,
+                            linkedCancellationToken.Token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        Log?.Invoke(
+                            "[previewer] project host fallback does not expose AXSG design RPC; preview rendering is available, but AXSG Inspector actions are disabled for this session.");
+                    }
 
                     var previewUrl = await CompleteInitialPreviewStartupAsync(
                         cancellationToken => _transport.SendInitialClientBootstrapAsync(
@@ -159,7 +173,7 @@ internal sealed class PreviewSession : IPreviewHostSession
                     lastException = ex;
                     Log?.Invoke(
                         "[previewer] preview startup lost the HTML port binding race; retrying with a new reserved port.");
-                    await CleanupStartupAttemptAsync().ConfigureAwait(false);
+                    await CleanupStartupAttemptAsync(resetDesignCommandState: false).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -263,6 +277,12 @@ internal sealed class PreviewSession : IPreviewHostSession
         ArgumentNullException.ThrowIfNull(request);
 
         ThrowIfDisposed();
+        if (!_designCommandsAvailable)
+        {
+            throw new InvalidOperationException(
+                _designCommandsUnavailableMessage ?? BuildProjectHostFallbackDesignUnavailableMessage());
+        }
+
         StudioRemoteDesignClient client = _designClient ?? throw new InvalidOperationException("Preview design server is not connected.");
         string command = MapDesignOperation(request.Operation);
         object? payload = request.Arguments.ValueKind == JsonValueKind.Undefined
@@ -665,9 +685,15 @@ internal sealed class PreviewSession : IPreviewHostSession
         return previewUrl;
     }
 
-    private async Task CleanupStartupAttemptAsync()
+    private async Task CleanupStartupAttemptAsync(bool resetDesignCommandState = true)
     {
         _sessionStarted = false;
+        if (resetDesignCommandState)
+        {
+            _designCommandsAvailable = false;
+            _designCommandsUnavailableMessage = null;
+        }
+
         PublishPendingHotReloadFailure("Preview session stopped before hot reload completed.");
 
         if (_designClient is not null)
@@ -830,6 +856,11 @@ internal sealed class PreviewSession : IPreviewHostSession
         }
 
         return "Preview host exited" + exitCodeText + ".";
+    }
+
+    internal static string BuildProjectHostFallbackDesignUnavailableMessage()
+    {
+        return "AXSG preview design commands are unavailable for this session because it is using the Avalonia project host fallback. Preview rendering can continue, but AXSG Inspector workspace, tree, and property actions require the bundled AXSG designer host.";
     }
 
     private static bool PathEquals(string? left, string? right)

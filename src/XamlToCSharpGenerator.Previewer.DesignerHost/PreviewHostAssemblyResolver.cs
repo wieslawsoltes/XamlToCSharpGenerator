@@ -17,6 +17,8 @@ internal static class PreviewHostAssemblyResolution
         {
             _resolver = new PreviewHostAssemblyResolver(options.SourceAssemblyPath, options.HostAssemblyPath);
             EnsureInstalledNoLock();
+            PreviewHostDependencyPreloader.PreloadManagedDependencies(options.SourceAssemblyPath);
+            PreviewHostDependencyPreloader.PreloadManagedDependencies(options.HostAssemblyPath);
         }
     }
 
@@ -107,8 +109,15 @@ internal sealed class PreviewHostAssemblyResolver
         {
             return context.LoadFromAssemblyPath(assemblyPath);
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine(
+                "[AXSG preview] Failed to load managed dependency '" +
+                assemblySimpleName +
+                "' from '" +
+                assemblyPath +
+                "': " +
+                ex.Message);
             return null;
         }
     }

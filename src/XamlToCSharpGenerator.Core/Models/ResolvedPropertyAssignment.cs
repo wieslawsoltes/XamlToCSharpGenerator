@@ -15,7 +15,8 @@ public sealed record ResolvedPropertyAssignment(
     bool PreserveBindingValue = false,
     bool RequiresObjectInitializer = false,
     string? ClrSetterUnsafeAccessorMethodName = null,
-    bool IsInitOnlyClrProperty = false)
+    bool IsInitOnlyClrProperty = false,
+    bool IsRequiredClrProperty = false)
 {
     // Compatibility constructor retained while Avalonia call sites migrate.
     public ResolvedPropertyAssignment(
@@ -35,7 +36,8 @@ public sealed record ResolvedPropertyAssignment(
         bool PreserveBindingValue = false,
         bool RequiresObjectInitializer = false,
         string? ClrSetterUnsafeAccessorMethodName = null,
-        bool IsInitOnlyClrProperty = false)
+        bool IsInitOnlyClrProperty = false,
+        bool IsRequiredClrProperty = false)
         : this(
             PropertyName,
             ValueExpression,
@@ -54,7 +56,8 @@ public sealed record ResolvedPropertyAssignment(
             PreserveBindingValue,
             RequiresObjectInitializer,
             ClrSetterUnsafeAccessorMethodName,
-            IsInitOnlyClrProperty)
+            IsInitOnlyClrProperty,
+            IsRequiredClrProperty)
     {
     }
 

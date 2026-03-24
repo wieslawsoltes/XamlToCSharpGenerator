@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 
 namespace XamlToCSharpGenerator.Core.Parsing;
@@ -78,5 +79,63 @@ public static class XamlRuntimeBindingPathSemantics
 
         return normalized.IndexOf(':') >= 0 ||
                normalized.StartsWith("global::", StringComparison.Ordinal);
+    }
+
+    public static ImmutableArray<string> CollectTypeReferenceTokens(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>();
+        var normalized = path.Trim();
+        var index = 0;
+        while (index < normalized.Length)
+        {
+            if (normalized[index] != '(')
+            {
+                index++;
+                continue;
+            }
+
+            var attachedStatus = CompiledBindingPathSegmentSemantics.TryParseAttachedPropertySegment(
+                normalized,
+                index,
+                out var ownerTypeToken,
+                out _,
+                out var attachedNextIndex);
+            if (attachedStatus == CompiledBindingAttachedPropertyParseStatus.Parsed)
+            {
+                if (IsTypeCastToken(ownerTypeToken))
+                {
+                    builder.Add(ownerTypeToken.Trim());
+                }
+
+                index = attachedNextIndex;
+                continue;
+            }
+
+            var cursor = index;
+            if (CompiledBindingPathSegmentSemantics.TryParseCastTypeToken(
+                    normalized,
+                    ref cursor,
+                    out var castTypeToken,
+                    out _,
+                    out _))
+            {
+                if (IsTypeCastToken(castTypeToken))
+                {
+                    builder.Add(castTypeToken.Trim());
+                }
+
+                index = cursor;
+                continue;
+            }
+
+            index++;
+        }
+
+        return builder.ToImmutable();
     }
 }

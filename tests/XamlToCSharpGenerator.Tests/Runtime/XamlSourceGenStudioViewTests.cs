@@ -24,12 +24,12 @@ public class XamlSourceGenStudioViewTests
         ResetRuntimeState();
         EnsureFluentTheme();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         var window = new Window
         {
             Width = 1280,
             Height = 900,
-            Content = new XamlSourceGenStudioShellView
+            Content = new XamlSourceGenStudioShellPanel
             {
                 DataContext = viewModel
             }
@@ -60,7 +60,7 @@ public class XamlSourceGenStudioViewTests
         ResetRuntimeState();
         EnsureFluentTheme();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions
         {
             CanvasLayoutMode = SourceGenStudioCanvasLayoutMode.SideBySide
         });
@@ -68,7 +68,7 @@ public class XamlSourceGenStudioViewTests
         {
             Width = 1280,
             Height = 900,
-            Content = new XamlSourceGenStudioShellView
+            Content = new XamlSourceGenStudioShellPanel
             {
                 DataContext = viewModel
             }
@@ -131,7 +131,7 @@ public class XamlSourceGenStudioViewTests
         ResetRuntimeState();
         EnsureFluentTheme();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         var window = new Window
         {
             Width = 1280,
@@ -175,7 +175,7 @@ public class XamlSourceGenStudioViewTests
         ResetRuntimeState();
         EnsureFluentTheme();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         var overlay = new XamlSourceGenStudioOverlayView(
             liveAppContent: new Border
             {
@@ -233,7 +233,7 @@ public class XamlSourceGenStudioViewTests
     {
         ResetRuntimeState();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         var root = new StackPanel
         {
             Name = "RootPanel",
@@ -277,7 +277,7 @@ public class XamlSourceGenStudioViewTests
     {
         ResetRuntimeState();
 
-        using var viewModel = new XamlSourceGenStudioShellViewModel(new SourceGenStudioOptions());
+        using var viewModel = new XamlSourceGenStudioShellState(new SourceGenStudioOptions());
         var root = new StackPanel
         {
             Name = "RootPanel",
@@ -312,9 +312,9 @@ public class XamlSourceGenStudioViewTests
         ResetRuntimeState();
     }
 
-    private static int GetLiveProjectionBuildCount(XamlSourceGenStudioShellViewModel viewModel)
+    private static int GetLiveProjectionBuildCount(XamlSourceGenStudioShellState viewModel)
     {
-        var field = typeof(XamlSourceGenStudioShellViewModel).GetField(
+        var field = typeof(XamlSourceGenStudioShellState).GetField(
             "_liveProjectionBuildCount",
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(field);

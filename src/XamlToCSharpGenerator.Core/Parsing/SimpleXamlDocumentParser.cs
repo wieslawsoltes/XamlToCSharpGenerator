@@ -357,6 +357,7 @@ public sealed class SimpleXamlDocumentParser : IXamlDocumentParser
                 var propertyElementRawTextContent = TryGetRawInlineTextContent(child);
                 propertyElements.Add(new XamlPropertyElement(
                     PropertyName: ExtractPropertyElementName(child.Name.LocalName),
+                    XmlNamespace: child.Name.NamespaceName,
                     ObjectValues: objectValues.ToImmutable(),
                     Condition: XamlConditionalNamespaceUtilities.TryGetConditionalExpression(
                         child.Name.NamespaceName,

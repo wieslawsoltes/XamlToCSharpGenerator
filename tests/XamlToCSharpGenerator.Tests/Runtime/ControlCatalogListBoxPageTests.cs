@@ -16,6 +16,30 @@ public class ControlCatalogListBoxPageTests
     [AvaloniaFact]
     public void ListBox_Page_Realizes_Item_Text()
     {
+        AssertListBoxPageRealizesText();
+    }
+
+    [AvaloniaFact]
+    public void ListBox_Page_Realizes_Item_Text_After_Runtime_State_Reset()
+    {
+        RuntimeRemoteServiceTestHelper.ResetRuntimeState();
+        AssertListBoxPageRealizesText();
+    }
+
+    private static void EnsureFluentTheme()
+    {
+        var application = Application.Current ?? throw new InvalidOperationException("Avalonia application is not initialized.");
+
+        if (!application.Styles.OfType<FluentTheme>().Any())
+        {
+            application.Styles.Insert(0, new FluentTheme());
+        }
+
+        application.RequestedThemeVariant = ThemeVariant.Default;
+    }
+
+    private static void AssertListBoxPageRealizesText()
+    {
         EnsureFluentTheme();
 
         var window = new Window
@@ -47,17 +71,5 @@ public class ControlCatalogListBoxPageTests
             window.Close();
             Dispatcher.UIThread.RunJobs();
         }
-    }
-
-    private static void EnsureFluentTheme()
-    {
-        var application = Application.Current ?? throw new InvalidOperationException("Avalonia application is not initialized.");
-
-        if (!application.Styles.OfType<FluentTheme>().Any())
-        {
-            application.Styles.Insert(0, new FluentTheme());
-        }
-
-        application.RequestedThemeVariant = ThemeVariant.Default;
     }
 }

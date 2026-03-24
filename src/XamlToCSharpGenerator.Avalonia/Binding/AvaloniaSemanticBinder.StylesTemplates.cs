@@ -1198,18 +1198,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             {
                 continue;
             }
-
-            if (!byKey.ContainsKey(basedOnKeyValue) &&
-                !TryParseMarkupExtension(basedOnKeyValue, out _))
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0305",
-                    $"ControlTheme '{controlTheme.Key ?? "<unnamed>"}' references missing BasedOn theme key '{basedOnKeyValue}'.",
-                    document.FilePath,
-                    controlTheme.Line,
-                    controlTheme.Column,
-                    options.StrictMode));
-            }
         }
 
         var state = new Dictionary<int, int>();
@@ -1334,7 +1322,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 continue;
             }
 
-            var typeName = ResolveTypeName(compilation, resource.XmlNamespace, resource.XmlTypeName, out var symbol);
+            var typeName = ResolveResourceTypeName(compilation, document, resource, out var symbol);
             if (symbol is null)
             {
                 diagnostics.Add(new DiagnosticInfo(
@@ -1357,6 +1345,58 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         }
 
         return result.ToImmutable();
+    }
+
+    private static string? ResolveResourceTypeName(
+        Compilation compilation,
+        XamlDocumentModel document,
+        XamlResourceDefinition resource,
+        out INamedTypeSymbol? symbol)
+    {
+        symbol = ResolveResourceTypeSymbol(compilation, document, resource);
+        return symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
+
+    private static INamedTypeSymbol? ResolveResourceTypeSymbol(
+        Compilation compilation,
+        XamlDocumentModel document,
+        XamlResourceDefinition resource)
+    {
+        if (resource.TypeArguments.IsDefaultOrEmpty)
+        {
+            return ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
+        }
+
+        var resolvedTypeArguments = new List<ITypeSymbol>(resource.TypeArguments.Length);
+        foreach (var argumentToken in resource.TypeArguments)
+        {
+            var resolvedTypeArgument = ResolveTypeToken(compilation, document, argumentToken, document.ClassNamespace);
+            if (resolvedTypeArgument is null)
+            {
+                return ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
+            }
+
+            resolvedTypeArguments.Add(resolvedTypeArgument);
+        }
+
+        var genericType = ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName, resource.TypeArguments.Length) ??
+                          ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
+        if (genericType is null)
+        {
+            return null;
+        }
+
+        if (genericType.TypeParameters.Length == resolvedTypeArguments.Count)
+        {
+            return genericType.Construct(resolvedTypeArguments.ToArray());
+        }
+
+        if (genericType.OriginalDefinition.TypeParameters.Length == resolvedTypeArguments.Count)
+        {
+            return genericType.OriginalDefinition.Construct(resolvedTypeArguments.ToArray());
+        }
+
+        return genericType;
     }
 
     private static ImmutableArray<ResolvedTemplateDefinition> BindTemplates(

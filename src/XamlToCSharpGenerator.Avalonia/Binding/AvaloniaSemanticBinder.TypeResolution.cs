@@ -636,7 +636,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var explicitClrMetadataName = TryBuildClrNamespaceMetadataName(xmlNamespace, xmlTypeName, genericArity);
         if (explicitClrMetadataName is not null)
         {
-            var resolved = compilation.GetTypeByMetadataName(explicitClrMetadataName);
+            var resolved = ResolveExplicitClrNamespaceType(compilation, xmlNamespace, explicitClrMetadataName);
             if (resolved is not null)
             {
                 return resolved;
@@ -667,6 +667,38 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             xmlNamespace,
             xmlTypeName,
             genericArity);
+    }
+
+    private static INamedTypeSymbol? ResolveExplicitClrNamespaceType(
+        Compilation compilation,
+        string xmlNamespace,
+        string metadataName)
+    {
+        if (XamlXmlNamespaceSemantics.TryExtractClrNamespaceReference(
+                xmlNamespace,
+                out _,
+                out var assemblySimpleName) &&
+            !string.IsNullOrWhiteSpace(assemblySimpleName))
+        {
+            if (string.Equals(compilation.AssemblyName, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+            {
+                return compilation.Assembly.GetTypeByMetadataName(metadataName) ??
+                       compilation.GetTypeByMetadataName(metadataName);
+            }
+
+            foreach (var assembly in EnumerateAssemblies(compilation))
+            {
+                if (!string.Equals(assembly.Name, assemblySimpleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return assembly.GetTypeByMetadataName(metadataName) ??
+                       compilation.GetTypeByMetadataName(metadataName);
+            }
+        }
+
+        return compilation.GetTypeByMetadataName(metadataName);
     }
 
     private static INamedTypeSymbol? ResolveTypeFromXmlnsDefinitionMap(

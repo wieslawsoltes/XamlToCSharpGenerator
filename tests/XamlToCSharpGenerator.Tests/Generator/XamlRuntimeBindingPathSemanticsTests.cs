@@ -34,4 +34,24 @@ public class XamlRuntimeBindingPathSemanticsTests
     {
         Assert.Equal(expected, XamlRuntimeBindingPathSemantics.IsTypeCastToken(token));
     }
+
+    [Fact]
+    public void CollectTypeReferenceTokens_Finds_Inner_Cast_Segments()
+    {
+        var tokens = XamlRuntimeBindingPathSemantics.CollectTypeReferenceTokens(
+            "$parent[UserControl].((vm:HomeViewModel)DataContext).SelectCategory");
+
+        Assert.Single(tokens);
+        Assert.Equal("vm:HomeViewModel", tokens[0]);
+    }
+
+    [Fact]
+    public void CollectTypeReferenceTokens_Finds_Attached_Property_Owner_Tokens()
+    {
+        var tokens = XamlRuntimeBindingPathSemantics.CollectTypeReferenceTokens(
+            "(controls:Grid.Row).Value");
+
+        Assert.Single(tokens);
+        Assert.Equal("controls:Grid", tokens[0]);
+    }
 }

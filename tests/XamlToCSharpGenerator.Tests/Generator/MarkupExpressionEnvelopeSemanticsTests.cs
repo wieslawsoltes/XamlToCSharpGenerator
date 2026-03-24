@@ -17,5 +17,13 @@ public class MarkupExpressionEnvelopeSemanticsTests
         Assert.False(MarkupExpressionEnvelopeSemantics.TryExtractInnerContent("Binding Name", out _));
         Assert.False(MarkupExpressionEnvelopeSemantics.TryExtractInnerContent("{ }", out _));
         Assert.False(MarkupExpressionEnvelopeSemantics.TryExtractInnerContent("   ", out _));
+        Assert.False(MarkupExpressionEnvelopeSemantics.TryExtractInnerContent("{}{Binding Name}", out _));
+    }
+
+    [Fact]
+    public void UnescapeEscapedLiteral_Strips_Markup_Escape_Prefix()
+    {
+        Assert.Equal("{Icon fa-wallet}", MarkupExpressionEnvelopeSemantics.UnescapeEscapedLiteral("{}{Icon fa-wallet}"));
+        Assert.Equal("  {Icon fa-wallet}", MarkupExpressionEnvelopeSemantics.UnescapeEscapedLiteral("  {}{Icon fa-wallet}"));
     }
 }

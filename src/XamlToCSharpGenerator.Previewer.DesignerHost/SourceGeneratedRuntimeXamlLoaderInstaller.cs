@@ -116,13 +116,24 @@ internal static class SourceGeneratedRuntimeXamlLoaderInstaller
             return loadedAssembly;
         }
 
+        string normalizedSourceAssemblyPath = Path.GetFullPath(sourceAssemblyPath);
         try
         {
-            return Assembly.LoadFrom(Path.GetFullPath(sourceAssemblyPath));
+            return Assembly.LoadFrom(normalizedSourceAssemblyPath);
         }
-        catch
+        catch (Exception ex)
         {
-            return localAssembly ?? Assembly.GetEntryAssembly();
+            string fallbackAssemblyName = localAssembly?.GetName().Name ??
+                                          Assembly.GetEntryAssembly()?.GetName().Name ??
+                                          "<none>";
+            throw new InvalidOperationException(
+                "Failed to load preview source assembly '" +
+                normalizedSourceAssemblyPath +
+                "'. Preview type resolution cannot continue with the fallback assembly '" +
+                fallbackAssemblyName +
+                "'. " +
+                ex.Message,
+                ex);
         }
     }
 

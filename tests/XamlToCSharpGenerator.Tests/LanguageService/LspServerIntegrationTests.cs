@@ -12,6 +12,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.Models;
+using XamlToCSharpGenerator.LanguageService.Text;
 using XamlToCSharpGenerator.LanguageServer.Protocol;
 using XamlToCSharpGenerator.LanguageServer.Server;
 using XamlToCSharpGenerator.LanguageService.Workspace;
@@ -534,11 +535,8 @@ public sealed class LspServerIntegrationTests
     [Fact]
     public async Task WorkspaceSymbol_Request_ReturnsMatchingOpenDocumentSymbols()
     {
-        await using var harness = await LspServerHarness.StartAsync();
-        await harness.InitializeAsync();
-
-        const string firstUri = "file:///tmp/WorkspaceSymbolOne.axaml";
-        const string secondUri = "file:///tmp/WorkspaceSymbolTwo.axaml";
+        var temporaryDirectory = Path.Combine(Path.GetTempPath(), "axsg-lsp-workspace-symbols-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporaryDirectory);
         const string firstXaml =
             "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
             "  <Grid x:Name=\"LayoutRoot\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" />\n" +
@@ -547,39 +545,51 @@ public sealed class LspServerIntegrationTests
             "<UserControl xmlns=\"https://github.com/avaloniaui\">\n" +
             "  <StackPanel />\n" +
             "</UserControl>";
+        var firstUri = UriPathHelper.ToDocumentUri(Path.Combine(temporaryDirectory, "WorkspaceSymbolOne.axaml"));
+        var secondUri = UriPathHelper.ToDocumentUri(Path.Combine(temporaryDirectory, "WorkspaceSymbolTwo.axaml"));
 
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
+        try
         {
-            ["textDocument"] = new JsonObject
+            await using var harness = await LspServerHarness.StartAsync(workspaceRoot: temporaryDirectory);
+            await harness.InitializeAsync();
+
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
             {
-                ["uri"] = firstUri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = firstXaml
-            }
-        });
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = firstUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = firstXaml
+                }
+            });
 
-        await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
-        {
-            ["textDocument"] = new JsonObject
+            await harness.SendNotificationAsync("textDocument/didOpen", new JsonObject
             {
-                ["uri"] = secondUri,
-                ["languageId"] = "axaml",
-                ["version"] = 1,
-                ["text"] = secondXaml
-            }
-        });
+                ["textDocument"] = new JsonObject
+                {
+                    ["uri"] = secondUri,
+                    ["languageId"] = "axaml",
+                    ["version"] = 1,
+                    ["text"] = secondXaml
+                }
+            });
 
-        await harness.SendRequestAsync(18, "workspace/symbol", new JsonObject
+            await harness.SendRequestAsync(18, "workspace/symbol", new JsonObject
+            {
+                ["query"] = "LayoutRoot"
+            });
+
+            using var response = await harness.ReadResponseAsync(18);
+            var symbols = response.RootElement.GetProperty("result");
+            Assert.Equal(1, symbols.GetArrayLength());
+            Assert.Equal(firstUri, symbols[0].GetProperty("location").GetProperty("uri").GetString());
+            Assert.Contains("LayoutRoot", symbols[0].GetProperty("name").GetString(), StringComparison.Ordinal);
+        }
+        finally
         {
-            ["query"] = "LayoutRoot"
-        });
-
-        using var response = await harness.ReadResponseAsync(18);
-        var symbols = response.RootElement.GetProperty("result");
-        Assert.Equal(1, symbols.GetArrayLength());
-        Assert.Equal(firstUri, symbols[0].GetProperty("location").GetProperty("uri").GetString());
-        Assert.Contains("LayoutRoot", symbols[0].GetProperty("name").GetString(), StringComparison.Ordinal);
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
     }
 
     [Fact]

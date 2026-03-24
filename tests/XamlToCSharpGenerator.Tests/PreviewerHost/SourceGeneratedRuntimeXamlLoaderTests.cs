@@ -492,6 +492,106 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
         }
     }
 
+    [Fact]
+    public void PreviewHostDependencyPreloader_Loads_Runtime_Dependencies_From_Source_Assembly_Deps()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            (string _, string dependencyAssemblyName, string sourceAssemblyPath) =
+                CreatePreviewDependencyPreloadArtifacts(tempRoot);
+
+            IReadOnlyList<string> dependencyPaths = PreviewHostDependencyPreloader.GetManagedDependencyPaths(sourceAssemblyPath);
+
+            Assert.Contains(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileName(dependencyPath),
+                    dependencyAssemblyName + ".dll",
+                    StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PreviewHostDependencyPreloader_Does_Not_Load_Source_Assembly_From_Its_Own_Deps_File()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            (string sourceAssemblyName, string dependencyAssemblyName, string sourceAssemblyPath) =
+                CreatePreviewDependencyPreloadArtifacts(tempRoot);
+
+            IReadOnlyList<string> dependencyPaths = PreviewHostDependencyPreloader.GetManagedDependencyPaths(sourceAssemblyPath);
+
+            Assert.DoesNotContain(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileNameWithoutExtension(dependencyPath),
+                    sourceAssemblyName,
+                    StringComparison.Ordinal));
+            Assert.Contains(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileName(dependencyPath),
+                    dependencyAssemblyName + ".dll",
+                    StringComparison.Ordinal));
+            Assert.DoesNotContain(
+                dependencyPaths,
+                dependencyPath => string.Equals(
+                    Path.GetFileNameWithoutExtension(dependencyPath),
+                    sourceAssemblyName,
+                    StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolvePreviewLocalAssembly_Throws_Clear_Error_When_Source_Assembly_Is_Invalid()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        PreviewHostOptions previousOptions = PreviewHostRuntimeState.Current;
+
+        try
+        {
+            string invalidAssemblyPath = Path.Combine(tempRoot, "InvalidPreviewAssembly.dll");
+            File.WriteAllText(invalidAssemblyPath, "not a managed assembly");
+            PreviewHostRuntimeState.Configure(new PreviewHostOptions(
+                PreviewCompilerMode.Avalonia,
+                null,
+                null,
+                invalidAssemblyPath,
+                Path.Combine(tempRoot, "View.axaml"),
+                "/Views/View.axaml",
+                null,
+                null,
+                null));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => SourceGeneratedRuntimeXamlLoaderInstaller.ResolvePreviewLocalAssembly(localAssembly: null));
+
+            Assert.Contains("Failed to load preview source assembly", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("InvalidPreviewAssembly.dll", exception.Message, StringComparison.Ordinal);
+            Assert.NotNull(exception.InnerException);
+        }
+        finally
+        {
+            PreviewHostRuntimeState.Configure(previousOptions);
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     [AvaloniaFact]
     public void LoadCore_Clears_Stale_Last_Good_Overlay_When_Baseline_Is_Current()
     {
@@ -844,6 +944,80 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
             emitResult.Success,
             "Failed to emit test assembly '" + assemblyName + "': " +
             string.Join(Environment.NewLine, emitResult.Diagnostics));
+    }
+
+    private static (string SourceAssemblyName, string DependencyAssemblyName, string SourceAssemblyPath)
+        CreatePreviewDependencyPreloadArtifacts(string tempRoot)
+    {
+        var sourceAssemblyName = "AxsgPreviewRoot_" + Guid.NewGuid().ToString("N");
+        var dependencyAssemblyName = "AxsgPreviewDependency_" + Guid.NewGuid().ToString("N");
+        var sourceAssemblyPath = Path.Combine(tempRoot, sourceAssemblyName + ".dll");
+        var dependencyAssemblyPath = Path.Combine(tempRoot, dependencyAssemblyName + ".dll");
+        var depsJsonPath = Path.ChangeExtension(sourceAssemblyPath, ".deps.json")
+            ?? throw new InvalidOperationException("Failed to create deps.json path.");
+
+        EmitAssemblyToFile(
+            sourceAssemblyName,
+            """
+            namespace PreviewSource;
+
+            public sealed class PreviewShell
+            {
+            }
+            """,
+            sourceAssemblyPath);
+        EmitAssemblyToFile(
+            dependencyAssemblyName,
+            """
+            namespace PreviewDependency;
+
+            public sealed class PreviewService
+            {
+            }
+            """,
+            dependencyAssemblyPath);
+
+        File.WriteAllText(
+            depsJsonPath,
+            $$"""
+            {
+              "runtimeTarget": {
+                "name": ".NETCoreApp,Version=v10.0",
+                "signature": ""
+              },
+              "targets": {
+                ".NETCoreApp,Version=v10.0": {
+                  "{{sourceAssemblyName}}/1.0.0": {
+                    "dependencies": {
+                      "{{dependencyAssemblyName}}": "1.0.0"
+                    },
+                    "runtime": {
+                      "{{sourceAssemblyName}}.dll": {}
+                    }
+                  },
+                  "{{dependencyAssemblyName}}/1.0.0": {
+                    "runtime": {
+                      "{{dependencyAssemblyName}}.dll": {}
+                    }
+                  }
+                }
+              },
+              "libraries": {
+                "{{sourceAssemblyName}}/1.0.0": {
+                  "type": "project",
+                  "serviceable": false,
+                  "sha512": ""
+                },
+                "{{dependencyAssemblyName}}/1.0.0": {
+                  "type": "project",
+                  "serviceable": false,
+                  "sha512": ""
+                }
+              }
+            }
+            """);
+
+        return (sourceAssemblyName, dependencyAssemblyName, sourceAssemblyPath);
     }
 
     private static IReadOnlyList<MetadataReference> CreateLoadedAssemblyMetadataReferences()

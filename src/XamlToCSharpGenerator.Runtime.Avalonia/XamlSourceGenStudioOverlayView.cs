@@ -28,7 +28,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private Border? _liveSurfacePanel;
     private TextBlock? _liveModeText;
-    private XamlSourceGenStudioShellViewModel? _viewModel;
+    private XamlSourceGenStudioShellState? _viewModel;
     private readonly StyledElement? _liveSurfaceDataContextSource;
     private readonly object? _initialLiveSurfaceDataContext;
     private Grid? _liveLayer;
@@ -115,8 +115,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Width = 130
         };
-        mode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.WorkspaceModes)));
-        mode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.WorkspaceMode), BindingMode.TwoWay));
+        mode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.WorkspaceModes)));
+        mode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.WorkspaceMode), BindingMode.TwoWay));
         Grid.SetColumn(mode, 1);
         grid.Children.Add(mode);
 
@@ -124,8 +124,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Width = 130
         };
-        filter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyFilterModes)));
-        filter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyFilterMode), BindingMode.TwoWay));
+        filter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertyFilterModes)));
+        filter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertyFilterMode), BindingMode.TwoWay));
         Grid.SetColumn(filter, 2);
         grid.Children.Add(filter);
 
@@ -133,8 +133,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Width = 130
         };
-        hitTestMode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.HitTestModes)));
-        hitTestMode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.HitTestMode), BindingMode.TwoWay));
+        hitTestMode.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.HitTestModes)));
+        hitTestMode.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.HitTestMode), BindingMode.TwoWay));
         Grid.SetColumn(hitTestMode, 3);
         grid.Children.Add(hitTestMode);
 
@@ -143,27 +143,27 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             TextAlignment = global::Avalonia.Media.TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center
         };
-        state.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioStateText)));
+        state.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.StudioStateText)));
         Grid.SetColumn(state, 4);
         grid.Children.Add(state);
 
         var refresh = new Button { Content = "Refresh" };
-        refresh.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RefreshCommand)));
+        refresh.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.RefreshCommand)));
         Grid.SetColumn(refresh, 5);
         grid.Children.Add(refresh);
 
         var undo = new Button { Content = "Undo" };
-        undo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.UndoCommand)));
+        undo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.UndoCommand)));
         Grid.SetColumn(undo, 6);
         grid.Children.Add(undo);
 
         var redo = new Button { Content = "Redo" };
-        redo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RedoCommand)));
+        redo.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.RedoCommand)));
         Grid.SetColumn(redo, 7);
         grid.Children.Add(redo);
 
         var apply = new Button { Content = "Apply XAML" };
-        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyXamlCommand)));
+        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.ApplyXamlCommand)));
         Grid.SetColumn(apply, 8);
         grid.Children.Add(apply);
 
@@ -173,8 +173,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenStudioScopeDescriptor>(
                 static scope => scope.ScopeKind + ": " + scope.DisplayName)
         };
-        scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Scopes)));
-        scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedScope), BindingMode.TwoWay));
+        scopeSelector.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.Scopes)));
+        scopeSelector.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedScope), BindingMode.TwoWay));
         Grid.SetColumn(scopeSelector, 9);
         grid.Children.Add(scopeSelector);
 
@@ -185,8 +185,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             FontSize = 11,
             Foreground = global::Avalonia.Media.Brushes.Gray
         };
-        remoteState.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteStatusText)));
-        remoteState.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoteVncEndpoint)));
+        remoteState.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.RemoteStatusText)));
+        remoteState.Bind(ToolTip.TipProperty, new Binding(nameof(XamlSourceGenStudioShellState.RemoteVncEndpoint)));
         Grid.SetColumn(remoteState, 10);
         grid.Children.Add(remoteState);
 
@@ -219,7 +219,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Watermark = "Search elements/toolbox"
         };
-        search.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SearchText), BindingMode.TwoWay));
+        search.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.SearchText), BindingMode.TwoWay));
         Grid.SetRow(search, 1);
         grid.Children.Add(search);
 
@@ -260,8 +260,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                 new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(SourceGenHotDesignElementNode.IsExpanded)))
             }
         });
-        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.DisplayElements)));
-        tree.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedElement), BindingMode.TwoWay));
+        tree.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.DisplayElements)));
+        tree.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedElement), BindingMode.TwoWay));
         Grid.SetRow(tree, 2);
         grid.Children.Add(tree);
 
@@ -285,8 +285,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                 },
                 supportsRecycling: true)
         };
-        toolbox.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ToolboxItems)));
-        toolbox.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedToolboxItem), BindingMode.TwoWay));
+        toolbox.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.ToolboxItems)));
+        toolbox.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedToolboxItem), BindingMode.TwoWay));
         Grid.SetRow(toolbox, 3);
         grid.Children.Add(toolbox);
 
@@ -294,7 +294,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Watermark = "Element name"
         };
-        elementName.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.NewElementName), BindingMode.TwoWay));
+        elementName.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.NewElementName), BindingMode.TwoWay));
         Grid.SetRow(elementName, 4);
         grid.Children.Add(elementName);
 
@@ -304,11 +304,11 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Spacing = 8
         };
         var insert = new Button { Content = "Insert" };
-        insert.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.InsertElementCommand)));
+        insert.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.InsertElementCommand)));
         actions.Children.Add(insert);
 
         var remove = new Button { Content = "Remove" };
-        remove.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemoveElementCommand)));
+        remove.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.RemoveElementCommand)));
         actions.Children.Add(remove);
         Grid.SetRow(actions, 5);
         grid.Children.Add(actions);
@@ -435,7 +435,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Foreground = global::Avalonia.Media.Brushes.Gray,
             TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
         };
-        status.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StatusMessage)));
+        status.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.StatusMessage)));
         Grid.SetRow(status, 2);
         grid.Children.Add(status);
 
@@ -482,7 +482,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             FontSize = 11,
             Foreground = Brushes.Gray
         };
-        summary.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySummaryText)));
+        summary.Bind(TextBlock.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertySummaryText)));
         grid.Children.Add(summary);
 
         var filters = new Grid
@@ -496,15 +496,15 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Watermark = "Filter by name/value/type/category"
         };
-        propertySearch.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySearchText), BindingMode.TwoWay));
+        propertySearch.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertySearchText), BindingMode.TwoWay));
         filters.Children.Add(propertySearch);
 
         var categoryFilter = new ComboBox
         {
             Width = 120
         };
-        categoryFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyCategories)));
-        categoryFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertyCategory), BindingMode.TwoWay));
+        categoryFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertyCategories)));
+        categoryFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedPropertyCategory), BindingMode.TwoWay));
         Grid.SetColumn(categoryFilter, 1);
         filters.Children.Add(categoryFilter);
 
@@ -512,8 +512,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         {
             Width = 120
         };
-        sourceFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertySources)));
-        sourceFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertySource), BindingMode.TwoWay));
+        sourceFilter.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertySources)));
+        sourceFilter.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedPropertySource), BindingMode.TwoWay));
         Grid.SetColumn(sourceFilter, 2);
         filters.Children.Add(sourceFilter);
 
@@ -522,7 +522,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Content = "Set only",
             VerticalAlignment = VerticalAlignment.Center
         };
-        setOnly.Bind(ToggleButton.IsCheckedProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ShowOnlySetProperties), BindingMode.TwoWay));
+        setOnly.Bind(ToggleButton.IsCheckedProperty, new Binding(nameof(XamlSourceGenStudioShellState.ShowOnlySetProperties), BindingMode.TwoWay));
         Grid.SetColumn(setOnly, 3);
         filters.Children.Add(setOnly);
         grid.Children.Add(filters);
@@ -588,18 +588,18 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                 },
                 supportsRecycling: true)
         };
-        propertyList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.FilteredProperties)));
-        propertyList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedProperty), BindingMode.TwoWay));
+        propertyList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.FilteredProperties)));
+        propertyList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedProperty), BindingMode.TwoWay));
         Grid.SetRow(propertyList, 2);
         grid.Children.Add(propertyList);
 
         var propertyName = new TextBox { Watermark = "Property" };
-        propertyName.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyName), BindingMode.TwoWay));
+        propertyName.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertyName), BindingMode.TwoWay));
         Grid.SetRow(propertyName, 3);
         grid.Children.Add(propertyName);
 
         var propertyValue = new TextBox { Watermark = "Value" };
-        propertyValue.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.PropertyValue), BindingMode.TwoWay));
+        propertyValue.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.PropertyValue), BindingMode.TwoWay));
         Grid.SetRow(propertyValue, 4);
         grid.Children.Add(propertyValue);
 
@@ -613,8 +613,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
                 },
                 supportsRecycling: true)
         };
-        quickSetList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedPropertyQuickSets)));
-        quickSetList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedQuickSet), BindingMode.TwoWay));
+        quickSetList.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedPropertyQuickSets)));
+        quickSetList.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedQuickSet), BindingMode.TwoWay));
         Grid.SetRow(quickSetList, 5);
         grid.Children.Add(quickSetList);
 
@@ -625,12 +625,12 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         };
 
         var quickApply = new Button { Content = "Apply Quick Set" };
-        quickApply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyQuickSetCommand)));
+        quickApply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.ApplyQuickSetCommand)));
         tools.Children.Add(quickApply);
 
         var pin = new Button { Content = "Pin/Unpin Selected" };
-        pin.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TogglePropertyPinCommand)));
-        pin.Bind(Button.CommandParameterProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedProperty)));
+        pin.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.TogglePropertyPinCommand)));
+        pin.Bind(Button.CommandParameterProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedProperty)));
         tools.Children.Add(pin);
         Grid.SetRow(tools, 6);
         grid.Children.Add(tools);
@@ -641,10 +641,10 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Spacing = 8
         };
         var apply = new Button { Content = "Apply" };
-        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyPropertyCommand)));
+        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.ApplyPropertyCommand)));
         actions.Children.Add(apply);
         var remove = new Button { Content = "Remove" };
-        remove.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.RemovePropertyCommand)));
+        remove.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.RemovePropertyCommand)));
         actions.Children.Add(remove);
         Grid.SetRow(actions, 7);
         grid.Children.Add(actions);
@@ -671,8 +671,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
                 static document => document.BuildUri)
         };
-        documents.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.Documents)));
-        documents.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedDocument), BindingMode.TwoWay));
+        documents.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.Documents)));
+        documents.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedDocument), BindingMode.TwoWay));
         grid.Children.Add(documents);
 
         var editor = new TextBox
@@ -682,7 +682,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas"),
             TextWrapping = global::Avalonia.Media.TextWrapping.NoWrap
         };
-        editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.XamlText), BindingMode.TwoWay));
+        editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.XamlText), BindingMode.TwoWay));
         Grid.SetRow(editor, 1);
         grid.Children.Add(editor);
 
@@ -691,7 +691,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Content = "Apply XAML",
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyXamlCommand)));
+        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.ApplyXamlCommand)));
         Grid.SetRow(apply, 2);
         grid.Children.Add(apply);
 
@@ -717,8 +717,8 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             ItemTemplate = XamlSourceGenStudioViewTemplateFactory.CreateTextBlockTemplate<SourceGenHotDesignDocumentDescriptor>(
                 static document => document.BuildUri)
         };
-        templateDocs.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateDocuments)));
-        templateDocs.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.SelectedTemplateDocument), BindingMode.TwoWay));
+        templateDocs.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.TemplateDocuments)));
+        templateDocs.Bind(SelectingItemsControl.SelectedItemProperty, new Binding(nameof(XamlSourceGenStudioShellState.SelectedTemplateDocument), BindingMode.TwoWay));
         grid.Children.Add(templateDocs);
 
         var editor = new TextBox
@@ -728,7 +728,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             FontFamily = global::Avalonia.Media.FontFamily.Parse("Consolas"),
             TextWrapping = global::Avalonia.Media.TextWrapping.NoWrap
         };
-        editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.TemplateXamlText), BindingMode.TwoWay));
+        editor.Bind(TextBox.TextProperty, new Binding(nameof(XamlSourceGenStudioShellState.TemplateXamlText), BindingMode.TwoWay));
         Grid.SetRow(editor, 1);
         grid.Children.Add(editor);
 
@@ -737,7 +737,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             Content = "Apply Template",
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.ApplyTemplateXamlCommand)));
+        apply.Bind(Button.CommandProperty, new Binding(nameof(XamlSourceGenStudioShellState.ApplyTemplateXamlCommand)));
         Grid.SetRow(apply, 2);
         grid.Children.Add(apply);
 
@@ -753,7 +753,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
         };
 
         var list = new ListBox();
-        list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellViewModel.StudioOperationLines)));
+        list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(XamlSourceGenStudioShellState.StudioOperationLines)));
         tab.Content = list;
         return tab;
     }
@@ -770,7 +770,7 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         }
 
-        _viewModel = DataContext as XamlSourceGenStudioShellViewModel;
+        _viewModel = DataContext as XamlSourceGenStudioShellState;
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -797,20 +797,20 @@ internal sealed class XamlSourceGenStudioOverlayView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(XamlSourceGenStudioShellViewModel.WorkspaceMode) or
-            nameof(XamlSourceGenStudioShellViewModel.LiveSurfaceModeText))
+        if (e.PropertyName is nameof(XamlSourceGenStudioShellState.WorkspaceMode) or
+            nameof(XamlSourceGenStudioShellState.LiveSurfaceModeText))
         {
             UpdateLiveSurfaceModeVisuals();
         }
 
-        if (e.PropertyName == nameof(XamlSourceGenStudioShellViewModel.HitTestMode))
+        if (e.PropertyName == nameof(XamlSourceGenStudioShellState.HitTestMode))
         {
             _hoveredControl = null;
             RefreshAdorners();
             RefreshLiveTreeProjection();
         }
 
-        if (e.PropertyName == nameof(XamlSourceGenStudioShellViewModel.SelectedElement))
+        if (e.PropertyName == nameof(XamlSourceGenStudioShellState.SelectedElement))
         {
             SynchronizeSelectionFromWorkspace();
         }

@@ -74,6 +74,14 @@
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotReloadErrorResilienceEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenIdeHotReloadEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingStrict" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingVerbose" />
+    <CompilerVisibleProperty Include="XamlSourceGenIlWeavingBackend" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingEnabled" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingStrict" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingVerbose" />
+    <CompilerVisibleProperty Include="AvaloniaSourceGenIlWeavingBackend" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="AvaloniaSourceGenTracePasses" />

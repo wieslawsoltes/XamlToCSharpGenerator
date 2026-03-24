@@ -14,11 +14,14 @@ This package is a build-transitive shell. It does not expose a user-facing code 
 
 - `buildTransitive/XamlToCSharpGenerator.Build.props`
 - `buildTransitive/XamlToCSharpGenerator.Build.targets`
+- `buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll`
+- `buildTransitive/Mono.Cecil.dll`
 
 Those files coordinate:
 
 - backend selection
 - generator/runtime asset wiring
+- build-time IL weaving for legacy `AvaloniaXamlLoader.Load(...)` migration
 - local analyzer deployment for repo development
 - docs packaging hooks
 - hot-reload-related build behavior
@@ -43,6 +46,7 @@ Use this package directly when you are:
 
 - authoring a custom SDK or template
 - debugging `buildTransitive` behavior
+- relying on AXSG IL weaving to preserve supported legacy Avalonia loader call sites
 - integrating AXSG into a repo with its own target layering
 - maintaining CI/release/docs workflows that rely on shared build imports
 
@@ -60,6 +64,7 @@ This package does not contain binding, selector, runtime, or editor semantics. I
 
 - [Compiler Host and Project Model](../concepts/compiler-host-and-project-model/)
 - [Compiler Configuration and Transform Rules](../advanced/compiler-configuration-and-transform-rules/)
+- [Avalonia Loader Migration and IL Weaving](../guides/avalonia-loader-il-weaving/)
 - [Packaging and Release](../guides/packaging-and-release/)
 - [Package and Assembly](package-and-assembly/)
 - [Package Selection and Integration](../guides/package-selection-and-integration/)

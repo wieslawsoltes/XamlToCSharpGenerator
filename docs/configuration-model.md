@@ -88,7 +88,7 @@ Unknown keys are ignored. Known keys with invalid value shape produce `AXSG0918`
 | `buildingByReSharper` | bool |
 | `additionalProperties` | object<string,string> |
 
-SDK/watch integration toggles such as `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled` remain MSBuild-only and are not part of the unified JSON schema.
+SDK/watch integration toggles such as `AvaloniaSourceGenDotNetWatchXamlBuildTriggersEnabled`, plus IL-weaving controls such as `XamlSourceGenIlWeavingEnabled`, `XamlSourceGenIlWeavingStrict`, `XamlSourceGenIlWeavingVerbose`, `XamlSourceGenIlWeavingBackend`, and their `AvaloniaSourceGen*` aliases, remain MSBuild-only and are not part of the unified JSON schema.
 
 ### `parser`
 
