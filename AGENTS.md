@@ -190,7 +190,33 @@ References:
 - Prefer explicit types where clarity is improved; avoid `var` in public APIs.
 - All public APIs must be documented and unit-tested.
 
-## 14) Fluent icons path data (required)
+## 14) Version updates (required)
+
+Version bumps must keep the .NET/package metadata and VS Code extension metadata in sync.
+
+### Version source of truth
+- `.NET` package versioning is defined in `Directory.Build.props` via `VersionPrefix` and
+  `VersionSuffix`.
+- The VS Code extension version is defined in:
+  - `tools/vscode/axsg-language-server/package.json`
+  - `tools/vscode/axsg-language-server/package-lock.json`
+
+### How to bump to the next alpha version
+1. Increment `VersionSuffix` in `Directory.Build.props` (for example `alpha.23` -> `alpha.24`).
+2. Update `tools/vscode/axsg-language-server/package.json` to the matching semver
+   prerelease (for example `0.1.0-alpha.24`).
+3. Update the root `version` fields in
+   `tools/vscode/axsg-language-server/package-lock.json` to the same value.
+4. Verify there are no stale references to the previous prerelease in the authoritative
+   version files before committing.
+
+### Rules
+- Keep the repository on a single prerelease version; do not leave `.NET` and VS Code
+  extension versions diverged.
+- Use a dedicated commit for version bumps when practical.
+- Do not treat README examples like `0.1.0-local` as release-version sources.
+
+## 15) Fluent icons path data (required)
 
 References:
 - https://github.com/microsoft/fluentui-system-icons
@@ -222,7 +248,7 @@ cat package/icons/folder_open_20_regular.svg
 
 Then copy the `d` attribute from the `<path>` element into code.
 
-## 15) SourceGen XAML compiler parity guardrails (required)
+## 16) SourceGen XAML compiler parity guardrails (required)
 
 These rules prevent regressions in the source-generator compiler pipeline.
 
@@ -267,7 +293,7 @@ These rules prevent regressions in the source-generator compiler pipeline.
 - Do not downgrade warnings to hide unsupported behavior; either implement behavior
   or keep the warning actionable.
 
-## 16) Hot reload and incremental generator reliability (required)
+## 17) Hot reload and incremental generator reliability (required)
 
 ### Incremental generator stability
 - Generated hint names must be unique and stable per logical XAML input.
@@ -304,7 +330,7 @@ These rules prevent regressions in the source-generator compiler pipeline.
   - failure handling with last-known-good behavior when applicable.
 - Add tests that exercise both compile-time emission and runtime live-edit behavior for the feature.
 
-## 17) XAML compiler and semantic-binder implementation standard (required)
+## 18) XAML compiler and semantic-binder implementation standard (required)
 
 These rules are mandatory for parser, semantic model, transforms, binder, emitter, and
 runtime contracts. They apply to all new features and all refactors.

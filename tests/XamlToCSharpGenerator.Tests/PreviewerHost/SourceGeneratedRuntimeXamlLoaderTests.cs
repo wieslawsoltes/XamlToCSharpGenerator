@@ -493,6 +493,86 @@ public sealed class SourceGeneratedRuntimeXamlLoaderTests
     }
 
     [Fact]
+    public void PreviewHostAssemblyResolver_Prefers_Host_Dependency_When_Source_And_Host_Share_Assembly_Name()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var sourceDirectory = Path.Combine(tempRoot, "source");
+            var hostDirectory = Path.Combine(tempRoot, "host");
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(hostDirectory);
+
+            var sourceAssemblyPath = Path.Combine(sourceDirectory, "PreviewSource.dll");
+            var hostAssemblyPath = Path.Combine(hostDirectory, "PreviewHost.dll");
+            var dependencyAssemblyName = "AxsgSharedDependency_" + Guid.NewGuid().ToString("N");
+            var sourceDependencyAssemblyPath = Path.Combine(sourceDirectory, dependencyAssemblyName + ".dll");
+            var hostDependencyAssemblyPath = Path.Combine(hostDirectory, dependencyAssemblyName + ".dll");
+
+            EmitAssemblyToFile(
+                "PreviewSource",
+                """
+                namespace PreviewSource;
+
+                public sealed class PreviewShell
+                {
+                }
+                """,
+                sourceAssemblyPath);
+            EmitAssemblyToFile(
+                "PreviewHost",
+                """
+                namespace PreviewHost;
+
+                public sealed class HostShell
+                {
+                }
+                """,
+                hostAssemblyPath);
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                [assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+
+                namespace PreviewDependency;
+
+                public sealed class SourceVersionMarker
+                {
+                }
+                """,
+                sourceDependencyAssemblyPath);
+            EmitAssemblyToFile(
+                dependencyAssemblyName,
+                """
+                [assembly: System.Reflection.AssemblyVersion("2.0.0.0")]
+
+                namespace PreviewDependency;
+
+                public sealed class HostVersionMarker
+                {
+                }
+                """,
+                hostDependencyAssemblyPath);
+
+            var resolver = new PreviewHostAssemblyResolver(sourceAssemblyPath, hostAssemblyPath);
+
+            string? resolvedPath = resolver.ResolveAssemblyPath(new AssemblyName(dependencyAssemblyName));
+
+            Assert.NotNull(resolvedPath);
+            Assert.Equal(dependencyAssemblyName + ".dll", Path.GetFileName(resolvedPath));
+            Assert.Contains(
+                $"{Path.DirectorySeparatorChar}host{Path.DirectorySeparatorChar}",
+                resolvedPath,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void PreviewHostDependencyPreloader_Loads_Runtime_Dependencies_From_Source_Assembly_Deps()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
