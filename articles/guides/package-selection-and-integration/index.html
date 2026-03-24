@@ -163,10 +163,11 @@
 <li><code>&lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;</code></li>
 <li><code>.UseAvaloniaSourceGeneratedXaml()</code> on <code>AppBuilder</code></li>
 </ul>
-<p>For class-backed XAML, also make sure existing code-behind does not keep an unconditional parameterless <code>InitializeComponent()</code> wrapper that still calls <code>AvaloniaXamlLoader.Load(this)</code>. AXSG generates <code>InitializeComponent(bool loadXaml = true)</code>, and the hand-written parameterless overload will intercept constructor calls such as <code>InitializeComponent();</code>.</p>
+<p>For class-backed XAML, AXSG generates <code>InitializeComponent(bool loadXaml = true)</code>. A hand-written parameterless <code>InitializeComponent()</code> wrapper still intercepts constructor calls such as <code>InitializeComponent();</code>, so you should either remove it or rely on AXSG IL weaving to rewrite supported legacy loader calls during the build.</p>
 <p>Use the guarded fallback pattern instead when the same file must support both AXSG and non-AXSG builds:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 </ul>
 <p>If you need a custom project item group, use <code>XamlSourceGenInputItemGroup</code> and mirror your XAML items into that group. Do not override <code>XamlSourceGenAdditionalFilesSourceItemGroup</code> for Avalonia consumers; the build package always projects AXSG Avalonia inputs into Roslyn <code>AdditionalFiles</code> as <code>AvaloniaXaml</code>.</p>
 <h2 id="when-to-split-packages">When to split packages</h2>

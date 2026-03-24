@@ -167,11 +167,13 @@
 <p>The AXSG runtime bootstrap and fallback services do not replace that method. In particular:</p>
 <ul>
 <li><code>.UseAvaloniaSourceGeneratedXaml()</code> does not make an old hand-written <code>InitializeComponent()</code> wrapper safe</li>
-<li>a parameterless <code>InitializeComponent()</code> that still calls <code>AvaloniaXamlLoader.Load(this)</code> can bypass the generated AXSG method completely</li>
+<li>a parameterless <code>InitializeComponent()</code> that still calls <code>AvaloniaXamlLoader.Load(this)</code> can bypass the generated AXSG method completely when AXSG IL weaving is disabled or the call shape is unsupported</li>
 </ul>
+<p>With AXSG IL weaving enabled, supported same-instance <code>AvaloniaXamlLoader.Load(...)</code> call sites are rewritten after compile to generated AXSG initializer helpers. That keeps those legacy wrappers on the generated initialization path instead of turning them into a second runtime-loader path.</p>
 <p>If you are migrating an existing Avalonia app, use the guarded fallback pattern documented here:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 </ul>
 <h2 id="relevant-runtime-packages">Relevant runtime packages</h2>
 <ul>

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html data-lunet-theme-mode="system" data-lunet-theme-storage-key="lunet-theme" data-lunet-css-prefix="lunet" lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="lunet 1.0.10.0">
+    <script>(function(){const root=document.documentElement;const key=root.getAttribute("data-lunet-theme-storage-key")||"lunet-theme";const fallback=root.getAttribute("data-lunet-theme-mode")||"system";let stored=null;try{stored=localStorage.getItem(key);}catch(_){stored=null;}const mode=(stored==="light"||stored==="dark"||stored==="system")?stored:fallback;const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;const resolved=mode==="system"?(prefersDark?"dark":"light"):mode;root.setAttribute("data-lunet-theme-mode",mode);root.setAttribute("data-bs-theme",resolved);}());</script>
+    <link rel='icon' href='/XamlToCSharpGenerator/favicon.ico' sizes='32x32'>
+    <title>Avalonia Loader Migration and IL Weaving | XamlToCSharpGenerator</title>
+    <link rel="stylesheet" href="/XamlToCSharpGenerator/css/lite.css">
+    <script src="/XamlToCSharpGenerator/js/lite-defer.js" defer></script>
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@wieslawsoltes">
+<meta name="twitter:title" content="Avalonia Loader Migration and IL Weaving | XamlToCSharpGenerator">
+<meta name="twitter:description" content="Avalonia Loader Migration and IL Weaving AXSG can preserve common legacy Avalonia code-behind patterns by rewriting compiled AvaloniaXamlLoader.Load(...) calls to AXSG-generated initializer helpers during the build. This is a migration bridge. It does not remove AvaloniaXamlLoader from Avalonia or change Avalonia's NuGet package surface. It changes your compiled application assembly so supported call sites end up on AXSG's generated object-graph path. Why this exists...">
+<meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta name="twitter:image:alt" content="Avalonia Loader Migration and IL Weaving | XamlToCSharpGenerator">
+<meta property="og:title" content="Avalonia Loader Migration and IL Weaving | XamlToCSharpGenerator">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
+<meta property="og:description" content="Avalonia Loader Migration and IL Weaving AXSG can preserve common legacy Avalonia code-behind patterns by rewriting compiled AvaloniaXamlLoader.Load(...) calls to AXSG-generated initializer helpers during the build. This is a migration bridge. It does not remove AvaloniaXamlLoader from Avalonia or change Avalonia's NuGet package surface. It changes your compiled application assembly so supported call sites end up on AXSG's generated object-graph path. Why this exists...">
+<meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
+<meta property="og:image:alt" content="Avalonia Loader Migration and IL Weaving | XamlToCSharpGenerator">
+  </head>
+  <body>
+
+    <div id="lunet" class="container">
+      <nav class="navbar navbar-expand-md sticky-top">
+        <a class="navbar-brand" href="/XamlToCSharpGenerator/">
+          <img class="lunet-logo" src="/XamlToCSharpGenerator/images/logo.svg" alt="XamlToCSharpGenerator" width="96" height="96">
+          <span class="visually-hidden">Home</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+          data-bs-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="navbarSupportedContent" class="collapse navbar-collapse justify-content-between">
+<ol id='nav-id-home-0' class='navbar-nav nav-level0 show '>
+  <li id='nav-item-home-1' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/' class='nav-link  '><i class='bi bi-house-door' aria-hidden='true'></i> Home</a></span>  </li>
+  <li id='nav-item-home-2' class='nav-item  active'>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/articles/' class='nav-link  '><i class='bi bi-book' aria-hidden='true'></i> Docs</a></span>  </li>
+  <li id='nav-item-home-3' class='nav-item '>
+    <span class='nav-item-row'><a href='/XamlToCSharpGenerator/api/' class='nav-link  '><i class='bi bi-braces' aria-hidden='true'></i> API</a></span>  </li>
+</ol>
+          <ol class="navbar-nav flex-grow-1" style="padding-right: 0.5rem;">
+            <li class="nav-item w-100">
+                <div class="lunet-search dropdown w-100">
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search-input" type="search" class="form-control" placeholder="Search... (Alt+s)" aria-label="Search" aria-controls="search-results" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-search-empty-message="Enter words to search..." data-search-no-results-message="No results found.">
+                    <ul id="search-results" class="dropdown-menu w-100 p-0" style="max-height: 50vh;" role="listbox" aria-labelledby="search-input"></ul>
+                  </div>
+                </div>
+            </li>
+          </ol>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 navbar-right">
+            <div class="dropdown">
+              <button
+                id="theme-mode-toggle"
+                class="btn btn-outline-secondary btn-sm lunet-theme-toggle dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Theme">
+                <i class="bi bi-circle-half" data-lunet-theme-toggle-icon aria-hidden="true"></i>
+                <span
+                  data-lunet-theme-toggle-label
+                  data-theme-system-label="System"
+                  data-theme-light-label="Light"
+                  data-theme-dark-label="Dark">Theme</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-mode-toggle">
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="system"><i class="bi bi-circle-half me-2"></i>System</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="light"><i class="bi bi-sun-fill me-2"></i>Light</button></li>
+                <li><button class="dropdown-item" type="button" data-lunet-theme-choice="dark"><i class="bi bi-moon-stars-fill me-2"></i>Dark</button></li>
+              </ul>
+            </div>
+<ol id='nav-id-home2-0' class='navbar-nav nav-level0 show flex-shrink-0'>
+  <li id='nav-item-home2-1' class='nav-item '>
+    <span class='nav-item-row'><a href='https://github.com/wieslawsoltes/XamlToCSharpGenerator' class='nav-link  btn btn-info'><i class="bi bi-github"></i> GitHub</a></span>  </li>
+</ol>
+          </div>
+        </div>
+      </nav>
+      <div class="lunet lunet-articles">
+        <section data-prismjs-copy="" data-prismjs-copy-success="" data-prismjs-copy-timeout="1200" data-copy-tooltip="Copy to Clipboard." data-copy-tooltip-success="Copied!" data-copy-tooltip-error="Failed to copy!">
+
+<div class="container-xxl">
+  <div class="row">
+      <!-- Left sidebar - responsive offcanvas (offcanvas on mobile, visible sidebar on md+) -->
+      <!-- Right sidebar (TOC) - collapsible on mobile, visible sidebar on xxl+ -->
+      <aside id="docs-sidebar-toc" class="col-12 col-xxl-2 sticky-xxl-top menu-sidebar align-self-start order-0 order-xxl-2 collapse d-xxl-block" aria-expanded="true">
+        <h3 class="toc-title">On this page</h3>
+        <nav class="js-toc"></nav>
+      </aside>
+      <!-- Main content column -->
+      <div class="col-12 col-md-9 col-lg-9 col-xl-9 col-xxl-8 order-2 order-md-1 js-toc-content">
+        
+        <p id="lunet-results"></p>
+        <!-- Toggle buttons visible only on small screens -->
+        <div class="d-md-none mb-3">
+          <button
+            class="btn btn-outline-secondary btn-sm d-xxl-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#docs-sidebar-toc"
+            aria-controls="docs-sidebar-toc"
+            aria-expanded="false"
+            aria-label="Toggle Table Of Contents">
+            On this page
+          </button>
+        </div>
+<!-- lunet:summarize -->
+<h1 id="avalonia-loader-migration-and-il-weaving">Avalonia Loader Migration and IL Weaving</h1>
+<p>AXSG can preserve common legacy Avalonia code-behind patterns by rewriting compiled <code>AvaloniaXamlLoader.Load(...)</code> calls to AXSG-generated initializer helpers during the build.</p>
+<p>This is a migration bridge. It does not remove <code>AvaloniaXamlLoader</code> from Avalonia or change Avalonia's NuGet package surface. It changes your compiled application assembly so supported call sites end up on AXSG's generated object-graph path.</p>
+<h2 id="why-this-exists">Why this exists</h2>
+<p>Many Avalonia projects still contain class-backed code such as:</p>
+<pre><code class="language-csharp">private void InitializeComponent()
+{
+    AvaloniaXamlLoader.Load(this);
+}
+</code></pre>
+<p>or:</p>
+<pre><code class="language-csharp">public ServiceProviderPanel(IServiceProvider serviceProvider)
+{
+    AvaloniaXamlLoader.Load(serviceProvider, this);
+}
+</code></pre>
+<p>Before AXSG IL weaving, those call sites had to be removed or manually guarded during migration because they bypassed AXSG's generated <code>InitializeComponent(bool loadXaml = true)</code> path.</p>
+<p>With IL weaving enabled, AXSG can keep those common source shapes working while still routing the compiled app through generated AXSG initialization.</p>
+<h2 id="when-the-weaving-pass-runs">When the weaving pass runs</h2>
+<p>AXSG runs the weaving pass only when all of these are true:</p>
+<ul>
+<li>the AXSG backend is active</li>
+<li>the build is a real compile, not a design-time build</li>
+<li>the output assembly has been produced</li>
+<li><code>XamlSourceGenIlWeavingEnabled</code> is <code>true</code></li>
+</ul>
+<p>The pass runs after <code>CoreCompile</code> and before output-copy targets, so the rewritten assembly is what the app and tests execute.</p>
+<h2 id="supported-call-shapes">Supported call shapes</h2>
+<p>AXSG rewrites these legacy call patterns when the target object is the current instance:</p>
+<ul>
+<li><code>AvaloniaXamlLoader.Load(this);</code></li>
+<li><code>AvaloniaXamlLoader.Load(serviceProvider, this);</code></li>
+</ul>
+<p>The source spelling does not matter. Imported and fully-qualified forms both compile to the same IL call shape, so both are supported.</p>
+<h2 id="what-is-not-rewritten">What is not rewritten</h2>
+<p>AXSG does not rewrite every possible <code>AvaloniaXamlLoader</code> call. The current pass is intentionally narrow and deterministic.</p>
+<p>These shapes are left alone:</p>
+<ul>
+<li><code>AvaloniaXamlLoader.Load(otherInstance);</code></li>
+<li><code>var self = this; AvaloniaXamlLoader.Load(self);</code></li>
+<li>call sites in non-AXSG builds</li>
+<li>call sites in design-time builds</li>
+<li>call sites on types that do not have AXSG-generated initializer helpers</li>
+</ul>
+<p>The current rule is direct same-instance migration support, not arbitrary object-loader interception.</p>
+<h2 id="what-axsg-rewrites-the-calls-to">What AXSG rewrites the calls to</h2>
+<p>For class-backed AXSG documents, the emitter now generates stable helper overloads:</p>
+<ul>
+<li><code>__InitializeXamlSourceGenComponent(self)</code></li>
+<li><code>__InitializeXamlSourceGenComponent(serviceProvider, self)</code></li>
+</ul>
+<p>The weaver redirects supported <code>AvaloniaXamlLoader.Load(...)</code> calls to those helpers.</p>
+<p>That means rewritten calls go through the same generated initialization body that powers AXSG class-backed XAML:</p>
+<ul>
+<li>generated object-graph population</li>
+<li>name rebinding</li>
+<li>service-provider-aware initialization</li>
+<li>hot reload and hot design registration</li>
+</ul>
+<p>The weaving pass is therefore compatibility glue, not a second runtime path.</p>
+<h2 id="recommended-migration-paths">Recommended migration paths</h2>
+<h3 id="preferred-long-term-axsg-style">Preferred long-term AXSG style</h3>
+<p>Once a project is fully migrated, the cleanest shape is still:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+</code></pre>
+<p>with no hand-written <code>AvaloniaXamlLoader</code> wrapper at all.</p>
+<h3 id="compatibility-first-migration">Compatibility-first migration</h3>
+<p>If you want to switch to AXSG without editing all existing code-behind immediately, keep the legacy wrapper temporarily and let AXSG rewrite it:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+
+private void InitializeComponent()
+{
+    AvaloniaXamlLoader.Load(this);
+}
+</code></pre>
+<p>This also applies to <code>App.axaml.cs</code>.</p>
+<h3 id="explicit-strict-migration">Explicit strict migration</h3>
+<p>If you want the build to enforce source cleanup instead of silently bridging it, disable weaving:</p>
+<pre><code class="language-xml">&lt;PropertyGroup&gt;
+  &lt;XamlSourceGenIlWeavingEnabled&gt;false&lt;/XamlSourceGenIlWeavingEnabled&gt;
+&lt;/PropertyGroup&gt;
+</code></pre>
+<p>With weaving disabled, the older AXSG rule comes back: a hand-written parameterless <code>InitializeComponent()</code> wrapper can intercept the constructor call and bypass the generated AXSG initializer.</p>
+<h2 id="msbuild-properties">MSBuild properties</h2>
+<p>These switches are MSBuild-only build-integration properties. They do not map to <code>xaml-sourcegen.config.json</code>.</p>
+<table class="table">
+<thead>
+<tr>
+<th>Property</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>XamlSourceGenIlWeavingEnabled</code></td>
+<td><code>true</code></td>
+<td>Canonical switch for the post-compile rewrite pass.</td>
+</tr>
+<tr>
+<td><code>AvaloniaSourceGenIlWeavingEnabled</code></td>
+<td>mirrors <code>XamlSourceGenIlWeavingEnabled</code></td>
+<td>Compatibility alias for existing Avalonia-prefixed configuration.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingStrict</code></td>
+<td><code>true</code></td>
+<td>Fails the build when AXSG matches a supported loader call on a source-generated type but cannot find the generated initializer helper to rewrite to.</td>
+</tr>
+<tr>
+<td><code>AvaloniaSourceGenIlWeavingStrict</code></td>
+<td>mirrors <code>XamlSourceGenIlWeavingStrict</code></td>
+<td>Compatibility alias.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingVerbose</code></td>
+<td><code>false</code></td>
+<td>Prints inspection, match, and rewrite counts for the pass.</td>
+</tr>
+<tr>
+<td><code>AvaloniaSourceGenIlWeavingVerbose</code></td>
+<td>mirrors <code>XamlSourceGenIlWeavingVerbose</code></td>
+<td>Compatibility alias.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingBackend</code></td>
+<td><code>Metadata</code></td>
+<td>Selects the scan backend for the weaving pass. <code>Metadata</code> uses <code>System.Reflection.Metadata</code>; <code>Cecil</code> keeps the legacy Mono.Cecil scan path.</td>
+</tr>
+<tr>
+<td><code>AvaloniaSourceGenIlWeavingBackend</code></td>
+<td>mirrors <code>XamlSourceGenIlWeavingBackend</code></td>
+<td>Compatibility alias.</td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<pre><code class="language-xml">&lt;PropertyGroup&gt;
+  &lt;AvaloniaXamlCompilerBackend&gt;SourceGen&lt;/AvaloniaXamlCompilerBackend&gt;
+  &lt;XamlSourceGenIlWeavingEnabled&gt;true&lt;/XamlSourceGenIlWeavingEnabled&gt;
+  &lt;XamlSourceGenIlWeavingVerbose&gt;true&lt;/XamlSourceGenIlWeavingVerbose&gt;
+  &lt;XamlSourceGenIlWeavingBackend&gt;Metadata&lt;/XamlSourceGenIlWeavingBackend&gt;
+&lt;/PropertyGroup&gt;
+</code></pre>
+<h2 id="diagnostics-and-troubleshooting">Diagnostics and troubleshooting</h2>
+<p>When the pass rewrites anything, AXSG logs a build message like:</p>
+<pre><code class="language-text">[AXSG.Build] IL weaving inspected 11 type(s), matched 3 AvaloniaXamlLoader call(s), and rewrote 3 call(s) in '.../SourceGenIlWeavingSample.dll'.
+</code></pre>
+<p>Use <code>XamlSourceGenIlWeavingVerbose=true</code> when you want that message even for zero-rewrite builds.</p>
+<p>If strict mode is enabled and AXSG finds a supported loader call on a source-generated type but cannot find the generated initializer helper, the build fails. That usually indicates one of these problems:</p>
+<ul>
+<li>the type is not actually using the expected AXSG-generated class-backed shape</li>
+<li>the call site does not match the supported same-instance pattern</li>
+<li>generated output is incomplete or stale</li>
+</ul>
+<p>If the app still behaves like classic Avalonia loading, check:</p>
+<ol>
+<li><code>AvaloniaXamlCompilerBackend=SourceGen</code></li>
+<li><code>XamlSourceGenIlWeavingEnabled=true</code></li>
+<li>the code-behind is using a supported call shape</li>
+<li>the build output contains the AXSG IL weaving log</li>
+</ol>
+<h2 id="hot-reload-and-hot-design-impact">Hot reload and hot design impact</h2>
+<p>Rewritten call sites land on the same generated AXSG initializer helpers used by the normal class-backed path, so hot reload and hot design registration stay intact.</p>
+<p>The sample app at <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/tree/main/samples/SourceGenIlWeavingSample"><code>samples/SourceGenIlWeavingSample</code></a> covers:</p>
+<ul>
+<li><code>App</code> initialization through <code>AvaloniaXamlLoader.Load(this)</code></li>
+<li>view initialization through <code>AvaloniaXamlLoader.Load(this)</code></li>
+<li>service-provider initialization through <code>AvaloniaXamlLoader.Load(serviceProvider, this)</code></li>
+</ul>
+<p>The corresponding runtime tests verify that rewritten calls still register tracked documents for hot reload.</p>
+<h2 id="what-this-feature-does-not-do">What this feature does not do</h2>
+<p>AXSG IL weaving does not:</p>
+<ul>
+<li>remove <code>AvaloniaXamlLoader</code> from the Avalonia package</li>
+<li>change Avalonia's default backend behavior when AXSG is not active</li>
+<li>rewrite arbitrary object-loader calls for non-current instances</li>
+<li>replace the recommended end-state of calling the generated AXSG <code>InitializeComponent()</code> directly</li>
+</ul>
+<p>It is a build-time migration aid for supported legacy patterns.</p>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/build">Package: XamlToCSharpGenerator.Build</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/configuration-model">Configuration Model</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/reference/configuration-migration">Configuration Migration</a></li>
+</ul>
+
+      </div>
+  </div>
+</div>
+
+        </section>
+        <footer>
+          <hr>
+          <p>Copyright &copy; 2026, Wieslaw Soltes aka <a href="https://github.com/wieslawsoltes">wieslawsoltes</a> - Content licensed under the <a href="https://github.com/wieslawsoltes/XamlToCSharpGenerator/blob/main/LICENSE">MIT license</a> | Site generated by <a href="https://github.com/lunet-io/lunet">lunet</a> hosted on <a href="https://pages.github.com/">GitHub Pages</a></p>
+        </footer>
+      </div>
+    </div>
+
+  </body>
+</html>

@@ -240,12 +240,33 @@
 <td>compilation symbol</td>
 <td>Defined when AXSG is the active backend. Use it to guard fallback <code>AvaloniaXamlLoader.Load(this)</code> code.</td>
 </tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingEnabled</code> / <code>AvaloniaSourceGenIlWeavingEnabled</code></td>
+<td>MSBuild property</td>
+<td>Enables AXSG post-compile rewriting of supported <code>AvaloniaXamlLoader.Load(...)</code> call sites to generated AXSG initializer helpers.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingStrict</code> / <code>AvaloniaSourceGenIlWeavingStrict</code></td>
+<td>MSBuild property</td>
+<td>Fails the build when AXSG matches a supported loader call on a source-generated type but cannot find the generated initializer helper to rewrite to.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingVerbose</code> / <code>AvaloniaSourceGenIlWeavingVerbose</code></td>
+<td>MSBuild property</td>
+<td>Emits inspection, match, and rewrite counts for the weaving pass.</td>
+</tr>
+<tr>
+<td><code>XamlSourceGenIlWeavingBackend</code> / <code>AvaloniaSourceGenIlWeavingBackend</code></td>
+<td>MSBuild property</td>
+<td>Selects the IL-weaving scan backend. <code>Metadata</code> uses <code>System.Reflection.Metadata</code> and <code>Cecil</code> keeps the legacy Mono.Cecil scan path.</td>
+</tr>
 </tbody>
 </table>
 <p>For normal AXSG app configuration, do not try to express those as JSON config-file keys. Set them in the project file instead.</p>
 <p>For a full explanation of the name-generator and <code>InitializeComponent</code> compatibility matrix, see:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 </ul>
 <h2 id="top-level-schema">Top-level schema</h2>
 <p>Top-level sections:</p>

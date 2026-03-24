@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
-<meta name="twitter:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must not keep an active legacy loader path when AXSG is the selected backend. The short rule Keep constructor calls like:...">
+<meta name="twitter:description" content="InitializeComponent and Loader Fallback This page covers the most common migration issue when enabling AXSG in an existing Avalonia app: deciding what to do with hand-written InitializeComponent() methods that still call AvaloniaXamlLoader.Load(...). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must follow the same AXSG migration rules as any other class-backed AXAML file. The short rule Keep constructor calls like:...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
 <meta property="og:title" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="InitializeComponent and Loader Fallback This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written InitializeComponent() method that still calls AvaloniaXamlLoader.Load(this). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must not keep an active legacy loader path when AXSG is the selected backend. The short rule Keep constructor calls like:...">
+<meta property="og:description" content="InitializeComponent and Loader Fallback This page covers the most common migration issue when enabling AXSG in an existing Avalonia app: deciding what to do with hand-written InitializeComponent() methods that still call AvaloniaXamlLoader.Load(...). That rule includes App.axaml.cs. The application root is a class-backed XAML type too, so App must follow the same AXSG migration rules as any other class-backed AXAML file. The short rule Keep constructor calls like:...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="InitializeComponent and Loader Fallback | XamlToCSharpGenerator">
   </head>
@@ -158,8 +158,8 @@
         </div>
 <!-- lunet:summarize -->
 <h1 id="initializecomponent-and-loader-fallback">InitializeComponent and Loader Fallback</h1>
-<p>This page covers the most common migration mistake when enabling AXSG in an existing Avalonia app: leaving a hand-written <code>InitializeComponent()</code> method that still calls <code>AvaloniaXamlLoader.Load(this)</code>.</p>
-<p>That rule includes <code>App.axaml.cs</code>. The application root is a class-backed XAML type too, so <code>App</code> must not keep an active legacy loader path when AXSG is the selected backend.</p>
+<p>This page covers the most common migration issue when enabling AXSG in an existing Avalonia app: deciding what to do with hand-written <code>InitializeComponent()</code> methods that still call <code>AvaloniaXamlLoader.Load(...)</code>.</p>
+<p>That rule includes <code>App.axaml.cs</code>. The application root is a class-backed XAML type too, so <code>App</code> must follow the same AXSG migration rules as any other class-backed AXAML file.</p>
 <h2 id="the-short-rule">The short rule</h2>
 <p>Keep constructor calls like:</p>
 <pre><code class="language-csharp">public MainWindow()
@@ -167,19 +167,22 @@
     InitializeComponent();
 }
 </code></pre>
-<p>But do not keep an unconditional hand-written method like:</p>
+<p>AXSG now supports two migration paths:</p>
+<ol>
+<li>remove the hand-written <code>AvaloniaXamlLoader</code> wrapper entirely</li>
+<li>keep supported legacy loader calls and let AXSG IL-weave them to generated initializer helpers during the build</li>
+</ol>
+<p>The clean long-term shape is still to remove the wrapper, but the common loader forms no longer require immediate source edits when IL weaving is enabled.</p>
+<p>Without IL weaving, or when the call shape is unsupported, an unconditional hand-written method like:</p>
 <pre><code class="language-csharp">private void InitializeComponent()
 {
     global::Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
 }
 </code></pre>
-<p>when AXSG is enabled.</p>
-<p>Also do not treat <code>AvaloniaNameGeneratorIsEnabled</code> as the AXSG switch. That property belongs to the legacy Avalonia path. In an AXSG project, a direct <code>AvaloniaXamlLoader.Load(this)</code> class-initialization path is not compatible with the generated SourceGen initialization path.</p>
-<h2 id="why">Why</h2>
-<p>For class-backed XAML, AXSG generates an <code>InitializeComponent(bool loadXaml = true)</code> method in the generated partial class. That is the method expected to build the object graph from generated code.</p>
-<p>If your code-behind also declares a parameterless <code>InitializeComponent()</code>, then the constructor call <code>InitializeComponent();</code> binds to the hand-written method, not the generated one. In that case AXSG output exists, but your view never uses it.</p>
-<h2 id="what-to-do">What to do</h2>
-<h3 id="sourcegen-only-project">Sourcegen-only project</h3>
+<p>still intercepts the constructor call and bypasses AXSG's generated parameterized <code>InitializeComponent</code>.</p>
+<p>Also do not treat <code>AvaloniaNameGeneratorIsEnabled</code> as the AXSG switch. That property belongs to the legacy Avalonia path.</p>
+<h2 id="migration-choices">Migration choices</h2>
+<h3 id="1-clean-axsg-source-shape">1) Clean AXSG source shape</h3>
 <p>Remove the hand-written fallback method entirely:</p>
 <pre><code class="language-csharp">public MainWindow()
 {
@@ -195,7 +198,23 @@
     }
 }
 </code></pre>
-<h3 id="mixed-backend-or-multi-target-project">Mixed-backend or multi-target project</h3>
+<h3 id="2-compatibility-bridge-with-axsg-il-weaving">2) Compatibility bridge with AXSG IL weaving</h3>
+<p>Keep the common legacy wrapper temporarily:</p>
+<pre><code class="language-csharp">public MainWindow()
+{
+    InitializeComponent();
+}
+
+private void InitializeComponent()
+{
+    AvaloniaXamlLoader.Load(this);
+}
+</code></pre>
+<p>When <code>XamlSourceGenIlWeavingEnabled=true</code> and the build is using AXSG, that <code>Load(this)</code> call is rewritten after compile to the AXSG-generated initializer helper for the same type.</p>
+<p>AXSG also supports:</p>
+<pre><code class="language-csharp">AvaloniaXamlLoader.Load(serviceProvider, this);
+</code></pre>
+<h3 id="3-mixed-backend-or-multi-target-project">3) Mixed-backend or multi-target project</h3>
 <p>Keep the fallback only when AXSG is not the active backend:</p>
 <pre><code class="language-csharp">public MainWindow()
 {
@@ -209,49 +228,63 @@ private void InitializeComponent()
 }
 #endif
 </code></pre>
-<p>This is the recommended portable pattern for libraries and apps that still need to build on both AXSG and non-AXSG paths.</p>
+<p>This is still the recommended portable pattern for libraries and apps that truly build in both AXSG and non-AXSG modes.</p>
+<h2 id="why-the-old-problem-still-matters">Why the old problem still matters</h2>
+<p>For class-backed XAML, AXSG generates an <code>InitializeComponent(bool loadXaml = true)</code> method in the generated partial class. That is the method expected to build the object graph from generated code.</p>
+<p>If your code-behind also declares a parameterless <code>InitializeComponent()</code>, then the constructor call <code>InitializeComponent();</code> binds to the hand-written method, not the generated one. In that case AXSG output exists, but your view never uses it.</p>
+<p>AXSG IL weaving changes that story for supported legacy loader calls because the wrapper body is rewritten after compile to AXSG's generated initializer helper instead of calling Avalonia's runtime loader directly.</p>
 <p>For the full backend and name-generator matrix, use:</p>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 </ul>
-<h2 id="when-the-fallback-is-still-useful">When the fallback is still useful</h2>
-<p>The guarded fallback remains appropriate when:</p>
+<h2 id="supported-woven-call-shapes">Supported woven call shapes</h2>
+<p>AXSG's weaving pass is intentionally narrow. It supports:</p>
 <ul>
-<li>the project still supports non-sourcegen Avalonia/XAML compiler paths</li>
-<li>some target frameworks use AXSG and others do not</li>
-<li>you are migrating incrementally and need one code-behind file to work in both modes</li>
+<li>direct <code>AvaloniaXamlLoader.Load(this)</code></li>
+<li>direct <code>AvaloniaXamlLoader.Load(serviceProvider, this)</code></li>
+<li>imported or fully-qualified source spellings that compile to those call shapes</li>
+</ul>
+<p>It does not rewrite arbitrary object-loader calls such as:</p>
+<ul>
+<li><code>AvaloniaXamlLoader.Load(otherInstance)</code></li>
+<li><code>var self = this; AvaloniaXamlLoader.Load(self)</code></li>
 </ul>
 <h2 id="what-not-to-do">What not to do</h2>
-<p>Avoid these patterns:</p>
+<p>Avoid these assumptions:</p>
 <ul>
-<li>unconditional <code>private void InitializeComponent() =&gt; AvaloniaXamlLoader.Load(this);</code></li>
-<li>keeping both implementations and expecting the generated one to win</li>
+<li>assuming AXSG removes <code>AvaloniaXamlLoader</code> from Avalonia packages</li>
+<li>assuming every possible <code>AvaloniaXamlLoader</code> call is rewritten</li>
+<li>disabling IL weaving and expecting the old wrapper to keep using AXSG automatically</li>
 <li>removing the constructor call to <code>InitializeComponent();</code></li>
 </ul>
 <h2 id="relationship-to-runtime-bootstrap">Relationship to runtime bootstrap</h2>
 <p>This guidance is separate from <code>AppBuilder</code> bootstrap. You still need:</p>
 <pre><code class="language-csharp">.UseAvaloniaSourceGeneratedXaml()
 </code></pre>
-<p>in the app startup path. The generated <code>InitializeComponent</code> method and the AXSG runtime bootstrap solve different problems:</p>
+<p>in the app startup path. The generated <code>InitializeComponent</code> method, the IL weaving bridge, and the AXSG runtime bootstrap solve different problems:</p>
 <ul>
 <li>generated <code>InitializeComponent</code> builds class-backed object graphs from generated code</li>
+<li>IL weaving redirects supported legacy loader call sites to the generated initialization path</li>
 <li><code>.UseAvaloniaSourceGeneratedXaml()</code> enables the AXSG runtime loader, registries, and runtime integration surface</li>
 </ul>
-<p>Both are part of the normal supported setup.</p>
+<p>All are part of the normal supported setup.</p>
 <h2 id="troubleshooting-checklist">Troubleshooting checklist</h2>
 <p>If a class-backed view or <code>App.axaml.cs</code> seems to ignore AXSG output:</p>
 <ol>
 <li>Check whether the project sets <code>AvaloniaXamlCompilerBackend=SourceGen</code>.</li>
 <li>Check whether the app calls <code>.UseAvaloniaSourceGeneratedXaml()</code>.</li>
-<li>Check whether the code-behind, including <code>App.axaml.cs</code>, still declares an unconditional parameterless <code>InitializeComponent()</code>.</li>
+<li>Check whether <code>XamlSourceGenIlWeavingEnabled</code> is <code>true</code> when you expect the migration bridge to apply.</li>
+<li>Check whether the code-behind, including <code>App.axaml.cs</code>, uses a supported loader call shape.</li>
 <li>Check whether the project is forcing <code>AvaloniaNameGeneratorIsEnabled=true</code>.</li>
-<li>Inspect generated output under <code>obj/...</code> and confirm the class-backed partial includes AXSG-generated <code>InitializeComponent</code>.</li>
+<li>Inspect the build output for the AXSG IL weaving log or inspect generated output under <code>obj/...</code> and confirm the class-backed partial includes AXSG-generated initializer helpers.</li>
 </ol>
 <h2 id="related-docs">Related docs</h2>
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/installation">Installation</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/getting-started/quickstart">Quickstart</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-name-generator-and-initializecomponent-modes">Avalonia Name Generator and InitializeComponent Modes</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/class-backed-xaml-and-initializecomponent">Class-backed XAML and InitializeComponent Internals</a></li>
 </ul>

@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Package: XamlToCSharpGenerator.Build | XamlToCSharpGenerator">
-<meta name="twitter:description" content="XamlToCSharpGenerator.Build Role Provides the MSBuild props/targets layer that wires AXSG into project builds, backend selection, docs packaging, local analyzer deployment, and build-time runtime integration. What ships This package is a build-transitive shell. It does not expose a user-facing code assembly. Instead it contributes: buildTransitive/XamlToCSharpGenerator.Build.props buildTransitive/XamlToCSharpGenerator.Build.targets Those files coordinate: backend selection generator/runtime asset wiring local analyzer deployment for repo development...">
+<meta name="twitter:description" content="XamlToCSharpGenerator.Build Role Provides the MSBuild props/targets layer that wires AXSG into project builds, backend selection, docs packaging, local analyzer deployment, and build-time runtime integration. What ships This package is a build-transitive shell. It does not expose a user-facing code assembly. Instead it contributes: buildTransitive/XamlToCSharpGenerator.Build.props buildTransitive/XamlToCSharpGenerator.Build.targets buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll buildTransitive/Mono.Cecil.dll Those files coordinate: backend selection...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Package: XamlToCSharpGenerator.Build | XamlToCSharpGenerator">
 <meta property="og:title" content="Package: XamlToCSharpGenerator.Build | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="XamlToCSharpGenerator.Build Role Provides the MSBuild props/targets layer that wires AXSG into project builds, backend selection, docs packaging, local analyzer deployment, and build-time runtime integration. What ships This package is a build-transitive shell. It does not expose a user-facing code assembly. Instead it contributes: buildTransitive/XamlToCSharpGenerator.Build.props buildTransitive/XamlToCSharpGenerator.Build.targets Those files coordinate: backend selection generator/runtime asset wiring local analyzer deployment for repo development...">
+<meta property="og:description" content="XamlToCSharpGenerator.Build Role Provides the MSBuild props/targets layer that wires AXSG into project builds, backend selection, docs packaging, local analyzer deployment, and build-time runtime integration. What ships This package is a build-transitive shell. It does not expose a user-facing code assembly. Instead it contributes: buildTransitive/XamlToCSharpGenerator.Build.props buildTransitive/XamlToCSharpGenerator.Build.targets buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll buildTransitive/Mono.Cecil.dll Those files coordinate: backend selection...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Package: XamlToCSharpGenerator.Build | XamlToCSharpGenerator">
   </head>
@@ -151,11 +151,14 @@
 <ul>
 <li><code>buildTransitive/XamlToCSharpGenerator.Build.props</code></li>
 <li><code>buildTransitive/XamlToCSharpGenerator.Build.targets</code></li>
+<li><code>buildTransitive/XamlToCSharpGenerator.Build.Tasks.dll</code></li>
+<li><code>buildTransitive/Mono.Cecil.dll</code></li>
 </ul>
 <p>Those files coordinate:</p>
 <ul>
 <li>backend selection</li>
 <li>generator/runtime asset wiring</li>
+<li>build-time IL weaving for legacy <code>AvaloniaXamlLoader.Load(...)</code> migration</li>
 <li>local analyzer deployment for repo development</li>
 <li>docs packaging hooks</li>
 <li>hot-reload-related build behavior</li>
@@ -175,6 +178,7 @@
 <ul>
 <li>authoring a custom SDK or template</li>
 <li>debugging <code>buildTransitive</code> behavior</li>
+<li>relying on AXSG IL weaving to preserve supported legacy Avalonia loader call sites</li>
 <li>integrating AXSG into a repo with its own target layering</li>
 <li>maintaining CI/release/docs workflows that rely on shared build imports</li>
 </ul>
@@ -190,6 +194,7 @@
 <ul>
 <li><a href="/XamlToCSharpGenerator/articles/concepts/compiler-host-and-project-model">Compiler Host and Project Model</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/advanced/compiler-configuration-and-transform-rules">Compiler Configuration and Transform Rules</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/guides/avalonia-loader-il-weaving">Avalonia Loader Migration and IL Weaving</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/packaging-and-release">Packaging and Release</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/package-and-assembly">Package and Assembly</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/package-selection-and-integration">Package Selection and Integration</a></li>
