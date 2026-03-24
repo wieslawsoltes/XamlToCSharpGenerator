@@ -17,8 +17,8 @@ internal static class PreviewHostAssemblyResolution
         {
             _resolver = new PreviewHostAssemblyResolver(options.SourceAssemblyPath, options.HostAssemblyPath);
             EnsureInstalledNoLock();
-            PreviewHostDependencyPreloader.PreloadManagedDependencies(options.SourceAssemblyPath);
             PreviewHostDependencyPreloader.PreloadManagedDependencies(options.HostAssemblyPath);
+            PreviewHostDependencyPreloader.PreloadManagedDependencies(options.SourceAssemblyPath);
         }
     }
 
@@ -76,8 +76,10 @@ internal sealed class PreviewHostAssemblyResolver
         List<AssemblyDependencyResolver> dependencyResolvers = [];
         HashSet<string> directories = new(StringComparer.Ordinal);
 
-        AddAssemblyLocation(sourceAssemblyPath, dependencyResolvers, directories);
+        // The preview host and application host share the default load context, so
+        // host dependencies must win when the same simple name exists in both closures.
         AddAssemblyLocation(hostAssemblyPath, dependencyResolvers, directories);
+        AddAssemblyLocation(sourceAssemblyPath, dependencyResolvers, directories);
 
         _dependencyResolvers = [.. dependencyResolvers];
         _assemblyDirectories = [.. directories];
