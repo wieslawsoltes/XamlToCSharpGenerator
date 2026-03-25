@@ -500,6 +500,19 @@ test('resolveAvaloniaPreviewerToolPaths keeps bundled host first and preserves p
     ]);
 });
 
+test('resolveAvaloniaPreviewerToolPaths can prefer the project host after a bundled-host failure', () => {
+  assert.deepEqual(
+    resolveAvaloniaPreviewerToolPaths(
+      true,
+      '/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll',
+      '/tmp/project/Avalonia.Designer.HostApp.dll',
+      true),
+    [
+      path.normalize('/tmp/project/Avalonia.Designer.HostApp.dll'),
+      path.normalize('/tmp/bundled/XamlToCSharpGenerator.Previewer.DesignerHost.dll')
+    ]);
+});
+
 test('resolveAvaloniaPreviewerToolPaths de-duplicates identical host paths', () => {
   assert.deepEqual(
     resolveAvaloniaPreviewerToolPaths(

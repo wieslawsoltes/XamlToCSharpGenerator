@@ -669,6 +669,40 @@ test('handleSessionEvent defers updateResult refresh instead of refreshing immed
   assert.deepEqual(refreshes, []);
 });
 
+test('performRefreshFromSessionAsync marks project-host fallback sessions unavailable without issuing design commands', async () => {
+  const { controller } = createController();
+  const designStates = [];
+  const sentCommands = [];
+  const previewSession = {
+    hasDesignCommandsAvailable() {
+      return false;
+    },
+    getDesignUnavailableMessage() {
+      return 'Fallback-only preview session.';
+    },
+    async sendDesignCommand(command, payload) {
+      sentCommands.push({ command, payload });
+      return {};
+    },
+    setDesignState(state) {
+      designStates.push(state);
+    }
+  };
+
+  await controller.performRefreshFromSessionAsync(previewSession, 'previewStarted');
+
+  assert.deepEqual(sentCommands, []);
+  assert.deepEqual(designStates, [
+    {
+      available: false,
+      reason: 'designUnavailable',
+      message: 'Fallback-only preview session.'
+    }
+  ]);
+  assert.equal(controller.currentSession, previewSession);
+  assert.equal(controller.workspace, null);
+});
+
 test('handleSessionEvent clears stale inspector state when the preview host exits', async () => {
   const { controller } = createController();
   const designStates = [];
