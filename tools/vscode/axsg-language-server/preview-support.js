@@ -81,6 +81,7 @@ const DEFAULT_PREVIEW_SIZE_WAIT_MS = 750;
 const HOST_PROJECT_STATE_PREFIX = 'axsg.preview.hostProject::';
 const PREVIEW_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.PreviewerHost.dll';
 const SOURCE_GENERATED_DESIGNER_HOST_ASSEMBLY_NAME = 'XamlToCSharpGenerator.Previewer.DesignerHost.dll';
+const PROJECT_HOST_FALLBACK_DESIGN_UNAVAILABLE_MESSAGE = 'AXSG preview design commands are unavailable for this session because it is using the Avalonia project host fallback. Preview rendering can continue, but AXSG Inspector workspace, tree, and property actions require the bundled AXSG designer host.';
 
 class JsonLineHelperClient extends EventEmitter {
   constructor(command, args, options) {
@@ -248,6 +249,8 @@ class AvaloniaPreviewSession {
     this.previewSizeReady = createDeferred();
     this.previewSizeReadyResolved = false;
     this.designState = null;
+    this.preferProjectHostRuntime = false;
+    this.designCommandsAvailable = null;
   }
 
   reveal() {
@@ -482,7 +485,10 @@ class AvaloniaPreviewSession {
     const outputChannel = this.controller.getOutputChannel();
     outputChannel.appendLine(`[preview] starting ${this.fileName}`);
 
-    const attempts = buildStartAttempts(this.controller.extensionPath, this.launchInfo);
+    const attempts = buildStartAttempts(
+      this.controller.extensionPath,
+      this.launchInfo,
+      this.preferProjectHostRuntime);
     if (attempts.length === 0) {
       throw new Error('No preview start strategy is available for the selected project.');
     }
@@ -510,6 +516,12 @@ class AvaloniaPreviewSession {
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
+        if (attempt.isBundledDesignerHost && nextAttempt && nextAttempt.useProjectHostRuntime) {
+          this.preferProjectHostRuntime = true;
+          outputChannel.appendLine(
+            `[preview] bundled Avalonia XamlX host was unavailable for ${this.fileName}; preferring project host fallback for the rest of this session.`);
+        }
+
         if (requestedMode === PREVIEW_COMPILER_MODE_AUTO && nextAttempt) {
           outputChannel.appendLine(
             `[preview] ${attempt.label} preview was unavailable: ${message}. Falling back to ${nextAttempt.label}.`);
@@ -532,6 +544,7 @@ class AvaloniaPreviewSession {
   }
 
   async startAttemptAsync(helperPath, dotNetCommand, outputChannel, attempt) {
+    this.designCommandsAvailable = areDesignCommandsAvailableForAttempt(attempt);
     this.helper = new JsonLineHelperClient(dotNetCommand, [helperPath], {
       cwd: this.launchInfo.workspaceRoot,
       outputChannel
@@ -789,6 +802,10 @@ class AvaloniaPreviewSession {
       throw new Error('Preview session is not available.');
     }
 
+    if (this.designCommandsAvailable === false) {
+      throw new Error(PROJECT_HOST_FALLBACK_DESIGN_UNAVAILABLE_MESSAGE);
+    }
+
     await this.start();
     if (!this.helper) {
       throw new Error('Preview host is not available.');
@@ -803,6 +820,16 @@ class AvaloniaPreviewSession {
   setDesignState(nextState) {
     this.designState = nextState || null;
     this.updatePanel();
+  }
+
+  hasDesignCommandsAvailable() {
+    return this.designCommandsAvailable !== false;
+  }
+
+  getDesignUnavailableMessage() {
+    return this.designCommandsAvailable === false
+      ? PROJECT_HOST_FALLBACK_DESIGN_UNAVAILABLE_MESSAGE
+      : '';
   }
 
   async waitForInitialPreviewSizeAsync() {
@@ -3388,7 +3415,15 @@ function resolveBundledSourceGeneratedDesignerHostPath(extensionPath) {
   return path.join(extensionPath, 'designer-host', SOURCE_GENERATED_DESIGNER_HOST_ASSEMBLY_NAME);
 }
 
-function buildStartAttempts(extensionPath, launchInfo) {
+function areDesignCommandsAvailableForAttempt(attempt) {
+  if (!attempt) {
+    return true;
+  }
+
+  return !(attempt.mode === PREVIEW_COMPILER_MODE_AVALONIA && attempt.useProjectHostRuntime);
+}
+
+function buildStartAttempts(extensionPath, launchInfo, preferProjectHostRuntime = false) {
   const attempts = [];
   const requestedMode = launchInfo.previewPlan && launchInfo.previewPlan.requestedMode
     ? launchInfo.previewPlan.requestedMode
@@ -3431,7 +3466,8 @@ function buildStartAttempts(extensionPath, launchInfo) {
       const previewerToolPaths = resolveAvaloniaPreviewerToolPaths(
         hasBundledDesignerHost,
         designerHostPath,
-        launchInfo.hostProject.previewerToolPath);
+        launchInfo.hostProject.previewerToolPath,
+        preferProjectHostRuntime);
 
       for (let index = 0; index < previewerToolPaths.length; index += 1) {
         const previewerToolPath = previewerToolPaths[index];
@@ -3444,13 +3480,15 @@ function buildStartAttempts(extensionPath, launchInfo) {
           launchInfo.hostProject.targetPath,
           useHostAssemblyRuntime);
         attempts.push({
-          label: index === 0
-            ? 'Avalonia XamlX'
-            : 'Avalonia XamlX (project host fallback)',
+          label: useHostAssemblyRuntime
+            ? 'Avalonia XamlX (project host fallback)'
+            : 'Avalonia XamlX',
           mode,
           previewerToolPath,
           runtimeConfigPath: runtimePaths.runtimeConfigPath,
-          depsFilePath: runtimePaths.depsFilePath
+          depsFilePath: runtimePaths.depsFilePath,
+          isBundledDesignerHost: !useHostAssemblyRuntime,
+          useProjectHostRuntime: useHostAssemblyRuntime
         });
       }
     }
@@ -3578,6 +3616,7 @@ function isProjectFilePath(filePath) {
 
 module.exports = {
   AvaloniaPreviewController,
+  buildStartAttempts,
   buildPreviewHostExitStatus,
   describePreviewCompilerMode,
   describePreviewDesignState

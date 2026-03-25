@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const Module = require('node:module');
+const os = require('node:os');
+const path = require('node:path');
 
 function createVscodeMock() {
   const didChangeTextDocumentListeners = [];
@@ -340,4 +343,49 @@ test('describePreviewDesignState reports ready inspector state', () => {
     badgeText: 'Design / Logical',
     message: 'Inspector ready in Design mode using the logical tree.'
   });
+});
+
+test('buildStartAttempts prefers the project fallback first after a bundled-host failure in the same session', () => {
+  const vscodeMock = createVscodeMock();
+  const { buildStartAttempts } = loadPreviewSupport(vscodeMock);
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'axsg-preview-support-'));
+
+  try {
+    const bundledHostPath = path.join(tempRoot, 'designer-host', 'XamlToCSharpGenerator.Previewer.DesignerHost.dll');
+    const projectHostPath = path.join(tempRoot, 'project', 'Avalonia.Designer.HostApp.dll');
+    const hostTargetPath = path.join(tempRoot, 'app', 'TestApp.dll');
+
+    fs.mkdirSync(path.dirname(bundledHostPath), { recursive: true });
+    fs.mkdirSync(path.dirname(projectHostPath), { recursive: true });
+    fs.mkdirSync(path.dirname(hostTargetPath), { recursive: true });
+    fs.writeFileSync(bundledHostPath, '');
+    fs.writeFileSync(projectHostPath, '');
+    fs.writeFileSync(hostTargetPath, '');
+
+    const launchInfo = {
+      previewPlan: {
+        requestedMode: 'avalonia',
+        preferredMode: 'avalonia'
+      },
+      hostProject: {
+        previewerToolPath: projectHostPath,
+        targetPath: hostTargetPath
+      }
+    };
+
+    const defaultAttempts = buildStartAttempts(tempRoot, launchInfo, false);
+    const stickyFallbackAttempts = buildStartAttempts(tempRoot, launchInfo, true);
+
+    assert.equal(defaultAttempts[0].label, 'Avalonia XamlX');
+    assert.equal(defaultAttempts[0].isBundledDesignerHost, true);
+    assert.equal(defaultAttempts[1].label, 'Avalonia XamlX (project host fallback)');
+    assert.equal(defaultAttempts[1].useProjectHostRuntime, true);
+
+    assert.equal(stickyFallbackAttempts[0].label, 'Avalonia XamlX (project host fallback)');
+    assert.equal(stickyFallbackAttempts[0].useProjectHostRuntime, true);
+    assert.equal(stickyFallbackAttempts[1].label, 'Avalonia XamlX');
+    assert.equal(stickyFallbackAttempts[1].isBundledDesignerHost, true);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

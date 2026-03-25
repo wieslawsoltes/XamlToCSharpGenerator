@@ -325,7 +325,11 @@ function normalizePreviewScale(scale) {
   return Math.round(normalizedScale * 1000) / 1000;
 }
 
-function resolveAvaloniaPreviewerToolPaths(hasBundledDesignerHost, bundledDesignerHostPath, projectPreviewerToolPath) {
+function resolveAvaloniaPreviewerToolPaths(
+  hasBundledDesignerHost,
+  bundledDesignerHostPath,
+  projectPreviewerToolPath,
+  preferProjectPreviewerToolPath = false) {
   const orderedPaths = [];
   const seenPaths = new Set();
 
@@ -339,11 +343,19 @@ function resolveAvaloniaPreviewerToolPaths(hasBundledDesignerHost, bundledDesign
     orderedPaths.push(normalizedPath);
   }
 
-  if (hasBundledDesignerHost) {
-    tryAdd(bundledDesignerHostPath);
+  if (preferProjectPreviewerToolPath) {
+    tryAdd(projectPreviewerToolPath);
+    if (hasBundledDesignerHost) {
+      tryAdd(bundledDesignerHostPath);
+    }
+  } else {
+    if (hasBundledDesignerHost) {
+      tryAdd(bundledDesignerHostPath);
+    }
+
+    tryAdd(projectPreviewerToolPath);
   }
 
-  tryAdd(projectPreviewerToolPath);
   return orderedPaths;
 }
 
