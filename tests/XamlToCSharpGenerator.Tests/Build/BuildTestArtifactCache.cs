@@ -30,6 +30,7 @@ internal static class BuildTestArtifactCache
     private static BuildTestSourceGenArtifacts CreateSourceGenArtifacts()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build.Tasks", "XamlToCSharpGenerator.Build.Tasks.csproj"));
         BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Generator", "XamlToCSharpGenerator.Generator.csproj"));
         BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime.Core", "XamlToCSharpGenerator.Runtime.Core.csproj"));
         BuildProject(repositoryRoot, Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Runtime.Avalonia", "XamlToCSharpGenerator.Runtime.Avalonia.csproj"));
@@ -56,6 +57,7 @@ internal static class BuildTestArtifactCache
         return new BuildTestSourceGenArtifacts(
             NormalizeForMsBuild(Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props")),
             NormalizeForMsBuild(Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets")),
+            CreateAssemblyReference(repositoryRoot, "XamlToCSharpGenerator.Build.Tasks", "netstandard2.0"),
             runtimeReferences,
             analyzerPaths);
     }
@@ -162,11 +164,13 @@ internal sealed class BuildTestSourceGenArtifacts
     public BuildTestSourceGenArtifacts(
         string propsPath,
         string targetsPath,
+        BuildTestAssemblyReference ilWeaverTaskAssembly,
         IReadOnlyList<BuildTestAssemblyReference> runtimeReferences,
         IReadOnlyList<string> analyzerPaths)
     {
         PropsPath = propsPath;
         TargetsPath = targetsPath;
+        IlWeaverTaskAssembly = ilWeaverTaskAssembly;
         RuntimeReferences = runtimeReferences;
         AnalyzerPaths = analyzerPaths;
     }
@@ -175,6 +179,8 @@ internal sealed class BuildTestSourceGenArtifacts
 
     public string TargetsPath { get; }
 
+    public BuildTestAssemblyReference IlWeaverTaskAssembly { get; }
+
     public IReadOnlyList<BuildTestAssemblyReference> RuntimeReferences { get; }
 
     public IReadOnlyList<string> AnalyzerPaths { get; }
@@ -182,6 +188,11 @@ internal sealed class BuildTestSourceGenArtifacts
     public string CreateConditionalSourceGenItemGroup()
     {
         var builder = new StringBuilder();
+        builder.AppendLine("  <PropertyGroup Condition=\"'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'\">");
+        builder.Append("    <XamlSourceGenIlWeaverTaskAssemblyPath>")
+            .Append(NormalizeForMsBuild(IlWeaverTaskAssembly.HintPath))
+            .AppendLine("</XamlSourceGenIlWeaverTaskAssemblyPath>");
+        builder.AppendLine("  </PropertyGroup>");
         builder.AppendLine("  <ItemGroup Condition=\"'$(AvaloniaXamlCompilerBackend)' == 'SourceGen'\">");
         foreach (var runtimeReference in RuntimeReferences)
         {
