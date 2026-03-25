@@ -81,6 +81,7 @@ public static class DeterministicTypeResolutionSemantics
 
         var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenSymbols = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var effectiveTypeName = extensionSuffix
             ? typeName + "Extension"
             : AppendGenericArity(typeName, genericArity);
@@ -103,9 +104,10 @@ public static class DeterministicTypeResolutionSemantics
             foreach (var assembly in assemblies)
             {
                 var candidate = assembly.GetTypeByMetadataName(metadataName);
-                if (candidate is not null && seen.Add(BuildCandidateKey(candidate)))
+                if (candidate is not null &&
+                    IsAccessibleTypeCandidate(compilation, candidate) &&
+                    TryAddDistinctCandidate(candidates, seen, seenSymbols, candidate))
                 {
-                    candidates.Add(candidate);
                 }
             }
         }
@@ -137,6 +139,29 @@ public static class DeterministicTypeResolutionSemantics
         return assemblyIdentity + "|" + typeName;
     }
 
+    private static bool TryAddDistinctCandidate(
+        ImmutableArray<INamedTypeSymbol>.Builder candidates,
+        HashSet<string> seenKeys,
+        HashSet<INamedTypeSymbol> seenSymbols,
+        INamedTypeSymbol candidate)
+    {
+        var candidateKey = BuildCandidateKey(candidate);
+        if (seenKeys.Contains(candidateKey) || seenSymbols.Contains(candidate))
+        {
+            return false;
+        }
+
+        seenKeys.Add(candidateKey);
+        seenSymbols.Add(candidate);
+        candidates.Add(candidate);
+        return true;
+    }
+
+    private static bool IsAccessibleTypeCandidate(Compilation compilation, INamedTypeSymbol candidate)
+    {
+        return compilation.IsSymbolAccessibleWithin(candidate, compilation.Assembly);
+    }
+
     public static DeterministicTypeSelectionResult SelectDeterministicCandidate(
         ImmutableArray<INamedTypeSymbol> candidates,
         string token,
@@ -155,11 +180,6 @@ public static class DeterministicTypeResolutionSemantics
         var fullyQualifiedNames = candidates
             .Select(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
             .ToImmutableArray();
-        if (fullyQualifiedNames.Distinct(StringComparer.Ordinal).Count() == 1)
-        {
-            return new DeterministicTypeSelectionResult(candidates[0], null);
-        }
-
         var duplicateNameSet = fullyQualifiedNames
             .GroupBy(static name => name, StringComparer.Ordinal)
             .Where(static group => group.Count() > 1)

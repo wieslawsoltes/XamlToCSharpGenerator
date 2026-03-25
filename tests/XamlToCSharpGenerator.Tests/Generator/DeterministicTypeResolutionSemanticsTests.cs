@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlToCSharpGenerator.ExpressionSemantics;
@@ -86,6 +91,52 @@ public class DeterministicTypeResolutionSemanticsTests
     }
 
     [Fact]
+    public void SelectDeterministicCandidate_Keeps_Ambiguity_For_Same_Name_Candidates_From_Different_Assemblies()
+    {
+        var controlsReferenceA = CreateMetadataReferenceFromSource(
+            "Demo.Controls.A",
+            """
+            namespace Demo.Controls
+            {
+                public class Widget { }
+            }
+            """);
+        var controlsReferenceB = CreateMetadataReferenceFromSource(
+            "Demo.Controls.B",
+            """
+            namespace Demo.Controls
+            {
+                public class Widget { }
+            }
+            """);
+        var compilation = CreateCompilation(
+            """
+            namespace Demo
+            {
+                public class Host { }
+            }
+            """,
+            controlsReferenceA,
+            controlsReferenceB);
+
+        var candidates = DeterministicTypeResolutionSemantics.CollectCandidatesFromNamespacePrefixes(
+            compilation,
+            ["Demo.Controls."],
+            "Widget");
+
+        Assert.Equal(2, candidates.Length);
+
+        var selection = DeterministicTypeResolutionSemantics.SelectDeterministicCandidate(
+            candidates,
+            "Widget",
+            "test strategy");
+
+        Assert.NotNull(selection.Ambiguity);
+        Assert.Contains("Demo.Controls.A", selection.Ambiguity!.Message, StringComparison.Ordinal);
+        Assert.Contains("Demo.Controls.B", selection.Ambiguity.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelectDeterministicCandidate_Returns_Default_For_Empty_Candidates()
     {
         var selection = DeterministicTypeResolutionSemantics.SelectDeterministicCandidate(
@@ -163,18 +214,61 @@ public class DeterministicTypeResolutionSemanticsTests
         Assert.Equal(expected, actual);
     }
 
-    private static CSharpCompilation CreateCompilation(string code)
+    private static CSharpCompilation CreateCompilation(string code, params MetadataReference[] additionalReferences)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(code);
-        var references = new[]
+        var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
         };
+        AddLoadedRuntimeReference(references, "System.Runtime");
+        AddLoadedRuntimeReference(references, "netstandard");
+        references.AddRange(additionalReferences);
 
         return CSharpCompilation.Create(
             assemblyName: "Demo.Assembly",
             syntaxTrees: [syntaxTree],
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static MetadataReference CreateMetadataReferenceFromSource(
+        string assemblyName,
+        string code,
+        params MetadataReference[] additionalReferences)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName: assemblyName,
+            syntaxTrees: [CSharpSyntaxTree.ParseText(code)],
+            references: CreateCompilation(string.Empty, additionalReferences).References,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        Assert.True(
+            emitResult.Success,
+            string.Join(Environment.NewLine, emitResult.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+        stream.Position = 0;
+        return MetadataReference.CreateFromImage(stream.ToArray());
+    }
+
+    private static void AddLoadedRuntimeReference(ICollection<MetadataReference> references, string assemblyName)
+    {
+        try
+        {
+            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(candidate =>
+                    !candidate.IsDynamic &&
+                    string.Equals(candidate.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase))
+                ?? Assembly.Load(assemblyName);
+            if (!string.IsNullOrWhiteSpace(assembly.Location))
+            {
+                references.Add(MetadataReference.CreateFromFile(assembly.Location));
+            }
+        }
+        catch
+        {
+            // Optional runtime facades can differ between test hosts.
+        }
     }
 }

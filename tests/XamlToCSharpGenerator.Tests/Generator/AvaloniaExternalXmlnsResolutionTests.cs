@@ -180,6 +180,44 @@ public sealed class AvaloniaExternalXmlnsResolutionTests
     }
 
     [Fact]
+    public void CollectTypeCandidatesFromXmlnsDefinitionTargets_Ignores_Inaccessible_Internal_Duplicates()
+    {
+        const string code = """
+            namespace Demo
+            {
+                public partial class MainWindow : global::Avalonia.Controls.Window
+                {
+                }
+            }
+            """;
+
+        var compilation = CreateCompilationWithPackageReferenceAssemblies(code, includeDiagnostics: true);
+
+        var binderType = typeof(AvaloniaSemanticBinder);
+        var getTargets = binderType.GetMethod(
+            "GetXmlnsDefinitionTargetsForXmlNamespace",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        var collectCandidates = binderType.GetMethod(
+            "CollectTypeCandidatesFromXmlnsDefinitionTargets",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(getTargets);
+        Assert.NotNull(collectCandidates);
+
+        var targets = getTargets!.Invoke(null, [compilation, "https://github.com/avaloniaui"]);
+        var candidates = ((System.Collections.IEnumerable)collectCandidates!.Invoke(
+                null,
+                [compilation, targets!, "DataGrid", null, false])!)
+            .Cast<INamedTypeSymbol>()
+            .ToArray();
+
+        var candidate = Assert.Single(candidates);
+        Assert.Equal("Avalonia.Controls.DataGrid", candidate.ToDisplayString());
+        Assert.Equal("Avalonia.Controls.DataGrid", candidate.ContainingAssembly?.Name);
+        Assert.Equal(Accessibility.Public, candidate.DeclaredAccessibility);
+    }
+
+    [Fact]
     public void Resolves_XmlnsDefinition_Bridge_Mappings_From_Referenced_Assemblies()
     {
         const string code = """

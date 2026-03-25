@@ -458,6 +458,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenSymbols = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var effectiveTypeName = extensionSuffix
             ? typeName + "Extension"
             : DeterministicTypeResolutionSemantics.AppendGenericArity(typeName, genericArity);
@@ -479,9 +480,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             var candidate = target.Assembly.GetTypeByMetadataName(metadataName);
             if (candidate is not null)
             {
-                if (seen.Add(BuildTypeCandidateKey(candidate)))
+                if (IsAccessibleTypeCandidate(compilation, candidate) &&
+                    TryAddDistinctTypeCandidate(candidates, seen, seenSymbols, candidate))
                 {
-                    candidates.Add(candidate);
                 }
 
                 continue;
@@ -495,9 +496,10 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 }
 
                 var bridgedCandidate = referencedAssembly.GetTypeByMetadataName(metadataName);
-                if (bridgedCandidate is not null && seen.Add(BuildTypeCandidateKey(bridgedCandidate)))
+                if (bridgedCandidate is not null &&
+                    IsAccessibleTypeCandidate(compilation, bridgedCandidate) &&
+                    TryAddDistinctTypeCandidate(candidates, seen, seenSymbols, bridgedCandidate))
                 {
-                    candidates.Add(bridgedCandidate);
                 }
             }
         }
@@ -510,6 +512,29 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         var typeName = candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var assemblyIdentity = candidate.ContainingAssembly?.Identity.ToString() ?? string.Empty;
         return assemblyIdentity + "|" + typeName;
+    }
+
+    private static bool TryAddDistinctTypeCandidate(
+        ImmutableArray<INamedTypeSymbol>.Builder candidates,
+        HashSet<string> seenKeys,
+        HashSet<INamedTypeSymbol> seenSymbols,
+        INamedTypeSymbol candidate)
+    {
+        var candidateKey = BuildTypeCandidateKey(candidate);
+        if (seenKeys.Contains(candidateKey) || seenSymbols.Contains(candidate))
+        {
+            return false;
+        }
+
+        seenKeys.Add(candidateKey);
+        seenSymbols.Add(candidate);
+        candidates.Add(candidate);
+        return true;
+    }
+
+    private static bool IsAccessibleTypeCandidate(Compilation compilation, INamedTypeSymbol candidate)
+    {
+        return compilation.IsSymbolAccessibleWithin(candidate, compilation.Assembly);
     }
 
     private static INamedTypeSymbol? TryResolveTypeFromNamespacePrefixes(
