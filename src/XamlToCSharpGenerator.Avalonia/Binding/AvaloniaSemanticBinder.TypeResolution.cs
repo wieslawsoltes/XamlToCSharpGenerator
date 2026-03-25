@@ -78,12 +78,27 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private sealed class XmlnsDefinitionCacheEntry
     {
-        public XmlnsDefinitionCacheEntry(ImmutableDictionary<string, ImmutableArray<string>> map)
+        public XmlnsDefinitionCacheEntry(ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> map)
         {
             Map = map;
         }
 
-        public ImmutableDictionary<string, ImmutableArray<string>> Map { get; }
+        public ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> Map { get; }
+    }
+
+    private sealed class XmlnsDefinitionTarget
+    {
+        public XmlnsDefinitionTarget(
+            IAssemblySymbol assembly,
+            string clrNamespace)
+        {
+            Assembly = assembly;
+            ClrNamespace = clrNamespace;
+        }
+
+        public IAssemblySymbol Assembly { get; }
+
+        public string ClrNamespace { get; }
     }
 
     private sealed class SourceAssemblyNamespaceCacheEntry
@@ -127,25 +142,26 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             .Namespaces;
     }
 
-    private static ImmutableArray<string> GetClrNamespacesForXmlNamespace(Compilation compilation, string xmlNamespace)
+    private static ImmutableArray<XmlnsDefinitionTarget> GetXmlnsDefinitionTargetsForXmlNamespace(Compilation compilation, string xmlNamespace)
     {
         if (string.IsNullOrWhiteSpace(xmlNamespace))
         {
-            return ImmutableArray<string>.Empty;
+            return ImmutableArray<XmlnsDefinitionTarget>.Empty;
         }
 
         var normalizedXmlNamespace = NormalizeXmlNamespaceKey(xmlNamespace);
         var cacheEntry = XmlnsDefinitionCache.GetValue(
             compilation,
             static x => new XmlnsDefinitionCacheEntry(BuildXmlnsDefinitionMap(x)));
-        return cacheEntry.Map.TryGetValue(normalizedXmlNamespace, out var namespaces)
-            ? namespaces
-            : ImmutableArray<string>.Empty;
+        return cacheEntry.Map.TryGetValue(normalizedXmlNamespace, out var targets)
+            ? targets
+            : ImmutableArray<XmlnsDefinitionTarget>.Empty;
     }
 
-    private static ImmutableDictionary<string, ImmutableArray<string>> BuildXmlnsDefinitionMap(Compilation compilation)
+    private static ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> BuildXmlnsDefinitionMap(Compilation compilation)
     {
-        var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var map = new Dictionary<string, List<XmlnsDefinitionTarget>>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var assembly in EnumerateAssemblies(compilation))
         {
@@ -169,21 +185,29 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                if (!map.TryGetValue(xmlKey, out var namespaces))
+                var normalizedClrNamespace = clrNamespace.Trim();
+                var dedupeKey = xmlKey + "|" + assembly.Identity + "|" + normalizedClrNamespace;
+                if (!seen.Add(dedupeKey))
                 {
-                    namespaces = new HashSet<string>(StringComparer.Ordinal);
-                    map[xmlKey] = namespaces;
+                    continue;
                 }
 
-                namespaces.Add(clrNamespace.Trim());
+                if (!map.TryGetValue(xmlKey, out var targets))
+                {
+                    targets = new List<XmlnsDefinitionTarget>();
+                    map[xmlKey] = targets;
+                }
+
+                targets.Add(new XmlnsDefinitionTarget(assembly, normalizedClrNamespace));
             }
         }
 
-        var builder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<string>>(StringComparer.Ordinal);
+        var builder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<XmlnsDefinitionTarget>>(StringComparer.Ordinal);
         foreach (var entry in map)
         {
             builder[entry.Key] = entry.Value
-                .OrderBy(static value => value, StringComparer.Ordinal)
+                .OrderBy(static value => value.ClrNamespace, StringComparer.Ordinal)
+                .ThenBy(static value => value.Assembly.Identity.ToString(), StringComparer.Ordinal)
                 .ToImmutableArray();
         }
 
@@ -418,6 +442,53 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             typeName,
             genericArity,
             extensionSuffix);
+    }
+
+    private static ImmutableArray<INamedTypeSymbol> CollectTypeCandidatesFromXmlnsDefinitionTargets(
+        ImmutableArray<XmlnsDefinitionTarget> targets,
+        string typeName,
+        int? genericArity = null,
+        bool extensionSuffix = false)
+    {
+        if (targets.IsDefaultOrEmpty || string.IsNullOrWhiteSpace(typeName))
+        {
+            return ImmutableArray<INamedTypeSymbol>.Empty;
+        }
+
+        var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var effectiveTypeName = extensionSuffix
+            ? typeName + "Extension"
+            : DeterministicTypeResolutionSemantics.AppendGenericArity(typeName, genericArity);
+
+        foreach (var target in targets)
+        {
+            var clrNamespace = target.ClrNamespace.Trim();
+            if (clrNamespace.Length == 0)
+            {
+                continue;
+            }
+
+            if (!clrNamespace.EndsWith(".", StringComparison.Ordinal))
+            {
+                clrNamespace += ".";
+            }
+
+            var candidate = target.Assembly.GetTypeByMetadataName(clrNamespace + effectiveTypeName);
+            if (candidate is not null && seen.Add(BuildTypeCandidateKey(candidate)))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates.ToImmutable();
+    }
+
+    private static string BuildTypeCandidateKey(INamedTypeSymbol candidate)
+    {
+        var typeName = candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var assemblyIdentity = candidate.ContainingAssembly?.Identity.ToString() ?? string.Empty;
+        return assemblyIdentity + "|" + typeName;
     }
 
     private static INamedTypeSymbol? TryResolveTypeFromNamespacePrefixes(
@@ -707,31 +778,18 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         string xmlTypeName,
         int? genericArity)
     {
-        var clrNamespaces = GetClrNamespacesForXmlNamespace(compilation, xmlNamespace);
-        if (clrNamespaces.IsDefaultOrEmpty)
+        var targets = GetXmlnsDefinitionTargetsForXmlNamespace(compilation, xmlNamespace);
+        if (targets.IsDefaultOrEmpty)
         {
             return null;
         }
 
-        var typeName = AppendGenericArity(xmlTypeName, genericArity);
-        var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
-        var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        foreach (var clrNamespace in clrNamespaces)
-        {
-            if (string.IsNullOrWhiteSpace(clrNamespace))
-            {
-                continue;
-            }
-
-            var candidate = compilation.GetTypeByMetadataName(clrNamespace + "." + typeName);
-            if (candidate is not null && seen.Add(candidate))
-            {
-                candidates.Add(candidate);
-            }
-        }
-
         var resolved = SelectDeterministicTypeCandidate(
-            candidates.ToImmutable(),
+            CollectTypeCandidatesFromXmlnsDefinitionTargets(
+                targets,
+                xmlTypeName,
+                genericArity,
+                extensionSuffix: false),
             xmlTypeName,
             "XmlnsDefinitionAttribute map");
         if (resolved is not null)
@@ -743,24 +801,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             IsTypeResolutionCompatibilityFallbackEnabled() &&
             !IsStrictTypeResolutionMode())
         {
-            candidates.Clear();
-            seen.Clear();
-            foreach (var clrNamespace in clrNamespaces)
-            {
-                if (string.IsNullOrWhiteSpace(clrNamespace))
-                {
-                    continue;
-                }
-
-                var extensionCandidate = compilation.GetTypeByMetadataName(clrNamespace + "." + xmlTypeName + "Extension");
-                if (extensionCandidate is not null && seen.Add(extensionCandidate))
-                {
-                    candidates.Add(extensionCandidate);
-                }
-            }
-
             var extensionResolved = SelectDeterministicTypeCandidate(
-                candidates.ToImmutable(),
+                CollectTypeCandidatesFromXmlnsDefinitionTargets(
+                    targets,
+                    xmlTypeName,
+                    genericArity: null,
+                    extensionSuffix: true),
                 xmlTypeName,
                 "XmlnsDefinitionAttribute extension compatibility fallback");
             if (extensionResolved is not null)
