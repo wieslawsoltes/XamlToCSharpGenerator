@@ -80,10 +80,12 @@ public static class DeterministicTypeResolutionSemantics
         }
 
         var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
-        var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenSymbols = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var effectiveTypeName = extensionSuffix
             ? typeName + "Extension"
             : AppendGenericArity(typeName, genericArity);
+        var assemblies = EnumerateAssemblies(compilation).ToImmutableArray();
 
         foreach (var namespacePrefix in namespacePrefixes)
         {
@@ -92,14 +94,72 @@ public static class DeterministicTypeResolutionSemantics
                 continue;
             }
 
-            var candidate = compilation.GetTypeByMetadataName(namespacePrefix + effectiveTypeName);
-            if (candidate is not null && seen.Add(candidate))
+            var normalizedPrefix = namespacePrefix.Trim();
+            if (!normalizedPrefix.EndsWith(".", StringComparison.Ordinal))
             {
-                candidates.Add(candidate);
+                normalizedPrefix += ".";
+            }
+
+            var metadataName = normalizedPrefix + effectiveTypeName;
+            foreach (var assembly in assemblies)
+            {
+                var candidate = assembly.GetTypeByMetadataName(metadataName);
+                if (candidate is not null &&
+                    IsAccessibleTypeCandidate(compilation, candidate) &&
+                    TryAddDistinctCandidate(candidates, seen, seenSymbols, candidate))
+                {
+                }
             }
         }
 
         return candidates.ToImmutable();
+    }
+
+    private static IEnumerable<IAssemblySymbol> EnumerateAssemblies(Compilation compilation)
+    {
+        var visitedAssemblies = new HashSet<IAssemblySymbol>(SymbolEqualityComparer.Default);
+        if (visitedAssemblies.Add(compilation.Assembly))
+        {
+            yield return compilation.Assembly;
+        }
+
+        foreach (var referencedAssembly in compilation.SourceModule.ReferencedAssemblySymbols)
+        {
+            if (referencedAssembly is not null && visitedAssemblies.Add(referencedAssembly))
+            {
+                yield return referencedAssembly;
+            }
+        }
+    }
+
+    private static string BuildCandidateKey(INamedTypeSymbol candidate)
+    {
+        var typeName = candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var assemblyIdentity = candidate.ContainingAssembly?.Identity.ToString() ?? string.Empty;
+        return assemblyIdentity + "|" + typeName;
+    }
+
+    private static bool TryAddDistinctCandidate(
+        ImmutableArray<INamedTypeSymbol>.Builder candidates,
+        HashSet<string> seenKeys,
+        HashSet<INamedTypeSymbol> seenSymbols,
+        INamedTypeSymbol candidate)
+    {
+        var candidateKey = BuildCandidateKey(candidate);
+        if (seenKeys.Contains(candidateKey) || seenSymbols.Contains(candidate))
+        {
+            return false;
+        }
+
+        seenKeys.Add(candidateKey);
+        seenSymbols.Add(candidate);
+        candidates.Add(candidate);
+        return true;
+    }
+
+    private static bool IsAccessibleTypeCandidate(Compilation compilation, INamedTypeSymbol candidate)
+    {
+        return compilation.IsSymbolAccessibleWithin(candidate, compilation.Assembly);
     }
 
     public static DeterministicTypeSelectionResult SelectDeterministicCandidate(
@@ -117,10 +177,26 @@ public static class DeterministicTypeResolutionSemantics
             return new DeterministicTypeSelectionResult(candidates[0], null);
         }
 
+        var fullyQualifiedNames = candidates
+            .Select(static candidate => candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+            .ToImmutableArray();
+        var duplicateNameSet = fullyQualifiedNames
+            .GroupBy(static name => name, StringComparer.Ordinal)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => group.Key)
+            .ToImmutableHashSet(StringComparer.Ordinal);
         var candidateNames = ImmutableArray.CreateBuilder<string>(candidates.Length);
-        foreach (var candidate in candidates)
+        for (var index = 0; index < candidates.Length; index++)
         {
-            candidateNames.Add(candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+            var fullyQualifiedName = fullyQualifiedNames[index];
+            if (!duplicateNameSet.Contains(fullyQualifiedName))
+            {
+                candidateNames.Add(fullyQualifiedName);
+                continue;
+            }
+
+            var assemblyIdentity = candidates[index].ContainingAssembly?.Identity.ToString() ?? "<unknown>";
+            candidateNames.Add(fullyQualifiedName + " [" + assemblyIdentity + "]");
         }
 
         var ambiguity = new TypeResolutionAmbiguityInfo(
