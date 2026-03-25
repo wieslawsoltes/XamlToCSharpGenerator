@@ -445,6 +445,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     }
 
     private static ImmutableArray<INamedTypeSymbol> CollectTypeCandidatesFromXmlnsDefinitionTargets(
+        Compilation compilation,
         ImmutableArray<XmlnsDefinitionTarget> targets,
         string typeName,
         int? genericArity = null,
@@ -474,10 +475,30 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 clrNamespace += ".";
             }
 
-            var candidate = target.Assembly.GetTypeByMetadataName(clrNamespace + effectiveTypeName);
-            if (candidate is not null && seen.Add(BuildTypeCandidateKey(candidate)))
+            var metadataName = clrNamespace + effectiveTypeName;
+            var candidate = target.Assembly.GetTypeByMetadataName(metadataName);
+            if (candidate is not null)
             {
-                candidates.Add(candidate);
+                if (seen.Add(BuildTypeCandidateKey(candidate)))
+                {
+                    candidates.Add(candidate);
+                }
+
+                continue;
+            }
+
+            foreach (var referencedAssembly in EnumerateAssemblies(compilation))
+            {
+                if (SymbolEqualityComparer.Default.Equals(referencedAssembly, target.Assembly))
+                {
+                    continue;
+                }
+
+                var bridgedCandidate = referencedAssembly.GetTypeByMetadataName(metadataName);
+                if (bridgedCandidate is not null && seen.Add(BuildTypeCandidateKey(bridgedCandidate)))
+                {
+                    candidates.Add(bridgedCandidate);
+                }
             }
         }
 
@@ -786,6 +807,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         var resolved = SelectDeterministicTypeCandidate(
             CollectTypeCandidatesFromXmlnsDefinitionTargets(
+                compilation,
                 targets,
                 xmlTypeName,
                 genericArity,
@@ -803,6 +825,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         {
             var extensionResolved = SelectDeterministicTypeCandidate(
                 CollectTypeCandidatesFromXmlnsDefinitionTargets(
+                    compilation,
                     targets,
                     xmlTypeName,
                     genericArity: null,

@@ -179,6 +179,89 @@ public sealed class AvaloniaExternalXmlnsResolutionTests
         Assert.Contains("new global::Avalonia.Controls.DataGrid();", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Resolves_XmlnsDefinition_Bridge_Mappings_From_Referenced_Assemblies()
+    {
+        const string code = """
+            namespace Demo
+            {
+                public partial class MainWindow : global::Avalonia.Controls.Window
+                {
+                }
+            }
+            """;
+
+        const string xaml = """
+            <Window xmlns="https://bridge.test"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    x:Class="Demo.MainWindow">
+                <BridgeControl />
+            </Window>
+            """;
+
+        var sharedControlsReference = CreateMetadataReferenceFromSource(
+            "Bridge.Controls.Assembly",
+            """
+            namespace Bridge.Controls
+            {
+                public class BridgeControl : global::Avalonia.Controls.Control
+                {
+                }
+            }
+            """,
+            MetadataReference.CreateFromFile(typeof(global::Avalonia.AvaloniaObject).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Control).Assembly.Location));
+        var bridgeMetadataReference = CreateMetadataReferenceFromSource(
+            "Bridge.Metadata.Assembly",
+            """
+            [assembly: global::Avalonia.Metadata.XmlnsDefinition("https://bridge.test", "Bridge.Controls")]
+
+            namespace Bridge.Metadata
+            {
+                public static class Marker
+                {
+                }
+            }
+            """,
+            MetadataReference.CreateFromFile(typeof(global::Avalonia.AvaloniaObject).Assembly.Location),
+            sharedControlsReference);
+        var compilation = CreateCompilation(
+            code,
+            MetadataReference.CreateFromFile(typeof(global::Avalonia.AvaloniaObject).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Window).Assembly.Location),
+            sharedControlsReference,
+            bridgeMetadataReference);
+
+        var resolveTypeSymbol = typeof(AvaloniaSemanticBinder)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(static method => method.Name == "ResolveTypeSymbol" && method.GetParameters().Length == 3);
+        var resolvedBridgeControlType = (INamedTypeSymbol?)resolveTypeSymbol.Invoke(
+            null,
+            [compilation, "https://bridge.test", "BridgeControl"]);
+
+        Assert.NotNull(resolvedBridgeControlType);
+        Assert.Equal("Bridge.Controls.BridgeControl", resolvedBridgeControlType!.ToDisplayString());
+
+        var (updatedCompilation, diagnostics, _) = FrameworkGeneratorTestHarness.RunGenerator(
+            new AvaloniaXamlSourceGenerator(),
+            compilation,
+            [("MainWindow.axaml", xaml, "AvaloniaXaml", "MainWindow.axaml")],
+            additionalBuildOptions:
+            [
+                new KeyValuePair<string, string>("build_property.AvaloniaXamlCompilerBackend", "SourceGen"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenCompilerEnabled", "true"),
+                new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "false")
+            ]);
+
+        Assert.DoesNotContain(
+            diagnostics,
+            static diagnostic => diagnostic.Id == "AXSG0112" && diagnostic.GetMessage().Contains("ambiguous", StringComparison.OrdinalIgnoreCase));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainWindow");
+        Assert.DoesNotContain("new global::System.Object();", generated, StringComparison.Ordinal);
+        Assert.Contains("new global::Bridge.Controls.BridgeControl();", generated, StringComparison.Ordinal);
+    }
+
     private static CSharpCompilation CreateCompilationWithLoadedAssemblyReferences(string code)
     {
         var referenceLocations = AppDomain.CurrentDomain
@@ -225,7 +308,9 @@ public sealed class AvaloniaExternalXmlnsResolutionTests
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(code);
         var references = ImmutableArray.CreateBuilder<MetadataReference>();
-        references.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        AddRuntimeReference(references, typeof(object).Assembly);
+        AddLoadedRuntimeReference(references, "System.Runtime");
+        AddLoadedRuntimeReference(references, "netstandard");
         foreach (var additionalReference in additionalReferences)
         {
             references.Add(additionalReference);
@@ -236,6 +321,51 @@ public sealed class AvaloniaExternalXmlnsResolutionTests
             syntaxTrees: [syntaxTree],
             references: references.ToImmutable(),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static void AddRuntimeReference(ImmutableArray<MetadataReference>.Builder references, Assembly assembly)
+    {
+        if (!string.IsNullOrWhiteSpace(assembly.Location))
+        {
+            references.Add(MetadataReference.CreateFromFile(assembly.Location));
+        }
+    }
+
+    private static void AddLoadedRuntimeReference(ImmutableArray<MetadataReference>.Builder references, string assemblyName)
+    {
+        try
+        {
+            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(candidate =>
+                    !candidate.IsDynamic &&
+                    string.Equals(candidate.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase))
+                ?? Assembly.Load(assemblyName);
+            AddRuntimeReference(references, assembly);
+        }
+        catch
+        {
+            // Optional runtime facades are not always available under the same name on every test host.
+        }
+    }
+
+    private static MetadataReference CreateMetadataReferenceFromSource(
+        string assemblyName,
+        string code,
+        params MetadataReference[] additionalReferences)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName: assemblyName,
+            syntaxTrees: [CSharpSyntaxTree.ParseText(code)],
+            references: CreateCompilation(string.Empty, additionalReferences).References,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        Assert.True(
+            emitResult.Success,
+            string.Join(Environment.NewLine, emitResult.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+        stream.Position = 0;
+        return MetadataReference.CreateFromImage(stream.ToArray());
     }
 
     private static string GetGeneratedPartialClassSource(Compilation compilation, string className)
