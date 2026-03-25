@@ -21,6 +21,7 @@ const EDITOR_SELECTION_DEBOUNCE_MS = 120;
 const UPDATE_RESULT_REFRESH_DELAY_MS = 450;
 const UPDATE_RESULT_REFRESH_RETRY_DELAY_MS = 120;
 const TREE_REVEAL_RETRY_DELAYS_MS = [0, 30, 90];
+const PROJECT_HOST_FALLBACK_DESIGN_UNAVAILABLE_MESSAGE = 'AXSG preview design commands are unavailable for this session because it is using the Avalonia project host fallback. Preview rendering can continue, but AXSG Inspector workspace, tree, and property actions require the bundled AXSG designer host.';
 
 class DesignSessionController {
   constructor(options) {
@@ -427,6 +428,15 @@ class DesignSessionController {
     this.selectedDocumentBuildUri = this.getRememberedSelectedDocumentBuildUri(session);
     if (previousSession && previousSession !== session) {
       previousSession.setDesignState(null);
+    }
+
+    if (!this.hasSessionDesignCommandsAvailable(session)) {
+      this.cancelScheduledUpdateResultRefresh(session);
+      this.setUnavailableState(
+        session,
+        'designUnavailable',
+        this.getSessionDesignUnavailableMessage(session));
+      return;
     }
 
     try {
@@ -1557,6 +1567,25 @@ class DesignSessionController {
 
     this.designCommandChains.set(session, next.catch(() => {}));
     return next;
+  }
+
+  hasSessionDesignCommandsAvailable(session) {
+    if (!session || typeof session.hasDesignCommandsAvailable !== 'function') {
+      return true;
+    }
+
+    return session.hasDesignCommandsAvailable();
+  }
+
+  getSessionDesignUnavailableMessage(session) {
+    if (session && typeof session.getDesignUnavailableMessage === 'function') {
+      const message = session.getDesignUnavailableMessage();
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message.trim();
+      }
+    }
+
+    return PROJECT_HOST_FALLBACK_DESIGN_UNAVAILABLE_MESSAGE;
   }
 
   isStaleMutationSession(session) {
