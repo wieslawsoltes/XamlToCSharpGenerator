@@ -64,7 +64,7 @@ public sealed class XamlCompilerAnalysisService
         var (parsedDocument, parseDiagnostics) = parser.Parse(new XamlFileInput(
             FilePath: document.FilePath,
             TargetPath: Path.GetFileName(document.FilePath),
-            SourceItemGroup: "AvaloniaXaml",
+            SourceItemGroup: _frameworkProfile.BuildContract.XamlSourceItemGroup,
             Text: document.Text));
 
         diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(parseDiagnostics, source: "AXSG.Parse"));
