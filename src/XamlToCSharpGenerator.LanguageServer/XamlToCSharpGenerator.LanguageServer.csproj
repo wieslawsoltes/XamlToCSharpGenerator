@@ -26,5 +26,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+    <InternalsVisibleTo Include="XamlLanguageServer.Wpf" />
   </ItemGroup>
 </Project>
