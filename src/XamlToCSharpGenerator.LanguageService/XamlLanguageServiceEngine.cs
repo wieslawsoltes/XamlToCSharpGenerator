@@ -6,6 +6,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Text;
+using XamlToCSharpGenerator.Avalonia.Framework;
+using XamlToCSharpGenerator.Framework.Abstractions;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Definitions;
@@ -75,10 +77,16 @@ public sealed class XamlLanguageServiceEngine : IDisposable
     }
 
     public XamlLanguageServiceEngine(ICompilationProvider compilationProvider)
+        : this(compilationProvider, AvaloniaFrameworkProfile.Instance)
+    {
+    }
+
+    public XamlLanguageServiceEngine(ICompilationProvider compilationProvider, IXamlFrameworkProfile frameworkProfile)
     {
         _documentStore = new XamlDocumentStore();
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
-        _analysisService = new XamlCompilerAnalysisService(_compilationProvider);
+        ArgumentNullException.ThrowIfNull(frameworkProfile);
+        _analysisService = new XamlCompilerAnalysisService(_compilationProvider, frameworkProfile);
         _completionService = new XamlCompletionService();
         _hoverService = new XamlHoverService();
         _documentLinkService = new XamlDocumentLinkService();
