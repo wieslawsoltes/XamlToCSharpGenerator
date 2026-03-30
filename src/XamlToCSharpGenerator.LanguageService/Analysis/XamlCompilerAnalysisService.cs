@@ -109,6 +109,14 @@ public sealed class XamlCompilerAnalysisService
             : AvaloniaTypeIndex.Create(snapshot.Compilation);
         var prefixMap = XamlXmlNamespaceResolver.BuildPrefixMap(parsedDocument);
 
+        // When the AXSG parser fails (incomplete edits, malformed XML), fall back to
+        // extracting xmlns declarations from the raw text so that completions can still
+        // resolve the correct XML namespace for the framework's type index.
+        if (prefixMap.IsEmpty)
+        {
+            prefixMap = XamlXmlNamespaceResolver.BuildPrefixMapFromText(document.Text);
+        }
+
         return new XamlAnalysisResult(
             Document: document,
             ProjectPath: snapshot.ProjectPath,

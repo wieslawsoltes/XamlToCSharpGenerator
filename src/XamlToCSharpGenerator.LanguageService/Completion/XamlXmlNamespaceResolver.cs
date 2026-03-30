@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using XamlToCSharpGenerator.Core.Models;
 
 namespace XamlToCSharpGenerator.LanguageService.Completion;
@@ -8,6 +9,12 @@ namespace XamlToCSharpGenerator.LanguageService.Completion;
 internal static class XamlXmlNamespaceResolver
 {
     private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
+
+    // Matches xmlns:prefix="uri" or xmlns="uri" in raw text.
+    // Works even when the document is not well-formed XML.
+    private static readonly Regex XmlnsPattern = new(
+        @"xmlns(?::(?<prefix>[A-Za-z_][\w.-]*))?=""(?<uri>[^""]+)""",
+        RegexOptions.Compiled);
 
     public static ImmutableDictionary<string, string> BuildPrefixMap(XamlDocumentModel? document)
     {
@@ -20,6 +27,32 @@ internal static class XamlXmlNamespaceResolver
         foreach (var pair in document.XmlNamespaces)
         {
             builder[pair.Key] = pair.Value;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// Best-effort prefix map extraction from raw XAML text.
+    /// Used as a fallback when the full XAML parser and XDocument.Parse both fail
+    /// (e.g. the user is mid-edit and the document is temporarily invalid XML).
+    /// </summary>
+    public static ImmutableDictionary<string, string> BuildPrefixMapFromText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        foreach (Match match in XmlnsPattern.Matches(text))
+        {
+            var prefix = match.Groups["prefix"].Success ? match.Groups["prefix"].Value : string.Empty;
+            var uri = match.Groups["uri"].Value;
+            if (!string.IsNullOrWhiteSpace(uri) && !builder.ContainsKey(prefix))
+            {
+                builder[prefix] = uri;
+            }
         }
 
         return builder.ToImmutable();
