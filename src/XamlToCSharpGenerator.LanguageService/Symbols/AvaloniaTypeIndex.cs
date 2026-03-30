@@ -14,6 +14,7 @@ public sealed class AvaloniaTypeIndex
 {
     private const string AvaloniaXmlnsDefinitionAttributeMetadataName = "Avalonia.Metadata.XmlnsDefinitionAttribute";
     private const string SourceGenXmlnsDefinitionAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXmlnsDefinitionAttribute";
+    private const string WpfXmlnsDefinitionAttributeMetadataName = "System.Windows.Markup.XmlnsDefinitionAttribute";
     private const string AvaloniaPseudoClassesAttributeMetadataName = "Avalonia.Controls.Metadata.PseudoClassesAttribute";
     private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
 
@@ -587,7 +588,8 @@ public sealed class AvaloniaTypeIndex
             {
                 var attributeMetadataName = attribute.AttributeClass?.ToDisplayString();
                 if (!string.Equals(attributeMetadataName, AvaloniaXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal) &&
-                    !string.Equals(attributeMetadataName, SourceGenXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal))
+                    !string.Equals(attributeMetadataName, SourceGenXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal) &&
+                    !string.Equals(attributeMetadataName, WpfXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal))
                 {
                     continue;
                 }
