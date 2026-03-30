@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace XamlToCSharpGenerator.LanguageService.Workspace;
 
-internal sealed class DeferredCompilationProvider : ICompilationProvider
+public sealed class DeferredCompilationProvider : ICompilationProvider
 {
     private readonly Func<ICompilationProvider> _factory;
     private readonly object _gate = new();

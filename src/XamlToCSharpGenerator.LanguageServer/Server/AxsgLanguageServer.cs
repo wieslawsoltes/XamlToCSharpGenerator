@@ -18,7 +18,7 @@ using XamlToCSharpGenerator.RemoteProtocol.JsonRpc;
 
 namespace XamlToCSharpGenerator.LanguageServer.Server;
 
-internal sealed class AxsgLanguageServer : IDisposable
+public sealed class AxsgLanguageServer : IDisposable
 {
     private readonly LspMessageReader _reader;
     private readonly LspMessageWriter _writer;
