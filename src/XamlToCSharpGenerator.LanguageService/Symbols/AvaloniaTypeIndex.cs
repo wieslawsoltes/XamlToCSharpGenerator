@@ -19,6 +19,7 @@ public sealed class AvaloniaTypeIndex
     private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
 
     private static readonly ConditionalWeakTable<Compilation, AvaloniaTypeIndex> Cache = new();
+    private static readonly object CacheSync = new();
 
     private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByXmlNamespace;
     private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByClrNamespace;
@@ -42,6 +43,48 @@ public sealed class AvaloniaTypeIndex
         }
 
         return Cache.GetValue(compilation, BuildIndex);
+    }
+
+    public static bool TryPrimeCache(
+        Compilation compilation,
+        ImmutableDictionary<string, ImmutableArray<AvaloniaTypeInfo>> xmlNamespaceTypes)
+    {
+        if (compilation is null || xmlNamespaceTypes.IsEmpty)
+        {
+            return false;
+        }
+
+        lock (CacheSync)
+        {
+            if (Cache.TryGetValue(compilation, out _))
+            {
+                return true;
+            }
+
+            var primed = BuildFromPrecomputedTypes(xmlNamespaceTypes);
+            Cache.Add(compilation, primed);
+            return true;
+        }
+    }
+
+    public ImmutableDictionary<string, ImmutableArray<AvaloniaTypeInfo>> ExportXmlNamespaceTypes(
+        IEnumerable<string> xmlNamespaces)
+    {
+        var builder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<AvaloniaTypeInfo>>(StringComparer.Ordinal);
+        foreach (var ns in xmlNamespaces ?? Enumerable.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(ns))
+            {
+                continue;
+            }
+
+            if (_typesByXmlNamespace.TryGetValue(ns, out var byName))
+            {
+                builder[ns] = byName.Values.ToImmutableArray();
+            }
+        }
+
+        return builder.ToImmutable();
     }
 
     public ImmutableArray<AvaloniaTypeInfo> GetTypes(string xmlNamespace)
@@ -182,6 +225,40 @@ public sealed class AvaloniaTypeIndex
 
         PopulateClrNamespaceIndexWithAllAssemblies(compilation, byClrNamespace, byFullTypeName);
         return new AvaloniaTypeIndex(result.ToImmutable(), byClrNamespace.ToImmutable(), byFullTypeName.ToImmutable());
+    }
+
+    private static AvaloniaTypeIndex BuildFromPrecomputedTypes(
+        ImmutableDictionary<string, ImmutableArray<AvaloniaTypeInfo>> xmlNamespaceTypes)
+    {
+        var byXmlNamespace = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, AvaloniaTypeInfo>>(StringComparer.Ordinal);
+        var byClrNamespace = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, AvaloniaTypeInfo>>(StringComparer.Ordinal);
+        var byFullTypeName = ImmutableDictionary.CreateBuilder<string, AvaloniaTypeInfo>(StringComparer.Ordinal);
+
+        foreach (var pair in xmlNamespaceTypes)
+        {
+            var byTypeName = ImmutableDictionary.CreateBuilder<string, AvaloniaTypeInfo>(StringComparer.Ordinal);
+            foreach (var typeInfo in pair.Value)
+            {
+                if (typeInfo is null || string.IsNullOrWhiteSpace(typeInfo.XmlTypeName))
+                {
+                    continue;
+                }
+
+                if (!byTypeName.ContainsKey(typeInfo.XmlTypeName))
+                {
+                    byTypeName[typeInfo.XmlTypeName] = typeInfo;
+                }
+
+                AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
+            }
+
+            byXmlNamespace[pair.Key] = byTypeName.ToImmutable();
+        }
+
+        return new AvaloniaTypeIndex(
+            byXmlNamespace.ToImmutable(),
+            byClrNamespace.ToImmutable(),
+            byFullTypeName.ToImmutable());
     }
 
     private static void AddTypeByClrNamespace(
