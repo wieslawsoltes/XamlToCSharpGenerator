@@ -14,6 +14,7 @@
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework\XamlToCSharpGenerator.LanguageService.Framework.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework.All\XamlToCSharpGenerator.LanguageService.Framework.All.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
@@ -26,6 +27,10 @@
     </Reference>
     <Reference Include="XamlToCSharpGenerator.ExpressionSemantics">
       <HintPath>..\XamlToCSharpGenerator.ExpressionSemantics\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.ExpressionSemantics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="XamlToCSharpGenerator.LanguageService.Framework">

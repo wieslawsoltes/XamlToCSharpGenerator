@@ -10,6 +10,7 @@
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
     <ProjectReference Include="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework\XamlToCSharpGenerator.LanguageService.Framework.csproj" />
   </ItemGroup>
 
@@ -22,9 +23,17 @@
       <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="XamlToCSharpGenerator.LanguageService.Framework">
       <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" />
   </ItemGroup>
 </Project>
