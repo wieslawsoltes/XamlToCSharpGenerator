@@ -9,6 +9,8 @@ using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Definitions;
+using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -18,6 +20,19 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
 {
     private const string PresentationXmlNamespace = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private const string MauiXmlNamespace = "http://schemas.microsoft.com/dotnet/2021/maui";
+    private const string CustomXmlNamespace = "https://example.com/custom";
+
+    [Fact]
+    public void BuiltInRegistry_ContainsAllBuiltInFrameworks()
+    {
+        var registry = XamlBuiltInLanguageFrameworkRegistry.Create();
+
+        Assert.Equal(4, registry.Providers.Length);
+        Assert.True(registry.TryGetById(FrameworkProfileIds.Avalonia, out _));
+        Assert.True(registry.TryGetById(FrameworkProfileIds.Wpf, out _));
+        Assert.True(registry.TryGetById(FrameworkProfileIds.WinUI, out _));
+        Assert.True(registry.TryGetById(FrameworkProfileIds.Maui, out _));
+    }
 
     [Fact]
     public async Task AnalyzeAsync_InfersWpfFrameworkFromCompilationMarkers()
@@ -343,6 +358,81 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         Assert.Equal(FrameworkProfileIds.Maui, mauiAnalysis.Framework.Id);
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_UsesCustomRegistryForFrameworkResolutionAndProjectDiscovery()
+    {
+        using var workspace = new TempWorkspace();
+        var projectPath = Path.Combine(workspace.RootPath, "App.csproj");
+        var viewDirectory = Path.Combine(workspace.RootPath, "Views");
+        Directory.CreateDirectory(viewDirectory);
+
+        var documentPath = Path.Combine(viewDirectory, "MainView.xaml");
+        const string xaml = "<RootView xmlns=\"https://example.com/custom\" />";
+
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <CustomXaml Include="Views/MainView.xaml" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(documentPath, xaml);
+
+        var registry = new XamlLanguageFrameworkRegistryBuilder()
+            .Add(CustomLanguageFrameworkProvider.Instance)
+            .Build(CustomLanguageFrameworkProvider.FrameworkId);
+        var analysisService = new XamlCompilerAnalysisService(
+            new InMemoryCompilationProvider(CreateCustomCompilation()),
+            registry);
+        var document = new LanguageServiceDocument(
+            UriPathHelper.ToDocumentUri(documentPath),
+            documentPath,
+            xaml,
+            Version: 1);
+
+        var analysis = await analysisService.AnalyzeAsync(
+            document,
+            CreateOptions(projectPath),
+            CancellationToken.None);
+
+        Assert.Equal(CustomLanguageFrameworkProvider.FrameworkId, analysis.Framework.Id);
+        Assert.True(XamlProjectFileDiscoveryService.TryResolveProjectXamlEntryByFilePath(
+            projectPath,
+            documentPath,
+            documentPath,
+            registry,
+            out var entry));
+        Assert.Equal("Views/MainView.xaml", entry.TargetPath);
+    }
+
+    [Fact]
+    public async Task Completion_CustomRegistry_UsesProviderSpecificMarkupExtensions()
+    {
+        var registry = new XamlLanguageFrameworkRegistryBuilder()
+            .Add(CustomLanguageFrameworkProvider.Instance)
+            .Build(CustomLanguageFrameworkProvider.FrameworkId);
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateCustomCompilation()),
+            registry);
+
+        const string uri = "file:///tmp/CustomCompletion.xaml";
+        const string xaml = "<RootView xmlns=\"https://example.com/custom\" Title=\"{\" />";
+        var options = CreateOptions(frameworkId: CustomLanguageFrameworkProvider.FrameworkId);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+        var caret = SourceText.From(xaml).Lines.GetLinePosition(xaml.IndexOf("{", StringComparison.Ordinal) + 1);
+        var completions = await engine.GetCompletionsAsync(
+            uri,
+            new SourcePosition(caret.Line, caret.Character),
+            options,
+            CancellationToken.None);
+
+        Assert.Contains(completions, item => string.Equals(item.Label, "CustomMarkup", StringComparison.Ordinal));
+        Assert.DoesNotContain(completions, item => string.Equals(item.Label, "CompiledBinding", StringComparison.Ordinal));
+    }
+
     private static async Task<XamlAnalysisResult> AnalyzeAsync(Compilation compilation, string xaml, string filePath)
     {
         var analysisService = new XamlCompilerAnalysisService(new InMemoryCompilationProvider(compilation));
@@ -511,6 +601,40 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         return CreateCompilation(source, "MauiLanguageServiceTests");
     }
 
+    private static CSharpCompilation CreateCustomCompilation()
+    {
+        const string source = """
+                              using System;
+
+                              [assembly: System.Windows.Markup.XmlnsDefinitionAttribute("https://example.com/custom", "Custom.Framework")]
+
+                              namespace System.Windows.Markup
+                              {
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsDefinitionAttribute : Attribute
+                                  {
+                                      public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                                  }
+
+                                  [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+                                  public sealed class XmlnsPrefixAttribute : Attribute
+                                  {
+                                      public XmlnsPrefixAttribute(string xmlNamespace, string prefix) { }
+                                  }
+                              }
+
+                              namespace Custom.Framework
+                              {
+                                  public class RootView
+                                  {
+                                      public string? Title { get; set; }
+                                  }
+                              }
+                              """;
+
+        return CreateCompilation(source, "CustomLanguageServiceTests");
+    }
+
     private static CSharpCompilation CreateCompilation(string source, string assemblyName)
     {
         return CSharpCompilation.Create(
@@ -539,6 +663,74 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
             {
                 Directory.Delete(RootPath, recursive: true);
             }
+        }
+    }
+
+    private sealed class CustomLanguageFrameworkProvider : IXamlLanguageFrameworkProvider
+    {
+        public const string FrameworkId = "custom";
+
+        public static CustomLanguageFrameworkProvider Instance { get; } = new();
+
+        private CustomLanguageFrameworkProvider()
+        {
+            Framework = new XamlLanguageFrameworkInfo(
+                Id: FrameworkId,
+                Profile: new PassiveXamlFrameworkProfile(
+                    FrameworkId,
+                    CustomXmlNamespace,
+                    preferredProjectXamlItemName: "CustomXaml",
+                    projectXamlItemNames:
+                    [
+                        "CustomXaml"
+                    ]),
+                DefaultXmlNamespace: CustomXmlNamespace,
+                XmlnsDefinitionAttributeMetadataNames:
+                [
+                    "System.Windows.Markup.XmlnsDefinitionAttribute"
+                ],
+                XmlnsPrefixAttributeMetadataNames:
+                [
+                    "System.Windows.Markup.XmlnsPrefixAttribute"
+                ],
+                MarkupExtensionNamespaces:
+                [
+                    "System.Windows.Markup"
+                ],
+                PreferredProjectXamlItemName: "CustomXaml",
+                ProjectXamlItemNames:
+                [
+                    "CustomXaml"
+                ],
+                DirectiveCompletions:
+                [
+                    XamlLanguageFrameworkCompletion.Create("x:CustomData", "x:CustomData=\"$0\"", "Custom framework directive")
+                ],
+                MarkupExtensionCompletions:
+                [
+                    XamlLanguageFrameworkCompletion.Create("CustomMarkup", "{CustomMarkup $0}", "Custom framework markup extension")
+                ]);
+        }
+
+        public XamlLanguageFrameworkInfo Framework { get; }
+
+        public int DetectionPriority => 900;
+
+        public bool CanResolveFromProject(System.Xml.Linq.XDocument projectDocument, string projectPath)
+        {
+            _ = projectPath;
+            return XamlLanguageFrameworkDetectionHelpers.HasItemElement(projectDocument, "CustomXaml");
+        }
+
+        public bool CanResolveFromCompilation(Compilation compilation)
+        {
+            return XamlLanguageFrameworkDetectionHelpers.HasType(compilation, "Custom.Framework.RootView");
+        }
+
+        public bool CanResolveFromDocument(string filePath, string? documentText)
+        {
+            _ = filePath;
+            return XamlLanguageFrameworkDetectionHelpers.DocumentContains(documentText, CustomXmlNamespace);
         }
     }
 }
