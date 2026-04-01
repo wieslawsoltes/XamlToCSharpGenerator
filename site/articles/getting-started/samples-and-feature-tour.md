@@ -15,6 +15,7 @@ AXSG ships sample applications that exercise the compiler, runtime, hot reload p
 | iOS hot reload host | `samples/ControlCatalog.iOS` | AXSG + `dotnet watch` simulator/device validation for the control catalog |
 | NoUi framework pilot | `samples/NoUiFrameworkPilotSample` | framework-host reuse outside Avalonia |
 | CRUD sample | `samples/SourceGenCrudSample` | app-facing install path and generated runtime behavior |
+| Editor host sample | `samples/EditorAvaloniaSample` | embedding `XamlToCSharpGenerator.Editor.Avalonia`, switching workspace-backed documents, and surfacing live diagnostics |
 
 All sample paths are shown relative to the repository root.
 

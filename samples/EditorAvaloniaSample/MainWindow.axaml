@@ -1,0 +1,253 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:editor="clr-namespace:XamlToCSharpGenerator.Editor.Avalonia;assembly=XamlToCSharpGenerator.Editor.Avalonia"
+        xmlns:ls="clr-namespace:XamlToCSharpGenerator.LanguageService.Models;assembly=XamlToCSharpGenerator.LanguageService"
+        xmlns:vm="clr-namespace:EditorAvaloniaSample.ViewModels"
+        x:Class="EditorAvaloniaSample.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1480"
+        Height="920"
+        MinWidth="1200"
+        MinHeight="760"
+        Title="Editor.Avalonia Sample">
+  <Grid RowDefinitions="*,28">
+    <Grid ColumnDefinitions="280,4,*"
+          RowDefinitions="36,*,4,220">
+      <Border Grid.RowSpan="4"
+              Background="#F3F3F3"
+              BorderBrush="#D9D9D9"
+              BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,Auto,*"
+              RowSpacing="0">
+          <StackPanel Margin="12,10,12,6"
+                      Spacing="2">
+            <TextBlock Text="EXPLORER"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Opacity="0.7" />
+            <TextBlock Text="{Binding WorkspaceDisplayName}"
+                       FontSize="16"
+                       FontWeight="SemiBold" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="1"
+                     Margin="12,0,12,8"
+                     Text="Select an AXAML file from the sample workspace to load it in the embedded editor."
+                     FontSize="12"
+                     Opacity="0.68"
+                     TextWrapping="Wrap" />
+
+          <TreeView Grid.Row="2"
+                    Margin="6,0,6,6"
+                    AutoScrollToSelectedItem="True"
+                    ItemsSource="{Binding ExplorerNodes}"
+                    SelectedItem="{Binding SelectedExplorerNode, Mode=TwoWay}">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem">
+                <Setter Property="IsExpanded"
+                        Value="{Binding IsExpanded}" />
+              </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate x:DataType="vm:EditorExplorerNodeViewModel"
+                                ItemsSource="{Binding Children}">
+                <StackPanel Margin="0,2"
+                            Spacing="2">
+                  <TextBlock Text="{Binding DisplayName}"
+                             FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding RelativePath}"
+                             FontSize="11"
+                             Opacity="0.68" />
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Column="1"
+                    Grid.RowSpan="4"
+                    Width="4"
+                    Background="#E1E1E1"
+                    ResizeDirection="Columns" />
+
+      <Border Grid.Column="2"
+              Background="#ECECEC"
+              BorderBrush="#D9D9D9"
+              BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+              ColumnSpacing="8"
+              Margin="8,0,8,0">
+          <Border Padding="12,8,12,7"
+                  Background="White"
+                  BorderBrush="#D0D0D0"
+                  BorderThickness="1,1,1,0"
+                  CornerRadius="6,6,0,0">
+            <TextBlock Text="{Binding CurrentDocumentTitle}"
+                       FontWeight="SemiBold" />
+          </Border>
+
+          <TextBlock Grid.Column="1"
+                     Margin="8,0,0,0"
+                     Text="{Binding CurrentDocumentPath}"
+                     VerticalAlignment="Center"
+                     Opacity="0.68"
+                     TextTrimming="CharacterEllipsis" />
+
+          <Button Grid.Column="2"
+                  Margin="0,4,0,4"
+                  Content="Restore From Disk"
+                  Command="{Binding RestoreDocumentCommand}" />
+
+          <Button Grid.Column="3"
+                  Margin="0,4,0,4"
+                  Content="Introduce Error"
+                  Command="{Binding IntroduceErrorCommand}" />
+        </Grid>
+      </Border>
+
+      <Grid Grid.Column="2"
+            Grid.Row="1"
+            RowDefinitions="Auto,*">
+        <Border Background="#F7F7F7"
+                BorderBrush="#D9D9D9"
+                BorderThickness="0,0,0,1"
+                Padding="12,8">
+          <Grid ColumnDefinitions="*,340"
+                ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding CurrentDocumentDescription}"
+                         FontSize="13"
+                         TextWrapping="Wrap" />
+              <SelectableTextBlock Text="{Binding DocumentUri}"
+                                   FontSize="11"
+                                   Opacity="0.68"
+                                   TextWrapping="Wrap" />
+            </StackPanel>
+
+            <SelectableTextBlock Grid.Column="1"
+                                 Text="{Binding StatusMessage}"
+                                 FontSize="12"
+                                 Opacity="0.78"
+                                 TextWrapping="Wrap"
+                                 VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="White"
+                BorderBrush="#D9D9D9"
+                BorderThickness="0"
+                ClipToBounds="True">
+          <editor:AxamlTextEditor x:Name="Editor"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
+                                  BorderThickness="0"
+                                  FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                                  FontSize="13"
+                                  SourceText="{Binding EditorText, Mode=TwoWay}"
+                                  DocumentUri="{Binding DocumentUri}"
+                                  WorkspaceRoot="{Binding WorkspaceRoot}" />
+        </Border>
+      </Grid>
+
+      <GridSplitter Grid.Column="2"
+                    Grid.Row="2"
+                    Height="4"
+                    Background="#E1E1E1"
+                    ResizeDirection="Rows" />
+
+      <Border Grid.Column="2"
+              Grid.Row="3"
+              Background="#F3F3F3"
+              BorderBrush="#D9D9D9"
+              BorderThickness="0,1,0,0">
+        <TabControl TabStripPlacement="Top">
+          <TabItem Header="Problems">
+            <ListBox BorderThickness="0"
+                     ItemsSource="{Binding ElementName=Editor, Path=Diagnostics}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="ls:LanguageServiceDiagnostic">
+                  <Grid Margin="8,6"
+                        ColumnDefinitions="90,*,110"
+                        ColumnSpacing="12">
+                    <TextBlock Text="{Binding Severity}"
+                               FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Top" />
+
+                    <StackPanel Grid.Column="1"
+                                Spacing="2">
+                      <TextBlock Text="{Binding Message}"
+                                 FontWeight="SemiBold"
+                                 TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Code}"
+                                 FontSize="12"
+                                 Opacity="0.68" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2"
+                                Spacing="2"
+                                HorizontalAlignment="Right">
+                      <TextBlock Text="{Binding Range.Start.Line, StringFormat='{}Ln {0}'}"
+                                 FontSize="12"
+                                 HorizontalAlignment="Right" />
+                      <TextBlock Text="{Binding Range.Start.Character, StringFormat='{}Col {0}'}"
+                                 FontSize="12"
+                                 Opacity="0.68"
+                                 HorizontalAlignment="Right" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </TabItem>
+
+          <TabItem Header="Output">
+            <ListBox BorderThickness="0"
+                     ItemsSource="{Binding OutputLines}">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="8,4"
+                             FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                             FontSize="12"
+                             Text="{Binding}"
+                             TextWrapping="Wrap" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </TabItem>
+        </TabControl>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="1"
+            Background="#005A9E">
+      <Grid Margin="12,0"
+            ColumnDefinitions="Auto,Auto,*,Auto"
+            ColumnSpacing="14">
+        <TextBlock Text="{Binding WorkspaceDisplayName}"
+                   Foreground="White"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding CurrentDocumentTitle}"
+                   Foreground="White"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2"
+                   Text="{Binding StatusMessage}"
+                   Foreground="White"
+                   FontSize="12"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3"
+                   Text="Ctrl+Space completion"
+                   Foreground="White"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

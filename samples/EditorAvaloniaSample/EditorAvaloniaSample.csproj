@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AssemblyName>EditorAvaloniaSample</AssemblyName>
+    <RootNamespace>EditorAvaloniaSample</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
+    <PackageReference Include="ReactiveUI" Version="23.1.8" />
+    <PackageReference Include="ReactiveUI.Avalonia" Version="11.4.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Update="App.axaml;MainWindow.axaml;Workspace/*.axaml"
+                  SubType="Designer"
+                  Visible="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XamlToCSharpGenerator.Editor.Avalonia\XamlToCSharpGenerator.Editor.Avalonia.csproj" />
+  </ItemGroup>
+</Project>

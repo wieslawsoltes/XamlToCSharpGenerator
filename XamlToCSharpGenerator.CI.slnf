@@ -5,6 +5,7 @@
       "samples/Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj",
       "samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj",
       "samples/ControlCatalog/ControlCatalog.csproj",
+      "samples/EditorAvaloniaSample/EditorAvaloniaSample.csproj",
       "samples/MiniMvvm/MiniMvvm.csproj",
       "samples/NoUiFrameworkPilotSample/NoUiFrameworkPilotSample.csproj",
       "samples/SampleControls/ControlSamples.csproj",

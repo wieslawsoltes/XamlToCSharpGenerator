@@ -12,6 +12,7 @@
     <Project Path="samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj" />
     <Project Path="samples/ControlCatalog.iOS/ControlCatalog.iOS.csproj" />
     <Project Path="samples/ControlCatalog/ControlCatalog.csproj" />
+    <Project Path="samples/EditorAvaloniaSample/EditorAvaloniaSample.csproj" />
     <Project Path="samples/MiniMvvm/MiniMvvm.csproj" />
     <Project Path="samples/NoUiFrameworkPilotSample/NoUiFrameworkPilotSample.csproj" />
     <Project Path="samples/SourceGenCrudSample/SourceGenCrudSample.csproj" />

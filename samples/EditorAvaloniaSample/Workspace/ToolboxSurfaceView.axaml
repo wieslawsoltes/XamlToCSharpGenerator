@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EditorAvaloniaSample.ViewModels"
+             x:Class="EditorAvaloniaSample.Workspace.ToolboxSurfaceView"
+             x:CompileBindings="True"
+             x:DataType="vm:EditorPreviewDataViewModel">
+  <Grid Margin="16"
+        ColumnDefinitions="260,*"
+        ColumnSpacing="16">
+    <StackPanel Spacing="6">
+      <TextBlock Text="Suggested Tools"
+                 FontWeight="SemiBold" />
+      <Border Padding="12"
+              BorderThickness="1"
+              CornerRadius="8">
+        <ItemsControl ItemsSource="{Binding Tools}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:EditorPaletteToolViewModel">
+              <StackPanel Margin="0,0,0,10"
+                          Spacing="2">
+                <TextBlock Text="{Binding Name}"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Category}"
+                           FontSize="12"
+                           Opacity="0.72" />
+                <TextBlock Text="{Binding Hint}"
+                           Opacity="0.72"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+    </StackPanel>
+
+    <StackPanel Grid.Column="1"
+                Spacing="16">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{Binding Title}"
+                   FontSize="22"
+                   FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Subtitle}"
+                   Opacity="0.72"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal"
+                  Spacing="8">
+        <Button Content="{Binding SecondaryActionLabel}" />
+        <ComboBox SelectedIndex="0"
+                  Width="160">
+          <ComboBoxItem Content="Compact" />
+          <ComboBoxItem Content="Comfortable" />
+          <ComboBoxItem Content="Dense" />
+        </ComboBox>
+        <ToggleSwitch IsChecked="True"
+                      Content="Live Diagnostics" />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Text="Notes"
+                   FontWeight="SemiBold" />
+        <Border Padding="12"
+                BorderThickness="1"
+                CornerRadius="8">
+          <TextBlock Text="Use this file to check completions on common Fluent controls, templated items, and typed bindings from inside the embedded editor."
+                     TextWrapping="Wrap" />
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>
