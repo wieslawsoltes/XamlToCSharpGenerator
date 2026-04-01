@@ -241,7 +241,7 @@ public sealed class XamlDefinitionService
         }
 
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
-        var prefixMap = analysis.PrefixMap;
+        var prefixMap = XamlNavigationPrefixMapResolver.Resolve(analysis, position);
         var token = string.IsNullOrWhiteSpace(context.Token) ? identifier : context.Token;
         var localAttributeName = GetLocalName(context.CurrentAttributeName);
 
