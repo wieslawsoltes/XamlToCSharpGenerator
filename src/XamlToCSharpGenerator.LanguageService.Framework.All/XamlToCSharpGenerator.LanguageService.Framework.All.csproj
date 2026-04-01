@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.LanguageService.Framework.All</PackageId>
+    <Description>Default built-in framework bundle for the AXAML language service.</Description>
+    <PackageTags>$(PackageTags);language-service;lsp;framework-bundle</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework\XamlToCSharpGenerator.LanguageService.Framework.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework.Avalonia\XamlToCSharpGenerator.LanguageService.Framework.Avalonia.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework.Wpf\XamlToCSharpGenerator.LanguageService.Framework.Wpf.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework.WinUI\XamlToCSharpGenerator.LanguageService.Framework.WinUI.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework.Maui\XamlToCSharpGenerator.LanguageService.Framework.Maui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework.Avalonia">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework.Avalonia\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.Avalonia.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework.Wpf">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework.Wpf\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.Wpf.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework.WinUI">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework.WinUI\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.WinUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework.Maui">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework.Maui\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.Maui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

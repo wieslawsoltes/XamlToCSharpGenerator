@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.LanguageService.Framework.Avalonia</PackageId>
+    <Description>Avalonia framework support package for the AXAML language service.</Description>
+    <PackageTags>$(PackageTags);language-service;avalonia;lsp</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
+    <ProjectReference Include="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.LanguageService.Framework\XamlToCSharpGenerator.LanguageService.Framework.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Avalonia">
+      <HintPath>..\XamlToCSharpGenerator.Avalonia\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Avalonia.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.LanguageService.Framework">
+      <HintPath>..\XamlToCSharpGenerator.LanguageService.Framework\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
