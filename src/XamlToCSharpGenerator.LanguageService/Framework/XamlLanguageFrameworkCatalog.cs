@@ -390,7 +390,7 @@ internal static class XamlLanguageFrameworkCatalog
 
 internal sealed class XamlLanguageFrameworkResolver
 {
-    private static readonly ConcurrentDictionary<string, string?> ProjectFrameworkCache =
+    private static readonly ConcurrentDictionary<string, ProjectFrameworkCacheEntry> ProjectFrameworkCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public XamlLanguageFrameworkInfo Resolve(
@@ -433,11 +433,28 @@ internal sealed class XamlLanguageFrameworkResolver
         }
 
         var normalizedProjectPath = Path.GetFullPath(projectPath);
-        var cachedFrameworkId = ProjectFrameworkCache.GetOrAdd(
-            normalizedProjectPath,
-            static path => ResolveProjectFrameworkIdCore(path));
+        long lastWriteUtcTicks;
+        try
+        {
+            lastWriteUtcTicks = File.GetLastWriteTimeUtc(normalizedProjectPath).Ticks;
+        }
+        catch
+        {
+            return false;
+        }
 
-        return XamlLanguageFrameworkCatalog.TryGetById(cachedFrameworkId, out framework);
+        if (ProjectFrameworkCache.TryGetValue(normalizedProjectPath, out var cachedEntry) &&
+            cachedEntry.LastWriteUtcTicks == lastWriteUtcTicks)
+        {
+            return XamlLanguageFrameworkCatalog.TryGetById(cachedEntry.FrameworkId, out framework);
+        }
+
+        var resolvedFrameworkId = ResolveProjectFrameworkIdCore(normalizedProjectPath);
+        ProjectFrameworkCache[normalizedProjectPath] = new ProjectFrameworkCacheEntry(
+            lastWriteUtcTicks,
+            resolvedFrameworkId);
+
+        return XamlLanguageFrameworkCatalog.TryGetById(resolvedFrameworkId, out framework);
     }
 
     private static string? ResolveProjectFrameworkIdCore(string projectPath)
@@ -615,4 +632,6 @@ internal sealed class XamlLanguageFrameworkResolver
 
         return false;
     }
+
+    private readonly record struct ProjectFrameworkCacheEntry(long LastWriteUtcTicks, string? FrameworkId);
 }

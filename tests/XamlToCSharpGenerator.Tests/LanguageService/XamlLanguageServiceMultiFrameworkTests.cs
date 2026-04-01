@@ -280,6 +280,69 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         Assert.Equal("Pages/MainPage.xaml", entry.TargetPath);
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_RecomputesFrameworkWhenProjectFileChanges()
+    {
+        using var workspace = new TempWorkspace();
+        var projectPath = Path.Combine(workspace.RootPath, "App.csproj");
+        var documentPath = Path.Combine(workspace.RootPath, "MainView.xaml");
+        const string xaml = "<Page />";
+
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <UseWPF>true</UseWPF>
+              </PropertyGroup>
+            </Project>
+            """);
+        File.SetLastWriteTimeUtc(projectPath, DateTime.UtcNow.AddSeconds(-2));
+
+        var analysisService = new XamlCompilerAnalysisService(new InMemoryCompilationProvider(CreateCompilation(
+            """
+            namespace App;
+
+            public sealed class Placeholder
+            {
+            }
+            """,
+            "ProjectFrameworkRecomputeTests")));
+        var document = new LanguageServiceDocument(
+            UriPathHelper.ToDocumentUri(documentPath),
+            documentPath,
+            xaml,
+            Version: 1);
+
+        var wpfAnalysis = await analysisService.AnalyzeAsync(
+            document,
+            CreateOptions(projectPath),
+            CancellationToken.None);
+
+        Assert.Equal(FrameworkProfileIds.Wpf, wpfAnalysis.Framework.Id);
+
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <UseMaui>true</UseMaui>
+              </PropertyGroup>
+              <ItemGroup>
+                <MauiXaml Include="MainView.xaml" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.SetLastWriteTimeUtc(projectPath, DateTime.UtcNow.AddSeconds(2));
+
+        var mauiAnalysis = await analysisService.AnalyzeAsync(
+            document,
+            CreateOptions(projectPath),
+            CancellationToken.None);
+
+        Assert.Equal(FrameworkProfileIds.Maui, mauiAnalysis.Framework.Id);
+    }
+
     private static async Task<XamlAnalysisResult> AnalyzeAsync(Compilation compilation, string xaml, string filePath)
     {
         var analysisService = new XamlCompilerAnalysisService(new InMemoryCompilationProvider(compilation));
