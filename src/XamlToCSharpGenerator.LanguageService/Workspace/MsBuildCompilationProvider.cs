@@ -45,7 +45,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     {
         _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
         RegisterMsBuildLocator();
-        _workspace = MSBuildWorkspace.Create();
+        _workspace = MSBuildWorkspace.Create(CreateWorkspaceProperties());
     }
 
     public Task<CompilationSnapshot> GetCompilationAsync(
@@ -539,6 +539,20 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     private static readonly SourceRange EmptyRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
+
+    private static Dictionary<string, string> CreateWorkspaceProperties()
+    {
+        var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Design-time MSBuild loads for Windows-targeted projects on non-Windows hosts
+        // need explicit opt-in to resolve WindowsDesktop reference packs.
+        if (!OperatingSystem.IsWindows())
+        {
+            properties["EnableWindowsTargeting"] = "true";
+        }
+
+        return properties;
+    }
 
     private readonly record struct CachedProjectPathResolution(
         DateTimeOffset CachedAtUtc,
