@@ -160,6 +160,197 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
     }
 
     [Fact]
+    public async Task Definition_Wpf_FrameworkElementInMetadataAssembly_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateWpfHostCompilation()));
+        const string uri = "file:///tmp/WpfMetadataDefinition.xaml";
+        const string xaml =
+            "<Window xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n" +
+            "  <TextBlock Text=\"Hello\" />\n" +
+            "</Window>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.Wpf);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "Window",
+            options,
+            "public class Window");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "TextBlock",
+            options,
+            "public class TextBlock");
+    }
+
+    [Fact]
+    public async Task Definition_Wpf_FrameworkElementInNestedPrefixScope_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateWpfScopedHostCompilation()));
+        const string uri = "file:///tmp/WpfNestedScopeDefinition.xaml";
+        const string xaml =
+            "<local:RootView xmlns:local=\"using:TestHost.Controls\">\n" +
+            "  <local:ContentHost xmlns:wpf=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n" +
+            "    <wpf:TextBlock Text=\"Hello\" />\n" +
+            "  </local:ContentHost>\n" +
+            "</local:RootView>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.Wpf);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "wpf:TextBlock",
+            options,
+            "public class TextBlock");
+    }
+
+    [Fact]
+    public async Task References_Wpf_FrameworkElementInNestedPrefixScope_IncludeMetadataDeclarationAndUsage()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateWpfScopedHostCompilation()));
+        const string uri = "file:///tmp/WpfNestedScopeReferences.xaml";
+        const string xaml =
+            "<local:RootView xmlns:local=\"using:TestHost.Controls\">\n" +
+            "  <local:ContentHost xmlns:wpf=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n" +
+            "    <wpf:TextBlock Text=\"Hello\" />\n" +
+            "  </local:ContentHost>\n" +
+            "</local:RootView>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.Wpf);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        var references = await engine.GetReferencesAsync(
+            uri,
+            GetPosition(xaml, xaml.IndexOf("TextBlock", StringComparison.Ordinal) + 1),
+            options,
+            CancellationToken.None);
+
+        Assert.Contains(references, item => item.IsDeclaration && item.Uri.StartsWith("axsg-metadata:///", StringComparison.Ordinal));
+        Assert.Contains(references, item => !item.IsDeclaration && string.Equals(item.Uri, uri, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Definition_WinUi_FrameworkElementInMetadataAssembly_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateWinUiHostCompilation()));
+        const string uri = "file:///tmp/WinUiMetadataDefinition.xaml";
+        const string xaml =
+            "<Page xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n" +
+            "  <TextBlock Text=\"Hello\" />\n" +
+            "</Page>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.WinUI);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "Page",
+            options,
+            "public class Page");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "TextBlock",
+            options,
+            "public class TextBlock");
+    }
+
+    [Fact]
+    public async Task Definition_WinUi_FrameworkElementInNestedPrefixScope_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateWinUiScopedHostCompilation()));
+        const string uri = "file:///tmp/WinUiNestedScopeDefinition.xaml";
+        const string xaml =
+            "<local:RootView xmlns:local=\"using:TestHost.Controls\">\n" +
+            "  <local:ContentHost xmlns:winui=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n" +
+            "    <winui:TextBlock Text=\"Hello\" />\n" +
+            "  </local:ContentHost>\n" +
+            "</local:RootView>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.WinUI);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "winui:TextBlock",
+            options,
+            "public class TextBlock");
+    }
+
+    [Fact]
+    public async Task Definition_Maui_FrameworkElementInMetadataAssembly_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateMauiHostCompilation()));
+        const string uri = "file:///tmp/MauiMetadataDefinition.xaml";
+        const string xaml =
+            "<ContentPage xmlns=\"http://schemas.microsoft.com/dotnet/2021/maui\">\n" +
+            "  <Label Text=\"Hello\" />\n" +
+            "</ContentPage>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.Maui);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "ContentPage",
+            options,
+            "public class ContentPage");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "Label",
+            options,
+            "public class Label");
+    }
+
+    [Fact]
+    public async Task Definition_Maui_FrameworkElementInNestedPrefixScope_ResolvesMetadataDocument()
+    {
+        using var engine = new XamlLanguageServiceEngine(
+            new InMemoryCompilationProvider(CreateMauiScopedHostCompilation()));
+        const string uri = "file:///tmp/MauiNestedScopeDefinition.xaml";
+        const string xaml =
+            "<local:RootView xmlns:local=\"using:TestHost.Controls\">\n" +
+            "  <local:ContentHost xmlns:maui=\"http://schemas.microsoft.com/dotnet/2021/maui\">\n" +
+            "    <maui:Label Text=\"Hello\" />\n" +
+            "  </local:ContentHost>\n" +
+            "</local:RootView>";
+        var options = CreateOptions(frameworkId: FrameworkProfileIds.Maui);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "maui:Label",
+            options,
+            "public class Label");
+    }
+
+    [Fact]
     public async Task Definition_WpfPackUri_ResolvesProjectFile()
     {
         using var workspace = new TempWorkspace();
@@ -457,6 +648,37 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
             IncludeSemanticDiagnostics: false);
     }
 
+    private static async Task AssertTypeDefinitionResolvesToMetadataAsync(
+        XamlLanguageServiceEngine engine,
+        string uri,
+        string xaml,
+        string token,
+        XamlLanguageServiceOptions options,
+        string expectedDeclarationSnippet)
+    {
+        var tokenOffset = xaml.IndexOf(token, StringComparison.Ordinal);
+        Assert.True(tokenOffset >= 0, "Expected type token not found in XAML.");
+        var localNameOffset = token.LastIndexOf(':');
+        var typeTokenOffset = localNameOffset >= 0 ? localNameOffset + 1 : 0;
+        var caretOffset = tokenOffset + typeTokenOffset + Math.Min(1, token.Length - typeTokenOffset - 1);
+
+        var definitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, caretOffset),
+            options,
+            CancellationToken.None);
+
+        Assert.NotEmpty(definitions);
+        Assert.StartsWith("axsg-metadata:///", definitions[0].Uri, StringComparison.Ordinal);
+
+        var metadataDocumentId = GetQueryParameter(definitions[0].Uri, "id");
+        Assert.False(string.IsNullOrWhiteSpace(metadataDocumentId));
+
+        var metadataDocument = engine.GetMetadataDocumentText(metadataDocumentId!);
+        Assert.NotNull(metadataDocument);
+        Assert.Contains(expectedDeclarationSnippet, metadataDocument, StringComparison.Ordinal);
+    }
+
     private static SourcePosition GetPosition(string text, int offset)
     {
         var position = SourceText.From(text).Lines.GetLinePosition(offset);
@@ -514,6 +736,22 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         return CreateCompilation(source, "WpfLanguageServiceTests");
     }
 
+    private static CSharpCompilation CreateWpfHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateWpfCompilation(),
+            "WpfLanguageServiceHost",
+            CreateScopedHostSource());
+    }
+
+    private static CSharpCompilation CreateWpfScopedHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateWpfCompilation(),
+            "WpfLanguageServiceScopedHost",
+            CreateScopedHostSource());
+    }
+
     private static CSharpCompilation CreateWinUiCompilation()
     {
         const string source = """
@@ -559,6 +797,22 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         return CreateCompilation(source, "WinUiLanguageServiceTests");
     }
 
+    private static CSharpCompilation CreateWinUiHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateWinUiCompilation(),
+            "WinUiLanguageServiceHost",
+            CreateScopedHostSource());
+    }
+
+    private static CSharpCompilation CreateWinUiScopedHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateWinUiCompilation(),
+            "WinUiLanguageServiceScopedHost",
+            CreateScopedHostSource());
+    }
+
     private static CSharpCompilation CreateMauiCompilation()
     {
         const string source = """
@@ -599,6 +853,22 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
                               """;
 
         return CreateCompilation(source, "MauiLanguageServiceTests");
+    }
+
+    private static CSharpCompilation CreateMauiHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateMauiCompilation(),
+            "MauiLanguageServiceHost",
+            CreateScopedHostSource());
+    }
+
+    private static CSharpCompilation CreateMauiScopedHostCompilation()
+    {
+        return CreateHostCompilationWithMetadataReference(
+            CreateMauiCompilation(),
+            "MauiLanguageServiceScopedHost",
+            CreateScopedHostSource());
     }
 
     private static CSharpCompilation CreateCustomCompilation()
@@ -645,6 +915,74 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
                 MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location)
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static CSharpCompilation CreateHostCompilationWithMetadataReference(
+        CSharpCompilation metadataCompilation,
+        string hostAssemblyName,
+        string hostSource)
+    {
+        using var metadataStream = new MemoryStream();
+        var emitResult = metadataCompilation.Emit(metadataStream);
+        Assert.True(
+            emitResult.Success,
+            "Failed to emit framework metadata compilation: " + string.Join(Environment.NewLine, emitResult.Diagnostics));
+
+        metadataStream.Position = 0;
+        var metadataReference = MetadataReference.CreateFromImage(metadataStream.ToArray());
+
+        return CSharpCompilation.Create(
+            hostAssemblyName,
+            [CSharpSyntaxTree.ParseText(hostSource)],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location),
+                metadataReference
+            ],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static string CreateScopedHostSource()
+    {
+        return """
+               namespace TestHost.Controls;
+
+               public sealed class RootView
+               {
+               }
+
+               public sealed class ContentHost
+               {
+               }
+               """;
+    }
+
+    private static string? GetQueryParameter(string uri, string key)
+    {
+        var query = new Uri(uri).Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var segment in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var name = Uri.UnescapeDataString(segment[..separatorIndex]);
+            if (!string.Equals(name, key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return Uri.UnescapeDataString(segment[(separatorIndex + 1)..]);
+        }
+
+        return null;
     }
 
     private sealed class TempWorkspace : IDisposable
