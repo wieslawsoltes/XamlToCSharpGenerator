@@ -8,12 +8,11 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
-using XamlToCSharpGenerator.Framework.Abstractions;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Diagnostics;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Workspace;
@@ -23,19 +22,19 @@ namespace XamlToCSharpGenerator.LanguageService.Analysis;
 public sealed class XamlCompilerAnalysisService
 {
     private readonly ICompilationProvider _compilationProvider;
-    private readonly IXamlFrameworkProfile _frameworkProfile;
+    private readonly XamlLanguageFrameworkResolver _frameworkResolver;
 
     public XamlCompilerAnalysisService(ICompilationProvider compilationProvider)
-        : this(compilationProvider, AvaloniaFrameworkProfile.Instance)
+        : this(compilationProvider, new XamlLanguageFrameworkResolver())
     {
     }
 
-    public XamlCompilerAnalysisService(
+    internal XamlCompilerAnalysisService(
         ICompilationProvider compilationProvider,
-        IXamlFrameworkProfile frameworkProfile)
+        XamlLanguageFrameworkResolver frameworkResolver)
     {
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
-        _frameworkProfile = frameworkProfile ?? throw new ArgumentNullException(nameof(frameworkProfile));
+        _frameworkResolver = frameworkResolver ?? throw new ArgumentNullException(nameof(frameworkResolver));
     }
 
     public async Task<XamlAnalysisResult> AnalyzeAsync(
@@ -56,22 +55,26 @@ public sealed class XamlCompilerAnalysisService
             diagnostics.AddRange(snapshot.Diagnostics);
         }
 
+        var framework = _frameworkResolver.Resolve(options, snapshot, document.FilePath, document.Text);
         ResolvedViewModel? resolvedViewModel = null;
 
-        var generatorOptions = GeneratorOptionsDefaults.Create(snapshot.Compilation, Path.GetDirectoryName(document.FilePath));
-        var parser = CreateParser(snapshot.Compilation, generatorOptions);
+        var generatorOptions = GeneratorOptionsDefaults.Create(
+            snapshot.Compilation,
+            Path.GetDirectoryName(document.FilePath),
+            framework);
+        var parser = CreateParser(framework, snapshot.Compilation, generatorOptions);
 
         var (parsedDocument, parseDiagnostics) = parser.Parse(new XamlFileInput(
             FilePath: document.FilePath,
             TargetPath: Path.GetFileName(document.FilePath),
-            SourceItemGroup: "AvaloniaXaml",
+            SourceItemGroup: framework.Profile.BuildContract.XamlSourceItemGroup,
             Text: document.Text));
 
         diagnostics.AddRange(DiagnosticConversion.FromCoreDiagnostics(parseDiagnostics, source: "AXSG.Parse"));
 
         if (parsedDocument is not null && snapshot.Compilation is not null)
         {
-            var binder = _frameworkProfile.CreateSemanticBinder();
+            var binder = framework.Profile.CreateSemanticBinder();
             var (viewModel, semanticDiagnostics) = binder.Bind(
                 parsedDocument,
                 snapshot.Compilation,
@@ -106,7 +109,7 @@ public sealed class XamlCompilerAnalysisService
 
         var typeIndex = snapshot.Compilation is null
             ? null
-            : AvaloniaTypeIndex.Create(snapshot.Compilation);
+            : AvaloniaTypeIndex.Create(snapshot.Compilation, framework);
         var prefixMap = XamlXmlNamespaceResolver.BuildPrefixMap(parsedDocument);
 
         return new XamlAnalysisResult(
@@ -118,12 +121,16 @@ public sealed class XamlCompilerAnalysisService
             XmlDocument: xmlDocument,
             PrefixMap: prefixMap,
             TypeIndex: typeIndex,
+            Framework: framework,
             Diagnostics: diagnostics.ToImmutable());
     }
 
-    private SimpleXamlDocumentParser CreateParser(Compilation? compilation, GeneratorOptions options)
+    private static SimpleXamlDocumentParser CreateParser(
+        XamlLanguageFrameworkInfo framework,
+        Compilation? compilation,
+        GeneratorOptions options)
     {
-        var settings = _frameworkProfile.BuildParserSettings(
+        var settings = framework.Profile.BuildParserSettings(
             compilation ?? CSharpCompilationFactory.Empty,
             options);
 
@@ -131,7 +138,7 @@ public sealed class XamlCompilerAnalysisService
             settings.GlobalXmlnsPrefixes,
             settings.AllowImplicitDefaultXmlns,
             settings.ImplicitDefaultXmlns,
-            _frameworkProfile.CreateDocumentEnrichers());
+            framework.Profile.CreateDocumentEnrichers());
     }
 
     private static bool TryCreateNonPartialClassDiagnostic(

@@ -29,7 +29,8 @@ internal static class XamlXmlNamespaceResolver
         ImmutableDictionary<string, string> prefixMap,
         string qualifiedName,
         out string xmlNamespace,
-        out string xmlTypeName)
+        out string xmlTypeName,
+        string? defaultXmlNamespace = null)
     {
         xmlNamespace = string.Empty;
         xmlTypeName = qualifiedName;
@@ -45,7 +46,9 @@ internal static class XamlXmlNamespaceResolver
             if (!prefixMap.TryGetValue(string.Empty, out var defaultNamespace) ||
                 string.IsNullOrWhiteSpace(defaultNamespace))
             {
-                xmlNamespace = AvaloniaDefaultXmlNamespace;
+                xmlNamespace = string.IsNullOrWhiteSpace(defaultXmlNamespace)
+                    ? AvaloniaDefaultXmlNamespace
+                    : defaultXmlNamespace;
                 return true;
             }
 

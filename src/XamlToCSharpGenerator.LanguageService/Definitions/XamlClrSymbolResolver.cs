@@ -24,7 +24,8 @@ internal static class XamlClrSymbolResolver
                 prefixMap,
                 qualifiedTypeName,
                 out var xmlNamespace,
-                out var xmlTypeName))
+                out var xmlTypeName,
+                typeIndex.DefaultXmlNamespace))
         {
             return false;
         }
