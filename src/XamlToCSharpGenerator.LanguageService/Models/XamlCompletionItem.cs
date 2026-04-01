@@ -7,4 +7,5 @@ public sealed record XamlCompletionItem(
     string? Detail = null,
     string? Documentation = null,
     bool IsDeprecated = false,
-    SourceRange? ReplaceRange = null);
+    SourceRange? ReplaceRange = null,
+    bool InsertTextIsSnippet = false);

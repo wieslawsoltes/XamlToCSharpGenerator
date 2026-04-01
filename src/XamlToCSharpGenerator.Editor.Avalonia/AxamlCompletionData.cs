@@ -18,7 +18,7 @@ internal sealed class AxamlCompletionData : ICompletionData
 
     public IImage? Image => null;
 
-    public string Text => _item.InsertText;
+    public string Text => _item.Label;
 
     public object Content => _item.Label;
 
@@ -28,6 +28,16 @@ internal sealed class AxamlCompletionData : ICompletionData
 
     public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
     {
-        textArea.Document.Replace(completionSegment, Text);
+        var replacementOffset = completionSegment.Offset;
+        if (_item.InsertTextIsSnippet)
+        {
+            var expansion = AxamlCompletionSnippetParser.Expand(_item.InsertText);
+            textArea.Document.Replace(completionSegment, expansion.Text);
+            textArea.Caret.Offset = replacementOffset + expansion.CaretOffset;
+            return;
+        }
+
+        textArea.Document.Replace(completionSegment, _item.InsertText);
+        textArea.Caret.Offset = replacementOffset + _item.InsertText.Length;
     }
 }

@@ -780,7 +780,7 @@ internal sealed class AxsgLanguageServer : IDisposable
                 completionItem["insertText"] = completion.InsertText;
             }
 
-            if (ContainsSnippetPlaceholder(completion.InsertText))
+            if (completion.InsertTextIsSnippet)
             {
                 completionItem["insertTextFormat"] = 2;
             }
@@ -1817,30 +1817,6 @@ internal sealed class AxsgLanguageServer : IDisposable
             XamlCompletionItemKind.Snippet => 15,
             _ => 1
         };
-    }
-
-    private static bool ContainsSnippetPlaceholder(string? insertText)
-    {
-        if (string.IsNullOrWhiteSpace(insertText))
-        {
-            return false;
-        }
-
-        for (var i = 0; i < insertText.Length - 1; i++)
-        {
-            if (insertText[i] != '$')
-            {
-                continue;
-            }
-
-            var next = insertText[i + 1];
-            if (char.IsDigit(next) || next == '{')
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static JsonObject SerializeRange(SourceRange range)

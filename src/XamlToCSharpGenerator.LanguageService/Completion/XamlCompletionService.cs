@@ -14,21 +14,21 @@ public sealed class XamlCompletionService
 {
     private static readonly ImmutableArray<XamlCompletionItem> BaseDirectiveCompletions =
     [
-        new("x:Class", "x:Class=\"$0\"", XamlCompletionItemKind.Keyword, "XAML class directive"),
-        new("x:Name", "x:Name=\"$0\"", XamlCompletionItemKind.Keyword, "Element name"),
-        new("x:Key", "x:Key=\"$0\"", XamlCompletionItemKind.Keyword, "Resource key")
+        new("x:Class", "x:Class=\"$0\"", XamlCompletionItemKind.Keyword, "XAML class directive", InsertTextIsSnippet: true),
+        new("x:Name", "x:Name=\"$0\"", XamlCompletionItemKind.Keyword, "Element name", InsertTextIsSnippet: true),
+        new("x:Key", "x:Key=\"$0\"", XamlCompletionItemKind.Keyword, "Resource key", InsertTextIsSnippet: true)
     ];
 
     private static readonly ImmutableArray<XamlCompletionItem> BaseMarkupExtensionCompletions =
     [
-        new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Binding"),
-        new("StaticResource", "{StaticResource $0}", XamlCompletionItemKind.MarkupExtension, "Static resource lookup"),
-        new("DynamicResource", "{DynamicResource $0}", XamlCompletionItemKind.MarkupExtension, "Dynamic resource lookup"),
-        new("TemplateBinding", "{TemplateBinding $0}", XamlCompletionItemKind.MarkupExtension, "Template binding"),
-        new("RelativeSource", "{RelativeSource $0}", XamlCompletionItemKind.MarkupExtension, "Relative source"),
-        new("x:Reference", "{x:Reference $0}", XamlCompletionItemKind.MarkupExtension, "Named element reference"),
-        new("x:Static", "{x:Static $0}", XamlCompletionItemKind.MarkupExtension, "Static member reference"),
-        new("x:Type", "{x:Type $0}", XamlCompletionItemKind.MarkupExtension, "Type extension"),
+        new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Binding", InsertTextIsSnippet: true),
+        new("StaticResource", "{StaticResource $0}", XamlCompletionItemKind.MarkupExtension, "Static resource lookup", InsertTextIsSnippet: true),
+        new("DynamicResource", "{DynamicResource $0}", XamlCompletionItemKind.MarkupExtension, "Dynamic resource lookup", InsertTextIsSnippet: true),
+        new("TemplateBinding", "{TemplateBinding $0}", XamlCompletionItemKind.MarkupExtension, "Template binding", InsertTextIsSnippet: true),
+        new("RelativeSource", "{RelativeSource $0}", XamlCompletionItemKind.MarkupExtension, "Relative source", InsertTextIsSnippet: true),
+        new("x:Reference", "{x:Reference $0}", XamlCompletionItemKind.MarkupExtension, "Named element reference", InsertTextIsSnippet: true),
+        new("x:Static", "{x:Static $0}", XamlCompletionItemKind.MarkupExtension, "Static member reference", InsertTextIsSnippet: true),
+        new("x:Type", "{x:Type $0}", XamlCompletionItemKind.MarkupExtension, "Type extension", InsertTextIsSnippet: true),
         new("x:Null", "{x:Null}", XamlCompletionItemKind.MarkupExtension, "Null extension")
     ];
 
@@ -184,7 +184,8 @@ public sealed class XamlCompletionService
                 property.Name,
                 property.Name + "=\"$0\"",
                 kind,
-                property.TypeName));
+                property.TypeName,
+                InsertTextIsSnippet: true));
         }
     }
 
@@ -377,7 +378,8 @@ public sealed class XamlCompletionService
                 completion.Label,
                 completion.InsertText,
                 itemKind,
-                completion.Detail));
+                completion.Detail,
+                InsertTextIsSnippet: completion.InsertTextIsSnippet));
         }
 
         return builder.ToImmutable();

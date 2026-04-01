@@ -3,9 +3,9 @@ using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
@@ -17,11 +17,19 @@ namespace XamlToCSharpGenerator.Editor.Avalonia;
 
 public sealed class AxamlTextEditor : TextEditor
 {
+    protected override Type StyleKeyOverride => typeof(TextEditor);
+
     public static readonly DirectProperty<AxamlTextEditor, string> TextProperty =
         AvaloniaProperty.RegisterDirect<AxamlTextEditor, string>(
             nameof(Text),
             editor => editor.Text,
             (editor, value) => editor.Text = value ?? string.Empty);
+
+    public static readonly DirectProperty<AxamlTextEditor, string> SourceTextProperty =
+        AvaloniaProperty.RegisterDirect<AxamlTextEditor, string>(
+            nameof(SourceText),
+            editor => editor.SourceText,
+            (editor, value) => editor.SourceText = value ?? string.Empty);
 
     public static readonly StyledProperty<string?> DocumentUriProperty =
         AvaloniaProperty.Register<AxamlTextEditor, string?>(nameof(DocumentUri));
@@ -36,6 +44,8 @@ public sealed class AxamlTextEditor : TextEditor
 
     private readonly XamlLanguageServiceEngine _engine;
     private readonly AxamlDiagnosticColorizer _diagnosticColorizer;
+    private readonly AxamlTextEditorFoldingSupport _foldingSupport;
+    private readonly AxamlTextEditorTextMateSupport _textMateSupport;
     private CompletionWindow? _completionWindow;
     private DispatcherTimer? _analysisDebounce;
     private bool _documentOpened;
@@ -44,6 +54,7 @@ public sealed class AxamlTextEditor : TextEditor
     private int _documentVersion;
     private ImmutableArray<LanguageServiceDiagnostic> _diagnostics = ImmutableArray<LanguageServiceDiagnostic>.Empty;
     private CancellationTokenSource? _analysisCts;
+    private IThemeVariantHost? _themeVariantHost;
 
     public AxamlTextEditor()
         : this(new XamlLanguageServiceEngine())
@@ -54,6 +65,8 @@ public sealed class AxamlTextEditor : TextEditor
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _diagnosticColorizer = new AxamlDiagnosticColorizer();
+        _foldingSupport = new AxamlTextEditorFoldingSupport(this);
+        _textMateSupport = new AxamlTextEditorTextMateSupport(this);
 
         ShowLineNumbers = true;
         Options.EnableHyperlinks = false;
@@ -70,10 +83,15 @@ public sealed class AxamlTextEditor : TextEditor
             Interval = TimeSpan.FromMilliseconds(120)
         };
         _analysisDebounce.Tick += OnAnalysisDebounceTick;
-
     }
 
     public new string Text
+    {
+        get => _text;
+        set => SetEditorText(value ?? string.Empty);
+    }
+
+    public string SourceText
     {
         get => _text;
         set => SetEditorText(value ?? string.Empty);
@@ -105,6 +123,9 @@ public sealed class AxamlTextEditor : TextEditor
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        SubscribeThemeVariantChanges();
+        _textMateSupport.ApplyThemeVariant(_themeVariantHost?.ActualThemeVariant);
+        _textMateSupport.ApplyDocumentUri(DocumentUri);
         _ = EnsureDocumentOpenAndAnalyzeAsync();
     }
 
@@ -114,6 +135,7 @@ public sealed class AxamlTextEditor : TextEditor
 
         if (change.Property == DocumentUriProperty)
         {
+            _textMateSupport.ApplyDocumentUri(DocumentUri);
             _ = EnsureDocumentOpenAndAnalyzeAsync();
             return;
         }
@@ -127,6 +149,7 @@ public sealed class AxamlTextEditor : TextEditor
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        UnsubscribeThemeVariantChanges();
         _analysisCts?.Cancel();
         _analysisCts?.Dispose();
         _analysisCts = null;
@@ -140,6 +163,7 @@ public sealed class AxamlTextEditor : TextEditor
         _openedDocumentUri = null;
         _completionWindow?.Close();
         _completionWindow = null;
+        _foldingSupport.Clear();
     }
 
     private void OnEditorTextChanged(object? sender, EventArgs e)
@@ -147,7 +171,9 @@ public sealed class AxamlTextEditor : TextEditor
         var currentText = base.Text ?? string.Empty;
         if (!string.Equals(_text, currentText, StringComparison.Ordinal))
         {
+            var previousText = _text;
             SetAndRaise(TextProperty, ref _text, currentText);
+            RaisePropertyChanged(SourceTextProperty, previousText, currentText);
         }
 
         _analysisDebounce?.Stop();
@@ -168,8 +194,10 @@ public sealed class AxamlTextEditor : TextEditor
             return;
         }
 
+        var previousText = _text;
         base.Text = value;
         SetAndRaise(TextProperty, ref _text, value);
+        RaisePropertyChanged(SourceTextProperty, previousText, value);
     }
 
     private async Task EnsureDocumentOpenAndAnalyzeAsync()
@@ -183,29 +211,43 @@ public sealed class AxamlTextEditor : TextEditor
 
         _analysisCts?.Cancel();
         _analysisCts?.Dispose();
-        _analysisCts = new CancellationTokenSource();
+        var analysisCts = _analysisCts = new CancellationTokenSource();
+        var cancellationToken = analysisCts.Token;
 
-        if (!string.Equals(_openedDocumentUri, currentDocumentUri, StringComparison.Ordinal))
+        try
         {
-            CloseOpenedDocument();
-        }
+            if (!string.Equals(_openedDocumentUri, currentDocumentUri, StringComparison.Ordinal))
+            {
+                CloseOpenedDocument();
+            }
 
-        if (!_documentOpened)
+            if (!_documentOpened)
+            {
+                _documentVersion = 1;
+                var diagnostics = await _engine.OpenDocumentAsync(
+                    currentDocumentUri,
+                    Text ?? string.Empty,
+                    version: _documentVersion,
+                    CreateOptions(),
+                    cancellationToken).ConfigureAwait(false);
+                var foldings = await _engine.GetFoldingRangesAsync(currentDocumentUri, cancellationToken).ConfigureAwait(false);
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    Diagnostics = diagnostics;
+                    _foldingSupport.UpdateFoldings(Document, foldings);
+                });
+
+                _documentOpened = true;
+                _openedDocumentUri = currentDocumentUri;
+                return;
+            }
+
+            await AnalyzeNowAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _documentVersion = 1;
-            var diagnostics = await _engine.OpenDocumentAsync(
-                currentDocumentUri,
-                Text ?? string.Empty,
-                version: _documentVersion,
-                CreateOptions(),
-                _analysisCts.Token).ConfigureAwait(false);
-            await Dispatcher.UIThread.InvokeAsync(() => Diagnostics = diagnostics);
-            _documentOpened = true;
-            _openedDocumentUri = currentDocumentUri;
-            return;
         }
-
-        await AnalyzeNowAsync().ConfigureAwait(false);
     }
 
     private async Task AnalyzeNowAsync()
@@ -219,18 +261,31 @@ public sealed class AxamlTextEditor : TextEditor
 
         _analysisCts?.Cancel();
         _analysisCts?.Dispose();
-        _analysisCts = new CancellationTokenSource();
+        var analysisCts = _analysisCts = new CancellationTokenSource();
+        var cancellationToken = analysisCts.Token;
 
-        var diagnostics = await _engine.UpdateDocumentAsync(
-            currentDocumentUri,
-            Text ?? string.Empty,
-            version: ++_documentVersion,
-            CreateOptions(),
-            _analysisCts.Token).ConfigureAwait(false);
+        try
+        {
+            var diagnostics = await _engine.UpdateDocumentAsync(
+                currentDocumentUri,
+                Text ?? string.Empty,
+                version: ++_documentVersion,
+                CreateOptions(),
+                cancellationToken).ConfigureAwait(false);
+            var foldings = await _engine.GetFoldingRangesAsync(currentDocumentUri, cancellationToken).ConfigureAwait(false);
 
-        await Dispatcher.UIThread.InvokeAsync(() => Diagnostics = diagnostics);
-        _documentOpened = true;
-        _openedDocumentUri = currentDocumentUri;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                Diagnostics = diagnostics;
+                _foldingSupport.UpdateFoldings(Document, foldings);
+            });
+
+            _documentOpened = true;
+            _openedDocumentUri = currentDocumentUri;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
     }
 
     private async Task ShowCompletionAsync()
@@ -324,6 +379,35 @@ public sealed class AxamlTextEditor : TextEditor
 
         _documentOpened = false;
         _openedDocumentUri = null;
+        Diagnostics = ImmutableArray<LanguageServiceDiagnostic>.Empty;
+        _foldingSupport.Clear();
+    }
+
+    private void SubscribeThemeVariantChanges()
+    {
+        if (_themeVariantHost is not null || this is not IThemeVariantHost themeVariantHost)
+        {
+            return;
+        }
+
+        _themeVariantHost = themeVariantHost;
+        _themeVariantHost.ActualThemeVariantChanged += OnActualThemeVariantChanged;
+    }
+
+    private void UnsubscribeThemeVariantChanges()
+    {
+        if (_themeVariantHost is null)
+        {
+            return;
+        }
+
+        _themeVariantHost.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
+        _themeVariantHost = null;
+    }
+
+    private void OnActualThemeVariantChanged(object? sender, EventArgs e)
+    {
+        _textMateSupport.ApplyThemeVariant(_themeVariantHost?.ActualThemeVariant);
     }
 
     private static SourcePosition ToSourcePosition(int offset, TextDocument document)

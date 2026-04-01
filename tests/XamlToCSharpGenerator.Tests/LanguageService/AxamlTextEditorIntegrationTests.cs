@@ -1,9 +1,12 @@
 using System;
+using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using AvaloniaEdit.Folding;
 using XamlToCSharpGenerator.Editor.Avalonia;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.Models;
@@ -39,6 +42,18 @@ public sealed class AxamlTextEditorIntegrationTests
             predicate: () => !editor.Diagnostics.IsDefaultOrEmpty,
             timeout: TimeSpan.FromSeconds(5));
         Assert.True(hasInitialDiagnostics);
+        var hasFoldings = await WaitForAsync(
+            predicate: () =>
+            {
+                var foldingManager = GetFoldingManager(editor);
+                return foldingManager is not null && foldingManager.AllFoldings.Any();
+            },
+            timeout: TimeSpan.FromSeconds(5));
+        Assert.True(hasFoldings);
+        var hasTextMateTokens = await WaitForAsync(
+            predicate: () => GetTextMateTokenCount(editor, lineIndex: 0) > 0,
+            timeout: TimeSpan.FromSeconds(5));
+        Assert.True(hasTextMateTokens);
         var initialDiagnostics = editor.Diagnostics;
 
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -97,5 +112,59 @@ public sealed class AxamlTextEditorIntegrationTests
         }
 
         return true;
+    }
+
+    private static FoldingManager? GetFoldingManager(AxamlTextEditor editor)
+    {
+        var foldingSupportField = typeof(AxamlTextEditor).GetField(
+            "_foldingSupport",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(foldingSupportField);
+
+        var foldingSupport = foldingSupportField!.GetValue(editor);
+        Assert.NotNull(foldingSupport);
+
+        var foldingManagerField = foldingSupport!.GetType().GetField(
+            "_foldingManager",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(foldingManagerField);
+
+        return Assert.IsAssignableFrom<FoldingManager>(foldingManagerField!.GetValue(foldingSupport));
+    }
+
+    private static int GetTextMateTokenCount(AxamlTextEditor editor, int lineIndex)
+    {
+        var textMateSupportField = typeof(AxamlTextEditor).GetField(
+            "_textMateSupport",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(textMateSupportField);
+
+        var textMateSupport = textMateSupportField!.GetValue(editor);
+        Assert.NotNull(textMateSupport);
+
+        var installationField = textMateSupport!.GetType().GetField(
+            "_installation",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(installationField);
+
+        var installation = installationField!.GetValue(textMateSupport);
+        Assert.NotNull(installation);
+
+        var tmModelField = installation!.GetType().GetField(
+            "_tmModel",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(tmModelField);
+
+        var tmModel = tmModelField!.GetValue(installation);
+        if (tmModel is null)
+        {
+            return 0;
+        }
+
+        var getLineTokens = tmModel.GetType().GetMethod("GetLineTokens", BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(getLineTokens);
+
+        var tokens = getLineTokens!.Invoke(tmModel, [lineIndex]) as System.Collections.ICollection;
+        return tokens?.Count ?? 0;
     }
 }
