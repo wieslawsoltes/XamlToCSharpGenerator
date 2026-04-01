@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler. Start Getting Started Browse Packages Browse API Start Here Overview Choose the right install surface and understand the compiler/runtime split before you wire AXSG into an app. Quickstart Install the standard package, enable source-generated views, and validate...">
+<meta name="twitter:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, and hot reload. Most users start with one of two install surfaces: the XamlToCSharpGenerator NuGet package for app integration, or the AXSG XAML Language Service VSIX for VS Code editing. Start Getting Started NuGet Package VSIX Extension Primary Install Surfaces Most AXSG users only need one of these starting points....">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
 <meta property="og:title" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler. Start Getting Started Browse Packages Browse API Start Here Overview Choose the right install surface and understand the compiler/runtime split before you wire AXSG into an app. Quickstart Install the standard package, enable source-generated views, and validate...">
+<meta property="og:description" content="Avalonia XAML Compiler and Tooling XamlToCSharpGenerator AXSG compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, and hot reload. Most users start with one of two install surfaces: the XamlToCSharpGenerator NuGet package for app integration, or the AXSG XAML Language Service VSIX for VS Code editing. Start Getting Started NuGet Package VSIX Extension Primary Install Surfaces Most AXSG users only need one of these starting points....">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="XamlToCSharpGenerator | XamlToCSharpGenerator">
   </head>
@@ -94,12 +94,24 @@
 <div class="axsg-hero">
   <div class="axsg-eyebrow"><i class="bi bi-code-square" aria-hidden="true"></i> Avalonia XAML Compiler and Tooling</div>
   <h1>XamlToCSharpGenerator</h1>
-  <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, hot reload, and ships the runtime, language service, and editor surfaces around that compiler.</p>
+  <p class="lead"><strong>AXSG</strong> compiles Avalonia XAML into generated C#, adds compiled bindings, x:Bind, inline C#, and hot reload. Most users start with one of two install surfaces: the <code>XamlToCSharpGenerator</code> NuGet package for app integration, or the <code>AXSG XAML Language Service</code> VSIX for VS Code editing.</p>
   <div class="axsg-hero-actions">
     <a class="btn btn-primary btn-lg" href="articles/getting-started/overview"><i class="bi bi-rocket-takeoff" aria-hidden="true"></i> Start Getting Started</a>
-    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/package-guides/"><i class="bi bi-box-seam" aria-hidden="true"></i> Browse Packages</a>
-    <a class="btn btn-outline-secondary btn-lg" href="api"><i class="bi bi-braces-asterisk" aria-hidden="true"></i> Browse API</a>
+    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/xamltocsharpgenerator/"><i class="bi bi-box-seam" aria-hidden="true"></i> NuGet Package</a>
+    <a class="btn btn-outline-secondary btn-lg" href="articles/reference/vscode-extension/"><i class="bi bi-window-sidebar" aria-hidden="true"></i> VSIX Extension</a>
   </div>
+</div>
+<h2 id="primary-install-surfaces">Primary Install Surfaces</h2>
+<p>Most AXSG users only need one of these starting points.</p>
+<div class="axsg-link-grid">
+  <a class="axsg-link-card" href="articles/reference/xamltocsharpgenerator/">
+    <span class="axsg-link-card-title"><i class="bi bi-box-seam" aria-hidden="true"></i> NuGet: XamlToCSharpGenerator</span>
+    <p>The main source-generator package for Avalonia applications. Use it when you want the default build, generator, and runtime path in one package.</p>
+  </a>
+  <a class="axsg-link-card" href="articles/reference/vscode-extension/">
+    <span class="axsg-link-card-title"><i class="bi bi-window-sidebar" aria-hidden="true"></i> VSIX: AXSG XAML Language Service</span>
+    <p>The packaged VS Code extension. Use it when you want completion, diagnostics, navigation, preview, and inline C# tooling inside VS Code.</p>
+  </a>
 </div>
 <h2 id="start-here">Start Here</h2>
 <div class="axsg-link-grid">
@@ -163,11 +175,11 @@
     <p>Generated .NET API pages for the shipped compiler, runtime, language service, and editor assemblies.</p>
   </a>
 </div>
-<h2 id="shipped-artifact-families">Shipped Artifact Families</h2>
+<h2 id="deeper-package-families">Deeper Package Families</h2>
 <div class="axsg-link-grid axsg-link-grid--wide">
   <a class="axsg-link-card" href="articles/reference/xamltocsharpgenerator/">
-    <span class="axsg-link-card-title"><i class="bi bi-box-seam" aria-hidden="true"></i> App and Build Packages</span>
-    <p>`XamlToCSharpGenerator`, `Build`, and the standard app-facing install surface for generated Avalonia XAML.</p>
+    <span class="axsg-link-card-title"><i class="bi bi-box-seam" aria-hidden="true"></i> App and Build Breakdown</span>
+    <p>See how `XamlToCSharpGenerator`, `Build`, and the default app-facing integration layers fit together when you need more than the one-package path.</p>
   </a>
   <a class="axsg-link-card" href="articles/reference/compiler/">
     <span class="axsg-link-card-title"><i class="bi bi-gear-wide-connected" aria-hidden="true"></i> Compiler Packages</span>

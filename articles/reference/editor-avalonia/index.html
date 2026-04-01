@@ -161,6 +161,8 @@
 <ul>
 <li>an AvaloniaEdit-based editor host</li>
 <li>AXSG language-service integration</li>
+<li>TextMate-based syntax highlighting for AXAML/XML content</li>
+<li>fold-region support for multi-line XAML elements and comments</li>
 <li>document/update plumbing suitable for in-app editing surfaces</li>
 <li>editor-facing abstractions over syntax highlighting, diagnostics, and semantic updates</li>
 </ul>
@@ -180,6 +182,15 @@
 <li><code>Avalonia.AvaloniaEdit</code></li>
 </ul>
 <p>That means it is best suited for in-process editor experiences inside AXSG-aware desktop tools or product shells.</p>
+<h2 id="host-setup-notes">Host setup notes</h2>
+<p>Host applications should merge the AvaloniaEdit theme resources in <code>App.axaml</code>, for example:</p>
+<pre><code class="language-xml">&lt;Application.Styles&gt;
+  &lt;FluentTheme DensityStyle=&quot;Compact&quot; /&gt;
+  &lt;StyleInclude Source=&quot;avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml&quot; /&gt;
+&lt;/Application.Styles&gt;
+</code></pre>
+<p>Without the AvaloniaEdit theme resources, the embedded <code>AxamlTextEditor</code> control will not render like a normal text editor surface even though the language-service plumbing is active.</p>
+<p>The <a href="/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour"><code>EditorAvaloniaSample</code></a> shows a compact Fluent shell with a left explorer tree, a central editor surface, and bottom <code>Problems</code> and <code>Output</code> panels.</p>
 <h2 id="what-it-does-not-replace">What it does not replace</h2>
 <p>If you only need the semantic engine, use <code>XamlToCSharpGenerator.LanguageService</code> directly. If you need an out-of-process LSP server, use <code>XamlToCSharpGenerator.LanguageServer.Tool</code>.</p>
 <h2 id="related-docs">Related docs</h2>
@@ -187,6 +198,7 @@
 <li><a href="/XamlToCSharpGenerator/articles/concepts/tooling-surface">Tooling Surface</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/architecture/language-service-and-vscode">Language Service and VS Code</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/guides/vscode-language-service">VS Code and Language Service</a></li>
+<li><a href="/XamlToCSharpGenerator/articles/getting-started/samples-and-feature-tour">EditorAvaloniaSample</a></li>
 <li><a href="/XamlToCSharpGenerator/articles/reference/namespace-runtime-and-editor">Runtime and Editor Namespaces</a></li>
 </ul>
 

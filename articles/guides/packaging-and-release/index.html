@@ -12,13 +12,13 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@wieslawsoltes">
 <meta name="twitter:title" content="Packaging and Release | XamlToCSharpGenerator">
-<meta name="twitter:description" content="Packaging and Release This guide covers how AXSG packages NuGet artifacts, the VSIX, docs output, and release metadata. Artifact families AXSG ships: NuGet packages for compiler/runtime/tooling layers a .NET tool package for the language server a VSIX for the VS Code extension a Lunet-generated docs site published to GitHub Pages Local packaging workflow Shell bash ./eng/release/package-artifacts.sh 0.1.0-local PowerShell pwsh ./eng/release/package-artifacts.ps1 -Version 0.1.0-local...">
+<meta name="twitter:description" content="Packaging and Release This guide covers how AXSG packages NuGet artifacts, the VSIX, docs output, and release metadata. Artifact families AXSG ships: NuGet packages for compiler/runtime/tooling layers two .NET tool packages for the language server and workspace MCP host a VSIX for the VS Code extension a Lunet-generated docs site published to GitHub Pages Local packaging workflow Shell bash ./eng/release/package-artifacts.sh 0.1.0-local...">
 <meta name="twitter:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta name="twitter:image:alt" content="Packaging and Release | XamlToCSharpGenerator">
 <meta property="og:title" content="Packaging and Release | XamlToCSharpGenerator">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator">
-<meta property="og:description" content="Packaging and Release This guide covers how AXSG packages NuGet artifacts, the VSIX, docs output, and release metadata. Artifact families AXSG ships: NuGet packages for compiler/runtime/tooling layers a .NET tool package for the language server a VSIX for the VS Code extension a Lunet-generated docs site published to GitHub Pages Local packaging workflow Shell bash ./eng/release/package-artifacts.sh 0.1.0-local PowerShell pwsh ./eng/release/package-artifacts.ps1 -Version 0.1.0-local...">
+<meta property="og:description" content="Packaging and Release This guide covers how AXSG packages NuGet artifacts, the VSIX, docs output, and release metadata. Artifact families AXSG ships: NuGet packages for compiler/runtime/tooling layers two .NET tool packages for the language server and workspace MCP host a VSIX for the VS Code extension a Lunet-generated docs site published to GitHub Pages Local packaging workflow Shell bash ./eng/release/package-artifacts.sh 0.1.0-local...">
 <meta property="og:image" content="https://wieslawsoltes.github.io/XamlToCSharpGenerator/images/logo.svg">
 <meta property="og:image:alt" content="Packaging and Release | XamlToCSharpGenerator">
   </head>
@@ -149,7 +149,7 @@
 <p>AXSG ships:</p>
 <ul>
 <li>NuGet packages for compiler/runtime/tooling layers</li>
-<li>a .NET tool package for the language server</li>
+<li>two .NET tool packages for the language server and workspace MCP host</li>
 <li>a VSIX for the VS Code extension</li>
 <li>a Lunet-generated docs site published to GitHub Pages</li>
 </ul>
