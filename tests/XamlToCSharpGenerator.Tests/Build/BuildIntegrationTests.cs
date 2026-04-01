@@ -504,6 +504,123 @@ public class BuildIntegrationTests
     }
 
     [Fact]
+    public async System.Threading.Tasks.Task Explicit_IlWeaver_Task_Path_Skips_Local_IlWeaver_Project_Build()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var propsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.props");
+        var targetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build", "buildTransitive", "XamlToCSharpGenerator.Build.targets");
+        var artifacts = BuildTestArtifactCache.GetSourceGenArtifacts();
+        var explicitIlWeaverPath = artifacts.IlWeaverTaskAssembly.HintPath;
+        var ilWeaverAssetsPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build.Tasks", "obj", "project.assets.json");
+        var ilWeaverAssemblyPath = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator.Build.Tasks", "bin", "Debug", "netstandard2.0", "XamlToCSharpGenerator.Build.Tasks.dll");
+        var tempDir = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "build-local-ilweaver-explicit-path");
+
+        byte[]? originalAssets = null;
+        byte[]? originalAssembly = null;
+
+        try
+        {
+            if (File.Exists(ilWeaverAssetsPath))
+            {
+                originalAssets = File.ReadAllBytes(ilWeaverAssetsPath);
+                File.Delete(ilWeaverAssetsPath);
+            }
+
+            if (File.Exists(ilWeaverAssemblyPath))
+            {
+                originalAssembly = File.ReadAllBytes(ilWeaverAssemblyPath);
+                File.Delete(ilWeaverAssemblyPath);
+            }
+
+            var projectFile = Path.Combine(tempDir, "IlWeaverExplicitPathProbe.csproj");
+            File.WriteAllText(projectFile, $$"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="{{NormalizeForMsBuild(propsPath)}}" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
+    <XamlSourceGenIlWeavingEnabled>true</XamlSourceGenIlWeavingEnabled>
+    <XamlSourceGenIlWeaverTaskAssemblyPath>{{NormalizeForMsBuild(explicitIlWeaverPath)}}</XamlSourceGenIlWeaverTaskAssemblyPath>
+  </PropertyGroup>
+
+  <Import Project="{{NormalizeForMsBuild(targetsPath)}}" />
+
+  <Target Name="VerifyExplicitIlWeaverPathSkipsLocalBuild" DependsOnTargets="XamlToCSharpGenerator_BuildLocalIlWeaverTask">
+    <Error Condition="Exists('{{NormalizeForMsBuild(ilWeaverAssetsPath)}}')" Text="Local IL weaver restore should be skipped when an explicit task assembly path exists." />
+    <Error Condition="Exists('{{NormalizeForMsBuild(ilWeaverAssemblyPath)}}')" Text="Local IL weaver build should be skipped when an explicit task assembly path exists." />
+  </Target>
+</Project>
+""");
+
+            var restorePath = EnsureTrailingSeparator(Path.Combine(tempDir, "obj", "restore"));
+            var intermediatePath = EnsureTrailingSeparator(Path.Combine(tempDir, "obj", "sourcegen"));
+            var outputPath = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "sourcegen"));
+            var projectOutputPath = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "project-output"));
+            var projectOutDir = EnsureTrailingSeparator(Path.Combine(tempDir, "bin", "project-outdir"));
+            var runtimeIdentifier = GetCurrentTestRuntimeIdentifier();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"msbuild \"{projectFile}\" -nologo -v:minimal -t:VerifyExplicitIlWeaverPathSkipsLocalBuild -m:1 /nodeReuse:false -p:MSBuildProjectExtensionsPath=\"{restorePath}\" -p:BaseIntermediateOutputPath=\"{intermediatePath}\" -p:BaseOutputPath=\"{outputPath}\" -p:OutputPath=\"{projectOutputPath}\" -p:OutDir=\"{projectOutDir}\" -p:RuntimeIdentifier={runtimeIdentifier}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir
+            };
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+
+            var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await stdoutTask + await stderrTask;
+            Assert.True(process.ExitCode == 0, output);
+            Assert.False(File.Exists(ilWeaverAssetsPath), output);
+            Assert.False(File.Exists(ilWeaverAssemblyPath), output);
+        }
+        finally
+        {
+            try
+            {
+                if (originalAssets is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(ilWeaverAssetsPath)!);
+                    File.WriteAllBytes(ilWeaverAssetsPath, originalAssets);
+                }
+            }
+            catch
+            {
+                // Best effort restore of test fixture state.
+            }
+
+            try
+            {
+                if (originalAssembly is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(ilWeaverAssemblyPath)!);
+                    File.WriteAllBytes(ilWeaverAssemblyPath, originalAssembly);
+                }
+            }
+            catch
+            {
+                // Best effort restore of test fixture state.
+            }
+
+            try
+            {
+                BuildTestWorkspacePaths.TryDeleteDirectory(tempDir);
+            }
+            catch
+            {
+                // Best effort cleanup in tests.
+            }
+        }
+    }
+
+    [Fact]
     public async System.Threading.Tasks.Task Project_File_Avalonia_IlWeaving_Aliases_Override_Canonical_Defaults()
     {
         var repositoryRoot = GetRepositoryRoot();

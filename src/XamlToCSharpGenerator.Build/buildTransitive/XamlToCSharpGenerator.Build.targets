@@ -412,7 +412,7 @@
   </Target>
 
   <Target Name="XamlToCSharpGenerator_BuildLocalIlWeaverTask"
-          Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(XamlSourceGenIlWeavingEnabled)' == 'true' and !Exists('$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)') and Exists('$(_XamlSourceGenLocalIlWeaverProjectPath)')">
+          Condition="'$(XamlSourceGenEnabled)' == 'true' and '$(XamlSourceGenIlWeavingEnabled)' == 'true' and !Exists('$(_XamlSourceGenPackagedIlWeaverTaskAssemblyPath)') and Exists('$(_XamlSourceGenLocalIlWeaverProjectPath)') and !Exists('$(XamlSourceGenIlWeaverTaskAssemblyPath)')">
     <MSBuild Projects="$(_XamlSourceGenLocalIlWeaverProjectPath)"
              Targets="Restore"
              BuildInParallel="false"
