@@ -41,7 +41,7 @@ namespace XamlToCSharpGenerator.LanguageService.Workspace;
 /// version constraint: only writes if new version >= cached version).
 /// </para>
 /// </summary>
-internal static class AvaloniaFastCompilationProvider
+public static class AvaloniaFastCompilationProvider
 {
     private const string AvaloniaXmlNamespace = "https://github.com/avaloniaui";
     private static readonly JsonSerializerOptions CacheJsonOptions = new()
@@ -171,7 +171,8 @@ internal static class AvaloniaFastCompilationProvider
             var json = File.ReadAllText(filePath);
             var payload = JsonSerializer.Deserialize<Tier1CachePayload>(json, CacheJsonOptions);
 
-            if (payload?.Version != 1 || !IsVersionGreaterOrEqual(payload.AvaloniaVersion, avaloniaVersion))
+            if (payload?.Version != 1 || string.IsNullOrWhiteSpace(payload?.AvaloniaVersion) ||
+                !IsVersionGreaterOrEqual(payload!.AvaloniaVersion, avaloniaVersion))
             {
                 return null;
             }
@@ -432,7 +433,7 @@ internal static class AvaloniaFastCompilationProvider
                     continue;
                 }
 
-                var types = (ns.Types ?? Array.Empty<CachedType>())
+                var primeTypes = (ns.Types ?? Array.Empty<CachedType>())
                     .Select(t => new AvaloniaTypeInfo(
                         XmlTypeName: t.XmlTypeName ?? string.Empty,
                         FullTypeName: t.FullTypeName ?? string.Empty,
@@ -452,9 +453,9 @@ internal static class AvaloniaFastCompilationProvider
                         PseudoClasses: ImmutableArray<AvaloniaPseudoClassInfo>.Empty))
                     .ToImmutableArray();
 
-                if (!types.IsDefaultOrEmpty)
+                if (!primeTypes.IsDefaultOrEmpty)
                 {
-                    mapBuilder[ns.XmlNamespace!] = types;
+                    mapBuilder[ns.XmlNamespace!] = primeTypes;
                 }
             }
 
@@ -465,7 +466,7 @@ internal static class AvaloniaFastCompilationProvider
             }
 
             AvaloniaTypeIndex.TryPrimeCache(compilation, map);
-            var count = map.TryGetValue(AvaloniaXmlNamespace, out var types) ? types.Length : 0;
+            var count = map.TryGetValue(AvaloniaXmlNamespace, out var avaloniaTypes) ? avaloniaTypes.Length : 0;
             return $"[AXSG-LS] Tier-1 type index cache hit: loaded {count} Avalonia types from disk.";
         }
         catch (Exception ex)
