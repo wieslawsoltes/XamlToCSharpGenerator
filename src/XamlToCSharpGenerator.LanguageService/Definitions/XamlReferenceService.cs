@@ -10,6 +10,8 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Completion;
+using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -48,6 +50,17 @@ public sealed class XamlReferenceService
     private static readonly SourceRange MetadataDeclarationRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
+
+    public XamlReferenceService()
+        : this(XamlBuiltInLanguageFrameworkRegistry.Instance)
+    {
+    }
+
+    public XamlReferenceService(XamlLanguageFrameworkRegistry frameworkRegistry)
+    {
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+    }
 
     internal static void ClearCachesForTesting()
     {
@@ -414,7 +427,7 @@ public sealed class XamlReferenceService
         }
 
         var context = XamlCompletionContextDetector.Detect(analysis.Document.Text, position);
-        var prefixMap = analysis.PrefixMap;
+        var prefixMap = XamlNavigationPrefixMapResolver.Resolve(analysis, position);
         var token = string.IsNullOrWhiteSpace(context.Token) ? identifier : context.Token;
         var localAttributeName = GetLocalName(context.CurrentAttributeName);
 
@@ -2130,7 +2143,8 @@ public sealed class XamlReferenceService
             yield break;
         }
 
-        foreach (var sourceFile in GetCachedProjectSourceSnapshot(resolvedProjectPath))
+        var service = new XamlReferenceService(analysis.FrameworkRegistry);
+        foreach (var sourceFile in service.GetCachedProjectSourceSnapshot(resolvedProjectPath))
         {
             if (PathComparer.Equals(sourceFile.FilePath, currentFilePath))
             {
@@ -2141,7 +2155,7 @@ public sealed class XamlReferenceService
         }
     }
 
-    private static ImmutableArray<string> DiscoverProjectXamlFilePaths(string? projectPath, string currentFilePath)
+    private ImmutableArray<string> DiscoverProjectXamlFilePaths(string? projectPath, string currentFilePath)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(PathComparer);
@@ -2161,37 +2175,39 @@ public sealed class XamlReferenceService
         return builder.ToImmutable();
     }
 
-    private static ImmutableArray<string> GetCachedProjectXamlFileList(string projectFilePath)
+    private ImmutableArray<string> GetCachedProjectXamlFileList(string projectFilePath)
     {
         var normalizedProjectPath = NormalizePath(projectFilePath);
+        var cacheKey = BuildProjectCacheKey(normalizedProjectPath);
         var now = DateTimeOffset.UtcNow;
-        if (ProjectFileListCache.TryGetValue(normalizedProjectPath, out var cached) &&
+        if (ProjectFileListCache.TryGetValue(cacheKey, out var cached) &&
             now - cached.CachedAtUtc <= ProjectDiscoveryCacheTtl)
         {
             return cached.Paths;
         }
 
         var paths = BuildProjectXamlFileList(normalizedProjectPath);
-        ProjectFileListCache[normalizedProjectPath] = new CachedProjectFileList(now, paths);
+        ProjectFileListCache[cacheKey] = new CachedProjectFileList(now, paths);
         return paths;
     }
 
-    private static ImmutableArray<XamlProjectSourceFile> GetCachedProjectSourceSnapshot(string projectFilePath)
+    private ImmutableArray<XamlProjectSourceFile> GetCachedProjectSourceSnapshot(string projectFilePath)
     {
         var normalizedProjectPath = NormalizePath(projectFilePath);
+        var cacheKey = BuildProjectCacheKey(normalizedProjectPath);
         var now = DateTimeOffset.UtcNow;
-        if (ProjectSourceSnapshotCache.TryGetValue(normalizedProjectPath, out var cached) &&
+        if (ProjectSourceSnapshotCache.TryGetValue(cacheKey, out var cached) &&
             now - cached.ValidatedAtUtc <= SourceValidationCacheTtl)
         {
             return cached.Sources;
         }
 
         var sources = BuildProjectSourceSnapshot(normalizedProjectPath);
-        ProjectSourceSnapshotCache[normalizedProjectPath] = new CachedProjectSourceSnapshot(now, sources);
+        ProjectSourceSnapshotCache[cacheKey] = new CachedProjectSourceSnapshot(now, sources);
         return sources;
     }
 
-    private static ImmutableArray<XamlProjectSourceFile> BuildProjectSourceSnapshot(string projectFilePath)
+    private ImmutableArray<XamlProjectSourceFile> BuildProjectSourceSnapshot(string projectFilePath)
     {
         var filePaths = GetCachedProjectXamlFileList(projectFilePath);
         if (filePaths.IsDefaultOrEmpty)
@@ -2219,7 +2235,7 @@ public sealed class XamlReferenceService
             : builder.MoveToImmutable();
     }
 
-    private static ImmutableArray<string> BuildProjectXamlFileList(string projectFilePath)
+    private ImmutableArray<string> BuildProjectXamlFileList(string projectFilePath)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(PathComparer);
@@ -2485,7 +2501,7 @@ public sealed class XamlReferenceService
         }
     }
 
-    private static IEnumerable<string> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
+    private IEnumerable<string> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
     {
         foreach (var includeValue in GetCachedProjectIncludePatterns(projectFilePath))
         {
@@ -2496,9 +2512,10 @@ public sealed class XamlReferenceService
         }
     }
 
-    private static ImmutableArray<string> GetCachedProjectIncludePatterns(string projectFilePath)
+    private ImmutableArray<string> GetCachedProjectIncludePatterns(string projectFilePath)
     {
         var normalizedProjectPath = NormalizePath(projectFilePath);
+        var cacheKey = BuildProjectCacheKey(normalizedProjectPath);
 
         long lastWriteTicks;
         long length;
@@ -2518,7 +2535,7 @@ public sealed class XamlReferenceService
             return ImmutableArray<string>.Empty;
         }
 
-        if (ProjectIncludePatternCache.TryGetValue(normalizedProjectPath, out var cached) &&
+        if (ProjectIncludePatternCache.TryGetValue(cacheKey, out var cached) &&
             cached.LastWriteUtcTicks == lastWriteTicks &&
             cached.Length == length)
         {
@@ -2526,14 +2543,14 @@ public sealed class XamlReferenceService
         }
 
         var patterns = BuildProjectIncludePatterns(normalizedProjectPath);
-        ProjectIncludePatternCache[normalizedProjectPath] = new CachedProjectIncludePatterns(
+        ProjectIncludePatternCache[cacheKey] = new CachedProjectIncludePatterns(
             lastWriteTicks,
             length,
             patterns);
         return patterns;
     }
 
-    private static ImmutableArray<string> BuildProjectIncludePatterns(string projectFilePath)
+    private ImmutableArray<string> BuildProjectIncludePatterns(string projectFilePath)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -2777,7 +2794,7 @@ public sealed class XamlReferenceService
 
     internal static int CountRetainedProjectSnapshotXmlDocumentsForTesting(string projectFilePath)
     {
-        var snapshot = GetCachedProjectSourceSnapshot(projectFilePath);
+        var snapshot = new XamlReferenceService().GetCachedProjectSourceSnapshot(projectFilePath);
         var count = 0;
         for (var index = 0; index < snapshot.Length; index++)
         {
@@ -3118,14 +3135,14 @@ public sealed class XamlReferenceService
                normalized.Contains(separator + "bin" + separator, StringComparison.Ordinal);
     }
 
-    private static bool IsXamlItemElement(string localName)
+    private bool IsXamlItemElement(string localName)
     {
-        return string.Equals(localName, "AvaloniaXaml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Page", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "None", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Content", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "EmbeddedResource", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "AdditionalFiles", StringComparison.OrdinalIgnoreCase);
+        return _frameworkRegistry.IsKnownProjectXamlItemName(localName);
+    }
+
+    private string BuildProjectCacheKey(string normalizedProjectPath)
+    {
+        return _frameworkRegistry.CacheKey + "|" + normalizedProjectPath;
     }
 
     private static bool TryResolveTypeInfoByXmlNamespace(

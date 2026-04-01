@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Definitions;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 
@@ -11,24 +12,22 @@ namespace XamlToCSharpGenerator.LanguageService.Completion;
 
 public sealed class XamlCompletionService
 {
-    private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
-    private static readonly ImmutableArray<XamlCompletionItem> XamlDirectiveCompletions =
+    private static readonly ImmutableArray<XamlCompletionItem> BaseDirectiveCompletions =
     [
         new("x:Class", "x:Class=\"$0\"", XamlCompletionItemKind.Keyword, "XAML class directive"),
         new("x:Name", "x:Name=\"$0\"", XamlCompletionItemKind.Keyword, "Element name"),
-        new("x:Key", "x:Key=\"$0\"", XamlCompletionItemKind.Keyword, "Resource key"),
-        new("x:DataType", "x:DataType=\"$0\"", XamlCompletionItemKind.Keyword, "Compiled binding data type"),
-        new("x:CompileBindings", "x:CompileBindings=\"True\"", XamlCompletionItemKind.Keyword, "Compiled binding toggle")
+        new("x:Key", "x:Key=\"$0\"", XamlCompletionItemKind.Keyword, "Resource key")
     ];
 
-    private static readonly ImmutableArray<XamlCompletionItem> MarkupExtensionCompletions =
+    private static readonly ImmutableArray<XamlCompletionItem> BaseMarkupExtensionCompletions =
     [
-        new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Avalonia binding"),
-        new("CompiledBinding", "{CompiledBinding $0}", XamlCompletionItemKind.MarkupExtension, "Compiled binding"),
-        new("x:Bind", "{x:Bind $0}", XamlCompletionItemKind.MarkupExtension, "x:Bind compiled binding"),
+        new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Binding"),
         new("StaticResource", "{StaticResource $0}", XamlCompletionItemKind.MarkupExtension, "Static resource lookup"),
         new("DynamicResource", "{DynamicResource $0}", XamlCompletionItemKind.MarkupExtension, "Dynamic resource lookup"),
         new("TemplateBinding", "{TemplateBinding $0}", XamlCompletionItemKind.MarkupExtension, "Template binding"),
+        new("RelativeSource", "{RelativeSource $0}", XamlCompletionItemKind.MarkupExtension, "Relative source"),
+        new("x:Reference", "{x:Reference $0}", XamlCompletionItemKind.MarkupExtension, "Named element reference"),
+        new("x:Static", "{x:Static $0}", XamlCompletionItemKind.MarkupExtension, "Static member reference"),
         new("x:Type", "{x:Type $0}", XamlCompletionItemKind.MarkupExtension, "Type extension"),
         new("x:Null", "{x:Null}", XamlCompletionItemKind.MarkupExtension, "Null extension")
     ];
@@ -63,7 +62,7 @@ public sealed class XamlCompletionService
                 break;
 
             case XamlCompletionContextKind.AttributeName:
-                AddAttributeCompletions(builder, context, prefixMap, analysis.TypeIndex);
+                AddAttributeCompletions(builder, context, analysis);
                 break;
 
             case XamlCompletionContextKind.AttributeValue:
@@ -96,7 +95,7 @@ public sealed class XamlCompletionService
             var xmlNamespace = prefixMap.TryGetValue(string.Empty, out var resolvedNamespace) &&
                                !string.IsNullOrWhiteSpace(resolvedNamespace)
                 ? resolvedNamespace
-                : AvaloniaDefaultXmlNamespace;
+                : typeIndex.DefaultXmlNamespace;
 
             AppendElementTypeCompletions(completions, typeIndex, xmlNamespace, string.Empty, typedName);
             return;
@@ -152,26 +151,26 @@ public sealed class XamlCompletionService
     private static void AddAttributeCompletions(
         ImmutableArray<XamlCompletionItem>.Builder completions,
         XamlCompletionContext context,
-        ImmutableDictionary<string, string> prefixMap,
-        AvaloniaTypeIndex? typeIndex)
+        XamlAnalysisResult analysis)
     {
-        completions.AddRange(XamlDirectiveCompletions);
+        completions.AddRange(GetDirectiveCompletions(analysis.Framework));
 
-        if (string.IsNullOrWhiteSpace(context.CurrentElementName) || typeIndex is null)
+        if (string.IsNullOrWhiteSpace(context.CurrentElementName) || analysis.TypeIndex is null)
         {
             return;
         }
 
         if (!XamlXmlNamespaceResolver.TryResolveXmlNamespace(
-                prefixMap,
+                analysis.PrefixMap,
                 context.CurrentElementName,
                 out var elementXmlNamespace,
-                out var elementTypeName))
+                out var elementTypeName,
+                analysis.Framework.DefaultXmlNamespace))
         {
             return;
         }
 
-        if (!typeIndex.TryGetType(elementXmlNamespace, elementTypeName, out var typeInfo) || typeInfo is null)
+        if (!analysis.TypeIndex.TryGetType(elementXmlNamespace, elementTypeName, out var typeInfo) || typeInfo is null)
         {
             return;
         }
@@ -207,7 +206,7 @@ public sealed class XamlCompletionService
             return;
         }
 
-        completions.AddRange(CreateMarkupExtensionCompletions(analysis.Document.Text, context));
+        completions.AddRange(CreateMarkupExtensionCompletions(analysis.Document.Text, context, analysis.Framework));
 
         if (string.Equals(context.CurrentAttributeName, "x:Name", StringComparison.Ordinal))
         {
@@ -324,23 +323,61 @@ public sealed class XamlCompletionService
 
     private static ImmutableArray<XamlCompletionItem> CreateMarkupExtensionCompletions(
         string documentText,
-        XamlCompletionContext context)
+        XamlCompletionContext context,
+        XamlLanguageFrameworkInfo framework)
     {
+        var markupExtensionCompletions = GetMarkupExtensionCompletions(framework);
         if (string.IsNullOrEmpty(context.Token) ||
             context.TokenStartOffset < 0 ||
             context.TokenEndOffset < context.TokenStartOffset)
         {
-            return MarkupExtensionCompletions;
+            return markupExtensionCompletions;
         }
 
         var replaceRange = new SourceRange(
             XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenStartOffset),
             XamlToCSharpGenerator.LanguageService.Text.TextCoordinateHelper.GetPosition(documentText, context.TokenEndOffset));
 
-        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>(MarkupExtensionCompletions.Length);
-        foreach (var completion in MarkupExtensionCompletions)
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>(markupExtensionCompletions.Length);
+        foreach (var completion in markupExtensionCompletions)
         {
             builder.Add(completion with { ReplaceRange = replaceRange });
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableArray<XamlCompletionItem> GetDirectiveCompletions(XamlLanguageFrameworkInfo framework)
+    {
+        return BaseDirectiveCompletions.AddRange(MapFrameworkCompletions(
+            framework.DirectiveCompletions,
+            XamlCompletionItemKind.Keyword));
+    }
+
+    private static ImmutableArray<XamlCompletionItem> GetMarkupExtensionCompletions(XamlLanguageFrameworkInfo framework)
+    {
+        return BaseMarkupExtensionCompletions.AddRange(MapFrameworkCompletions(
+            framework.MarkupExtensionCompletions,
+            XamlCompletionItemKind.MarkupExtension));
+    }
+
+    private static ImmutableArray<XamlCompletionItem> MapFrameworkCompletions(
+        ImmutableArray<XamlLanguageFrameworkCompletion> completions,
+        XamlCompletionItemKind itemKind)
+    {
+        if (completions.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<XamlCompletionItem>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>(completions.Length);
+        foreach (var completion in completions)
+        {
+            builder.Add(new XamlCompletionItem(
+                completion.Label,
+                completion.InsertText,
+                itemKind,
+                completion.Detail));
         }
 
         return builder.ToImmutable();

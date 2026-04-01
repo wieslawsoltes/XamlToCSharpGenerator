@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -21,10 +22,12 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
 
     public XamlIncludeRefactoringProvider(
         XamlDocumentStore documentStore,
-        XamlCompilerAnalysisService analysisService)
+        XamlCompilerAnalysisService analysisService,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _documentStore = documentStore;
         _analysisService = analysisService;
+        _ = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
     }
 
     public async Task<ImmutableArray<XamlRefactoringAction>> GetCodeActionsAsync(
@@ -100,6 +103,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
                 projectPath,
                 document.FilePath,
                 targetFilePath,
+                analysis.FrameworkRegistry,
                 out _);
         if (!resolvedIncludeFile ||
             !includeFileExists ||
@@ -119,11 +123,15 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         string includePath = Path.GetRelativePath(projectDirectory, targetFilePath)
             .Replace('\\', '/');
         bool hasIncludePath = !string.IsNullOrWhiteSpace(includePath);
-        bool alreadyIncludesPath = hasIncludePath && ProjectAlreadyIncludesPath(projectText, includePath);
+        bool alreadyIncludesPath = hasIncludePath && ProjectAlreadyIncludesPath(projectText, includePath, analysis.FrameworkRegistry);
         XamlDocumentTextEdit edit = default!;
         bool createdEdit = hasIncludePath &&
             !alreadyIncludesPath &&
-            TryCreateProjectFileInsertionEdit(projectText, includePath, out edit);
+            TryCreateProjectFileInsertionEdit(
+                projectText,
+                includePath,
+                analysis.Framework.PreferredProjectXamlItemName,
+                out edit);
         if (!hasIncludePath ||
             alreadyIncludesPath ||
             !createdEdit)
@@ -389,7 +397,14 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
                 return true;
             }
 
-            if (!absoluteUri.Scheme.Equals("avares", StringComparison.OrdinalIgnoreCase) ||
+            if (TryResolvePackTargetPath(analysis, normalizedSource, projectDirectory, out filePath) ||
+                TryResolveMsAppxTargetPath(normalizedSource, projectDirectory, out filePath))
+            {
+                return true;
+            }
+
+            if (!analysis.Framework.SupportsAssemblyResourceUris ||
+                !absoluteUri.Scheme.Equals("avares", StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(absoluteUri.Host, analysis.Compilation?.AssemblyName, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
@@ -414,6 +429,65 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         return true;
     }
 
+    private static bool TryResolvePackTargetPath(
+        XamlAnalysisResult analysis,
+        string normalizedSource,
+        string projectDirectory,
+        out string filePath)
+    {
+        const string applicationPrefix = "pack://application:,,,/";
+
+        filePath = string.Empty;
+        if (!normalizedSource.StartsWith(applicationPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var payload = normalizedSource.Substring(applicationPrefix.Length).Trim();
+        var componentSeparator = payload.IndexOf(";component/", StringComparison.OrdinalIgnoreCase);
+        if (componentSeparator >= 0)
+        {
+            var assemblyName = payload.Substring(0, componentSeparator).Trim();
+            if (!string.IsNullOrWhiteSpace(assemblyName) &&
+                !string.Equals(assemblyName, analysis.Compilation?.AssemblyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            payload = payload.Substring(componentSeparator + ";component/".Length);
+        }
+
+        if (!LooksLikeXamlFile(payload))
+        {
+            return false;
+        }
+
+        filePath = Path.GetFullPath(Path.Combine(projectDirectory, payload.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+        return true;
+    }
+
+    private static bool TryResolveMsAppxTargetPath(
+        string normalizedSource,
+        string projectDirectory,
+        out string filePath)
+    {
+        filePath = string.Empty;
+        if (!Uri.TryCreate(normalizedSource, UriKind.Absolute, out var absoluteUri) ||
+            !absoluteUri.Scheme.Equals("ms-appx", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var payload = absoluteUri.AbsolutePath.TrimStart('/');
+        if (!LooksLikeXamlFile(payload))
+        {
+            return false;
+        }
+
+        filePath = Path.GetFullPath(Path.Combine(projectDirectory, payload.Replace('/', Path.DirectorySeparatorChar)));
+        return true;
+    }
+
     private static bool LooksLikeXamlFile(string path)
     {
         string extension = Path.GetExtension(path);
@@ -421,14 +495,17 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
                string.Equals(extension, ".axaml", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ProjectAlreadyIncludesPath(string projectText, string includePath)
+    private static bool ProjectAlreadyIncludesPath(
+        string projectText,
+        string includePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         try
         {
             XDocument document = XDocument.Parse(projectText, LoadOptions.PreserveWhitespace);
             return document
                 .Descendants()
-                .Where(static element => string.Equals(element.Name.LocalName, "AvaloniaXaml", StringComparison.Ordinal))
+                .Where(element => frameworkRegistry.IsKnownProjectXamlItemName(element.Name.LocalName))
                 .Attributes("Include")
                 .Any(attribute => string.Equals(
                     NormalizeProjectIncludePath(attribute.Value),
@@ -437,7 +514,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         }
         catch
         {
-            return projectText.IndexOf($"<AvaloniaXaml Include=\"{includePath}\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            return projectText.IndexOf($"Include=\"{includePath}\"", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 
@@ -451,6 +528,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
     private static bool TryCreateProjectFileInsertionEdit(
         string projectText,
         string includePath,
+        string projectItemName,
         out XamlDocumentTextEdit edit)
     {
         edit = default!;
@@ -464,7 +542,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         string escapedIncludePath = SecurityElement.Escape(includePath) ?? includePath;
         string insertionText =
             $"  <ItemGroup>{newline}" +
-            $"    <AvaloniaXaml Include=\"{escapedIncludePath}\" />{newline}" +
+            $"    <{projectItemName} Include=\"{escapedIncludePath}\" />{newline}" +
             $"  </ItemGroup>{newline}";
 
         SourcePosition insertionPosition = TextCoordinateHelper.GetPosition(projectText, projectClosingTagOffset);
@@ -479,7 +557,9 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         string localName = element.Name.LocalName;
         return string.Equals(localName, "ResourceInclude", StringComparison.Ordinal) ||
                string.Equals(localName, "StyleInclude", StringComparison.Ordinal) ||
-               string.Equals(localName, "MergeResourceInclude", StringComparison.Ordinal);
+               string.Equals(localName, "MergeResourceInclude", StringComparison.Ordinal) ||
+               (string.Equals(localName, "ResourceDictionary", StringComparison.Ordinal) &&
+                element.Attributes().Any(static attribute => string.Equals(attribute.Name.LocalName, "Source", StringComparison.Ordinal)));
     }
 
     private static string NormalizeIncludeSource(string includeSource)

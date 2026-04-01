@@ -85,6 +85,12 @@ with api.dotnet
         { name: "Runtime.Avalonia", path: "../src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj" },
         { name: "Runtime.Core", path: "../src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj" },
         { name: "RemoteProtocol", path: "../src/XamlToCSharpGenerator.RemoteProtocol/XamlToCSharpGenerator.RemoteProtocol.csproj" },
+        { name: "LanguageService.Framework", path: "../src/XamlToCSharpGenerator.LanguageService.Framework/XamlToCSharpGenerator.LanguageService.Framework.csproj" },
+        { name: "LanguageService.Framework.Avalonia", path: "../src/XamlToCSharpGenerator.LanguageService.Framework.Avalonia/XamlToCSharpGenerator.LanguageService.Framework.Avalonia.csproj" },
+        { name: "LanguageService.Framework.Wpf", path: "../src/XamlToCSharpGenerator.LanguageService.Framework.Wpf/XamlToCSharpGenerator.LanguageService.Framework.Wpf.csproj" },
+        { name: "LanguageService.Framework.WinUI", path: "../src/XamlToCSharpGenerator.LanguageService.Framework.WinUI/XamlToCSharpGenerator.LanguageService.Framework.WinUI.csproj" },
+        { name: "LanguageService.Framework.Maui", path: "../src/XamlToCSharpGenerator.LanguageService.Framework.Maui/XamlToCSharpGenerator.LanguageService.Framework.Maui.csproj" },
+        { name: "LanguageService.Framework.All", path: "../src/XamlToCSharpGenerator.LanguageService.Framework.All/XamlToCSharpGenerator.LanguageService.Framework.All.csproj" },
         { name: "LanguageService", path: "../src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" },
         { name: "LanguageServer", path: "../src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" },
         { name: "Editor.Avalonia", path: "../src/XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj" }

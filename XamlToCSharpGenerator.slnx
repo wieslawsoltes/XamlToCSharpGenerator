@@ -32,6 +32,12 @@
     <Project Path="src/XamlToCSharpGenerator.Framework.Abstractions/XamlToCSharpGenerator.Framework.Abstractions.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" />
     <Project Path="src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework/XamlToCSharpGenerator.LanguageService.Framework.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework.Avalonia/XamlToCSharpGenerator.LanguageService.Framework.Avalonia.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework.All/XamlToCSharpGenerator.LanguageService.Framework.All.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework.Maui/XamlToCSharpGenerator.LanguageService.Framework.Maui.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework.WinUI/XamlToCSharpGenerator.LanguageService.Framework.WinUI.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework.Wpf/XamlToCSharpGenerator.LanguageService.Framework.Wpf.csproj" />
     <Project Path="src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj" />
     <Project Path="src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
     <Project Path="src/XamlToCSharpGenerator.McpServer/XamlToCSharpGenerator.McpServer.csproj" />

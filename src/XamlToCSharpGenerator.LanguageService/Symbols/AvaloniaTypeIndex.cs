@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using XamlToCSharpGenerator.Core.Models;
+using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -12,35 +16,52 @@ namespace XamlToCSharpGenerator.LanguageService.Symbols;
 
 public sealed class AvaloniaTypeIndex
 {
-    private const string AvaloniaXmlnsDefinitionAttributeMetadataName = "Avalonia.Metadata.XmlnsDefinitionAttribute";
-    private const string SourceGenXmlnsDefinitionAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenXmlnsDefinitionAttribute";
-    private const string AvaloniaPseudoClassesAttributeMetadataName = "Avalonia.Controls.Metadata.PseudoClassesAttribute";
-    private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
-
-    private static readonly ConditionalWeakTable<Compilation, AvaloniaTypeIndex> Cache = new();
+    private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, AvaloniaTypeIndex>> Cache = new();
 
     private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByXmlNamespace;
     private readonly ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> _typesByClrNamespace;
     private readonly ImmutableDictionary<string, AvaloniaTypeInfo> _typesByFullTypeName;
+    private readonly XamlLanguageFrameworkInfo _framework;
 
     private AvaloniaTypeIndex(
+        XamlLanguageFrameworkInfo framework,
         ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> typesByXmlNamespace,
         ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>> typesByClrNamespace,
         ImmutableDictionary<string, AvaloniaTypeInfo> typesByFullTypeName)
     {
+        _framework = framework;
         _typesByXmlNamespace = typesByXmlNamespace;
         _typesByClrNamespace = typesByClrNamespace;
         _typesByFullTypeName = typesByFullTypeName;
     }
 
+    public string DefaultXmlNamespace => _framework.DefaultXmlNamespace;
+
     public static AvaloniaTypeIndex Create(Compilation compilation)
+    {
+        return Create(
+            compilation,
+            XamlBuiltInLanguageFrameworkRegistry.Instance.TryGetById(FrameworkProfileIds.Avalonia, out var framework)
+                ? framework
+                : XamlBuiltInLanguageFrameworkRegistry.Instance.DefaultFramework);
+    }
+
+    public static AvaloniaTypeIndex Create(Compilation compilation, XamlLanguageFrameworkInfo framework)
     {
         if (compilation is null)
         {
             throw new ArgumentNullException(nameof(compilation));
         }
 
-        return Cache.GetValue(compilation, BuildIndex);
+        ArgumentNullException.ThrowIfNull(framework);
+
+        var perCompilationCache = Cache.GetValue(
+            compilation,
+            static _ => new ConcurrentDictionary<string, AvaloniaTypeIndex>(StringComparer.Ordinal));
+        return perCompilationCache.GetOrAdd(
+            framework.Id,
+            static (_, state) => BuildIndex(state.Compilation, state.Framework),
+            (Compilation: compilation, Framework: framework));
     }
 
     public ImmutableArray<AvaloniaTypeInfo> GetTypes(string xmlNamespace)
@@ -129,17 +150,20 @@ public sealed class AvaloniaTypeIndex
         return matches.ToImmutable();
     }
 
-    private static AvaloniaTypeIndex BuildIndex(Compilation compilation)
+    private static AvaloniaTypeIndex BuildIndex(Compilation compilation, XamlLanguageFrameworkInfo framework)
     {
-        var map = BuildXmlNamespaceToClrNamespaceMap(compilation);
-        var fallbackNamespaces = BuildFallbackClrNamespaces(compilation);
-        if (map.TryGetValue(AvaloniaDefaultXmlNamespace, out var defaultNamespaces))
+        var map = BuildXmlNamespaceToClrNamespaceMap(compilation, framework);
+        if (framework.IncludeSourceAssemblyClrNamespacesInDefaultXmlNamespace)
         {
-            map = map.SetItem(AvaloniaDefaultXmlNamespace, defaultNamespaces.Union(fallbackNamespaces));
-        }
-        else
-        {
-            map = map.SetItem(AvaloniaDefaultXmlNamespace, fallbackNamespaces);
+            var fallbackNamespaces = BuildFallbackClrNamespaces(compilation);
+            if (map.TryGetValue(framework.DefaultXmlNamespace, out var defaultNamespaces))
+            {
+                map = map.SetItem(framework.DefaultXmlNamespace, defaultNamespaces.Union(fallbackNamespaces));
+            }
+            else
+            {
+                map = map.SetItem(framework.DefaultXmlNamespace, fallbackNamespaces);
+            }
         }
 
         var result = ImmutableDictionary.CreateBuilder<string, ImmutableDictionary<string, AvaloniaTypeInfo>>(StringComparer.Ordinal);
@@ -164,7 +188,7 @@ public sealed class AvaloniaTypeIndex
                     }
 
                     var xmlTypeName = GetXamlTypeName(type);
-                    var typeInfo = BuildTypeInfo(compilation, pair.Key, type);
+                    var typeInfo = BuildTypeInfo(compilation, framework, pair.Key, type);
                     AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
 
                     if (byTypeName.ContainsKey(xmlTypeName))
@@ -179,8 +203,8 @@ public sealed class AvaloniaTypeIndex
             result[pair.Key] = byTypeName.ToImmutable();
         }
 
-        PopulateClrNamespaceIndexWithAllAssemblies(compilation, byClrNamespace, byFullTypeName);
-        return new AvaloniaTypeIndex(result.ToImmutable(), byClrNamespace.ToImmutable(), byFullTypeName.ToImmutable());
+        PopulateClrNamespaceIndexWithAllAssemblies(compilation, framework, byClrNamespace, byFullTypeName);
+        return new AvaloniaTypeIndex(framework, result.ToImmutable(), byClrNamespace.ToImmutable(), byFullTypeName.ToImmutable());
     }
 
     private static void AddTypeByClrNamespace(
@@ -206,6 +230,7 @@ public sealed class AvaloniaTypeIndex
 
     private static void PopulateClrNamespaceIndexWithAllAssemblies(
         Compilation compilation,
+        XamlLanguageFrameworkInfo framework,
         ImmutableDictionary<string, ImmutableDictionary<string, AvaloniaTypeInfo>>.Builder byClrNamespace,
         ImmutableDictionary<string, AvaloniaTypeInfo>.Builder byFullTypeName)
     {
@@ -231,7 +256,7 @@ public sealed class AvaloniaTypeIndex
                     continue;
                 }
 
-                var typeInfo = BuildTypeInfo(compilation, AvaloniaDefaultXmlNamespace, type);
+                var typeInfo = BuildTypeInfo(compilation, framework, framework.DefaultXmlNamespace, type);
                 AddTypeByClrNamespace(byClrNamespace, byFullTypeName, typeInfo);
             }
         }
@@ -243,7 +268,11 @@ public sealed class AvaloniaTypeIndex
         return tickIndex > 0 ? type.Name.Substring(0, tickIndex) : type.Name;
     }
 
-    private static AvaloniaTypeInfo BuildTypeInfo(Compilation compilation, string xmlNamespace, INamedTypeSymbol type)
+    private static AvaloniaTypeInfo BuildTypeInfo(
+        Compilation compilation,
+        XamlLanguageFrameworkInfo framework,
+        string xmlNamespace,
+        INamedTypeSymbol type)
     {
         var properties = ImmutableArray.CreateBuilder<AvaloniaPropertyInfo>();
         var seenPropertyNames = new HashSet<string>(StringComparer.Ordinal);
@@ -299,7 +328,7 @@ public sealed class AvaloniaTypeIndex
 
         var fullTypeName = type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
         var summary = "`" + fullTypeName + "`";
-        var pseudoClasses = BuildPseudoClasses(compilation, type);
+        var pseudoClasses = BuildPseudoClasses(compilation, framework, type);
 
         return new AvaloniaTypeInfo(
             XmlTypeName: GetXamlTypeName(type),
@@ -313,8 +342,17 @@ public sealed class AvaloniaTypeIndex
             PseudoClasses: pseudoClasses);
     }
 
-    private static ImmutableArray<AvaloniaPseudoClassInfo> BuildPseudoClasses(Compilation compilation, INamedTypeSymbol type)
+    private static ImmutableArray<AvaloniaPseudoClassInfo> BuildPseudoClasses(
+        Compilation compilation,
+        XamlLanguageFrameworkInfo framework,
+        INamedTypeSymbol type)
     {
+        if (!framework.SupportsPseudoClasses ||
+            string.IsNullOrWhiteSpace(framework.PseudoClassesAttributeMetadataName))
+        {
+            return ImmutableArray<AvaloniaPseudoClassInfo>.Empty;
+        }
+
         var builder = ImmutableArray.CreateBuilder<AvaloniaPseudoClassInfo>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -322,7 +360,7 @@ public sealed class AvaloniaTypeIndex
         {
             foreach (var attribute in currentType.GetAttributes())
             {
-                if (!IsPseudoClassesAttribute(attribute))
+                if (!IsPseudoClassesAttribute(attribute, framework.PseudoClassesAttributeMetadataName!))
                 {
                     continue;
                 }
@@ -342,11 +380,11 @@ public sealed class AvaloniaTypeIndex
         return builder.ToImmutable();
     }
 
-    private static bool IsPseudoClassesAttribute(AttributeData attribute)
+    private static bool IsPseudoClassesAttribute(AttributeData attribute, string metadataName)
     {
         return string.Equals(
             attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
-            AvaloniaPseudoClassesAttributeMetadataName,
+            metadataName,
             StringComparison.Ordinal);
     }
 
@@ -577,17 +615,20 @@ public sealed class AvaloniaTypeIndex
         return null;
     }
 
-    private static ImmutableDictionary<string, ImmutableHashSet<string>> BuildXmlNamespaceToClrNamespaceMap(Compilation compilation)
+    private static ImmutableDictionary<string, ImmutableHashSet<string>> BuildXmlNamespaceToClrNamespaceMap(
+        Compilation compilation,
+        XamlLanguageFrameworkInfo framework)
     {
         var map = ImmutableDictionary.CreateBuilder<string, ImmutableHashSet<string>.Builder>(StringComparer.Ordinal);
+        var xmlnsDefinitionAttributes = framework.XmlnsDefinitionAttributeMetadataNames.ToImmutableHashSet(StringComparer.Ordinal);
 
         foreach (var assembly in EnumerateAssemblies(compilation))
         {
             foreach (var attribute in assembly.GetAttributes())
             {
                 var attributeMetadataName = attribute.AttributeClass?.ToDisplayString();
-                if (!string.Equals(attributeMetadataName, AvaloniaXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal) &&
-                    !string.Equals(attributeMetadataName, SourceGenXmlnsDefinitionAttributeMetadataName, StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(attributeMetadataName) ||
+                    !xmlnsDefinitionAttributes.Contains(attributeMetadataName))
                 {
                     continue;
                 }

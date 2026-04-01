@@ -531,7 +531,8 @@ public sealed class XamlHoverService
                 analysis.PrefixMap,
                 context.Token,
                 out var xmlNamespace,
-                out var xmlTypeName) ||
+                out var xmlTypeName,
+                analysis.Framework.DefaultXmlNamespace) ||
             !analysis.TypeIndex.TryGetType(xmlNamespace, xmlTypeName, out var typeInfo) ||
             typeInfo is null)
         {

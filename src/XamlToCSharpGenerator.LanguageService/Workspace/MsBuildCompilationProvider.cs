@@ -11,6 +11,8 @@ using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using XamlToCSharpGenerator.LanguageService.Definitions;
+using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -25,6 +27,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         "Found project reference without a matching metadata reference:";
 
     private readonly MSBuildWorkspace _workspace;
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly SemaphoreSlim _workspaceGate = new(1, 1);
     private readonly ConcurrentDictionary<string, Lazy<Task<CompilationSnapshot>>> _projectCompilationCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -34,9 +37,15 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         new(StringComparer.OrdinalIgnoreCase);
 
     public MsBuildCompilationProvider()
+        : this(XamlBuiltInLanguageFrameworkRegistry.Instance)
     {
+    }
+
+    public MsBuildCompilationProvider(XamlLanguageFrameworkRegistry frameworkRegistry)
+    {
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
         RegisterMsBuildLocator();
-        _workspace = MSBuildWorkspace.Create();
+        _workspace = MSBuildWorkspace.Create(CreateWorkspaceProperties());
     }
 
     public Task<CompilationSnapshot> GetCompilationAsync(
@@ -337,7 +346,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         }
     }
 
-    private static string? FindNearestProjectPath(string filePath, string? workspaceRoot)
+    private string? FindNearestProjectPath(string filePath, string? workspaceRoot)
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
@@ -387,7 +396,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         }
 
         if (boundedWorkspaceRoot is not null &&
-            XamlProjectFileDiscoveryService.TryResolveOwningProjectPath(filePath, boundedWorkspaceRoot, out var owningProjectPath))
+            XamlProjectFileDiscoveryService.TryResolveOwningProjectPath(filePath, boundedWorkspaceRoot, _frameworkRegistry, out var owningProjectPath))
         {
             return owningProjectPath;
         }
@@ -489,7 +498,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
 
         var normalizedFilePath = NormalizePath(filePath);
         var normalizedWorkspaceRoot = NormalizeWorkspaceRoot(workspaceRoot);
-        var cacheKey = BuildProjectResolutionCacheKey(normalizedFilePath, normalizedWorkspaceRoot);
+        var cacheKey = BuildProjectResolutionCacheKey(normalizedFilePath, normalizedWorkspaceRoot, _frameworkRegistry);
         var now = DateTimeOffset.UtcNow;
         if (_fileProjectPathCache.TryGetValue(cacheKey, out var cachedResolution) &&
             now - cachedResolution.CachedAtUtc <= ProjectResolutionCacheTtl)
@@ -502,9 +511,12 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         return resolvedProjectPath;
     }
 
-    private static string BuildProjectResolutionCacheKey(string normalizedFilePath, string? normalizedWorkspaceRoot)
+    private static string BuildProjectResolutionCacheKey(
+        string normalizedFilePath,
+        string? normalizedWorkspaceRoot,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
-        return normalizedFilePath + "|" + (normalizedWorkspaceRoot ?? string.Empty);
+        return frameworkRegistry.CacheKey + "|" + normalizedFilePath + "|" + (normalizedWorkspaceRoot ?? string.Empty);
     }
 
     private static string? NormalizeWorkspaceRoot(string? workspaceRoot)
@@ -527,6 +539,20 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     private static readonly SourceRange EmptyRange = new(
         new SourcePosition(0, 0),
         new SourcePosition(0, 1));
+
+    private static Dictionary<string, string> CreateWorkspaceProperties()
+    {
+        var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Design-time MSBuild loads for Windows-targeted projects on non-Windows hosts
+        // need explicit opt-in to resolve WindowsDesktop reference packs.
+        if (!OperatingSystem.IsWindows())
+        {
+            properties["EnableWindowsTargeting"] = "true";
+        }
+
+        return properties;
+    }
 
     private readonly record struct CachedProjectPathResolution(
         DateTimeOffset CachedAtUtc,

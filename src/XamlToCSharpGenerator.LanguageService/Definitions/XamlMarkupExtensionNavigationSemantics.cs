@@ -17,14 +17,6 @@ internal readonly record struct XamlMarkupExtensionClassToken(
 
 internal static class XamlMarkupExtensionNavigationSemantics
 {
-    private static readonly ImmutableArray<string> WellKnownMarkupExtensionNamespaces =
-    [
-        "Avalonia.Markup.Xaml.MarkupExtensions",
-        "Avalonia.Data",
-        "Avalonia.Markup.Xaml",
-        "System.Windows.Markup"
-    ];
-
     public static bool TryResolveClassTokenAtOffset(
         string text,
         int offset,
@@ -154,7 +146,9 @@ internal static class XamlMarkupExtensionNavigationSemantics
             return false;
         }
 
-        foreach (var metadataName in EnumerateMetadataNameCandidates(extensionToken))
+        foreach (var metadataName in EnumerateMetadataNameCandidates(
+                     extensionToken,
+                     analysis.Framework.MarkupExtensionNamespaces))
         {
             var symbol = analysis.Compilation.GetTypeByMetadataName(metadataName);
             if (symbol is null)
@@ -193,7 +187,9 @@ internal static class XamlMarkupExtensionNavigationSemantics
         }
     }
 
-    private static IEnumerable<string> EnumerateMetadataNameCandidates(string extensionToken)
+    private static IEnumerable<string> EnumerateMetadataNameCandidates(
+        string extensionToken,
+        ImmutableArray<string> markupExtensionNamespaces)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         var plainName = extensionToken;
@@ -209,7 +205,7 @@ internal static class XamlMarkupExtensionNavigationSemantics
         }
 
         var extensionName = XamlMarkupExtensionNameSemantics.ToClrExtensionTypeToken(plainName);
-        foreach (var ns in WellKnownMarkupExtensionNamespaces)
+        foreach (var ns in markupExtensionNamespaces)
         {
             if (names.Add(ns + "." + plainName))
             {

@@ -117,7 +117,7 @@ internal static class XamlHoverMarkdownFormatter
             "FallbackValue" or "Fallback" => "Value used when binding resolution fails.",
             "TargetNullValue" or "NullValue" => "Value used when the resolved binding value is null.",
             "Delay" => "Delays source updates for editable targets.",
-            "Priority" or "BindingPriority" => "Sets the Avalonia binding priority.",
+            "Priority" or "BindingPriority" => "Sets the binding priority.",
             "UpdateSourceTrigger" or "Trigger" => "Controls when source updates are pushed back.",
             _ => "Binding argument."
         };
