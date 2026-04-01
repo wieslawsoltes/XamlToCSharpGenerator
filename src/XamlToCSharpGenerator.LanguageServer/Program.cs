@@ -82,9 +82,13 @@ using var server = new AxsgLanguageServer(
     engine,
     options);
 
-// Wire prewarm completion → notify the client that Tier-2 is ready
+// Wire prewarm completion → invalidate stale Tier-1 analysis caches and notify the client.
+// Documents that were open during Tier-1 have cached analysis keyed on (uri, generation, version).
+// Incrementing their generations forces re-analysis using the full Tier-2 compilation on the
+// next completion/hover/diagnostic request, so users don't see stale Tier-1 results.
 tieredProvider.OnPrewarmCompleted = () =>
 {
+    engine.InvalidateAllOpenDocumentCaches();
     if (avaloniaVersion is not null)
     {
         _ = server.NotifyCacheReadyAsync(avaloniaVersion);

@@ -826,6 +826,20 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _uriGenerations.AddOrUpdate(uri, 1, static (_, generation) => generation + 1);
     }
 
+    /// <summary>
+    /// Invalidates the analysis cache for all currently-open documents.
+    /// Call this when the compilation tier upgrades (Tier-1 → Tier-2) so that
+    /// the next completion/hover/diagnostic request re-analyses using the full
+    /// MSBuild compilation rather than returning stale Tier-1 results.
+    /// </summary>
+    public void InvalidateAllOpenDocumentCaches()
+    {
+        foreach (var uri in _uriGenerations.Keys)
+        {
+            InvalidateUriCaches(uri);
+        }
+    }
+
     private static PositionRequestCacheKey BuildPositionRequestCacheKey(
         string uri,
         int documentVersion,
