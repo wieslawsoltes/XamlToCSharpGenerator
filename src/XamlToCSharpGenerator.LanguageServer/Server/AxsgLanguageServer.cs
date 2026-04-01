@@ -35,6 +35,7 @@ public sealed class AxsgLanguageServer : IDisposable
 
     private bool _shutdownRequested;
     private bool _exitRequested;
+    private readonly string? _cacheVersion;
 
     public AxsgLanguageServer(
         LspMessageReader reader,
@@ -52,6 +53,7 @@ public sealed class AxsgLanguageServer : IDisposable
             IncludeSemanticDiagnostics = false
         };
         _previewQueryService = new AxsgPreviewQueryService(_engine, _navigationOptions);
+        _cacheVersion = options.AvaloniaVersion;
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -131,6 +133,14 @@ public sealed class AxsgLanguageServer : IDisposable
                 break;
 
             case "initialized":
+                if (_cacheVersion is not null)
+                {
+                    await SendNotificationAsync("axsg/cacheStatus", new JsonObject
+                    {
+                        ["phase"] = "building",
+                        ["version"] = _cacheVersion
+                    }, cancellationToken).ConfigureAwait(false);
+                }
                 break;
 
             case "$/cancelRequest":
@@ -1633,6 +1643,31 @@ public sealed class AxsgLanguageServer : IDisposable
         };
 
         return _writer.WriteAsync(notification, cancellationToken);
+    }
+
+    private Task SendNotificationAsync(string method, JsonNode? paramsNode, CancellationToken cancellationToken)
+    {
+        var notification = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["method"] = method,
+            ["params"] = paramsNode
+        };
+
+        return _writer.WriteAsync(notification, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends an <c>axsg/cacheStatus</c> notification with <c>phase = "ready"</c>
+    /// to let the client know the background prewarm has completed.
+    /// </summary>
+    public Task NotifyCacheReadyAsync(string version)
+    {
+        return SendNotificationAsync("axsg/cacheStatus", new JsonObject
+        {
+            ["phase"] = "ready",
+            ["version"] = version
+        }, CancellationToken.None);
     }
 
     private static TextDocumentPositionRequest ParseTextDocumentPosition(JsonElement parameters)

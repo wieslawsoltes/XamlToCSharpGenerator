@@ -54,6 +54,12 @@ public sealed class TieredCompilationProvider : ICompilationProvider
     // from the prewarm task is immediately visible on the request thread.
     private volatile bool _fullProviderReady;
 
+    /// <summary>
+    /// Optional callback invoked when the background prewarm completes.
+    /// Called from <see cref="PrewarmAsync"/> after <c>_fullProviderReady</c> is set to true.
+    /// </summary>
+    public Action? OnPrewarmCompleted { get; set; }
+
     /// <param name="fullProvider">
     ///   The full MSBuild-backed compilation provider.  Its compilation loads
     ///   lazily — this class controls when the load is triggered.
@@ -140,6 +146,7 @@ public sealed class TieredCompilationProvider : ICompilationProvider
                     _fullProviderReady = true;
                     Console.Error.WriteLine(
                         "[AXSG-LS] Prewarm complete — upgraded to Tier 2 (full MSBuild compilation).");
+                    OnPrewarmCompleted?.Invoke();
                 }
                 else
                 {
