@@ -46,23 +46,51 @@ public static class AvaloniaSourceGeneratedXamlLoader
 
     public static bool TryLoad(IServiceProvider? serviceProvider, Uri uri, out object? value)
     {
+        return TryLoad(serviceProvider, uri, baseUri: null, out value);
+    }
+
+    public static bool TryLoad(IServiceProvider? serviceProvider, Uri uri, Uri? baseUri, out object? value)
+    {
         if (uri is null)
         {
             throw new ArgumentNullException(nameof(uri));
         }
 
-        var lookupUris = BuildLookupUriCandidates(serviceProvider, uri);
+        var lookupUris = BuildLookupUriCandidates(serviceProvider, uri, baseUri);
         for (var index = 0; index < lookupUris.Length; index++)
         {
             EnsureAssemblyLoadedForUriCandidate(serviceProvider, lookupUris[index]);
-            if (XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[index], out value))
+            if (XamlSourceGenRegistry.TryCreateWithoutMissingNotification(serviceProvider, lookupUris[index], out value))
             {
                 return true;
             }
         }
 
         value = null;
+        if (lookupUris.Length > 0)
+        {
+            XamlSourceGenRegistry.TryCreate(serviceProvider, lookupUris[0], out _);
+        }
+
         return false;
+    }
+
+    public static object Load(Uri uri, Uri? baseUri = null)
+    {
+        return Load(serviceProvider: null, uri, baseUri);
+    }
+
+    public static object Load(IServiceProvider? serviceProvider, Uri uri, Uri? baseUri = null)
+    {
+        if (TryLoad(serviceProvider, uri, baseUri, out var value) &&
+            value is not null)
+        {
+            return value;
+        }
+
+        return serviceProvider is null
+            ? AvaloniaXamlLoader.Load(uri, baseUri)
+            : AvaloniaXamlLoader.Load(serviceProvider, uri, baseUri);
     }
 
     public static object Load(RuntimeXamlLoaderDocument document, RuntimeXamlLoaderConfiguration? configuration = null)
@@ -165,7 +193,7 @@ public static class AvaloniaSourceGeneratedXamlLoader
         return null;
     }
 
-    private static string[] BuildLookupUriCandidates(IServiceProvider? serviceProvider, Uri uri)
+    private static string[] BuildLookupUriCandidates(IServiceProvider? serviceProvider, Uri uri, Uri? baseUri)
     {
         var directCandidate = uri.ToString();
         if (uri.IsAbsoluteUri)
@@ -173,19 +201,24 @@ public static class AvaloniaSourceGeneratedXamlLoader
             return [directCandidate];
         }
 
-        var candidates = new List<string>(capacity: 3)
+        var candidates = new List<string>(capacity: 4);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (TryResolveUriAgainstExplicitBase(uri, baseUri, out var explicitBaseCandidate) &&
+            seen.Add(explicitBaseCandidate))
         {
-            directCandidate
-        };
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            directCandidate
-        };
+            candidates.Add(explicitBaseCandidate);
+        }
 
         if (TryResolveUriAgainstContextBase(serviceProvider, uri, out var resolvedCandidate) &&
             seen.Add(resolvedCandidate))
         {
-            candidates.Insert(0, resolvedCandidate);
+            candidates.Add(resolvedCandidate);
+        }
+
+        if (seen.Add(directCandidate))
+        {
+            candidates.Add(directCandidate);
         }
 
         if (TryResolveUriAgainstRootObjectAssembly(serviceProvider, uri, out var assemblyResolvedCandidate) &&
@@ -195,6 +228,29 @@ public static class AvaloniaSourceGeneratedXamlLoader
         }
 
         return candidates.ToArray();
+    }
+
+    private static bool TryResolveUriAgainstExplicitBase(
+        Uri relativeUri,
+        Uri? baseUri,
+        out string resolvedCandidate)
+    {
+        resolvedCandidate = string.Empty;
+        if (baseUri is null ||
+            !baseUri.IsAbsoluteUri)
+        {
+            return false;
+        }
+
+        try
+        {
+            resolvedCandidate = new Uri(baseUri, relativeUri).ToString();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryResolveUriAgainstContextBase(

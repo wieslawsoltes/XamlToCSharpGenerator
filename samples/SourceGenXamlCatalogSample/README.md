@@ -12,6 +12,7 @@
 - `Global XMLNS`: global prefix imports (`vm`, `catalog`) and implicit default namespace support. The page omits local `vm/catalog` declarations and resolves them from project-level SourceGen settings.
 - `Conditional XAML`: conditional namespace aliases (`?ApiInformation.*`) that gate elements, properties, styles, and contract-specific branches.
 - `Runtime Loader`: runtime URI and inline-string loading via the SourceGen parser/binder/emitter pipeline.
+- `URI Dictionaries`: explicit `AvaloniaXamlLoader.Load(Uri)` of a classless `ResourceDictionary`, covering the issue #36 regression path.
 - `Styles + Selectors`: class selectors, combinators, and property predicate selectors.
 - `Control Themes`: `ControlTheme`, `BasedOn`, and theme assignment on framework/custom controls.
 - `Templates`: `DataTemplate`, inline deferred templates, and `ControlTemplate` + `TemplateBinding`.

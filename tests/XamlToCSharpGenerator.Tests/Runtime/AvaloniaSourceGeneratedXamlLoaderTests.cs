@@ -66,6 +66,92 @@ public class AvaloniaSourceGeneratedXamlLoaderTests : IDisposable
         Assert.Same(ExpectedInstance, value);
     }
 
+    [Fact]
+    public void TryLoad_Resolves_Relative_Uri_Against_Explicit_BaseUri()
+    {
+        XamlSourceGenRegistry.Clear();
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Accents/BaseColorsPalette.xaml",
+            static _ => ExpectedInstance);
+
+        var loaded = AvaloniaSourceGeneratedXamlLoader.TryLoad(
+            serviceProvider: null,
+            new Uri("/Accents/BaseColorsPalette.xaml", UriKind.RelativeOrAbsolute),
+            baseUri: new Uri("avares://Demo/FluentTheme.xaml"),
+            out var value);
+
+        Assert.True(loaded);
+        Assert.Same(ExpectedInstance, value);
+    }
+
+    [Fact]
+    public void TryLoad_Prefers_Explicit_BaseUri_Over_UriContext_BaseUri()
+    {
+        XamlSourceGenRegistry.Clear();
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Accents/BaseColorsPalette.xaml",
+            static _ => ExpectedInstance);
+        XamlSourceGenRegistry.Register(
+            "avares://Wrong/Accents/BaseColorsPalette.xaml",
+            static _ => new object());
+
+        var loaded = AvaloniaSourceGeneratedXamlLoader.TryLoad(
+            new TestUriContextServiceProvider(new Uri("avares://Wrong/FluentTheme.xaml")),
+            new Uri("/Accents/BaseColorsPalette.xaml", UriKind.RelativeOrAbsolute),
+            baseUri: new Uri("avares://Demo/FluentTheme.xaml"),
+            out var value);
+
+        Assert.True(loaded);
+        Assert.Same(ExpectedInstance, value);
+    }
+
+    [Fact]
+    public void TryLoad_Missing_Relative_Uri_Raises_One_Missing_Event_For_Preferred_Candidate()
+    {
+        XamlSourceGenRegistry.Clear();
+        var notifications = new List<string>();
+
+        void Handler(string uri) => notifications.Add(uri);
+
+        XamlSourceGenRegistry.MissingUriRequested += Handler;
+        try
+        {
+            var loaded = AvaloniaSourceGeneratedXamlLoader.TryLoad(
+                new TestUriContextServiceProvider(new Uri("avares://Wrong/FluentTheme.xaml")),
+                new Uri("/Accents/MissingPalette.xaml", UriKind.RelativeOrAbsolute),
+                baseUri: new Uri("avares://Demo/FluentTheme.xaml"),
+                out var value);
+
+            Assert.False(loaded);
+            Assert.Null(value);
+            Assert.Single(notifications);
+            Assert.True(
+                XamlSourceGenUriMapper.Default.UriEquals(
+                    "avares://Demo/Accents/MissingPalette.xaml",
+                    notifications[0]));
+        }
+        finally
+        {
+            XamlSourceGenRegistry.MissingUriRequested -= Handler;
+            XamlSourceGenRegistry.Clear();
+        }
+    }
+
+    [Fact]
+    public void Load_With_Explicit_BaseUri_Returns_SourceGenerated_Value()
+    {
+        XamlSourceGenRegistry.Clear();
+        XamlSourceGenRegistry.Register(
+            "avares://Demo/Accents/BaseColorsPalette.xaml",
+            static _ => ExpectedInstance);
+
+        var value = AvaloniaSourceGeneratedXamlLoader.Load(
+            new Uri("/Accents/BaseColorsPalette.xaml", UriKind.RelativeOrAbsolute),
+            new Uri("avares://Demo/FluentTheme.xaml"));
+
+        Assert.Same(ExpectedInstance, value);
+    }
+
     private static readonly object ExpectedInstance = new();
 
     private sealed class TestUriContextServiceProvider : IServiceProvider, IUriContext

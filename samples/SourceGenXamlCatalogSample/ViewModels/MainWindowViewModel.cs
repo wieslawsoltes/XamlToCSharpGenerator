@@ -36,6 +36,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public RuntimeLoaderPageViewModel RuntimeLoader { get; } = new();
 
+    public UriDictionaryLoadPageViewModel UriDictionaryLoad { get; } = new();
+
     public TemplatesPageViewModel Templates { get; } = new();
 
     public ResourcesIncludesPageViewModel Resources { get; } = new();

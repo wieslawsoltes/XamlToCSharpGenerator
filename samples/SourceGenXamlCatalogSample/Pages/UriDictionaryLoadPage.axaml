@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SourceGenXamlCatalogSample.ViewModels"
+             x:Class="SourceGenXamlCatalogSample.Pages.UriDictionaryLoadPage"
+             x:DataType="vm:UriDictionaryLoadPageViewModel"
+             x:CompileBindings="True">
+  <ScrollViewer>
+    <StackPanel Spacing="10" Margin="8">
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="Issue #36: explicit URI ResourceDictionary load" />
+          <TextBlock TextWrapping="Wrap"
+                     Text="This page loads a classless ResourceDictionary through AvaloniaXamlLoader.Load(Uri), which previously missed AXSG-generated dictionary artifacts." />
+          <SelectableTextBlock Text="{Binding DictionarySourceUri}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Reload Dictionary"
+                    Command="{Binding ReloadCommand}" />
+            <TextBlock VerticalAlignment="Center"
+                       Classes="catalog-muted"
+                       Text="{Binding LoadedTypeName}" />
+          </StackPanel>
+          <TextBlock Classes="catalog-muted"
+                     Text="{Binding Status}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="catalog-card">
+        <StackPanel Spacing="6">
+          <TextBlock FontWeight="SemiBold" Text="Preview built from dictionary values" />
+          <ContentControl Content="{Binding PreviewContent}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
