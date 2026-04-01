@@ -16,5 +16,6 @@ public sealed record XamlAnalysisResult(
     XDocument? XmlDocument,
     ImmutableDictionary<string, string> PrefixMap,
     AvaloniaTypeIndex? TypeIndex,
+    XamlLanguageFrameworkRegistry FrameworkRegistry,
     XamlLanguageFrameworkInfo Framework,
     ImmutableArray<LanguageServiceDiagnostic> Diagnostics);

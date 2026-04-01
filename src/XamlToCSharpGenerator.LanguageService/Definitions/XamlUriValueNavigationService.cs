@@ -77,6 +77,7 @@ internal static class XamlUriValueNavigationService
                 analysis.ProjectPath,
                 analysis.Document.FilePath,
                 absoluteTargetPath,
+                analysis.FrameworkRegistry,
                 out targetFilePath))
         {
             return true;
@@ -89,6 +90,7 @@ internal static class XamlUriValueNavigationService
                 analysis.ProjectPath,
                 analysis.Document.FilePath,
                 rootedTargetPath,
+                analysis.FrameworkRegistry,
                 out targetFilePath);
         }
 
@@ -98,6 +100,7 @@ internal static class XamlUriValueNavigationService
                 analysis.ProjectPath,
                 analysis.Document.FilePath,
                 relativeTargetPath,
+                analysis.FrameworkRegistry,
                 out targetFilePath);
         }
 
@@ -114,6 +117,7 @@ internal static class XamlUriValueNavigationService
                 analysis.ProjectPath,
                 analysis.Document.FilePath,
                 analysis.Document.FilePath,
+                analysis.FrameworkRegistry,
                 out var currentEntry))
         {
             return false;

@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Documents;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -19,17 +20,20 @@ internal sealed class CSharpToXamlNavigationService
     private readonly XamlDocumentStore _documentStore;
     private readonly XamlCompilerAnalysisService _analysisService;
     private readonly CSharpSymbolResolutionService _symbolResolutionService;
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly XamlReferenceService _referenceService;
 
     public CSharpToXamlNavigationService(
         XamlDocumentStore documentStore,
         XamlCompilerAnalysisService analysisService,
-        CSharpSymbolResolutionService symbolResolutionService)
+        CSharpSymbolResolutionService symbolResolutionService,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
         _analysisService = analysisService ?? throw new ArgumentNullException(nameof(analysisService));
         _symbolResolutionService = symbolResolutionService ?? throw new ArgumentNullException(nameof(symbolResolutionService));
-        _referenceService = new XamlReferenceService();
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+        _referenceService = new XamlReferenceService(_frameworkRegistry);
     }
 
     public async Task<ImmutableArray<XamlReferenceLocation>> GetReferencesAsync(
@@ -88,7 +92,8 @@ internal sealed class CSharpToXamlNavigationService
     {
         var xamlFilePaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(
             resolvedSymbol.Snapshot.ProjectPath,
-            resolvedSymbol.FilePath);
+            resolvedSymbol.FilePath,
+            _frameworkRegistry);
         if (xamlFilePaths.IsDefaultOrEmpty)
         {
             return null;
@@ -142,7 +147,8 @@ internal sealed class CSharpToXamlNavigationService
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var projectXamlPaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(
             analysis.ProjectPath,
-            analysis.Document.FilePath);
+            analysis.Document.FilePath,
+            analysis.FrameworkRegistry);
 
         foreach (var filePath in projectXamlPaths)
         {

@@ -4,11 +4,24 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 
 namespace XamlToCSharpGenerator.LanguageService.Refactorings;
 
 internal sealed class XamlNamespacePrefixSuggestionService
 {
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
+
+    public XamlNamespacePrefixSuggestionService()
+        : this(XamlBuiltInLanguageFrameworkRegistry.Instance)
+    {
+    }
+
+    public XamlNamespacePrefixSuggestionService(XamlLanguageFrameworkRegistry frameworkRegistry)
+    {
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+    }
+
     public string SuggestPrefix(
         Compilation? compilation,
         ImmutableDictionary<string, string> inScopePrefixMap,
@@ -34,7 +47,7 @@ internal sealed class XamlNamespacePrefixSuggestionService
         }
     }
 
-    private static IEnumerable<string> EnumerateCandidatePrefixes(
+    private IEnumerable<string> EnumerateCandidatePrefixes(
         Compilation? compilation,
         string xmlNamespace,
         string clrNamespace)
@@ -53,7 +66,7 @@ internal sealed class XamlNamespacePrefixSuggestionService
         yield return "local";
     }
 
-    private static IEnumerable<string> GetDeclaredPrefixes(Compilation? compilation, string xmlNamespace)
+    private IEnumerable<string> GetDeclaredPrefixes(Compilation? compilation, string xmlNamespace)
     {
         if (compilation is null)
         {
@@ -101,10 +114,10 @@ internal sealed class XamlNamespacePrefixSuggestionService
         }
     }
 
-    private static bool IsXmlnsPrefixAttribute(AttributeData attribute)
+    private bool IsXmlnsPrefixAttribute(AttributeData attribute)
     {
         var metadataName = attribute.AttributeClass?.ToDisplayString();
-        return XamlLanguageFrameworkCatalog.IsKnownXmlnsPrefixAttribute(metadataName);
+        return _frameworkRegistry.IsKnownXmlnsPrefixAttribute(metadataName);
     }
 
     private static string BuildClrNamespaceCandidate(string clrNamespace)

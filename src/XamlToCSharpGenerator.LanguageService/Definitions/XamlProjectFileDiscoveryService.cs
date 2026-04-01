@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Text;
 
 namespace XamlToCSharpGenerator.LanguageService.Definitions;
@@ -35,6 +36,17 @@ internal static class XamlProjectFileDiscoveryService
         string? projectPath,
         string? currentFilePath)
     {
+        return DiscoverProjectXamlFilePaths(
+            projectPath,
+            currentFilePath,
+            XamlBuiltInLanguageFrameworkRegistry.Instance);
+    }
+
+    public static ImmutableArray<string> DiscoverProjectXamlFilePaths(
+        string? projectPath,
+        string? currentFilePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
+    {
         var builder = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(PathComparer);
 
@@ -49,7 +61,7 @@ internal static class XamlProjectFileDiscoveryService
             return builder.ToImmutable();
         }
 
-        foreach (var includePath in GetCachedProjectXamlFileList(resolvedProjectPath))
+        foreach (var includePath in GetCachedProjectXamlFileList(resolvedProjectPath, frameworkRegistry))
         {
             AddCandidatePath(builder, seen, includePath);
         }
@@ -58,6 +70,13 @@ internal static class XamlProjectFileDiscoveryService
     }
 
     public static ImmutableArray<string> DiscoverWorkspaceXamlFilePaths(string? workspaceRoot)
+    {
+        return DiscoverWorkspaceXamlFilePaths(workspaceRoot, XamlBuiltInLanguageFrameworkRegistry.Instance);
+    }
+
+    public static ImmutableArray<string> DiscoverWorkspaceXamlFilePaths(
+        string? workspaceRoot,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         if (string.IsNullOrWhiteSpace(workspaceRoot))
         {
@@ -68,7 +87,7 @@ internal static class XamlProjectFileDiscoveryService
         var seen = new HashSet<string>(PathComparer);
         foreach (var projectPath in GetCachedWorkspaceProjectPaths(workspaceRoot))
         {
-            foreach (var filePath in GetCachedProjectXamlFileList(projectPath))
+            foreach (var filePath in GetCachedProjectXamlFileList(projectPath, frameworkRegistry))
             {
                 AddCandidatePath(builder, seen, filePath);
             }
@@ -81,6 +100,21 @@ internal static class XamlProjectFileDiscoveryService
         string? projectPath,
         string? currentFilePath,
         string? targetPath,
+        out string filePath)
+    {
+        return TryResolveProjectXamlFileByTargetPath(
+            projectPath,
+            currentFilePath,
+            targetPath,
+            XamlBuiltInLanguageFrameworkRegistry.Instance,
+            out filePath);
+    }
+
+    public static bool TryResolveProjectXamlFileByTargetPath(
+        string? projectPath,
+        string? currentFilePath,
+        string? targetPath,
+        XamlLanguageFrameworkRegistry frameworkRegistry,
         out string filePath)
     {
         filePath = string.Empty;
@@ -101,7 +135,7 @@ internal static class XamlProjectFileDiscoveryService
             return false;
         }
 
-        foreach (var entry in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        foreach (var entry in GetCachedProjectXamlFileEntries(resolvedProjectPath, frameworkRegistry))
         {
             if (!PathComparer.Equals(entry.TargetPath, normalizedTargetPath))
             {
@@ -121,6 +155,21 @@ internal static class XamlProjectFileDiscoveryService
         string filePath,
         out ProjectXamlFileEntry entry)
     {
+        return TryResolveProjectXamlEntryByFilePath(
+            projectPath,
+            currentFilePath,
+            filePath,
+            XamlBuiltInLanguageFrameworkRegistry.Instance,
+            out entry);
+    }
+
+    public static bool TryResolveProjectXamlEntryByFilePath(
+        string? projectPath,
+        string? currentFilePath,
+        string filePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry,
+        out ProjectXamlFileEntry entry)
+    {
         entry = default;
         if (string.IsNullOrWhiteSpace(filePath))
         {
@@ -134,7 +183,7 @@ internal static class XamlProjectFileDiscoveryService
         }
 
         var normalizedFilePath = NormalizePath(filePath);
-        foreach (var candidate in GetCachedProjectXamlFileEntries(resolvedProjectPath))
+        foreach (var candidate in GetCachedProjectXamlFileEntries(resolvedProjectPath, frameworkRegistry))
         {
             if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
             {
@@ -152,6 +201,21 @@ internal static class XamlProjectFileDiscoveryService
         string? projectPath,
         string? currentFilePath,
         string filePath,
+        out ProjectXamlFileEntry entry)
+    {
+        return TryResolveExplicitProjectXamlEntryByFilePath(
+            projectPath,
+            currentFilePath,
+            filePath,
+            XamlBuiltInLanguageFrameworkRegistry.Instance,
+            out entry);
+    }
+
+    public static bool TryResolveExplicitProjectXamlEntryByFilePath(
+        string? projectPath,
+        string? currentFilePath,
+        string filePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry,
         out ProjectXamlFileEntry entry)
     {
         entry = default;
@@ -173,7 +237,7 @@ internal static class XamlProjectFileDiscoveryService
         }
 
         var normalizedFilePath = NormalizePath(filePath);
-        foreach (var candidate in EnumerateExplicitXamlIncludes(resolvedProjectPath, projectDirectory))
+        foreach (var candidate in EnumerateExplicitXamlIncludes(resolvedProjectPath, projectDirectory, frameworkRegistry))
         {
             if (!PathComparer.Equals(candidate.FilePath, normalizedFilePath))
             {
@@ -193,6 +257,21 @@ internal static class XamlProjectFileDiscoveryService
         out string projectPath,
         out ProjectXamlFileEntry entry)
     {
+        return TryResolveOwningProjectXamlEntry(
+            filePath,
+            workspaceRoot,
+            XamlBuiltInLanguageFrameworkRegistry.Instance,
+            out projectPath,
+            out entry);
+    }
+
+    public static bool TryResolveOwningProjectXamlEntry(
+        string filePath,
+        string? workspaceRoot,
+        XamlLanguageFrameworkRegistry frameworkRegistry,
+        out string projectPath,
+        out ProjectXamlFileEntry entry)
+    {
         projectPath = string.Empty;
         entry = default;
 
@@ -208,6 +287,7 @@ internal static class XamlProjectFileDiscoveryService
                 ancestorProjectPath,
                 normalizedFilePath,
                 normalizedFilePath,
+                frameworkRegistry,
                 out entry))
         {
             projectPath = ancestorProjectPath;
@@ -226,6 +306,7 @@ internal static class XamlProjectFileDiscoveryService
                     candidateProjectPath,
                     normalizedFilePath,
                     normalizedFilePath,
+                    frameworkRegistry,
                     out entry))
             {
                 continue;
@@ -243,8 +324,21 @@ internal static class XamlProjectFileDiscoveryService
         string? workspaceRoot,
         out string projectPath)
     {
+        return TryResolveOwningProjectPath(
+            filePath,
+            workspaceRoot,
+            XamlBuiltInLanguageFrameworkRegistry.Instance,
+            out projectPath);
+    }
+
+    public static bool TryResolveOwningProjectPath(
+        string filePath,
+        string? workspaceRoot,
+        XamlLanguageFrameworkRegistry frameworkRegistry,
+        out string projectPath)
+    {
         projectPath = string.Empty;
-        if (!TryResolveOwningProjectXamlEntry(filePath, workspaceRoot, out var resolvedProjectPath, out _))
+        if (!TryResolveOwningProjectXamlEntry(filePath, workspaceRoot, frameworkRegistry, out var resolvedProjectPath, out _))
         {
             return false;
         }
@@ -313,9 +407,11 @@ internal static class XamlProjectFileDiscoveryService
         return null;
     }
 
-    private static ImmutableArray<string> GetCachedProjectXamlFileList(string projectFilePath)
+    private static ImmutableArray<string> GetCachedProjectXamlFileList(
+        string projectFilePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
-        var entries = GetCachedProjectXamlFileEntries(projectFilePath);
+        var entries = GetCachedProjectXamlFileEntries(projectFilePath, frameworkRegistry);
         if (entries.IsDefaultOrEmpty)
         {
             return ImmutableArray<string>.Empty;
@@ -330,18 +426,21 @@ internal static class XamlProjectFileDiscoveryService
         return builder.ToImmutable();
     }
 
-    private static ImmutableArray<ProjectXamlFileEntry> GetCachedProjectXamlFileEntries(string projectFilePath)
+    private static ImmutableArray<ProjectXamlFileEntry> GetCachedProjectXamlFileEntries(
+        string projectFilePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         var normalizedProjectPath = NormalizePath(projectFilePath);
+        var cacheKey = BuildProjectCacheKey(normalizedProjectPath, frameworkRegistry);
         var now = DateTimeOffset.UtcNow;
-        if (ProjectFileListCache.TryGetValue(normalizedProjectPath, out var cached) &&
+        if (ProjectFileListCache.TryGetValue(cacheKey, out var cached) &&
             now - cached.CachedAtUtc <= ProjectDiscoveryCacheTtl)
         {
             return cached.Entries;
         }
 
-        var entries = BuildProjectXamlFileList(normalizedProjectPath);
-        ProjectFileListCache[normalizedProjectPath] = new CachedProjectFileList(now, entries);
+        var entries = BuildProjectXamlFileList(normalizedProjectPath, frameworkRegistry);
+        ProjectFileListCache[cacheKey] = new CachedProjectFileList(now, entries);
         return entries;
     }
 
@@ -365,7 +464,9 @@ internal static class XamlProjectFileDiscoveryService
         return projectPaths;
     }
 
-    private static ImmutableArray<ProjectXamlFileEntry> BuildProjectXamlFileList(string projectFilePath)
+    private static ImmutableArray<ProjectXamlFileEntry> BuildProjectXamlFileList(
+        string projectFilePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         var entriesByFilePath = new Dictionary<string, ProjectXamlFileEntry>(PathComparer);
         var projectDirectory = Path.GetDirectoryName(projectFilePath);
@@ -381,7 +482,7 @@ internal static class XamlProjectFileDiscoveryService
                 NormalizeTargetPath(Path.GetRelativePath(projectDirectory, filePath))));
         }
 
-        foreach (var includeEntry in EnumerateExplicitXamlIncludes(projectFilePath, projectDirectory))
+        foreach (var includeEntry in EnumerateExplicitXamlIncludes(projectFilePath, projectDirectory, frameworkRegistry))
         {
             AddOrUpdateEntry(entriesByFilePath, includeEntry);
         }
@@ -497,7 +598,10 @@ internal static class XamlProjectFileDiscoveryService
         }
     }
 
-    private static IEnumerable<ProjectXamlFileEntry> EnumerateExplicitXamlIncludes(string projectFilePath, string projectDirectory)
+    private static IEnumerable<ProjectXamlFileEntry> EnumerateExplicitXamlIncludes(
+        string projectFilePath,
+        string projectDirectory,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         XDocument projectDocument;
         try
@@ -511,7 +615,7 @@ internal static class XamlProjectFileDiscoveryService
 
         foreach (var itemElement in projectDocument.Descendants())
         {
-            if (!IsXamlItemElement(itemElement.Name.LocalName))
+            if (!IsXamlItemElement(itemElement.Name.LocalName, frameworkRegistry))
             {
                 continue;
             }
@@ -636,9 +740,14 @@ internal static class XamlProjectFileDiscoveryService
         return new Regex("^" + escaped + "$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     }
 
-    private static bool IsXamlItemElement(string localName)
+    private static bool IsXamlItemElement(string localName, XamlLanguageFrameworkRegistry frameworkRegistry)
     {
-        return XamlLanguageFrameworkCatalog.IsKnownProjectXamlItemName(localName);
+        return frameworkRegistry.IsKnownProjectXamlItemName(localName);
+    }
+
+    private static string BuildProjectCacheKey(string normalizedProjectPath, XamlLanguageFrameworkRegistry frameworkRegistry)
+    {
+        return frameworkRegistry.CacheKey + "|" + normalizedProjectPath;
     }
 
     private static void AddCandidatePath(

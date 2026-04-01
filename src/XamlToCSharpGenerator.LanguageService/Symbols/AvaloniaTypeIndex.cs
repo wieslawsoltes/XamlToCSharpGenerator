@@ -6,7 +6,9 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
 
@@ -37,7 +39,11 @@ public sealed class AvaloniaTypeIndex
 
     public static AvaloniaTypeIndex Create(Compilation compilation)
     {
-        return Create(compilation, XamlLanguageFrameworkCatalog.Avalonia);
+        return Create(
+            compilation,
+            XamlBuiltInLanguageFrameworkRegistry.Instance.TryGetById(FrameworkProfileIds.Avalonia, out var framework)
+                ? framework
+                : XamlBuiltInLanguageFrameworkRegistry.Instance.DefaultFramework);
     }
 
     public static AvaloniaTypeIndex Create(Compilation compilation, XamlLanguageFrameworkInfo framework)

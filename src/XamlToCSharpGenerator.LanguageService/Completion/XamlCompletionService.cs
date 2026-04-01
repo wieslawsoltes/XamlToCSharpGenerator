@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Framework;
@@ -20,17 +19,6 @@ public sealed class XamlCompletionService
         new("x:Key", "x:Key=\"$0\"", XamlCompletionItemKind.Keyword, "Resource key")
     ];
 
-    private static readonly ImmutableArray<XamlCompletionItem> DataTypeDirectiveCompletions =
-    [
-        new("x:DataType", "x:DataType=\"$0\"", XamlCompletionItemKind.Keyword, "Compiled binding data type")
-    ];
-
-    private static readonly ImmutableArray<XamlCompletionItem> AvaloniaDirectiveCompletions =
-    [
-        new("x:DataType", "x:DataType=\"$0\"", XamlCompletionItemKind.Keyword, "Compiled binding data type"),
-        new("x:CompileBindings", "x:CompileBindings=\"True\"", XamlCompletionItemKind.Keyword, "Compiled binding toggle")
-    ];
-
     private static readonly ImmutableArray<XamlCompletionItem> BaseMarkupExtensionCompletions =
     [
         new("Binding", "{Binding $0}", XamlCompletionItemKind.MarkupExtension, "Binding"),
@@ -42,26 +30,6 @@ public sealed class XamlCompletionService
         new("x:Static", "{x:Static $0}", XamlCompletionItemKind.MarkupExtension, "Static member reference"),
         new("x:Type", "{x:Type $0}", XamlCompletionItemKind.MarkupExtension, "Type extension"),
         new("x:Null", "{x:Null}", XamlCompletionItemKind.MarkupExtension, "Null extension")
-    ];
-
-    private static readonly ImmutableArray<XamlCompletionItem> AvaloniaMarkupExtensionCompletions =
-    [
-        new("CompiledBinding", "{CompiledBinding $0}", XamlCompletionItemKind.MarkupExtension, "Compiled binding"),
-        new("ReflectionBinding", "{ReflectionBinding $0}", XamlCompletionItemKind.MarkupExtension, "Reflection binding"),
-        new("ResolveByName", "{ResolveByName $0}", XamlCompletionItemKind.MarkupExtension, "Resolve-by-name reference"),
-        new("OnPlatform", "{OnPlatform $0}", XamlCompletionItemKind.MarkupExtension, "Platform-specific value"),
-        new("OnFormFactor", "{OnFormFactor $0}", XamlCompletionItemKind.MarkupExtension, "Form-factor-specific value")
-    ];
-
-    private static readonly ImmutableArray<XamlCompletionItem> WinUiMarkupExtensionCompletions =
-    [
-        new("x:Bind", "{x:Bind $0}", XamlCompletionItemKind.MarkupExtension, "x:Bind compiled binding")
-    ];
-
-    private static readonly ImmutableArray<XamlCompletionItem> MauiMarkupExtensionCompletions =
-    [
-        new("OnPlatform", "{OnPlatform $0}", XamlCompletionItemKind.MarkupExtension, "Platform-specific value"),
-        new("OnFormFactor", "{OnFormFactor $0}", XamlCompletionItemKind.MarkupExtension, "Form-factor-specific value")
     ];
 
     public ImmutableArray<XamlCompletionItem> GetCompletions(XamlAnalysisResult analysis, SourcePosition position)
@@ -381,23 +349,38 @@ public sealed class XamlCompletionService
 
     private static ImmutableArray<XamlCompletionItem> GetDirectiveCompletions(XamlLanguageFrameworkInfo framework)
     {
-        return framework.Id switch
-        {
-            FrameworkProfileIds.Avalonia => BaseDirectiveCompletions.AddRange(AvaloniaDirectiveCompletions),
-            FrameworkProfileIds.WinUI or FrameworkProfileIds.Maui => BaseDirectiveCompletions.AddRange(DataTypeDirectiveCompletions),
-            _ => BaseDirectiveCompletions
-        };
+        return BaseDirectiveCompletions.AddRange(MapFrameworkCompletions(
+            framework.DirectiveCompletions,
+            XamlCompletionItemKind.Keyword));
     }
 
     private static ImmutableArray<XamlCompletionItem> GetMarkupExtensionCompletions(XamlLanguageFrameworkInfo framework)
     {
-        return framework.Id switch
+        return BaseMarkupExtensionCompletions.AddRange(MapFrameworkCompletions(
+            framework.MarkupExtensionCompletions,
+            XamlCompletionItemKind.MarkupExtension));
+    }
+
+    private static ImmutableArray<XamlCompletionItem> MapFrameworkCompletions(
+        ImmutableArray<XamlLanguageFrameworkCompletion> completions,
+        XamlCompletionItemKind itemKind)
+    {
+        if (completions.IsDefaultOrEmpty)
         {
-            FrameworkProfileIds.Avalonia => BaseMarkupExtensionCompletions.AddRange(AvaloniaMarkupExtensionCompletions),
-            FrameworkProfileIds.WinUI => BaseMarkupExtensionCompletions.AddRange(WinUiMarkupExtensionCompletions),
-            FrameworkProfileIds.Maui => BaseMarkupExtensionCompletions.AddRange(MauiMarkupExtensionCompletions),
-            _ => BaseMarkupExtensionCompletions
-        };
+            return ImmutableArray<XamlCompletionItem>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<XamlCompletionItem>(completions.Length);
+        foreach (var completion in completions)
+        {
+            builder.Add(new XamlCompletionItem(
+                completion.Label,
+                completion.InsertText,
+                itemKind,
+                completion.Detail));
+        }
+
+        return builder.ToImmutable();
     }
 
     private static void AppendElementTypeCompletions(

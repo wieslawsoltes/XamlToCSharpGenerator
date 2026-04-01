@@ -17,6 +17,8 @@ using XamlToCSharpGenerator.LanguageService.Hover;
 using XamlToCSharpGenerator.LanguageService.InlineCode;
 using XamlToCSharpGenerator.LanguageService.InlayHints;
 using XamlToCSharpGenerator.LanguageService.LinkedEditing;
+using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Refactorings;
 using XamlToCSharpGenerator.LanguageService.Selection;
@@ -35,6 +37,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     private readonly XamlDocumentStore _documentStore;
     private readonly ICompilationProvider _compilationProvider;
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly XamlCompilerAnalysisService _analysisService;
     private readonly XamlCompletionService _completionService;
     private readonly XamlHoverService _hoverService;
@@ -70,15 +73,32 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         new();
 
     public XamlLanguageServiceEngine()
-        : this(new DeferredCompilationProvider(static () => new MsBuildCompilationProvider()))
+        : this(
+            new DeferredCompilationProvider(static () => new MsBuildCompilationProvider(XamlBuiltInLanguageFrameworkRegistry.Instance)),
+            XamlBuiltInLanguageFrameworkRegistry.Instance)
+    {
+    }
+
+    public XamlLanguageServiceEngine(XamlLanguageFrameworkRegistry frameworkRegistry)
+        : this(
+            new DeferredCompilationProvider(() => new MsBuildCompilationProvider(frameworkRegistry)),
+            frameworkRegistry)
     {
     }
 
     public XamlLanguageServiceEngine(ICompilationProvider compilationProvider)
+        : this(compilationProvider, XamlBuiltInLanguageFrameworkRegistry.Instance)
+    {
+    }
+
+    public XamlLanguageServiceEngine(
+        ICompilationProvider compilationProvider,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _documentStore = new XamlDocumentStore();
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
-        _analysisService = new XamlCompilerAnalysisService(_compilationProvider);
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+        _analysisService = new XamlCompilerAnalysisService(_compilationProvider, _frameworkRegistry);
         _completionService = new XamlCompletionService();
         _hoverService = new XamlHoverService();
         _documentLinkService = new XamlDocumentLinkService();
@@ -87,11 +107,12 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _definitionService = new XamlDefinitionService();
         _foldingRangeService = new XamlFoldingRangeService();
         _formattingService = new XamlDocumentFormattingService();
-        _referenceService = new XamlReferenceService();
+        _referenceService = new XamlReferenceService(_frameworkRegistry);
         _csharpToXamlNavigationService = new CSharpToXamlNavigationService(
             _documentStore,
             _analysisService,
-            new CSharpSymbolResolutionService(_compilationProvider));
+            new CSharpSymbolResolutionService(_compilationProvider),
+            _frameworkRegistry);
         _documentSymbolService = new XamlDocumentSymbolService();
         _workspaceSymbolService = new XamlWorkspaceSymbolService();
         _semanticTokenService = new XamlSemanticTokenService();
@@ -99,14 +120,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         _inlineCSharpProjectionService = new XamlInlineCSharpProjectionService();
         _linkedEditingRangeService = new XamlLinkedEditingRangeService();
         _selectionRangeService = new XamlSelectionRangeService();
-        var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService);
+        var renameService = new XamlRenameService(_documentStore, _compilationProvider, _analysisService, _frameworkRegistry);
         var renameRefactoringProvider = new XamlRenameRefactoringProvider(renameService);
-        var namespacePrefixSuggestionService = new XamlNamespacePrefixSuggestionService();
+        var namespacePrefixSuggestionService = new XamlNamespacePrefixSuggestionService(_frameworkRegistry);
         var bindingRefactoringProvider = new XamlBindingMarkupRefactoringProvider(_documentStore, _analysisService);
         var classPartialRefactoringProvider = new XamlClassPartialRefactoringProvider(_documentStore, _analysisService);
         var classModifierRefactoringProvider = new XamlClassModifierRefactoringProvider(_documentStore, _analysisService);
         var eventHandlerRefactoringProvider = new XamlEventHandlerRefactoringProvider(_documentStore, _analysisService);
-        var includeRefactoringProvider = new XamlIncludeRefactoringProvider(_documentStore, _analysisService);
+        var includeRefactoringProvider = new XamlIncludeRefactoringProvider(_documentStore, _analysisService, _frameworkRegistry);
         var propertyElementRefactoringProvider = new XamlPropertyElementRefactoringProvider(_documentStore, _analysisService);
         var namespaceImportRefactoringProvider = new XamlNamespaceImportRefactoringProvider(
             _documentStore,
@@ -494,7 +515,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             AddMatchingWorkspaceSymbols(builder, _workspaceSymbolService.GetWorkspaceSymbols(analysis), normalizedQuery);
         }
 
-        foreach (var filePath in XamlProjectFileDiscoveryService.DiscoverWorkspaceXamlFilePaths(options.WorkspaceRoot))
+        foreach (var filePath in XamlProjectFileDiscoveryService.DiscoverWorkspaceXamlFilePaths(options.WorkspaceRoot, _frameworkRegistry))
         {
             if (!seenFiles.Add(filePath) || !File.Exists(filePath))
             {
@@ -628,6 +649,7 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             if (!XamlProjectFileDiscoveryService.TryResolveOwningProjectXamlEntry(
                     filePath,
                     options.WorkspaceRoot,
+                    _frameworkRegistry,
                     out projectPath,
                     out var resolvedOwningEntry))
             {
@@ -651,11 +673,13 @@ public sealed class XamlLanguageServiceEngine : IDisposable
                 projectPath,
                 filePath,
                 filePath,
+                _frameworkRegistry,
                 out var entry))
         {
             if (XamlProjectFileDiscoveryService.TryResolveOwningProjectXamlEntry(
                     filePath,
                     options.WorkspaceRoot,
+                    _frameworkRegistry,
                     out var owningProjectPath,
                     out var resolvedOwningEntry))
             {

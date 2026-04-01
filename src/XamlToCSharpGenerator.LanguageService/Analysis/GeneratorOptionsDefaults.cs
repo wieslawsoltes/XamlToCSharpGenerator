@@ -13,7 +13,7 @@ internal static class GeneratorOptionsDefaults
     {
         return new GeneratorOptions(
             IsEnabled: true,
-            UseCompiledBindingsByDefault: string.Equals(framework.Id, FrameworkProfileIds.Avalonia, System.StringComparison.Ordinal),
+            UseCompiledBindingsByDefault: framework.UseCompiledBindingsByDefault,
             CSharpExpressionsEnabled: true,
             ImplicitCSharpExpressionsEnabled: true,
             CreateSourceInfo: true,

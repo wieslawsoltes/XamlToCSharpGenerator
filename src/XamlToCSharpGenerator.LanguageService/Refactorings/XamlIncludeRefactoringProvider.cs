@@ -22,10 +22,12 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
 
     public XamlIncludeRefactoringProvider(
         XamlDocumentStore documentStore,
-        XamlCompilerAnalysisService analysisService)
+        XamlCompilerAnalysisService analysisService,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _documentStore = documentStore;
         _analysisService = analysisService;
+        _ = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
     }
 
     public async Task<ImmutableArray<XamlRefactoringAction>> GetCodeActionsAsync(
@@ -101,6 +103,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
                 projectPath,
                 document.FilePath,
                 targetFilePath,
+                analysis.FrameworkRegistry,
                 out _);
         if (!resolvedIncludeFile ||
             !includeFileExists ||
@@ -120,7 +123,7 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
         string includePath = Path.GetRelativePath(projectDirectory, targetFilePath)
             .Replace('\\', '/');
         bool hasIncludePath = !string.IsNullOrWhiteSpace(includePath);
-        bool alreadyIncludesPath = hasIncludePath && ProjectAlreadyIncludesPath(projectText, includePath);
+        bool alreadyIncludesPath = hasIncludePath && ProjectAlreadyIncludesPath(projectText, includePath, analysis.FrameworkRegistry);
         XamlDocumentTextEdit edit = default!;
         bool createdEdit = hasIncludePath &&
             !alreadyIncludesPath &&
@@ -492,14 +495,17 @@ internal sealed class XamlIncludeRefactoringProvider : IXamlRefactoringProvider
                string.Equals(extension, ".axaml", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ProjectAlreadyIncludesPath(string projectText, string includePath)
+    private static bool ProjectAlreadyIncludesPath(
+        string projectText,
+        string includePath,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         try
         {
             XDocument document = XDocument.Parse(projectText, LoadOptions.PreserveWhitespace);
             return document
                 .Descendants()
-                .Where(static element => XamlLanguageFrameworkCatalog.IsKnownProjectXamlItemName(element.Name.LocalName))
+                .Where(element => frameworkRegistry.IsKnownProjectXamlItemName(element.Name.LocalName))
                 .Attributes("Include")
                 .Any(attribute => string.Equals(
                     NormalizeProjectIncludePath(attribute.Value),

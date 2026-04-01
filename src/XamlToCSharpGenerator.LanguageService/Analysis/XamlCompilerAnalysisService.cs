@@ -13,6 +13,7 @@ using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Diagnostics;
 using XamlToCSharpGenerator.LanguageService.Framework;
+using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Workspace;
@@ -22,19 +23,21 @@ namespace XamlToCSharpGenerator.LanguageService.Analysis;
 public sealed class XamlCompilerAnalysisService
 {
     private readonly ICompilationProvider _compilationProvider;
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly XamlLanguageFrameworkResolver _frameworkResolver;
 
     public XamlCompilerAnalysisService(ICompilationProvider compilationProvider)
-        : this(compilationProvider, new XamlLanguageFrameworkResolver())
+        : this(compilationProvider, XamlBuiltInLanguageFrameworkRegistry.Instance)
     {
     }
 
-    internal XamlCompilerAnalysisService(
+    public XamlCompilerAnalysisService(
         ICompilationProvider compilationProvider,
-        XamlLanguageFrameworkResolver frameworkResolver)
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
-        _frameworkResolver = frameworkResolver ?? throw new ArgumentNullException(nameof(frameworkResolver));
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+        _frameworkResolver = new XamlLanguageFrameworkResolver(_frameworkRegistry);
     }
 
     public async Task<XamlAnalysisResult> AnalyzeAsync(
@@ -55,7 +58,12 @@ public sealed class XamlCompilerAnalysisService
             diagnostics.AddRange(snapshot.Diagnostics);
         }
 
-        var framework = _frameworkResolver.Resolve(options, snapshot, document.FilePath, document.Text);
+        var framework = _frameworkResolver.Resolve(
+            options.FrameworkId,
+            snapshot.ProjectPath,
+            snapshot.Compilation,
+            document.FilePath,
+            document.Text);
         ResolvedViewModel? resolvedViewModel = null;
 
         var generatorOptions = GeneratorOptionsDefaults.Create(
@@ -121,6 +129,7 @@ public sealed class XamlCompilerAnalysisService
             XmlDocument: xmlDocument,
             PrefixMap: prefixMap,
             TypeIndex: typeIndex,
+            FrameworkRegistry: _frameworkRegistry,
             Framework: framework,
             Diagnostics: diagnostics.ToImmutable());
     }

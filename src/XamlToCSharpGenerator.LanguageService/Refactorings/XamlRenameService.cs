@@ -17,6 +17,7 @@ using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
 using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -33,18 +34,21 @@ internal sealed class XamlRenameService
     private readonly XamlDocumentStore _documentStore;
     private readonly ICompilationProvider _compilationProvider;
     private readonly XamlCompilerAnalysisService _analysisService;
+    private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly XamlReferenceService _referenceService;
     private readonly CSharpSymbolResolutionService _csharpSymbolResolutionService;
 
     public XamlRenameService(
         XamlDocumentStore documentStore,
         ICompilationProvider compilationProvider,
-        XamlCompilerAnalysisService analysisService)
+        XamlCompilerAnalysisService analysisService,
+        XamlLanguageFrameworkRegistry frameworkRegistry)
     {
         _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
         _compilationProvider = compilationProvider ?? throw new ArgumentNullException(nameof(compilationProvider));
         _analysisService = analysisService ?? throw new ArgumentNullException(nameof(analysisService));
-        _referenceService = new XamlReferenceService();
+        _frameworkRegistry = frameworkRegistry ?? throw new ArgumentNullException(nameof(frameworkRegistry));
+        _referenceService = new XamlReferenceService(_frameworkRegistry);
         _csharpSymbolResolutionService = new CSharpSymbolResolutionService(_compilationProvider);
     }
 
@@ -273,7 +277,10 @@ internal sealed class XamlRenameService
         }
 
         var changesBuilder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<XamlDocumentTextEdit>>(StringComparer.Ordinal);
-        var xamlFilePaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(projectPath, currentFilePath: null);
+        var xamlFilePaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(
+            projectPath,
+            currentFilePath: null,
+            _frameworkRegistry);
         foreach (var xamlFilePath in xamlFilePaths)
         {
             var analysis = await AnalyzeProjectXamlFileAsync(xamlFilePath, options, cancellationToken).ConfigureAwait(false);
@@ -336,7 +343,10 @@ internal sealed class XamlRenameService
         var snapshot = await _compilationProvider
             .GetCompilationAsync(currentFilePath, options.WorkspaceRoot, cancellationToken)
             .ConfigureAwait(false);
-        var discoveredPaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(snapshot.ProjectPath, currentFilePath);
+        var discoveredPaths = XamlProjectFileDiscoveryService.DiscoverProjectXamlFilePaths(
+            snapshot.ProjectPath,
+            currentFilePath,
+            _frameworkRegistry);
         if (!discoveredPaths.IsDefaultOrEmpty)
         {
             return discoveredPaths;
