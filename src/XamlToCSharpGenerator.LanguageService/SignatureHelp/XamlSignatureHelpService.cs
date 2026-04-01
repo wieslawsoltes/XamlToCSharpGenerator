@@ -121,7 +121,7 @@ public sealed class XamlSignatureHelpService
     {
         var builder = ImmutableDictionary.CreateBuilder<string, SignatureDefinition>(StringComparer.OrdinalIgnoreCase);
         Add(builder, "Binding", "Binding(path, Mode, Source, RelativeSource, ElementName, Converter, ConverterParameter, StringFormat, FallbackValue, TargetNullValue)",
-            "Avalonia binding markup extension.",
+            "Binding markup extension.",
             ("path", "The source property path."),
             ("Mode", "Binding mode."),
             ("Source", "Explicit binding source."),

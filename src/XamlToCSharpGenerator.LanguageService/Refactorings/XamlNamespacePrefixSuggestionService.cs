@@ -3,14 +3,12 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using XamlToCSharpGenerator.LanguageService.Framework;
 
 namespace XamlToCSharpGenerator.LanguageService.Refactorings;
 
 internal sealed class XamlNamespacePrefixSuggestionService
 {
-    private const string AvaloniaXmlnsPrefixAttributeMetadataName = "Avalonia.Metadata.XmlnsPrefixAttribute";
-    private const string SourceGenGlobalXmlnsPrefixAttributeMetadataName = "XamlToCSharpGenerator.Runtime.SourceGenGlobalXmlnsPrefixAttribute";
-
     public string SuggestPrefix(
         Compilation? compilation,
         ImmutableDictionary<string, string> inScopePrefixMap,
@@ -106,8 +104,7 @@ internal sealed class XamlNamespacePrefixSuggestionService
     private static bool IsXmlnsPrefixAttribute(AttributeData attribute)
     {
         var metadataName = attribute.AttributeClass?.ToDisplayString();
-        return string.Equals(metadataName, AvaloniaXmlnsPrefixAttributeMetadataName, StringComparison.Ordinal) ||
-               string.Equals(metadataName, SourceGenGlobalXmlnsPrefixAttributeMetadataName, StringComparison.Ordinal);
+        return XamlLanguageFrameworkCatalog.IsKnownXmlnsPrefixAttribute(metadataName);
     }
 
     private static string BuildClrNamespaceCandidate(string clrNamespace)

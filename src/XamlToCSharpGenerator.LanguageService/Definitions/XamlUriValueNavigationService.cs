@@ -72,11 +72,11 @@ internal static class XamlUriValueNavigationService
             return true;
         }
 
-        if (TryResolveAbsoluteAvaresTargetPath(analysis, normalizedIncludeSource, out var avaresTargetPath) &&
+        if (TryResolveAbsoluteProjectResourceTargetPath(analysis, normalizedIncludeSource, out var absoluteTargetPath) &&
             XamlProjectFileDiscoveryService.TryResolveProjectXamlFileByTargetPath(
                 analysis.ProjectPath,
                 analysis.Document.FilePath,
-                avaresTargetPath,
+                absoluteTargetPath,
                 out targetFilePath))
         {
             return true;
@@ -137,6 +137,26 @@ internal static class XamlUriValueNavigationService
         return File.Exists(filePath) && IsXamlFile(filePath);
     }
 
+    private static bool TryResolveAbsoluteProjectResourceTargetPath(
+        XamlAnalysisResult analysis,
+        string includeSource,
+        out string targetPath)
+    {
+        targetPath = string.Empty;
+        if (analysis.Framework.SupportsAssemblyResourceUris &&
+            TryResolveAbsoluteAvaresTargetPath(analysis, includeSource, out targetPath))
+        {
+            return true;
+        }
+
+        if (TryResolvePackTargetPath(analysis, includeSource, out targetPath))
+        {
+            return true;
+        }
+
+        return TryResolveMsAppxTargetPath(includeSource, out targetPath);
+    }
+
     private static bool TryResolveAbsoluteAvaresTargetPath(
         XamlAnalysisResult analysis,
         string includeSource,
@@ -159,6 +179,56 @@ internal static class XamlUriValueNavigationService
         return targetPath.Length > 0;
     }
 
+    private static bool TryResolvePackTargetPath(
+        XamlAnalysisResult analysis,
+        string includeSource,
+        out string targetPath)
+    {
+        const string applicationPrefix = "pack://application:,,,/";
+
+        targetPath = string.Empty;
+        if (!includeSource.StartsWith(applicationPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var payload = includeSource.Substring(applicationPrefix.Length).Trim();
+        if (payload.Length == 0)
+        {
+            return false;
+        }
+
+        var componentSeparator = payload.IndexOf(";component/", StringComparison.OrdinalIgnoreCase);
+        if (componentSeparator >= 0)
+        {
+            var assemblyName = payload.Substring(0, componentSeparator).Trim();
+            if (assemblyName.Length > 0 &&
+                TryGetCurrentBuildAssemblyName(analysis, out var currentAssemblyName) &&
+                !string.Equals(assemblyName, currentAssemblyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            payload = payload.Substring(componentSeparator + ";component/".Length);
+        }
+
+        targetPath = XamlIncludePathSemantics.NormalizePath(payload.TrimStart('/'));
+        return targetPath.Length > 0;
+    }
+
+    private static bool TryResolveMsAppxTargetPath(string includeSource, out string targetPath)
+    {
+        targetPath = string.Empty;
+        if (!Uri.TryCreate(includeSource, UriKind.Absolute, out var absoluteUri) ||
+            !absoluteUri.Scheme.Equals("ms-appx", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        targetPath = XamlIncludePathSemantics.NormalizePath(absoluteUri.AbsolutePath.TrimStart('/'));
+        return targetPath.Length > 0;
+    }
+
     private static bool LooksLikeXamlUri(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -167,6 +237,12 @@ internal static class XamlUriValueNavigationService
         }
 
         if (value.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
+        {
+            return HasXamlExtension(value);
+        }
+
+        if (value.StartsWith("pack://application:,,,/", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("ms-appx://", StringComparison.OrdinalIgnoreCase))
         {
             return HasXamlExtension(value);
         }

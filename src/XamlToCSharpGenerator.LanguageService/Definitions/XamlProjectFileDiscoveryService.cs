@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Text;
 
 namespace XamlToCSharpGenerator.LanguageService.Definitions;
@@ -637,12 +638,7 @@ internal static class XamlProjectFileDiscoveryService
 
     private static bool IsXamlItemElement(string localName)
     {
-        return string.Equals(localName, "AvaloniaXaml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Page", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "ApplicationDefinition", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "EmbeddedResource", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "None", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Content", StringComparison.OrdinalIgnoreCase);
+        return XamlLanguageFrameworkCatalog.IsKnownProjectXamlItemName(localName);
     }
 
     private static void AddCandidatePath(

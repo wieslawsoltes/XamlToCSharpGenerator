@@ -194,7 +194,8 @@ internal static class XamlTypeReferenceNavigationResolver
                 prefixMap,
                 qualifiedTypeToken,
                 out var xmlNamespace,
-                out var xmlTypeName) ||
+                out var xmlTypeName,
+                analysis.Framework.DefaultXmlNamespace) ||
             !XamlClrSymbolResolver.TryResolveClrNamespace(xmlNamespace, out var clrNamespace))
         {
             return false;

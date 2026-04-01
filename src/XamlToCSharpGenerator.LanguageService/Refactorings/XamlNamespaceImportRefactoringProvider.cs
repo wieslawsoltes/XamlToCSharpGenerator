@@ -19,8 +19,6 @@ namespace XamlToCSharpGenerator.LanguageService.Refactorings;
 
 internal sealed class XamlNamespaceImportRefactoringProvider : IXamlRefactoringProvider
 {
-    private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
-
     private readonly XamlDocumentStore _documentStore;
     private readonly XamlCompilerAnalysisService _analysisService;
     private readonly XamlNamespacePrefixSuggestionService _prefixSuggestionService;
@@ -416,7 +414,11 @@ internal sealed class XamlNamespaceImportRefactoringProvider : IXamlRefactoringP
                      .FindTypesByXmlTypeName(xmlTypeName)
                      .GroupBy(static candidate => candidate.FullTypeName, StringComparer.Ordinal))
         {
-            AvaloniaTypeInfo chosenCandidate = ChoosePreferredCandidate(groupedCandidate, prefixMap, currentXmlNamespace);
+            AvaloniaTypeInfo chosenCandidate = ChoosePreferredCandidate(
+                groupedCandidate,
+                prefixMap,
+                currentXmlNamespace,
+                analysis.Framework.DefaultXmlNamespace);
             if (!TryCreateImportTarget(
                     analysis,
                     rawElementName,
@@ -444,11 +446,12 @@ internal sealed class XamlNamespaceImportRefactoringProvider : IXamlRefactoringP
     private AvaloniaTypeInfo ChoosePreferredCandidate(
         IGrouping<string, AvaloniaTypeInfo> candidates,
         ImmutableDictionary<string, string> prefixMap,
-        string currentXmlNamespace)
+        string currentXmlNamespace,
+        string defaultXmlNamespace)
     {
         return candidates
             .OrderByDescending(candidate => HasExistingNonDefaultPrefix(prefixMap, candidate.XmlNamespace))
-            .ThenByDescending(candidate => !string.Equals(candidate.XmlNamespace, AvaloniaDefaultXmlNamespace, StringComparison.Ordinal))
+            .ThenByDescending(candidate => !string.Equals(candidate.XmlNamespace, defaultXmlNamespace, StringComparison.Ordinal))
             .ThenByDescending(candidate => !string.Equals(candidate.XmlNamespace, currentXmlNamespace, StringComparison.Ordinal))
             .ThenBy(candidate => candidate.XmlNamespace, StringComparer.Ordinal)
             .First();

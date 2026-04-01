@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Completion;
+using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Symbols;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -3120,12 +3121,7 @@ public sealed class XamlReferenceService
 
     private static bool IsXamlItemElement(string localName)
     {
-        return string.Equals(localName, "AvaloniaXaml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Page", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "None", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "Content", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "EmbeddedResource", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(localName, "AdditionalFiles", StringComparison.OrdinalIgnoreCase);
+        return XamlLanguageFrameworkCatalog.IsKnownProjectXamlItemName(localName);
     }
 
     private static bool TryResolveTypeInfoByXmlNamespace(
