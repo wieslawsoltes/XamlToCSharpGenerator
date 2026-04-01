@@ -161,8 +161,10 @@ $packagePages = @(
     'runtime',
     'runtime-core',
     'runtime-avalonia',
+    'remote-protocol',
     'language-service',
     'language-server-tool',
+    'mcp-server-tool',
     'editor-avalonia',
     'vscode-extension'
 )

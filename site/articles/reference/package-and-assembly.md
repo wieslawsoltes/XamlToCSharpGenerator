@@ -4,7 +4,7 @@ title: "Package and Assembly"
 
 # Package and Assembly
 
-AXSG ships a mix of package shells, code-bearing libraries, build payloads, a .NET tool, and a VS Code extension. This page maps each install identity to its primary shipped payload and generated API coverage.
+AXSG ships a mix of package shells, code-bearing libraries, build payloads, .NET tool packages, and a VS Code extension. This page maps each install identity to its primary shipped payload and generated API coverage.
 
 When you already know the assembly or tool package name and need the direct generated API route, use [Assembly Catalog](assembly-catalog/).
 

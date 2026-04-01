@@ -4,7 +4,7 @@ title: "Docs and Release Infrastructure"
 
 # Docs and Release Infrastructure
 
-AXSG ships documentation, NuGet packages, a .NET tool, and a VS Code extension. The docs and release infrastructure ties those surfaces together so the published site, shipped artifacts, and CI outputs stay aligned.
+AXSG ships documentation, NuGet packages, two .NET tools, and a VS Code extension. The docs and release infrastructure ties those surfaces together so the published site, shipped artifacts, and CI outputs stay aligned.
 
 ## Docs stack
 

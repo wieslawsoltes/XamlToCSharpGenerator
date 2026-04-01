@@ -11,7 +11,7 @@ AXSG ships multiple artifacts because the project spans compile-time, runtime, e
 - compiler and framework packages
 - runtime packages
 - language service and editor packages
-- CLI tool package
+- CLI tool packages
 - internal host artifacts
 - VS Code extension
 

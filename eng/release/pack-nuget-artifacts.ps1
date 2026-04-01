@@ -57,8 +57,10 @@ $projects = @(
     'src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj',
     'src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj',
     'src/XamlToCSharpGenerator.LanguageService/XamlToCSharpGenerator.LanguageService.csproj',
+    'src/XamlToCSharpGenerator.McpServer/XamlToCSharpGenerator.McpServer.csproj',
     'src/XamlToCSharpGenerator.MiniLanguageParsing/XamlToCSharpGenerator.MiniLanguageParsing.csproj',
     'src/XamlToCSharpGenerator.NoUi/XamlToCSharpGenerator.NoUi.csproj',
+    'src/XamlToCSharpGenerator.RemoteProtocol/XamlToCSharpGenerator.RemoteProtocol.csproj',
     'src/XamlToCSharpGenerator.Runtime/XamlToCSharpGenerator.Runtime.csproj',
     'src/XamlToCSharpGenerator.Runtime.Avalonia/XamlToCSharpGenerator.Runtime.Avalonia.csproj',
     'src/XamlToCSharpGenerator.Runtime.Core/XamlToCSharpGenerator.Runtime.Core.csproj'
@@ -67,18 +69,21 @@ $projects = @(
 Push-Location $repoRoot
 try {
     foreach ($project in $projects) {
-        Invoke-ExternalCommand dotnet `
-            pack `
-            $project `
-            -c `
-            Release `
-            -o `
-            $resolvedOutputDir `
-            -m:1 `
-            /nodeReuse:false `
-            --disable-build-servers `
-            /p:ContinuousIntegrationBuild=true `
-            /p:Version=$Version
+        $dotnetPackArguments = @(
+            'pack',
+            $project,
+            '-c',
+            'Release',
+            '-o',
+            $resolvedOutputDir,
+            '-m:1',
+            '/nodeReuse:false',
+            '--disable-build-servers',
+            '/p:ContinuousIntegrationBuild=true',
+            "/p:Version=$Version"
+        )
+
+        Invoke-ExternalCommand -FilePath dotnet -Arguments $dotnetPackArguments
     }
 }
 finally {

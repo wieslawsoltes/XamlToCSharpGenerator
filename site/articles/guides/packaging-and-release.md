@@ -11,7 +11,7 @@ This guide covers how AXSG packages NuGet artifacts, the VSIX, docs output, and 
 AXSG ships:
 
 - NuGet packages for compiler/runtime/tooling layers
-- a .NET tool package for the language server
+- two .NET tool packages for the language server and workspace MCP host
 - a VSIX for the VS Code extension
 - a Lunet-generated docs site published to GitHub Pages
 
