@@ -64,6 +64,34 @@ internal static class AvaloniaLoaderCallAssertions
                     .SequenceEqual(expectedLoaderParameterTypes));
     }
 
+    public static void AssertMethodCallsSourceGeneratedUriLoader(
+        AssemblyDefinition assembly,
+        string typeFullName,
+        string methodName,
+        int explicitParameterCount,
+        IReadOnlyList<string> expectedLoaderParameterTypes)
+    {
+        var type = assembly.MainModule.Types.Single(candidate => candidate.FullName == typeFullName);
+        var method = type.Methods.Single(candidate =>
+            candidate.Name == methodName &&
+            candidate.Parameters.Count == explicitParameterCount);
+        var calledMethods = method.Body.Instructions
+            .Where(static instruction => instruction.OpCode == OpCodes.Call)
+            .Select(static instruction => instruction.Operand as MethodReference)
+            .Where(static methodReference => methodReference is not null)
+            .Cast<MethodReference>()
+            .ToArray();
+
+        Assert.Contains(
+            calledMethods,
+            calledMethod =>
+                string.Equals(calledMethod.Name, "Load", StringComparison.Ordinal) &&
+                string.Equals(calledMethod.DeclaringType.FullName, "XamlToCSharpGenerator.Runtime.AvaloniaSourceGeneratedXamlLoader", StringComparison.Ordinal) &&
+                calledMethod.Parameters.Count == expectedLoaderParameterTypes.Count &&
+                calledMethod.Parameters.Select(static parameter => parameter.ParameterType.FullName)
+                    .SequenceEqual(expectedLoaderParameterTypes));
+    }
+
     public static void AssertNoAvaloniaLoaderCallsRemain(AssemblyDefinition assembly, string targetNamespace)
     {
         foreach (var type in EnumerateTypes(assembly.MainModule.Types))

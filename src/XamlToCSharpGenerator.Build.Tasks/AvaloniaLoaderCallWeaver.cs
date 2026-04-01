@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Pdb;
@@ -16,6 +17,8 @@ internal sealed class AvaloniaLoaderCallWeaver
     private const string SourceGeneratedPopulateMethodName = "__PopulateGeneratedObjectGraph";
     private const string ServiceProviderTypeName = "System.IServiceProvider";
     private const string ObjectTypeName = "System.Object";
+    private const string UriTypeName = "System.Uri";
+    private const string SourceGeneratedRuntimeLoaderAssemblyName = "XamlToCSharpGenerator.Runtime.Avalonia";
 
     public AvaloniaLoaderCallWeaverResult Rewrite(AvaloniaLoaderCallWeaverConfiguration configuration)
     {
@@ -88,6 +91,7 @@ internal sealed class AvaloniaLoaderCallWeaver
         var methodsByToken = EnumerateTypes(assembly.MainModule.Types)
             .SelectMany(static type => type.Methods)
             .ToDictionary(static method => method.MetadataToken.ToInt32());
+        var uriLoaderReference = EnsureRuntimeLoaderAssemblyReference(assembly.MainModule, configuration.ReferencePaths);
         var initializerCache = new Dictionary<string, AvaloniaLoaderGeneratedInitializerCacheEntry>(StringComparer.Ordinal);
 
         foreach (var methodMatch in scanResult.MethodMatches)
@@ -97,7 +101,7 @@ internal sealed class AvaloniaLoaderCallWeaver
                 continue;
             }
 
-            RewriteMethodFromMetadataPlan(method, methodMatch, initializerCache, accumulator);
+            RewriteMethodFromMetadataPlan(method, methodMatch, initializerCache, uriLoaderReference, accumulator);
         }
 
         var result = accumulator.ToResult();
@@ -124,11 +128,12 @@ internal sealed class AvaloniaLoaderCallWeaver
         var readerParameters = CreateReaderParameters(configuration, symbolHandling);
 
         using var assembly = AssemblyDefinition.ReadAssembly(configuration.AssemblyPath, readerParameters);
+        var uriLoaderReference = EnsureRuntimeLoaderAssemblyReference(assembly.MainModule, configuration.ReferencePaths);
         var accumulator = new AvaloniaLoaderCallWeaverAccumulator();
 
         foreach (var type in assembly.MainModule.Types)
         {
-            RewriteType(type, accumulator);
+            RewriteType(type, uriLoaderReference, accumulator);
         }
 
         var result = accumulator.ToResult();
@@ -149,7 +154,10 @@ internal sealed class AvaloniaLoaderCallWeaver
         return accumulator.ToResult();
     }
 
-    private static void RewriteType(TypeDefinition type, AvaloniaLoaderCallWeaverAccumulator accumulator)
+    private static void RewriteType(
+        TypeDefinition type,
+        AssemblyNameReference uriLoaderReference,
+        AvaloniaLoaderCallWeaverAccumulator accumulator)
     {
         accumulator.InspectedTypeCount++;
 
@@ -169,7 +177,13 @@ internal sealed class AvaloniaLoaderCallWeaver
             {
                 if (instructions[instructionIndex].OpCode != OpCodes.Call ||
                     instructions[instructionIndex].Operand is not MethodReference calledMethod ||
-                    !TryMatchAvaloniaLoaderCall(calledMethod, out var hasServiceProvider) ||
+                    !TryMatchAvaloniaLoaderCall(calledMethod, out var callKind))
+                {
+                    continue;
+                }
+
+                if ((callKind == AvaloniaLoaderCallKind.ObjectWithoutServiceProvider ||
+                     callKind == AvaloniaLoaderCallKind.ObjectWithServiceProvider) &&
                     !MatchThisCall(instructions, instructionIndex - 1))
                 {
                     continue;
@@ -177,9 +191,13 @@ internal sealed class AvaloniaLoaderCallWeaver
 
                 accumulator.MatchedLoaderCallCount++;
 
-                var replacementMethod = hasServiceProvider
-                    ? initializerWithServiceProvider
-                    : initializerWithoutServiceProvider;
+                var replacementMethod = GetReplacementMethod(
+                    callKind,
+                    calledMethod,
+                    initializerWithoutServiceProvider,
+                    initializerWithServiceProvider,
+                    uriLoaderReference,
+                    type.Module);
                 if (replacementMethod is null)
                 {
                     if (hasSourceGeneratedPopulateMethod)
@@ -200,7 +218,7 @@ internal sealed class AvaloniaLoaderCallWeaver
 
         foreach (var nestedType in type.NestedTypes)
         {
-            RewriteType(nestedType, accumulator);
+            RewriteType(nestedType, uriLoaderReference, accumulator);
         }
     }
 
@@ -208,6 +226,7 @@ internal sealed class AvaloniaLoaderCallWeaver
         MethodDefinition method,
         AvaloniaLoaderMethodMatch methodMatch,
         Dictionary<string, AvaloniaLoaderGeneratedInitializerCacheEntry> initializerCache,
+        AssemblyNameReference uriLoaderReference,
         AvaloniaLoaderCallWeaverAccumulator accumulator)
     {
         var methodBody = method.Body;
@@ -229,21 +248,27 @@ internal sealed class AvaloniaLoaderCallWeaver
             if (instruction is null ||
                 instruction.OpCode != OpCodes.Call ||
                 instruction.Operand is not MethodReference calledMethod ||
-                !TryMatchAvaloniaLoaderCall(calledMethod, out var actualHasServiceProvider) ||
-                actualHasServiceProvider != callSite.HasServiceProvider)
+                !TryMatchAvaloniaLoaderCall(calledMethod, out var actualCallKind) ||
+                actualCallKind != callSite.Kind)
             {
                 continue;
             }
 
             var instructionIndex = instructions.IndexOf(instruction);
-            if (!MatchThisCall(instructions, instructionIndex - 1))
+            if ((callSite.Kind == AvaloniaLoaderCallKind.ObjectWithoutServiceProvider ||
+                 callSite.Kind == AvaloniaLoaderCallKind.ObjectWithServiceProvider) &&
+                !MatchThisCall(instructions, instructionIndex - 1))
             {
                 continue;
             }
 
-            var replacementMethod = callSite.HasServiceProvider
-                ? initializerCacheEntry.WithServiceProvider
-                : initializerCacheEntry.WithoutServiceProvider;
+            var replacementMethod = GetReplacementMethod(
+                callSite.Kind,
+                calledMethod,
+                initializerCacheEntry.WithoutServiceProvider,
+                initializerCacheEntry.WithServiceProvider,
+                uriLoaderReference,
+                method.Module);
             if (replacementMethod is null)
             {
                 if (initializerCacheEntry.HasSourceGeneratedPopulateMethod)
@@ -290,9 +315,33 @@ internal sealed class AvaloniaLoaderCallWeaver
         return null;
     }
 
-    private static bool TryMatchAvaloniaLoaderCall(MethodReference method, out bool hasServiceProvider)
+    private static MethodReference? GetReplacementMethod(
+        AvaloniaLoaderCallKind callKind,
+        MethodReference originalLoaderMethod,
+        MethodDefinition? initializerWithoutServiceProvider,
+        MethodDefinition? initializerWithServiceProvider,
+        AssemblyNameReference uriLoaderReference,
+        ModuleDefinition module)
     {
-        hasServiceProvider = false;
+        return callKind switch
+        {
+            AvaloniaLoaderCallKind.ObjectWithoutServiceProvider => initializerWithoutServiceProvider,
+            AvaloniaLoaderCallKind.ObjectWithServiceProvider => initializerWithServiceProvider,
+            AvaloniaLoaderCallKind.UriWithoutServiceProvider => CreateUriLoaderMethodReference(
+                module,
+                uriLoaderReference,
+                originalLoaderMethod),
+            AvaloniaLoaderCallKind.UriWithServiceProvider => CreateUriLoaderMethodReference(
+                module,
+                uriLoaderReference,
+                originalLoaderMethod),
+            _ => null
+        };
+    }
+
+    private static bool TryMatchAvaloniaLoaderCall(MethodReference method, out AvaloniaLoaderCallKind callKind)
+    {
+        callKind = default;
 
         if (!string.Equals(method.Name, "Load", StringComparison.Ordinal) ||
             !string.Equals(method.DeclaringType.FullName, AvaloniaLoaderTypeName, StringComparison.Ordinal))
@@ -303,6 +352,7 @@ internal sealed class AvaloniaLoaderCallWeaver
         if (method.Parameters.Count == 1 &&
             string.Equals(method.Parameters[0].ParameterType.FullName, ObjectTypeName, StringComparison.Ordinal))
         {
+            callKind = AvaloniaLoaderCallKind.ObjectWithoutServiceProvider;
             return true;
         }
 
@@ -310,11 +360,92 @@ internal sealed class AvaloniaLoaderCallWeaver
             string.Equals(method.Parameters[0].ParameterType.FullName, ServiceProviderTypeName, StringComparison.Ordinal) &&
             string.Equals(method.Parameters[1].ParameterType.FullName, ObjectTypeName, StringComparison.Ordinal))
         {
-            hasServiceProvider = true;
+            callKind = AvaloniaLoaderCallKind.ObjectWithServiceProvider;
+            return true;
+        }
+
+        if (method.Parameters.Count == 2 &&
+            string.Equals(method.Parameters[0].ParameterType.FullName, UriTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.Parameters[1].ParameterType.FullName, UriTypeName, StringComparison.Ordinal))
+        {
+            callKind = AvaloniaLoaderCallKind.UriWithoutServiceProvider;
+            return true;
+        }
+
+        if (method.Parameters.Count == 3 &&
+            string.Equals(method.Parameters[0].ParameterType.FullName, ServiceProviderTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.Parameters[1].ParameterType.FullName, UriTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.Parameters[2].ParameterType.FullName, UriTypeName, StringComparison.Ordinal))
+        {
+            callKind = AvaloniaLoaderCallKind.UriWithServiceProvider;
             return true;
         }
 
         return false;
+    }
+
+    private static MethodReference CreateUriLoaderMethodReference(
+        ModuleDefinition module,
+        AssemblyNameReference runtimeAssemblyReference,
+        MethodReference originalLoaderMethod)
+    {
+        var runtimeLoaderType = new TypeReference(
+            "XamlToCSharpGenerator.Runtime",
+            "AvaloniaSourceGeneratedXamlLoader",
+            module,
+            runtimeAssemblyReference);
+
+        var uriLoaderMethod = new MethodReference("Load", module.TypeSystem.Object, runtimeLoaderType)
+        {
+            HasThis = false
+        };
+        for (var index = 0; index < originalLoaderMethod.Parameters.Count; index++)
+        {
+            var parameter = originalLoaderMethod.Parameters[index];
+            uriLoaderMethod.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+        }
+
+        return module.ImportReference(uriLoaderMethod);
+    }
+
+    private static AssemblyNameReference EnsureRuntimeLoaderAssemblyReference(
+        ModuleDefinition module,
+        IReadOnlyList<string>? referencePaths)
+    {
+        var existingReference = module.AssemblyReferences.FirstOrDefault(reference =>
+            string.Equals(reference.Name, SourceGeneratedRuntimeLoaderAssemblyName, StringComparison.Ordinal));
+        if (existingReference is not null)
+        {
+            return existingReference;
+        }
+
+        AssemblyNameReference runtimeAssemblyReference;
+        var runtimeAssemblyPath = referencePaths?.FirstOrDefault(path =>
+            string.Equals(
+                Path.GetFileNameWithoutExtension(path),
+                SourceGeneratedRuntimeLoaderAssemblyName,
+                StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(runtimeAssemblyPath) &&
+            File.Exists(runtimeAssemblyPath))
+        {
+            var assemblyName = AssemblyName.GetAssemblyName(runtimeAssemblyPath);
+            runtimeAssemblyReference = new AssemblyNameReference(
+                assemblyName.Name ?? SourceGeneratedRuntimeLoaderAssemblyName,
+                assemblyName.Version ?? new Version(0, 0, 0, 0))
+            {
+                Culture = assemblyName.CultureName,
+                PublicKeyToken = assemblyName.GetPublicKeyToken()
+            };
+        }
+        else
+        {
+            runtimeAssemblyReference = new AssemblyNameReference(
+                SourceGeneratedRuntimeLoaderAssemblyName,
+                new Version(0, 0, 0, 0));
+        }
+
+        module.AssemblyReferences.Add(runtimeAssemblyReference);
+        return runtimeAssemblyReference;
     }
 
     private static bool MatchThisCall(Collection<Instruction> instructions, int instructionIndex)
@@ -560,6 +691,7 @@ internal sealed class AvaloniaLoaderCallWeaver
         MethodDefinition? WithoutServiceProvider,
         MethodDefinition? WithServiceProvider,
         bool HasSourceGeneratedPopulateMethod);
+
 }
 
 internal sealed record AvaloniaLoaderCallWeaverResult(

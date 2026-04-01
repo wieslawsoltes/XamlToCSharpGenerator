@@ -193,6 +193,121 @@ public class AvaloniaLoaderCallWeaverTests
         }
     }
 
+    [Theory]
+    [InlineData("Metadata")]
+    [InlineData("Cecil")]
+    public void Rewrite_Replaces_Uri_Loader_Calls_With_SourceGenerated_Runtime_Loader(string backend)
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var workspaceDirectory = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "il-weaver-uri-loader");
+
+        try
+        {
+            var sourceDirectory = Path.Combine(workspaceDirectory, "source");
+            var referenceDirectory = Path.Combine(workspaceDirectory, "references");
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(referenceDirectory);
+
+            var loaderAssemblyPath = Path.Combine(referenceDirectory, "Avalonia.Markup.Xaml.dll");
+            var targetAssemblyPath = Path.Combine(sourceDirectory, "UriLoaderSample.dll");
+
+            EmitAssemblyToFile(
+                loaderAssemblyPath,
+                """
+                using System;
+
+                namespace Avalonia.Markup.Xaml;
+
+                public static class AvaloniaXamlLoader
+                {
+                    public static object Load(Uri uri, Uri? baseUri = null)
+                    {
+                        return new object();
+                    }
+
+                    public static object Load(IServiceProvider services, Uri uri, Uri? baseUri = null)
+                    {
+                        return new object();
+                    }
+                }
+                """);
+            EmitAssemblyToFile(
+                targetAssemblyPath,
+                """
+                using System;
+                using Avalonia.Markup.Xaml;
+
+                namespace UriLoaderSample;
+
+                public static class LoaderProbe
+                {
+                    public static object LoadAbsolute(Uri uri)
+                    {
+                        return AvaloniaXamlLoader.Load(uri);
+                    }
+
+                    public static object LoadRelative(IServiceProvider services, Uri uri, Uri baseUri)
+                    {
+                        return AvaloniaXamlLoader.Load(services, uri, baseUri);
+                    }
+                }
+                """,
+                [
+                    MetadataReference.CreateFromFile(loaderAssemblyPath)
+                ]);
+
+            var weaver = new AvaloniaLoaderCallWeaver();
+            var result = weaver.Rewrite(
+                new AvaloniaLoaderCallWeaverConfiguration(
+                    targetAssemblyPath,
+                    FailOnMissingGeneratedInitializer: true,
+                    DebugSymbols: false,
+                    DebugType: null,
+                    AssemblyOriginatorKeyFile: null,
+                    KeyContainerName: null,
+                    PublicSign: false,
+                    DelaySign: false,
+                    ProjectDirectory: workspaceDirectory,
+                    ReferencePaths:
+                    [
+                        loaderAssemblyPath
+                    ],
+                    Backend: backend));
+
+            Assert.Empty(result.FatalErrorMessages);
+            Assert.Empty(result.MissingInitializerMessages);
+            Assert.Equal(2, result.RewrittenCallCount);
+
+            using var assembly = AssemblyDefinition.ReadAssembly(targetAssemblyPath);
+
+            AvaloniaLoaderCallAssertions.AssertMethodCallsSourceGeneratedUriLoader(
+                assembly,
+                "UriLoaderSample.LoaderProbe",
+                "LoadAbsolute",
+                explicitParameterCount: 1,
+                expectedLoaderParameterTypes:
+                [
+                    "System.Uri",
+                    "System.Uri"
+                ]);
+            AvaloniaLoaderCallAssertions.AssertMethodCallsSourceGeneratedUriLoader(
+                assembly,
+                "UriLoaderSample.LoaderProbe",
+                "LoadRelative",
+                explicitParameterCount: 3,
+                expectedLoaderParameterTypes:
+                [
+                    "System.IServiceProvider",
+                    "System.Uri",
+                    "System.Uri"
+                ]);
+        }
+        finally
+        {
+            BuildTestWorkspacePaths.TryDeleteDirectory(workspaceDirectory);
+        }
+    }
+
     private static void PrepareAssemblyForBestEffortWeaving(string assemblyPath)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(
@@ -275,7 +390,8 @@ public class AvaloniaLoaderCallWeaverTests
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(IServiceProvider).Assembly.Location)
+            MetadataReference.CreateFromFile(typeof(IServiceProvider).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Uri).Assembly.Location)
         };
 
         if (additionalReferences is not null)

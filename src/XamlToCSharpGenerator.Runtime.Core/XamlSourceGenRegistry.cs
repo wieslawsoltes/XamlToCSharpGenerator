@@ -34,6 +34,16 @@ public static class XamlSourceGenRegistry
         return Registry.TryCreate(serviceProvider, uri, out value);
     }
 
+    internal static bool TryCreateWithoutMissingNotification(
+        IServiceProvider? serviceProvider,
+        string uri,
+        out object? value)
+    {
+        return Registry is InMemoryArtifactFactoryRegistry inMemoryRegistry
+            ? inMemoryRegistry.TryCreate(serviceProvider, uri, out value, raiseMissingNotification: false)
+            : Registry.TryCreate(serviceProvider, uri, out value);
+    }
+
     public static void Clear()
     {
         Registry.Clear();
@@ -85,6 +95,15 @@ public static class XamlSourceGenRegistry
 
         public bool TryCreate(IServiceProvider? serviceProvider, string uri, out object? value)
         {
+            return TryCreate(serviceProvider, uri, out value, raiseMissingNotification: true);
+        }
+
+        internal bool TryCreate(
+            IServiceProvider? serviceProvider,
+            string uri,
+            out object? value,
+            bool raiseMissingNotification)
+        {
             var normalizedUri = _uriMapper.Normalize(uri);
             if (_entries.TryGetValue(normalizedUri, out var factory))
             {
@@ -93,7 +112,11 @@ public static class XamlSourceGenRegistry
             }
 
             value = null;
-            MissingUriRequested?.Invoke(normalizedUri);
+            if (raiseMissingNotification)
+            {
+                MissingUriRequested?.Invoke(normalizedUri);
+            }
+
             return false;
         }
 

@@ -406,6 +406,151 @@ public class PackageIntegrationTests
         Assert.True(mainWindowConstructor.DebugInformation.HasSequencePoints);
     }
 
+    [Fact]
+    public void TopLevel_Package_Consumer_Can_Load_Classless_ResourceDictionary_By_Uri()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var packageProject = Path.Combine(repositoryRoot, "src", "XamlToCSharpGenerator", "XamlToCSharpGenerator.csproj");
+        var workspaceDirectory = BuildTestWorkspacePaths.CreateTemporaryDirectory(repositoryRoot, "package-uri-loader-consumer");
+
+        try
+        {
+            var packageOutputDirectory = Path.Combine(workspaceDirectory, "packages");
+            var consumerDirectory = Path.Combine(workspaceDirectory, "consumer");
+            Directory.CreateDirectory(packageOutputDirectory);
+            Directory.CreateDirectory(consumerDirectory);
+
+            var packageVersion = CreateUniquePackageVersion();
+
+            var restore = RunProcess(
+                repositoryRoot,
+                "dotnet",
+                $"restore \"{packageProject}\" --nologo -m:1 /nodeReuse:false --disable-build-servers");
+            Assert.True(restore.ExitCode == 0, restore.Output);
+
+            var pack = RunProcess(
+                repositoryRoot,
+                "dotnet",
+                $"pack \"{packageProject}\" --nologo -c Debug -m:1 /nodeReuse:false --disable-build-servers -o \"{packageOutputDirectory}\" -p:PackageVersion={packageVersion}");
+            Assert.True(pack.ExitCode == 0, pack.Output);
+
+            File.WriteAllText(Path.Combine(consumerDirectory, "PackageUriLoaderConsumer.csproj"), $$"""
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PackageUriLoaderConsumer</AssemblyName>
+    <RootNamespace>PackageUriLoaderConsumer</RootNamespace>
+    <AvaloniaXamlCompilerBackend>SourceGen</AvaloniaXamlCompilerBackend>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="XamlToCSharpGenerator" Version="{{packageVersion}}" />
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+  </ItemGroup>
+</Project>
+""");
+
+            var nuGetConfig = new XDocument(
+                new XElement(
+                    "configuration",
+                    new XElement(
+                        "packageSources",
+                        new XElement("clear"),
+                        new XElement(
+                            "add",
+                            new XAttribute("key", "local"),
+                            new XAttribute("value", packageOutputDirectory)),
+                        new XElement(
+                            "add",
+                            new XAttribute("key", "nuget.org"),
+                            new XAttribute("value", "https://api.nuget.org/v3/index.json")))));
+            nuGetConfig.Save(Path.Combine(consumerDirectory, "NuGet.Config"));
+
+            Directory.CreateDirectory(Path.Combine(consumerDirectory, "Resources"));
+
+            File.WriteAllText(Path.Combine(consumerDirectory, "Program.cs"), """
+using System;
+using Avalonia.Controls;
+using Avalonia.Markup.Xaml;
+
+namespace PackageUriLoaderConsumer;
+
+internal static class Program
+{
+    public static int Main()
+    {
+        try
+        {
+            var loaded = AvaloniaXamlLoader.Load(
+                new Uri("avares://PackageUriLoaderConsumer/Resources/TestDictionary.axaml"));
+            if (loaded is not ResourceDictionary dictionary)
+            {
+                Console.WriteLine("FAIL|wrong-type|" + (loaded?.GetType().FullName ?? "<null>"));
+                return 2;
+            }
+
+            if (!dictionary.TryGetValue("ProbeText", out var value) ||
+                !string.Equals(value as string, "loaded-from-sourcegen", StringComparison.Ordinal))
+            {
+                Console.WriteLine("FAIL|missing-value");
+                return 3;
+            }
+
+            Console.WriteLine("OK|" + loaded.GetType().FullName);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("FAIL|" + ex.GetType().FullName + "|" + ex.Message);
+            return 1;
+        }
+    }
+}
+""");
+
+            File.WriteAllText(Path.Combine(consumerDirectory, "Resources", "TestDictionary.axaml"), """
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:String x:Key="ProbeText">loaded-from-sourcegen</x:String>
+</ResourceDictionary>
+""");
+
+            var projectPath = Path.Combine(consumerDirectory, "PackageUriLoaderConsumer.csproj");
+            var build = RunProcess(
+                consumerDirectory,
+                "dotnet",
+                $"build \"{projectPath}\" -t:Rebuild -c Debug --nologo -m:1 /nodeReuse:false --disable-build-servers");
+            Assert.True(build.ExitCode == 0, build.Output);
+
+            var run = RunProcess(
+                consumerDirectory,
+                "dotnet",
+                $"run --project \"{projectPath}\" -c Debug --no-build --nologo");
+            Assert.True(run.ExitCode == 0, run.Output);
+            Assert.Contains("OK|Avalonia.Controls.ResourceDictionary", run.Output, StringComparison.Ordinal);
+
+            var assemblyPath = Path.Combine(consumerDirectory, "bin", "Debug", "net10.0", "PackageUriLoaderConsumer.dll");
+            using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath);
+            AvaloniaLoaderCallAssertions.AssertMethodCallsSourceGeneratedUriLoader(
+                assembly,
+                "PackageUriLoaderConsumer.Program",
+                "Main",
+                explicitParameterCount: 0,
+                expectedLoaderParameterTypes:
+                [
+                    "System.Uri",
+                    "System.Uri"
+                ]);
+        }
+        finally
+        {
+            BuildTestWorkspacePaths.TryDeleteDirectory(workspaceDirectory);
+        }
+    }
+
     private static (int ExitCode, string Output) RunProcess(string workingDirectory, string fileName, string arguments)
     {
         var startInfo = new ProcessStartInfo

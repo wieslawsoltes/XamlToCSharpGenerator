@@ -10,4 +10,9 @@
   <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
     <Compile Remove="IgnoresAccessChecksToAttribute.cs" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.Runtime.Avalonia" />
+    <InternalsVisibleTo Include="XamlToCSharpGenerator.Tests" />
+  </ItemGroup>
 </Project>

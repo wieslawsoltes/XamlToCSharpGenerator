@@ -17,6 +17,7 @@ internal sealed class AvaloniaLoaderMetadataScanner
     private const string AvaloniaLoaderTypeName = "Avalonia.Markup.Xaml.AvaloniaXamlLoader";
     private const string ServiceProviderTypeName = "System.IServiceProvider";
     private const string ObjectTypeName = "System.Object";
+    private const string UriTypeName = "System.Uri";
     private static readonly Dictionary<short, OpCode> SingleByteOpCodes = CreateOpCodeMap(size: 1);
     private static readonly Dictionary<short, OpCode> MultiByteOpCodes = CreateOpCodeMap(size: 2);
     private static readonly MetadataTypeNameProvider SignatureTypeNameProvider = new();
@@ -95,14 +96,20 @@ internal sealed class AvaloniaLoaderMetadataScanner
             var instruction = instructions[instructionIndex];
             if (instruction.OpCode.Value != OpCodes.Call.Value ||
                 instruction.CalledMethod is not { } calledMethod ||
-                !TryMatchAvaloniaLoaderCall(calledMethod, out var hasServiceProvider) ||
+                !TryMatchAvaloniaLoaderCall(calledMethod, out var callKind))
+            {
+                continue;
+            }
+
+            if ((callKind == AvaloniaLoaderCallKind.ObjectWithoutServiceProvider ||
+                 callKind == AvaloniaLoaderCallKind.ObjectWithServiceProvider) &&
                 !MatchThisCall(instructions, instructionIndex - 1))
             {
                 continue;
             }
 
             callSites ??= [];
-            callSites.Add(new AvaloniaLoaderCallSiteMatch(instruction.Offset, hasServiceProvider));
+            callSites.Add(new AvaloniaLoaderCallSiteMatch(instruction.Offset, callKind));
         }
 
         if (callSites is null || callSites.Count == 0)
@@ -307,9 +314,9 @@ internal sealed class AvaloniaLoaderMetadataScanner
             : typeNamespace + "." + typeName;
     }
 
-    private static bool TryMatchAvaloniaLoaderCall(MetadataMethodReferenceInfo method, out bool hasServiceProvider)
+    private static bool TryMatchAvaloniaLoaderCall(MetadataMethodReferenceInfo method, out AvaloniaLoaderCallKind callKind)
     {
-        hasServiceProvider = false;
+        callKind = default;
         if (!string.Equals(method.Name, "Load", StringComparison.Ordinal) ||
             !string.Equals(method.DeclaringTypeFullName, AvaloniaLoaderTypeName, StringComparison.Ordinal))
         {
@@ -319,6 +326,7 @@ internal sealed class AvaloniaLoaderMetadataScanner
         if (method.ParameterTypeNames.Count == 1 &&
             string.Equals(method.ParameterTypeNames[0], ObjectTypeName, StringComparison.Ordinal))
         {
+            callKind = AvaloniaLoaderCallKind.ObjectWithoutServiceProvider;
             return true;
         }
 
@@ -326,7 +334,24 @@ internal sealed class AvaloniaLoaderMetadataScanner
             string.Equals(method.ParameterTypeNames[0], ServiceProviderTypeName, StringComparison.Ordinal) &&
             string.Equals(method.ParameterTypeNames[1], ObjectTypeName, StringComparison.Ordinal))
         {
-            hasServiceProvider = true;
+            callKind = AvaloniaLoaderCallKind.ObjectWithServiceProvider;
+            return true;
+        }
+
+        if (method.ParameterTypeNames.Count == 2 &&
+            string.Equals(method.ParameterTypeNames[0], UriTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.ParameterTypeNames[1], UriTypeName, StringComparison.Ordinal))
+        {
+            callKind = AvaloniaLoaderCallKind.UriWithoutServiceProvider;
+            return true;
+        }
+
+        if (method.ParameterTypeNames.Count == 3 &&
+            string.Equals(method.ParameterTypeNames[0], ServiceProviderTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.ParameterTypeNames[1], UriTypeName, StringComparison.Ordinal) &&
+            string.Equals(method.ParameterTypeNames[2], UriTypeName, StringComparison.Ordinal))
+        {
+            callKind = AvaloniaLoaderCallKind.UriWithServiceProvider;
             return true;
         }
 
@@ -482,4 +507,4 @@ internal sealed record AvaloniaLoaderMethodMatch(
 
 internal sealed record AvaloniaLoaderCallSiteMatch(
     int IlOffset,
-    bool HasServiceProvider);
+    AvaloniaLoaderCallKind Kind);
