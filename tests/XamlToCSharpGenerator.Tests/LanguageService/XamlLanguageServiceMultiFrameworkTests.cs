@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -13,6 +15,7 @@ using XamlToCSharpGenerator.LanguageService.Framework;
 using XamlToCSharpGenerator.LanguageService.Framework.All;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
+using XamlToCSharpGenerator.LanguageService.Workspace;
 
 namespace XamlToCSharpGenerator.Tests.LanguageService;
 
@@ -402,6 +405,205 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
     }
 
     [Fact]
+    public async Task Definition_MsBuildBackedWpfProject_ResolvesFrameworkTypes()
+    {
+        using var workspace = new TempWorkspace();
+        var projectPath = Path.Combine(workspace.RootPath, "BindValidation.csproj");
+        var appXamlPath = Path.Combine(workspace.RootPath, "App.xaml");
+        var appCsPath = Path.Combine(workspace.RootPath, "App.cs");
+        var mainWindowXamlPath = Path.Combine(workspace.RootPath, "MainWindow.xaml");
+        var mainWindowCsPath = Path.Combine(workspace.RootPath, "MainWindow.cs");
+        var ruleCsPath = Path.Combine(workspace.RootPath, "AgeRangeRule.cs");
+        var dataSourceCsPath = Path.Combine(workspace.RootPath, "MyDataSource.cs");
+
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0-windows</TargetFramework>
+                <UseWpf>true</UseWpf>
+                <EnableDefaultItems>false</EnableDefaultItems>
+                <OutputType>WinExe</OutputType>
+                <RootNamespace>BindValidation</RootNamespace>
+                <AssemblyName>BindValidation</AssemblyName>
+              </PropertyGroup>
+              <ItemGroup>
+                <ApplicationDefinition Include="App.xaml">
+                  <Generator>MSBuild:Compile</Generator>
+                </ApplicationDefinition>
+                <Page Include="MainWindow.xaml">
+                  <Generator>MSBuild:Compile</Generator>
+                </Page>
+                <Compile Include="AgeRangeRule.cs" />
+                <Compile Include="App.cs">
+                  <DependentUpon>App.xaml</DependentUpon>
+                </Compile>
+                <Compile Include="MainWindow.cs">
+                  <DependentUpon>MainWindow.xaml</DependentUpon>
+                </Compile>
+                <Compile Include="MyDataSource.cs" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(
+            appXamlPath,
+            """
+            <Application x:Class="BindValidation.App"
+                         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+            </Application>
+            """);
+        File.WriteAllText(
+            appCsPath,
+            """
+            using System.Windows;
+
+            namespace BindValidation;
+
+            public partial class App : Application
+            {
+            }
+            """);
+        File.WriteAllText(
+            mainWindowCsPath,
+            """
+            using System.Windows;
+
+            namespace BindValidation;
+
+            public partial class MainWindow : Window
+            {
+                public MainWindow()
+                {
+                    InitializeComponent();
+                }
+            }
+            """);
+        File.WriteAllText(
+            ruleCsPath,
+            """
+            using System.Globalization;
+            using System.Windows.Controls;
+
+            namespace BindValidation;
+
+            public sealed class AgeRangeRule : ValidationRule
+            {
+                public int Min { get; set; }
+                public int Max { get; set; }
+
+                public override ValidationResult Validate(object value, CultureInfo cultureInfo)
+                {
+                    return new ValidationResult(true, null);
+                }
+            }
+            """);
+        File.WriteAllText(
+            dataSourceCsPath,
+            """
+            namespace BindValidation;
+
+            public sealed class MyDataSource
+            {
+                public int Age { get; set; }
+                public int Age2 { get; set; }
+                public int Age3 { get; set; }
+            }
+            """);
+
+        const string xaml =
+            "<Window x:Class=\"BindValidation.MainWindow\"\n" +
+            "        xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"\n" +
+            "        xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n" +
+            "        xmlns:local=\"clr-namespace:BindValidation\"\n" +
+            "        Title=\"MainWindow\">\n" +
+            "    <Window.Resources>\n" +
+            "        <local:MyDataSource x:Key=\"Ods\"/>\n" +
+            "        <Style x:Key=\"TextBoxInError\" TargetType=\"{x:Type TextBox}\">\n" +
+            "            <Style.Triggers>\n" +
+            "                <Trigger Property=\"Validation.HasError\" Value=\"true\">\n" +
+            "                    <Setter Property=\"ToolTip\"\n" +
+            "                            Value=\"{Binding RelativeSource={x:Static RelativeSource.Self}, Path=(Validation.Errors)[0].ErrorContent}\"/>\n" +
+            "                </Trigger>\n" +
+            "            </Style.Triggers>\n" +
+            "        </Style>\n" +
+            "    </Window.Resources>\n" +
+            "    <Grid>\n" +
+            "        <TextBlock Text=\"Hello\" />\n" +
+            "        <TextBox>\n" +
+            "            <TextBox.Text>\n" +
+            "                <Binding Path=\"Age\" Source=\"{StaticResource Ods}\">\n" +
+            "                    <Binding.ValidationRules>\n" +
+            "                        <local:AgeRangeRule Min=\"21\" Max=\"130\"/>\n" +
+            "                        <ExceptionValidationRule/>\n" +
+            "                    </Binding.ValidationRules>\n" +
+            "                </Binding>\n" +
+            "            </TextBox.Text>\n" +
+            "        </TextBox>\n" +
+            "    </Grid>\n" +
+            "</Window>";
+        File.WriteAllText(mainWindowXamlPath, xaml);
+        await RestoreProjectAsync(projectPath, workspace.RootPath);
+
+        using var compilationProvider = new MsBuildCompilationProvider();
+        var snapshot = await compilationProvider.GetCompilationAsync(mainWindowXamlPath, workspace.RootPath, CancellationToken.None);
+        Assert.NotNull(snapshot.Compilation);
+        Assert.True(snapshot.Compilation!.GetTypeByMetadataName("System.Windows.Window") is not null, string.Join(Environment.NewLine, snapshot.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.True(snapshot.Compilation.GetTypeByMetadataName("System.Windows.Controls.TextBlock") is not null, string.Join(Environment.NewLine, snapshot.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.True(snapshot.Compilation.GetTypeByMetadataName("System.Windows.Data.Binding") is not null, string.Join(Environment.NewLine, snapshot.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.True(snapshot.Compilation.GetTypeByMetadataName("System.Windows.Controls.ExceptionValidationRule") is not null, string.Join(Environment.NewLine, snapshot.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+
+        using var engine = new XamlLanguageServiceEngine(compilationProvider);
+        var uri = UriPathHelper.ToDocumentUri(mainWindowXamlPath);
+        var options = CreateOptions(workspace.RootPath);
+
+        await engine.OpenDocumentAsync(uri, xaml, version: 1, options, CancellationToken.None);
+
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "Window",
+            options,
+            "public class Window");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "TextBlock",
+            options,
+            "public class TextBlock");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "Binding",
+            options,
+            "public class Binding");
+        await AssertTypeDefinitionResolvesToMetadataAsync(
+            engine,
+            uri,
+            xaml,
+            "ExceptionValidationRule",
+            options,
+            "ExceptionValidationRule");
+
+        var localTypeOffset = xaml.IndexOf("AgeRangeRule", StringComparison.Ordinal);
+        Assert.True(localTypeOffset >= 0, "Expected local type token not found in XAML.");
+
+        var localTypeDefinitions = await engine.GetDefinitionsAsync(
+            uri,
+            GetPosition(xaml, localTypeOffset + 2),
+            options,
+            CancellationToken.None);
+
+        Assert.NotEmpty(localTypeDefinitions);
+        Assert.Contains(localTypeDefinitions, item =>
+            string.Equals(item.Uri, UriPathHelper.ToDocumentUri(ruleCsPath), StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Definition_WinUiMsAppxUri_ResolvesProjectFile()
     {
         using var workspace = new TempWorkspace();
@@ -677,6 +879,30 @@ public sealed class XamlLanguageServiceMultiFrameworkTests
         var metadataDocument = engine.GetMetadataDocumentText(metadataDocumentId!);
         Assert.NotNull(metadataDocument);
         Assert.Contains(expectedDeclarationSnippet, metadataDocument, StringComparison.Ordinal);
+    }
+
+    private static async Task RestoreProjectAsync(string projectPath, string workingDirectory)
+    {
+        var enableWindowsTargeting = !OperatingSystem.IsWindows() ? " -p:EnableWindowsTargeting=true" : string.Empty;
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"restore \"{projectPath}\" -nologo -v:minimal{enableWindowsTargeting}",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = workingDirectory
+        };
+
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+
+        var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await stdoutTask + await stderrTask;
+        Assert.True(process.ExitCode == 0, output);
     }
 
     private static SourcePosition GetPosition(string text, int offset)
