@@ -1,0 +1,6 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:String x:Key="Issue36.Headline">Classless ResourceDictionary loaded through AvaloniaXamlLoader.Load(Uri).</x:String>
+  <x:String x:Key="Issue36.Body">This dictionary has no x:Class and is still resolved through the AXSG-generated URI path.</x:String>
+  <SolidColorBrush x:Key="Issue36.AccentBrush">#2B7FFF</SolidColorBrush>
+</ResourceDictionary>

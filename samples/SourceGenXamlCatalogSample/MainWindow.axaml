@@ -118,6 +118,9 @@
       <TabItem Header="Runtime Loader">
         <pages:RuntimeLoaderPage DataContext="{Binding RuntimeLoader}" />
       </TabItem>
+      <TabItem Header="URI Dictionaries">
+        <pages:UriDictionaryLoadPage DataContext="{Binding UriDictionaryLoad}" />
+      </TabItem>
       <TabItem Header="Styles + Selectors">
         <pages:StylesSelectorsPage />
       </TabItem>
