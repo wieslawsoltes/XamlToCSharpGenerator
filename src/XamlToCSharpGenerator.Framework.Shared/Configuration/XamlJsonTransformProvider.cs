@@ -135,8 +135,7 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
         string filePath,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics)
     {
-        if (!root.TryGetProperty("typeAliases", out var aliasesElement) ||
-            aliasesElement.ValueKind != JsonValueKind.Array)
+        if (!TryGetAliasArray(root, "typeAliases", filePath, diagnostics, out var aliasesElement))
         {
             return ImmutableArray<XamlTypeAliasRule>.Empty;
         }
@@ -151,8 +150,12 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
             }
 
             var xmlNamespace = ReadTrimmedString(aliasElement, "xmlNamespace");
-            var xamlType = ReadTrimmedString(aliasElement, "xamlType");
-            var clrType = ReadTrimmedString(aliasElement, "clrType");
+            var xamlType =
+                ReadTrimmedString(aliasElement, "xamlType") ??
+                ReadTrimmedString(aliasElement, "xamlTypeName");
+            var clrType =
+                ReadTrimmedString(aliasElement, "clrType") ??
+                ReadTrimmedString(aliasElement, "clrTypeName");
 
             if (string.IsNullOrWhiteSpace(xmlNamespace))
             {
@@ -184,8 +187,7 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
         string filePath,
         ImmutableArray<DiagnosticInfo>.Builder diagnostics)
     {
-        if (!root.TryGetProperty("propertyAliases", out var aliasesElement) ||
-            aliasesElement.ValueKind != JsonValueKind.Array)
+        if (!TryGetAliasArray(root, "propertyAliases", filePath, diagnostics, out var aliasesElement))
         {
             return ImmutableArray<XamlPropertyAliasRule>.Empty;
         }
@@ -199,9 +201,15 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
                 continue;
             }
 
-            var targetType = ReadTrimmedString(aliasElement, "targetType");
-            var xamlProperty = ReadTrimmedString(aliasElement, "xamlProperty");
-            var clrProperty = ReadTrimmedString(aliasElement, "clrProperty");
+            var targetType =
+                ReadTrimmedString(aliasElement, "targetType") ??
+                ReadTrimmedString(aliasElement, "targetTypeName");
+            var xamlProperty =
+                ReadTrimmedString(aliasElement, "xamlProperty") ??
+                ReadTrimmedString(aliasElement, "xamlPropertyName");
+            var clrProperty =
+                ReadTrimmedString(aliasElement, "clrProperty") ??
+                ReadTrimmedString(aliasElement, "clrPropertyName");
             var frameworkId = ReadTrimmedString(aliasElement, "frameworkId") ?? _defaultFrameworkId;
             var propertyOwnerTypeName =
                 ReadTrimmedString(aliasElement, "propertyOwnerType") ??
@@ -260,6 +268,33 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
     private static DiagnosticInfo InvalidEntry(string filePath, string message)
     {
         return new DiagnosticInfo("AXSG0901", message, filePath, 1, 1, true);
+    }
+
+    private static bool TryGetAliasArray(
+        JsonElement root,
+        string propertyName,
+        string filePath,
+        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
+        out JsonElement aliasesElement)
+    {
+        if (!root.TryGetProperty(propertyName, out aliasesElement))
+        {
+            return false;
+        }
+
+        if (aliasesElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        diagnostics.Add(new DiagnosticInfo(
+            "AXSG0900",
+            propertyName + " section must be a JSON array.",
+            filePath,
+            1,
+            1,
+            true));
+        return false;
     }
 
     private static string? ReadTrimmedString(JsonElement element, string propertyName)

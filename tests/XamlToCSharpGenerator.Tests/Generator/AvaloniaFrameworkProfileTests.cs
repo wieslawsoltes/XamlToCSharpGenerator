@@ -134,6 +134,67 @@ public class AvaloniaFrameworkProfileTests
     }
 
     [Fact]
+    public void TransformProvider_Accepts_Legacy_Alias_Property_Names()
+    {
+        IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
+        var provider = profile.TransformProvider;
+
+        var result = provider.ParseTransformRule(new XamlFrameworkTransformRuleInput(
+            "legacy-names.json",
+            """
+            {
+              "typeAliases": [
+                {
+                  "xmlNamespace": "https://github.com/avaloniaui",
+                  "xamlTypeName": "LegacyDemo",
+                  "clrTypeName": "App.LegacyDemo"
+                }
+              ],
+              "propertyAliases": [
+                {
+                  "targetTypeName": "Avalonia.Controls.UserControl",
+                  "xamlPropertyName": "AccentText",
+                  "clrPropertyName": "Foreground"
+                }
+              ]
+            }
+            """));
+
+        var typeAlias = Assert.Single(result.Configuration.TypeAliases);
+        var propertyAlias = Assert.Single(result.Configuration.PropertyAliases);
+
+        Assert.Equal("LegacyDemo", typeAlias.XamlTypeName);
+        Assert.Equal("App.LegacyDemo", typeAlias.ClrTypeName);
+        Assert.Equal("Avalonia.Controls.UserControl", propertyAlias.TargetTypeName);
+        Assert.Equal("AccentText", propertyAlias.XamlPropertyName);
+        Assert.Equal("Foreground", propertyAlias.ClrPropertyName);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void TransformProvider_Reports_Invalid_Alias_Section_Shapes()
+    {
+        IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
+        var provider = profile.TransformProvider;
+
+        var result = provider.ParseTransformRule(new XamlFrameworkTransformRuleInput(
+            "invalid-shape.json",
+            """
+            {
+              "typeAliases": {},
+              "propertyAliases": {}
+            }
+            """));
+
+        Assert.Empty(result.Configuration.TypeAliases);
+        Assert.Empty(result.Configuration.PropertyAliases);
+        Assert.Equal(2, result.Diagnostics.Length);
+        Assert.All(result.Diagnostics, diagnostic => Assert.Equal("AXSG0900", diagnostic.Id));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("typeAliases section must be a JSON array.", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("propertyAliases section must be a JSON array.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void BuildParserSettings_Adds_Implicit_Standard_Prefixes_When_Enabled()
     {
         IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
