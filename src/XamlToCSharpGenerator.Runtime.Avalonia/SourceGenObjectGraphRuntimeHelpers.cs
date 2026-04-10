@@ -420,7 +420,11 @@ public static class SourceGenObjectGraphRuntimeHelpers
         if (!AvaloniaSourceGeneratedXamlLoader.TryLoad(includeServiceProvider, includeUri, out var loaded) ||
             loaded is null)
         {
-            return false;
+            if (!TryLoadRegisteredIncludeRawXaml(documentUri, includeUri, out loaded) ||
+                loaded is null)
+            {
+                return false;
+            }
         }
 
         loadedInclude = loaded;
@@ -443,10 +447,103 @@ public static class SourceGenObjectGraphRuntimeHelpers
         if (!AvaloniaSourceGeneratedXamlLoader.TryLoad(includeServiceProvider, includeUri, out var loaded) ||
             loaded is not IStyle style)
         {
-            return false;
+            if (!TryLoadRegisteredIncludeRawXaml(documentUri, includeUri, out loaded) ||
+                loaded is not IStyle fallbackStyle)
+            {
+                return false;
+            }
+
+            style = fallbackStyle;
         }
 
         resolvedStyle = style;
+        return true;
+    }
+
+    private static bool TryLoadRegisteredIncludeRawXaml(
+        string? ownerDocumentUri,
+        Uri includeUri,
+        out object? loadedValue)
+    {
+        loadedValue = null;
+        if (!TryFindRegisteredIncludeDescriptor(ownerDocumentUri, includeUri, out var descriptor) ||
+            string.IsNullOrWhiteSpace(descriptor.RawXaml))
+        {
+            return false;
+        }
+
+        try
+        {
+            loadedValue = AvaloniaSourceGeneratedXamlLoader.Load(
+                descriptor.RawXaml,
+                localAssemblyName: includeUri.Host,
+                baseUri: includeUri);
+            return loadedValue is not null;
+        }
+        catch
+        {
+            loadedValue = null;
+            return false;
+        }
+    }
+
+    private static bool TryFindRegisteredIncludeDescriptor(
+        string? ownerDocumentUri,
+        Uri includeUri,
+        out SourceGenIncludeDescriptor descriptor)
+    {
+        descriptor = default!;
+        if (string.IsNullOrWhiteSpace(ownerDocumentUri))
+        {
+            return false;
+        }
+
+        foreach (var candidate in XamlIncludeRegistry.GetAll(ownerDocumentUri))
+        {
+            if (!TryResolveDescriptorSourceUri(ownerDocumentUri, candidate, out var candidateUri))
+            {
+                continue;
+            }
+
+            if (Uri.Compare(candidateUri, includeUri, UriComponents.AbsoluteUri, UriFormat.SafeUnescaped, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                descriptor = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveDescriptorSourceUri(
+        string ownerDocumentUri,
+        SourceGenIncludeDescriptor descriptor,
+        out Uri resolvedUri)
+    {
+        resolvedUri = default!;
+        if (descriptor.IsAbsoluteUri &&
+            Uri.TryCreate(descriptor.Source, UriKind.Absolute, out resolvedUri))
+        {
+            return true;
+        }
+
+        if (!Uri.TryCreate(descriptor.Source, UriKind.RelativeOrAbsolute, out var candidateUri))
+        {
+            return false;
+        }
+
+        if (candidateUri.IsAbsoluteUri)
+        {
+            resolvedUri = candidateUri;
+            return true;
+        }
+
+        if (!Uri.TryCreate(ownerDocumentUri, UriKind.Absolute, out var ownerUri))
+        {
+            return false;
+        }
+
+        resolvedUri = new Uri(ownerUri, candidateUri);
         return true;
     }
 
