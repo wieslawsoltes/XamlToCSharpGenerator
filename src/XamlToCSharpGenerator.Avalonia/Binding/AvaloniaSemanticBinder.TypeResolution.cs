@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
@@ -13,6 +12,7 @@ using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.Framework.Shared.Binding;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
@@ -65,52 +65,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         return (line, column);
     }
-
-    private sealed class AvaloniaNamespaceCandidateCacheEntry
-    {
-        public AvaloniaNamespaceCandidateCacheEntry(ImmutableArray<string> namespaces)
-        {
-            Namespaces = namespaces;
-        }
-
-        public ImmutableArray<string> Namespaces { get; }
-    }
-
-    private sealed class XmlnsDefinitionCacheEntry
-    {
-        public XmlnsDefinitionCacheEntry(ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> map)
-        {
-            Map = map;
-        }
-
-        public ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> Map { get; }
-    }
-
-    private sealed class XmlnsDefinitionTarget
-    {
-        public XmlnsDefinitionTarget(
-            IAssemblySymbol assembly,
-            string clrNamespace)
-        {
-            Assembly = assembly;
-            ClrNamespace = clrNamespace;
-        }
-
-        public IAssemblySymbol Assembly { get; }
-
-        public string ClrNamespace { get; }
-    }
-
-    private sealed class SourceAssemblyNamespaceCacheEntry
-    {
-        public SourceAssemblyNamespaceCacheEntry(ImmutableArray<string> namespaces)
-        {
-            Namespaces = namespaces;
-        }
-
-        public ImmutableArray<string> Namespaces { get; }
-    }
-
     private sealed class TypeResolutionDiagnosticContext
     {
         public TypeResolutionDiagnosticContext(
@@ -133,85 +87,39 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         public HashSet<string> ReportedKeys { get; }
     }
 
+    private static readonly ImmutableArray<string> SilentCompatibilityDiagnosticNamespacePrefixes =
+    [
+        "Avalonia.Controls",
+        "Avalonia.Controls.Primitives",
+        "Avalonia.Controls.Presenters",
+        "Avalonia.Controls.Shapes",
+        "Avalonia.Controls.Documents",
+        "Avalonia.Controls.Chrome",
+        "Avalonia.Controls.Embedding",
+        "Avalonia.Controls.Notifications",
+        "Avalonia.Controls.Converters",
+        "Avalonia.Styling",
+        "Avalonia.Controls.Templates",
+        "Avalonia.Input",
+        "Avalonia.Automation",
+        "Avalonia.Dialogs",
+        "Avalonia.Dialogs.Internal",
+        "Avalonia.Layout",
+        "Avalonia.Media",
+        "Avalonia.Media.Transformation",
+        "Avalonia.Media.Imaging",
+        "Avalonia.Animation",
+        "Avalonia.Animation.Easings"
+    ];
+
     private static ImmutableArray<string> GetAvaloniaDefaultNamespaceCandidates(Compilation compilation)
     {
-        return AvaloniaNamespaceCandidateCache
-            .GetValue(
-                compilation,
-                static x => new AvaloniaNamespaceCandidateCacheEntry(BuildAvaloniaDefaultNamespaceCandidates(x)))
-            .Namespaces;
+        return NamespaceDiscoveryService.GetFrameworkDefaultNamespaceCandidates(compilation);
     }
 
     private static ImmutableArray<XmlnsDefinitionTarget> GetXmlnsDefinitionTargetsForXmlNamespace(Compilation compilation, string xmlNamespace)
     {
-        if (string.IsNullOrWhiteSpace(xmlNamespace))
-        {
-            return ImmutableArray<XmlnsDefinitionTarget>.Empty;
-        }
-
-        var normalizedXmlNamespace = NormalizeXmlNamespaceKey(xmlNamespace);
-        var cacheEntry = XmlnsDefinitionCache.GetValue(
-            compilation,
-            static x => new XmlnsDefinitionCacheEntry(BuildXmlnsDefinitionMap(x)));
-        return cacheEntry.Map.TryGetValue(normalizedXmlNamespace, out var targets)
-            ? targets
-            : ImmutableArray<XmlnsDefinitionTarget>.Empty;
-    }
-
-    private static ImmutableDictionary<string, ImmutableArray<XmlnsDefinitionTarget>> BuildXmlnsDefinitionMap(Compilation compilation)
-    {
-        var map = new Dictionary<string, List<XmlnsDefinitionTarget>>(StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var assembly in EnumerateAssemblies(compilation))
-        {
-            foreach (var attribute in assembly.GetAttributes())
-            {
-                if (!IsXmlnsDefinitionAttribute(attribute.AttributeClass))
-                {
-                    continue;
-                }
-
-                if (attribute.ConstructorArguments.Length < 2 ||
-                    attribute.ConstructorArguments[0].Value is not string xmlNamespace ||
-                    attribute.ConstructorArguments[1].Value is not string clrNamespace)
-                {
-                    continue;
-                }
-
-                var xmlKey = NormalizeXmlNamespaceKey(xmlNamespace);
-                if (xmlKey.Length == 0 || string.IsNullOrWhiteSpace(clrNamespace))
-                {
-                    continue;
-                }
-
-                var normalizedClrNamespace = clrNamespace.Trim();
-                var dedupeKey = xmlKey + "|" + assembly.Identity + "|" + normalizedClrNamespace;
-                if (!seen.Add(dedupeKey))
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(xmlKey, out var targets))
-                {
-                    targets = new List<XmlnsDefinitionTarget>();
-                    map[xmlKey] = targets;
-                }
-
-                targets.Add(new XmlnsDefinitionTarget(assembly, normalizedClrNamespace));
-            }
-        }
-
-        var builder = ImmutableDictionary.CreateBuilder<string, ImmutableArray<XmlnsDefinitionTarget>>(StringComparer.Ordinal);
-        foreach (var entry in map)
-        {
-            builder[entry.Key] = entry.Value
-                .OrderBy(static value => value.ClrNamespace, StringComparer.Ordinal)
-                .ThenBy(static value => value.Assembly.Identity.ToString(), StringComparer.Ordinal)
-                .ToImmutableArray();
-        }
-
-        return builder.ToImmutable();
+        return NamespaceDiscoveryService.GetXmlnsDefinitionTargetsForXmlNamespace(compilation, xmlNamespace);
     }
 
     private static string NormalizeXmlNamespaceKey(string xmlNamespace)
@@ -220,59 +128,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         return IsAvaloniaDefaultXmlNamespace(normalized)
             ? AvaloniaDefaultXmlNamespace
             : normalized;
-    }
-
-    private static ImmutableArray<string> BuildAvaloniaDefaultNamespaceCandidates(Compilation compilation)
-    {
-        var orderedNamespaces = new List<string>(AvaloniaDefaultNamespaceCandidateSeed.Length + 32);
-        var knownNamespaces = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var namespacePrefix in AvaloniaDefaultNamespaceCandidateSeed)
-        {
-            AddNamespaceCandidate(namespacePrefix);
-        }
-
-        foreach (var assembly in EnumerateAssemblies(compilation))
-        {
-            foreach (var attribute in assembly.GetAttributes())
-            {
-                if (!IsAvaloniaXmlnsDefinitionAttribute(attribute.AttributeClass))
-                {
-                    continue;
-                }
-
-                if (attribute.ConstructorArguments.Length < 2 ||
-                    attribute.ConstructorArguments[0].Value is not string xmlNamespace ||
-                    !IsAvaloniaDefaultXmlNamespace(xmlNamespace) ||
-                    attribute.ConstructorArguments[1].Value is not string clrNamespace)
-                {
-                    continue;
-                }
-
-                AddNamespaceCandidate(clrNamespace);
-            }
-        }
-
-        return orderedNamespaces.ToImmutableArray();
-
-        void AddNamespaceCandidate(string namespacePrefix)
-        {
-            var normalized = namespacePrefix.Trim();
-            if (normalized.Length == 0)
-            {
-                return;
-            }
-
-            if (!normalized.EndsWith(".", StringComparison.Ordinal))
-            {
-                normalized += ".";
-            }
-
-            if (knownNamespaces.Add(normalized))
-            {
-                orderedNamespaces.Add(normalized);
-            }
-        }
     }
 
     private static bool TryGetImplicitProjectNamespaceRoot(
@@ -298,102 +153,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Compilation compilation,
         string rootNamespace)
     {
-        var allSourceNamespaces = SourceAssemblyNamespaceCache
-            .GetValue(
-                compilation,
-                static x => new SourceAssemblyNamespaceCacheEntry(BuildSourceAssemblyNamespaces(x)))
-            .Namespaces;
-
-        if (allSourceNamespaces.IsDefaultOrEmpty)
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        var normalizedRoot = rootNamespace.Trim();
-        var hasRoot = normalizedRoot.Length > 0;
-        var orderedNamespaces = new List<string>(allSourceNamespaces.Length + 1);
-        var knownNamespaces = new HashSet<string>(StringComparer.Ordinal);
-
-        if (hasRoot)
-        {
-            AddNamespaceCandidate(normalizedRoot);
-        }
-
-        foreach (var candidate in allSourceNamespaces)
-        {
-            if (hasRoot &&
-                !candidate.Equals(normalizedRoot, StringComparison.Ordinal) &&
-                !candidate.StartsWith(normalizedRoot + ".", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            AddNamespaceCandidate(candidate);
-        }
-
-        return orderedNamespaces.ToImmutableArray();
-
-        void AddNamespaceCandidate(string namespacePrefix)
-        {
-            var normalized = namespacePrefix.Trim();
-            if (normalized.Length == 0)
-            {
-                return;
-            }
-
-            if (!normalized.EndsWith(".", StringComparison.Ordinal))
-            {
-                normalized += ".";
-            }
-
-            if (knownNamespaces.Add(normalized))
-            {
-                orderedNamespaces.Add(normalized);
-            }
-        }
-    }
-
-    private static ImmutableArray<string> BuildSourceAssemblyNamespaces(Compilation compilation)
-    {
-        var namespaces = new HashSet<string>(StringComparer.Ordinal);
-        CollectSourceAssemblyNamespaces(compilation.Assembly.GlobalNamespace, namespaces);
-        return namespaces
-            .OrderBy(static value => value.Count(static ch => ch == '.'))
-            .ThenBy(static value => value, StringComparer.Ordinal)
-            .ToImmutableArray();
-    }
-
-    private static void CollectSourceAssemblyNamespaces(
-        INamespaceSymbol namespaceSymbol,
-        HashSet<string> namespaces)
-    {
-        foreach (var childNamespace in namespaceSymbol.GetNamespaceMembers())
-        {
-            var displayName = childNamespace.ToDisplayString();
-            if (!string.IsNullOrWhiteSpace(displayName))
-            {
-                namespaces.Add(displayName);
-            }
-
-            CollectSourceAssemblyNamespaces(childNamespace, namespaces);
-        }
+        return NamespaceDiscoveryService.GetProjectNamespaceCandidates(compilation, rootNamespace);
     }
 
     private static IEnumerable<IAssemblySymbol> EnumerateAssemblies(Compilation compilation)
     {
-        var visitedAssemblies = new HashSet<IAssemblySymbol>(SymbolEqualityComparer.Default);
-        if (visitedAssemblies.Add(compilation.Assembly))
-        {
-            yield return compilation.Assembly;
-        }
-
-        foreach (var referencedAssembly in compilation.SourceModule.ReferencedAssemblySymbols)
-        {
-            if (referencedAssembly is not null && visitedAssemblies.Add(referencedAssembly))
-            {
-                yield return referencedAssembly;
-            }
-        }
+        return TypeResolutionNamespaceDiscoveryService.EnumerateAssemblies(compilation);
     }
 
     private static bool IsAvaloniaXmlnsDefinitionAttribute(INamedTypeSymbol? attributeType)
@@ -420,7 +185,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
     private static bool IsTypeResolutionCompatibilityFallbackEnabled()
     {
         var options = ActiveGeneratorOptions.Value;
-        return options?.TypeResolutionCompatibilityFallbackEnabled ?? true;
+        return options?.TypeResolutionCompatibilityFallbackEnabled ?? false;
     }
 
     private static bool IsStrictTypeResolutionMode()
@@ -451,85 +216,12 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         int? genericArity = null,
         bool extensionSuffix = false)
     {
-        if (targets.IsDefaultOrEmpty || string.IsNullOrWhiteSpace(typeName))
-        {
-            return ImmutableArray<INamedTypeSymbol>.Empty;
-        }
-
-        var candidates = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var seenSymbols = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var effectiveTypeName = extensionSuffix
-            ? typeName + "Extension"
-            : DeterministicTypeResolutionSemantics.AppendGenericArity(typeName, genericArity);
-
-        foreach (var target in targets)
-        {
-            var clrNamespace = target.ClrNamespace.Trim();
-            if (clrNamespace.Length == 0)
-            {
-                continue;
-            }
-
-            if (!clrNamespace.EndsWith(".", StringComparison.Ordinal))
-            {
-                clrNamespace += ".";
-            }
-
-            var metadataName = clrNamespace + effectiveTypeName;
-            var candidate = target.Assembly.GetTypeByMetadataName(metadataName);
-            if (candidate is not null)
-            {
-                if (IsAccessibleTypeCandidate(compilation, candidate) &&
-                    TryAddDistinctTypeCandidate(candidates, seen, seenSymbols, candidate))
-                {
-                }
-
-                continue;
-            }
-
-            foreach (var referencedAssembly in EnumerateAssemblies(compilation))
-            {
-                if (SymbolEqualityComparer.Default.Equals(referencedAssembly, target.Assembly))
-                {
-                    continue;
-                }
-
-                var bridgedCandidate = referencedAssembly.GetTypeByMetadataName(metadataName);
-                if (bridgedCandidate is not null &&
-                    IsAccessibleTypeCandidate(compilation, bridgedCandidate) &&
-                    TryAddDistinctTypeCandidate(candidates, seen, seenSymbols, bridgedCandidate))
-                {
-                }
-            }
-        }
-
-        return candidates.ToImmutable();
-    }
-
-    private static string BuildTypeCandidateKey(INamedTypeSymbol candidate)
-    {
-        var typeName = candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var assemblyIdentity = candidate.ContainingAssembly?.Identity.ToString() ?? string.Empty;
-        return assemblyIdentity + "|" + typeName;
-    }
-
-    private static bool TryAddDistinctTypeCandidate(
-        ImmutableArray<INamedTypeSymbol>.Builder candidates,
-        HashSet<string> seenKeys,
-        HashSet<INamedTypeSymbol> seenSymbols,
-        INamedTypeSymbol candidate)
-    {
-        var candidateKey = BuildTypeCandidateKey(candidate);
-        if (seenKeys.Contains(candidateKey) || seenSymbols.Contains(candidate))
-        {
-            return false;
-        }
-
-        seenKeys.Add(candidateKey);
-        seenSymbols.Add(candidate);
-        candidates.Add(candidate);
-        return true;
+        return NamespaceDiscoveryService.CollectTypeCandidatesFromXmlnsDefinitionTargets(
+            compilation,
+            targets,
+            typeName,
+            genericArity,
+            extensionSuffix);
     }
 
     private static bool IsAccessibleTypeCandidate(Compilation compilation, INamedTypeSymbol candidate)
@@ -585,6 +277,11 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
+        if (ShouldSuppressTypeResolutionCompatibilityDiagnostic(ambiguity.Token))
+        {
+            return;
+        }
+
         if (!context.ReportedKeys.Add(ambiguity.DedupeKey))
         {
             return;
@@ -610,8 +307,14 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
             return;
         }
 
+        if (ShouldSuppressTypeResolutionCompatibilityDiagnostic(token, selectedCandidate))
+        {
+            return;
+        }
+
         var selectedName = selectedCandidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var dedupeKey = "fallback|" + token + "|" + strategy + "|" + selectedName;
+        var normalizedStrategy = NormalizeTypeResolutionCompatibilityStrategy(strategy);
+        var dedupeKey = "fallback|" + token + "|" + normalizedStrategy + "|" + selectedName;
         if (!context.ReportedKeys.Add(dedupeKey))
         {
             return;
@@ -619,11 +322,54 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         context.Diagnostics.Add(new DiagnosticInfo(
             "AXSG0113",
-            $"Type resolution for '{token}' used compatibility fallback '{strategy}' and selected '{selectedName}'.",
+            $"Type resolution for '{token}' used compatibility fallback '{normalizedStrategy}' and selected '{selectedName}'.",
             context.FilePath,
             1,
             1,
             false));
+    }
+
+    private static bool ShouldSuppressTypeResolutionCompatibilityDiagnostic(string token)
+    {
+        return string.Equals(token, "CSharp", StringComparison.Ordinal);
+    }
+
+    private static bool ShouldSuppressTypeResolutionCompatibilityDiagnostic(
+        string token,
+        INamedTypeSymbol selectedCandidate)
+    {
+        if (ShouldSuppressTypeResolutionCompatibilityDiagnostic(token))
+        {
+            return true;
+        }
+
+        var containingNamespace = selectedCandidate.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        if (string.Equals(containingNamespace, "Avalonia", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var prefix in SilentCompatibilityDiagnosticNamespacePrefixes)
+        {
+            if (containingNamespace.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeTypeResolutionCompatibilityStrategy(string strategy)
+    {
+        return strategy switch
+        {
+            "framework default namespace compatibility fallback" => "Avalonia default namespace compatibility fallback",
+            "framework default namespace extension compatibility fallback" => "Avalonia default namespace extension compatibility fallback",
+            "framework default xml namespace compatibility fallback" => "Avalonia default xml namespace compatibility fallback",
+            "framework default xml namespace extension compatibility fallback" => "Avalonia default xml namespace extension compatibility fallback",
+            _ => strategy
+        };
     }
 
     private static INamedTypeSymbol? ResolveTypeToken(
@@ -1044,7 +790,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 }
 
                 var metadataName = attributeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                if (!metadataName.Equals("global::Avalonia.Metadata.UsableDuringInitializationAttribute", StringComparison.Ordinal))
+                if (!SemanticConventions.IsUsableDuringInitializationAttribute(metadataName))
                 {
                     continue;
                 }
@@ -1082,19 +828,6 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         Template
     }
 
-    private readonly struct ItemContainerTypeMapping
-    {
-        public ItemContainerTypeMapping(string itemsControlMetadataName, string itemContainerMetadataName)
-        {
-            ItemsControlMetadataName = itemsControlMetadataName;
-            ItemContainerMetadataName = itemContainerMetadataName;
-        }
-
-        public string ItemsControlMetadataName { get; }
-
-        public string ItemContainerMetadataName { get; }
-    }
-
     private readonly struct TemplatePartExpectation
     {
         public TemplatePartExpectation(ITypeSymbol? expectedType, bool isRequired)
@@ -1124,26 +857,4 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         public int Column { get; }
     }
 
-    private readonly struct SetterValueResolutionResult
-    {
-        public SetterValueResolutionResult(
-            string Expression,
-            ResolvedValueKind ValueKind,
-            bool RequiresStaticResourceResolver,
-            ResolvedValueRequirements ValueRequirements)
-        {
-            this.Expression = Expression;
-            this.ValueKind = ValueKind;
-            this.RequiresStaticResourceResolver = RequiresStaticResourceResolver;
-            this.ValueRequirements = ValueRequirements;
-        }
-
-        public string Expression { get; }
-
-        public ResolvedValueKind ValueKind { get; }
-
-        public bool RequiresStaticResourceResolver { get; }
-
-        public ResolvedValueRequirements ValueRequirements { get; }
-    }
 }

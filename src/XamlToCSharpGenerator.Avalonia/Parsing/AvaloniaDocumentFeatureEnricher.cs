@@ -2,14 +2,19 @@ using System;
 using System.Collections.Immutable;
 using System.Xml;
 using System.Xml.Linq;
+using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Core.Abstractions;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
+using XamlToCSharpGenerator.Framework.Abstractions;
 
 namespace XamlToCSharpGenerator.Avalonia.Parsing;
 
 public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
 {
+    private static readonly XamlFrameworkSemanticConventions SemanticConventions =
+        AvaloniaFrameworkSemanticConventions.Instance;
+
     public static AvaloniaDocumentFeatureEnricher Instance { get; } = new();
 
     private AvaloniaDocumentFeatureEnricher()
@@ -101,7 +106,7 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
                 Column: column));
         }
 
-        if (element.Name.LocalName == "Style")
+        if (SemanticConventions.IsStyleDefinitionRootTypeName(element.Name.LocalName))
         {
             rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
             var selectorLineInfo = info.SelectorAttribute is null
@@ -125,7 +130,7 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
                 Column: column));
         }
 
-        if (element.Name.LocalName == "ControlTheme")
+        if (SemanticConventions.IsControlThemeDefinitionRootTypeName(element.Name.LocalName))
         {
             rawXaml ??= element.ToString(SaveOptions.DisableFormatting);
             controlThemes.Add(new XamlControlThemeDefinition(
@@ -309,15 +314,12 @@ public sealed class AvaloniaDocumentFeatureEnricher : IXamlDocumentEnricher
 
     private static bool IsTemplateElement(string localName)
     {
-        return localName == "DataTemplate"
-               || localName == "ControlTemplate"
-               || localName == "ItemsPanelTemplate"
-               || localName == "TreeDataTemplate";
+        return SemanticConventions.IsKnownTemplateKind(localName);
     }
 
     private static bool IsIncludeElement(string localName)
     {
-        return localName == "ResourceInclude" || localName == "StyleInclude" || localName == "MergeResourceInclude";
+        return SemanticConventions.IsIncludeRootTypeName(localName);
     }
 
     private static bool ShouldIgnoreElement(XElement element, ImmutableHashSet<string> ignoredNamespaces)

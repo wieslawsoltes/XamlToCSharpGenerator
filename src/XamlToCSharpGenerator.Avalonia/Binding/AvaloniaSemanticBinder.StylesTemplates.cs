@@ -14,6 +14,7 @@ using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.Framework.Shared.Binding;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
@@ -36,7 +37,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         foreach (var style in document.Styles)
         {
-            if (ShouldSkipConditionalBranch(
+            if (ConditionalXamlEvaluationService.ShouldSkipBranch(
                     style.Condition,
                     compilation,
                     document,
@@ -71,8 +72,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 {
                     targetType = AvaloniaSelectorSemanticAdapter.TryResolveSelectorTargetType(
                         selectorValidation.Branches,
-                        typeToken => ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace),
-                        IsTypeAssignableTo,
+                        typeToken => ResolveSelectorTypeToken(compilation, document, typeToken),
+                        TypeSymbolLookupSemanticsService.IsTypeAssignableTo,
                         out var unresolvedTypeToken,
                         out var unresolvedTypeOffset);
                     if (!string.IsNullOrWhiteSpace(unresolvedTypeToken))
@@ -95,13 +96,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             var styleDataType = ResolveTypeFromTypeExpression(compilation, document, style.DataType, document.ClassNamespace);
             var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
-            var compileBindingsEnabled = style.CompileBindings ?? options.UseCompiledBindingsByDefault;
+            var compileBindingsEnabled = style.CompileBindings ??
+                                         document.RootObject.CompileBindings ??
+                                         options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(style.Setters.Length);
             var seenSetterProperties = new HashSet<string>(StringComparer.Ordinal);
             foreach (var setter in style.Setters)
             {
-                if (ShouldSkipConditionalBranch(
+                if (ConditionalXamlEvaluationService.ShouldSkipBranch(
                         setter.Condition,
                         compilation,
                         document,
@@ -111,473 +114,106 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                var propertyAlias = ResolvePropertyAlias(targetType, setter.PropertyName);
-                var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
-                var resolvedPropertyName = normalizedPropertyName;
-                IPropertySymbol? targetProperty = null;
-                string? setterPropertyOwnerTypeName = null;
-                string? setterPropertyFieldName = null;
-                ITypeSymbol? setterValueType = null;
+                var setterPropertyPlan = SetterPropertyBindingPlanService.BuildPlan(
+                    setter.PropertyName,
+                    targetType,
+                    compilation,
+                    document);
 
-                if (propertyAlias.HasAvaloniaPropertyAlias &&
-                    propertyAlias.AvaloniaPropertyOwnerType is not null &&
-                    TryFindAvaloniaPropertyField(
-                        propertyAlias.AvaloniaPropertyOwnerType,
-                        propertyAlias.ResolvedPropertyName,
-                        out var aliasedOwnerType,
-                        out var aliasedPropertyField,
-                        propertyAlias.AvaloniaPropertyFieldName))
+                if (setterPropertyPlan.IsMissingOnTargetType)
                 {
-                    resolvedPropertyName = propertyAlias.ResolvedPropertyName;
-                    setterPropertyOwnerTypeName = aliasedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    setterPropertyFieldName = aliasedPropertyField.Name;
-                    setterValueType = TryGetAvaloniaPropertyValueType(aliasedPropertyField.Type);
-                }
-
-                if (targetType is not null &&
-                    TrySplitOwnerQualifiedPropertyToken(
-                        setter.PropertyName,
-                        out var ownerToken,
-                        out var attachedPropertyName))
-                {
-                    var explicitOwnerType = ResolveTypeToken(
-                        compilation,
-                        document,
-                        ownerToken,
-                        document.ClassNamespace);
-                    if (explicitOwnerType is not null &&
-                        TryFindAvaloniaPropertyField(
-                            explicitOwnerType,
-                            attachedPropertyName,
-                            out var attachedOwnerType,
-                            out var attachedPropertyField))
-                    {
-                        resolvedPropertyName = attachedPropertyName;
-                        setterPropertyOwnerTypeName =
-                            attachedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        setterPropertyFieldName = attachedPropertyField.Name;
-                        setterValueType = TryGetAvaloniaPropertyValueType(attachedPropertyField.Type);
-                    }
-                }
-
-                if (targetType is not null)
-                {
-                    targetProperty = FindProperty(targetType, normalizedPropertyName);
-                    if (targetProperty is not null)
-                    {
-                        resolvedPropertyName = targetProperty.Name;
-                    }
-                }
-
-                setterValueType ??= targetProperty?.Type;
-                if (targetType is not null &&
-                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
-                    TryFindAvaloniaPropertyField(targetType, resolvedPropertyName, out var stylePropertyOwnerType, out var stylePropertyField))
-                {
-                    setterPropertyOwnerTypeName =
-                        stylePropertyOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    setterPropertyFieldName = stylePropertyField.Name;
-                    setterValueType ??= TryGetAvaloniaPropertyValueType(stylePropertyField.Type);
-                }
-
-                if (targetType is not null &&
-                    targetProperty is null &&
-                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
-                {
+                    var styleTargetDisplayName = targetType?.ToDisplayString() ?? "style";
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0301",
-                        $"Style setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
+                        $"Style setter property '{setter.PropertyName}' was not found on '{styleTargetDisplayName}'.",
                         document.FilePath,
                         setter.Line,
                         setter.Column,
                         options.StrictMode));
                 }
 
-                var duplicatePropertyKey = !string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
-                                           !string.IsNullOrWhiteSpace(setterPropertyFieldName)
-                    ? setterPropertyOwnerTypeName + "." + setterPropertyFieldName
-                    : resolvedPropertyName;
-                if (!seenSetterProperties.Add(duplicatePropertyKey))
+                if (!seenSetterProperties.Add(setterPropertyPlan.SetterIdentityPlan.DuplicateIdentityKey))
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0304",
-                        $"Style setter property '{resolvedPropertyName}' is duplicated in selector '{selector}'.",
+                        $"Style setter property '{setterPropertyPlan.ResolvedPropertyName}' is duplicated in selector '{selector}'.",
                         document.FilePath,
                         setter.Line,
                         setter.Column,
                         options.StrictMode));
                 }
 
-                var valueExpression = string.Empty;
-                var valueResolvedFromMarkup = false;
-                var valueKind = ResolvedValueKind.Literal;
-                var requiresStaticResourceResolver = false;
-                var valueRequirements = ResolvedValueRequirements.None;
-
-                var isCompiledBinding = false;
-                string? compiledBindingPath = null;
-                string? compiledBindingSourceType = null;
-                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
-                {
-                    if (!TryBuildInlineCodeBindingExpression(
-                            compilation,
-                            styleDataType,
-                            rootContextType,
-                            targetType,
-                            inlineCode,
-                            out var inlineBindingExpression,
-                            out _,
-                            out _,
-                            out var inlineErrorMessage))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0112",
-                            $"Inline C# for style setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                        continue;
-                    }
-
-                    setters.Add(new ResolvedSetterDefinition(
-                        PropertyName: resolvedPropertyName,
-                        ValueExpression: inlineBindingExpression,
-                        IsCompiledBinding: false,
-                        CompiledBindingPath: null,
-                        CompiledBindingSourceTypeName: null,
-                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                        AvaloniaPropertyFieldName: setterPropertyFieldName,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        Condition: setter.Condition,
-                        ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                    continue;
-                }
-
-                if (TryResolveImplicitCSharpShorthandExpression(
-                        setter.Value,
-                        compilation,
-                        document,
-                        options,
-                        styleDataType,
-                        rootContextType,
-                        targetType,
-                        unsafeAccessors,
-                        out var isShorthandExpression,
-                        out var shorthandResolution))
-                {
-                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
-                        shorthandResolution.Path is not null &&
-                        TryBuildRuntimeBindingExpression(
-                            compilation,
-                            document,
-                            new BindingMarkup(
-                                isCompiledBinding: false,
-                                path: shorthandResolution.Path,
-                                mode: null,
-                                elementName: null,
-                                relativeSource: null,
-                                source: null,
-                                dataType: null,
-                                converter: null,
-                                converterCulture: null,
-                                converterParameter: null,
-                                stringFormat: null,
-                                fallbackValue: null,
-                                targetNullValue: null,
-                                delay: null,
-                                priority: null,
-                                updateSourceTrigger: null,
-                                hasSourceConflict: false,
-                                sourceConflictMessage: null),
-                            targetType,
-                            BindingPriorityScope.Style,
-                            out var shorthandBindingExpression))
-                    {
-                        var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                        if (shorthandResolution.SourceTypeName is not null &&
-                            shorthandResolution.AccessorExpression is not null)
-                        {
-                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                                TargetTypeName: targetTypeName,
-                                TargetPropertyName: resolvedPropertyName,
-                                Path: shorthandResolution.Path,
-                                SourceTypeName: shorthandResolution.SourceTypeName,
-                                ResultTypeName: shorthandResolution.ResultTypeName,
-                                AccessorExpression: shorthandResolution.AccessorExpression,
-                                IsSetterBinding: true,
-                                Line: setter.Line,
-                                Column: setter.Column));
-                        }
-
-                        setters.Add(new ResolvedSetterDefinition(
-                            PropertyName: resolvedPropertyName,
-                            ValueExpression: shorthandBindingExpression,
-                            IsCompiledBinding: shorthandResolution.SourceTypeName is not null,
-                            CompiledBindingPath: shorthandResolution.Path,
-                            CompiledBindingSourceTypeName: shorthandResolution.SourceTypeName,
-                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                            AvaloniaPropertyFieldName: setterPropertyFieldName,
-                            Line: setter.Line,
-                            Column: setter.Column,
-                            Condition: setter.Condition,
-                            ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                        continue;
-                    }
-
-                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
-                        shorthandResolution.ValueExpression is not null)
-                    {
-                        setters.Add(new ResolvedSetterDefinition(
-                            PropertyName: resolvedPropertyName,
-                            ValueExpression: shorthandResolution.ValueExpression,
-                            IsCompiledBinding: false,
-                            CompiledBindingPath: null,
-                            CompiledBindingSourceTypeName: null,
-                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                            AvaloniaPropertyFieldName: setterPropertyFieldName,
-                            Line: setter.Line,
-                            Column: setter.Column,
-                            Condition: setter.Condition,
-                            ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                        continue;
-                    }
-
-                    if (isShorthandExpression &&
-                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
-                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            shorthandResolution.DiagnosticId!,
-                            shorthandResolution.DiagnosticMessage!,
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                        continue;
-                    }
-                }
-
-                var styleExpressionAccessorPlaceholderToken = BuildCompiledBindingAccessorPlaceholderToken(
-                    setter.Line,
-                    setter.Column);
-
-                if (TryConvertCSharpExpressionMarkupToBindingExpression(
-                        setter.Value,
-                        compilation,
-                        document,
-                        options,
-                        styleDataType,
-                        styleExpressionAccessorPlaceholderToken,
-                        out var isExpressionMarkup,
-                        out var expressionBindingValueExpression,
-                        out var expressionAccessorExpression,
-                        out var normalizedExpression,
-                        out var expressionResultTypeName,
-                        out var expressionErrorCode,
-                        out var expressionErrorMessage))
-                {
-                    var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                    var expressionPath = "{= " + normalizedExpression + " }";
-                    var sourceTypeName = styleDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                        TargetTypeName: targetTypeName,
-                        TargetPropertyName: resolvedPropertyName,
-                        Path: expressionPath,
-                        SourceTypeName: sourceTypeName,
-                        ResultTypeName: expressionResultTypeName,
-                        AccessorExpression: expressionAccessorExpression,
-                        IsSetterBinding: true,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        AccessorPlaceholderToken: styleExpressionAccessorPlaceholderToken));
-
-                    setters.Add(new ResolvedSetterDefinition(
-                        PropertyName: resolvedPropertyName,
-                        ValueExpression: expressionBindingValueExpression,
-                        IsCompiledBinding: true,
-                        CompiledBindingPath: expressionPath,
-                        CompiledBindingSourceTypeName: sourceTypeName,
-                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                        AvaloniaPropertyFieldName: setterPropertyFieldName,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        Condition: setter.Condition,
-                        ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                    continue;
-                }
-
-                if (isExpressionMarkup)
-                {
-                    var message = expressionErrorCode == "AXSG0110"
-                        ? $"Expression binding for style setter '{setter.PropertyName}' requires x:DataType on the style."
-                        : $"Expression binding '{setter.Value}' is invalid for source type '{styleDataType?.ToDisplayString() ?? "unknown"}': {expressionErrorMessage}";
-                    diagnostics.Add(new DiagnosticInfo(
-                        expressionErrorCode,
-                        message,
-                        document.FilePath,
-                        setter.Line,
-                        setter.Column,
-                        options.StrictMode));
-                    continue;
-                }
-
-                if (TryParseBindingMarkup(setter.Value, out var bindingMarkup))
-                {
-                    var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
-                    INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
-                    var requiresAmbientDataType = false;
-                    var hasInvalidLocalDataType = false;
-                    if (!TryReportBindingSourceConflict(
-                            bindingMarkup,
-                            diagnostics,
-                            document,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode) &&
-                        wantsCompiledBinding &&
-                        TryResolveCompiledBindingSourceType(
-                            compilation,
-                            document,
-                            bindingMarkup,
-                            styleDataType,
-                            targetType,
-                            out compiledBindingSourceTypeSymbol,
-                            out requiresAmbientDataType,
-                            out hasInvalidLocalDataType))
-                    {
-                        if (!TryBuildCompiledBindingAccessorExpression(
-                                     compilation,
-                                     document,
-                                     compiledBindingSourceTypeSymbol!,
-                                     bindingMarkup.Path,
-                                     setterValueType,
-                                     unsafeAccessors,
-                                     out var compiledBindingResolution,
-                                     out var errorMessage))
-                        {
-                            diagnostics.Add(new DiagnosticInfo(
-                                "AXSG0111",
-                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{compiledBindingSourceTypeSymbol!.ToDisplayString()}': {errorMessage}",
-                                document.FilePath,
-                                setter.Line,
-                                setter.Column,
-                                options.StrictMode));
-                        }
-                        else
-                        {
-                            var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                                TargetTypeName: targetTypeName,
-                                TargetPropertyName: resolvedPropertyName,
-                                Path: compiledBindingResolution.NormalizedPath,
-                                SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                                ResultTypeName: compiledBindingResolution.ResultTypeName,
-                                AccessorExpression: compiledBindingResolution.AccessorExpression,
-                                IsSetterBinding: true,
-                                Line: setter.Line,
-                                Column: setter.Column));
-
-                            isCompiledBinding = true;
-                            compiledBindingPath = compiledBindingResolution.NormalizedPath;
-                            compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        }
-                    }
-                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && hasInvalidLocalDataType)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0110",
-                            $"Compiled binding for style setter '{setter.PropertyName}' specifies invalid DataType '{bindingMarkup.DataType}'.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0110",
-                            $"Compiled binding for style setter '{setter.PropertyName}' requires x:DataType on the style.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-
-                    if (!isCompiledBinding &&
-                        !bindingMarkup.HasSourceConflict &&
-                        TryBuildRuntimeBindingExpression(
-                            compilation,
-                            document,
-                            bindingMarkup,
-                            targetType,
-                            BindingPriorityScope.Style,
-                            out var runtimeBindingExpression))
-                    {
-                        valueExpression = runtimeBindingExpression;
-                        valueResolvedFromMarkup = true;
-                        valueKind = ResolvedValueKind.Binding;
-                        valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
-                    }
-                }
-
-                var conversionTargetType = setterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
-                if (!valueResolvedFromMarkup &&
-                    TryResolveSetterValueWithPolicy(
+                var conversionTargetType = setterPropertyPlan.SetterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
+                if (!SetterValuePlanningService.TryBuildPlan(
                         rawValue: setter.Value,
-                        conversionTargetType: conversionTargetType,
+                        authoredPropertyName: setter.PropertyName,
+                        resolvedPropertyName: setterPropertyPlan.ResolvedPropertyName,
                         compilation: compilation,
                         document: document,
-                        setterTargetType: targetType,
-                        bindingPriorityScope: BindingPriorityScope.Style,
-                        strictMode: options.StrictMode,
-                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName),
+                        options: options,
+                        scopeDataType: styleDataType,
+                        rootContextType: rootContextType,
+                        targetType: targetType,
+                        setterValueType: setterPropertyPlan.SetterValueType,
+                        conversionTargetType: conversionTargetType,
+                        ownerDisplayName: targetType?.ToDisplayString() ?? "style",
+                        contextDisplayName: "style",
+                        bindingPriorityScope: (int)BindingPriorityScope.Style,
+                        compileBindingsEnabled: compileBindingsEnabled,
+                        preferTypedStaticResourceCoercion: setterPropertyPlan.PreferTypedStaticResourceCoercion,
                         allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
                                                                         conversionTargetType.SpecialType == SpecialType.System_Object,
                         allowCompatibilityStringLiteralFallback: !options.StrictMode &&
                                                                  conversionTargetType.SpecialType == SpecialType.System_Object,
-                        propertyName: resolvedPropertyName,
-                        ownerDisplayName: targetType?.ToDisplayString() ?? "style",
                         line: setter.Line,
                         column: setter.Column,
                         diagnostics: diagnostics,
-                        resolution: out var styleSetterResolution,
-                        setterContext: true,
-                        converterAttributes: targetProperty?.GetAttributes() ?? default))
+                        unsafeAccessors: unsafeAccessors,
+                        converterAttributes: setterPropertyPlan.TargetProperty?.GetAttributes() ?? default,
+                        plan: out var setterValuePlan))
                 {
-                    valueExpression = styleSetterResolution.Expression;
-                    valueResolvedFromMarkup = true;
-                    valueKind = styleSetterResolution.ValueKind;
-                    requiresStaticResourceResolver = styleSetterResolution.RequiresStaticResourceResolver;
-                    valueRequirements = styleSetterResolution.ValueRequirements;
-                }
+                    if (!options.StrictMode &&
+                        setterPropertyPlan.FrameworkPropertyOperation is not null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            "AXSG0102",
+                            $"Could not convert setter value '{setter.Value}' for '{setterPropertyPlan.ResolvedPropertyName}'. Strategy=AvaloniaProperty.UnsetValueFallback.",
+                            document.FilePath,
+                            setter.Line,
+                            setter.Column,
+                            options.StrictMode));
 
-                if (!valueResolvedFromMarkup)
-                {
+                        setters.Add(new ResolvedSetterDefinition(
+                            PropertyName: setterPropertyPlan.ResolvedPropertyName,
+                            ValueExpression: "global::Avalonia.AvaloniaProperty.UnsetValue",
+                            IsCompiledBinding: false,
+                            CompiledBindingPath: null,
+                            CompiledBindingSourceTypeName: null,
+                            FrameworkPropertyOperation: setterPropertyPlan.FrameworkPropertyOperation,
+                            Line: setter.Line,
+                            Column: setter.Column,
+                            Condition: setter.Condition,
+                            ValueKind: ResolvedValueKind.Literal));
+                    }
+
                     continue;
                 }
 
+                compiledBindings.AddRange(setterValuePlan.CompiledBindings);
+
                 setters.Add(new ResolvedSetterDefinition(
-                    PropertyName: resolvedPropertyName,
-                    ValueExpression: valueExpression,
-                    IsCompiledBinding: isCompiledBinding,
-                    CompiledBindingPath: compiledBindingPath,
-                    CompiledBindingSourceTypeName: compiledBindingSourceType,
-                    AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                    AvaloniaPropertyFieldName: setterPropertyFieldName,
+                    PropertyName: setterPropertyPlan.ResolvedPropertyName,
+                    ValueExpression: setterValuePlan.ValueExpression,
+                    IsCompiledBinding: setterValuePlan.IsCompiledBinding,
+                    CompiledBindingPath: setterValuePlan.CompiledBindingPath,
+                    CompiledBindingSourceTypeName: setterValuePlan.CompiledBindingSourceTypeName,
+                    FrameworkPropertyOperation: setterPropertyPlan.FrameworkPropertyOperation,
                     Line: setter.Line,
                     Column: setter.Column,
                     Condition: setter.Condition,
-                    ValueKind: isCompiledBinding
-                        ? ResolvedValueKind.Binding
-                        : valueKind,
-                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
-                    ValueRequirements: valueRequirements));
+                    ValueKind: setterValuePlan.ValueKind,
+                    RequiresStaticResourceResolver: setterValuePlan.RequiresStaticResourceResolver,
+                    ValueRequirements: setterValuePlan.ValueRequirements));
             }
 
             styles.Add(new ResolvedStyleDefinition(
@@ -606,7 +242,7 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
         foreach (var controlTheme in document.ControlThemes)
         {
-            if (ShouldSkipConditionalBranch(
+            if (ConditionalXamlEvaluationService.ShouldSkipBranch(
                     controlTheme.Condition,
                     compilation,
                     document,
@@ -638,13 +274,15 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
             var themeDataType = ResolveTypeFromTypeExpression(compilation, document, controlTheme.DataType, document.ClassNamespace);
             var rootContextType = ResolveObjectTypeSymbol(compilation, document, document.RootObject);
-            var compileBindingsEnabled = controlTheme.CompileBindings ?? options.UseCompiledBindingsByDefault;
+            var compileBindingsEnabled = controlTheme.CompileBindings ??
+                                         document.RootObject.CompileBindings ??
+                                         options.UseCompiledBindingsByDefault;
 
             var setters = ImmutableArray.CreateBuilder<ResolvedSetterDefinition>(controlTheme.Setters.Length);
             var seenSetterProperties = new HashSet<string>(StringComparer.Ordinal);
             foreach (var setter in controlTheme.Setters)
             {
-                if (ShouldSkipConditionalBranch(
+                if (ConditionalXamlEvaluationService.ShouldSkipBranch(
                         setter.Condition,
                         compilation,
                         document,
@@ -654,475 +292,115 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                     continue;
                 }
 
-                var propertyAlias = ResolvePropertyAlias(targetType, setter.PropertyName);
-                var normalizedPropertyName = propertyAlias.ResolvedPropertyName;
-                var resolvedPropertyName = normalizedPropertyName;
-                IPropertySymbol? targetProperty = null;
-                string? setterPropertyOwnerTypeName = null;
-                string? setterPropertyFieldName = null;
-                ITypeSymbol? setterValueType = null;
+                var setterPropertyPlan = SetterPropertyBindingPlanService.BuildPlan(
+                    setter.PropertyName,
+                    targetType,
+                    compilation,
+                    document);
 
-                if (propertyAlias.HasAvaloniaPropertyAlias &&
-                    propertyAlias.AvaloniaPropertyOwnerType is not null &&
-                    TryFindAvaloniaPropertyField(
-                        propertyAlias.AvaloniaPropertyOwnerType,
-                        propertyAlias.ResolvedPropertyName,
-                        out var aliasedOwnerType,
-                        out var aliasedPropertyField,
-                        propertyAlias.AvaloniaPropertyFieldName))
+                if (setterPropertyPlan.IsMissingOnTargetType)
                 {
-                    resolvedPropertyName = propertyAlias.ResolvedPropertyName;
-                    setterPropertyOwnerTypeName = aliasedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    setterPropertyFieldName = aliasedPropertyField.Name;
-                    setterValueType = TryGetAvaloniaPropertyValueType(aliasedPropertyField.Type);
-                }
-
-                if (targetType is not null &&
-                    TrySplitOwnerQualifiedPropertyToken(
-                        setter.PropertyName,
-                        out var ownerToken,
-                        out var attachedPropertyName))
-                {
-                    var explicitOwnerType = ResolveTypeToken(
-                        compilation,
-                        document,
-                        ownerToken,
-                        document.ClassNamespace);
-                    if (explicitOwnerType is not null &&
-                        TryFindAvaloniaPropertyField(
-                            explicitOwnerType,
-                            attachedPropertyName,
-                            out var attachedOwnerType,
-                            out var attachedPropertyField))
-                    {
-                        resolvedPropertyName = attachedPropertyName;
-                        setterPropertyOwnerTypeName =
-                            attachedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        setterPropertyFieldName = attachedPropertyField.Name;
-                        setterValueType = TryGetAvaloniaPropertyValueType(attachedPropertyField.Type);
-                    }
-                }
-
-                if (targetType is not null)
-                {
-                    targetProperty = FindProperty(targetType, normalizedPropertyName);
-                    if (targetProperty is not null)
-                    {
-                        resolvedPropertyName = targetProperty.Name;
-                    }
-                }
-
-                setterValueType ??= targetProperty?.Type;
-                if (targetType is not null &&
-                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
-                    TryFindAvaloniaPropertyField(targetType, resolvedPropertyName, out var themePropertyOwnerType, out var themePropertyField))
-                {
-                    setterPropertyOwnerTypeName =
-                        themePropertyOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    setterPropertyFieldName = themePropertyField.Name;
-                    setterValueType ??= TryGetAvaloniaPropertyValueType(themePropertyField.Type);
-                }
-
-                if (targetType is not null &&
-                    targetProperty is null &&
-                    string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName))
-                {
+                    var themeTargetDisplayName = targetType?.ToDisplayString() ?? "control theme";
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0303",
-                        $"ControlTheme setter property '{setter.PropertyName}' was not found on '{targetType.ToDisplayString()}'.",
+                        $"ControlTheme setter property '{setter.PropertyName}' was not found on '{themeTargetDisplayName}'.",
                         document.FilePath,
                         setter.Line,
                         setter.Column,
                         options.StrictMode));
                 }
 
-                var duplicatePropertyKey = !string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName) &&
-                                           !string.IsNullOrWhiteSpace(setterPropertyFieldName)
-                    ? setterPropertyOwnerTypeName + "." + setterPropertyFieldName
-                    : resolvedPropertyName;
-                if (!seenSetterProperties.Add(duplicatePropertyKey))
+                if (!seenSetterProperties.Add(setterPropertyPlan.SetterIdentityPlan.DuplicateIdentityKey))
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0304",
-                        $"ControlTheme setter property '{resolvedPropertyName}' is duplicated.",
+                        $"ControlTheme setter property '{setterPropertyPlan.ResolvedPropertyName}' is duplicated.",
                         document.FilePath,
                         setter.Line,
                         setter.Column,
                         options.StrictMode));
                 }
 
-                var valueExpression = string.Empty;
-                var valueResolvedFromMarkup = false;
-                var valueKind = ResolvedValueKind.Literal;
-                var requiresStaticResourceResolver = false;
-                var valueRequirements = ResolvedValueRequirements.None;
-
-                var isCompiledBinding = false;
-                string? compiledBindingPath = null;
-                string? compiledBindingSourceType = null;
-                if (TryParseInlineCSharpMarkupExtensionCode(setter.Value, out var inlineCode))
+                if (!options.StrictMode &&
+                    setterPropertyPlan.FrameworkPropertyOperation is not null &&
+                    setterPropertyPlan.SetterValueType is null &&
+                    !string.IsNullOrWhiteSpace(setter.Value))
                 {
-                    if (!TryBuildInlineCodeBindingExpression(
-                            compilation,
-                            themeDataType,
-                            rootContextType,
-                            targetType,
-                            inlineCode,
-                            out var inlineBindingExpression,
-                            out _,
-                            out _,
-                            out var inlineErrorMessage))
+                    var trimmedSetterValue = setter.Value.TrimStart();
+                    if (trimmedSetterValue.Length > 0 && trimmedSetterValue[0] != '{')
                     {
                         diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0112",
-                            $"Inline C# for control theme setter '{setter.PropertyName}' is invalid: {inlineErrorMessage}",
+                            "AXSG0102",
+                            $"Could not convert setter value '{setter.Value}' for '{setterPropertyPlan.ResolvedPropertyName}'. Strategy=AvaloniaProperty.UnsetValueFallback.",
                             document.FilePath,
                             setter.Line,
                             setter.Column,
                             options.StrictMode));
-                        continue;
-                    }
-
-                    setters.Add(new ResolvedSetterDefinition(
-                        PropertyName: resolvedPropertyName,
-                        ValueExpression: inlineBindingExpression,
-                        IsCompiledBinding: false,
-                        CompiledBindingPath: null,
-                        CompiledBindingSourceTypeName: null,
-                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                        AvaloniaPropertyFieldName: setterPropertyFieldName,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        Condition: setter.Condition,
-                        ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                    continue;
-                }
-
-                if (TryResolveImplicitCSharpShorthandExpression(
-                        setter.Value,
-                        compilation,
-                        document,
-                        options,
-                        themeDataType,
-                        rootContextType,
-                        targetType,
-                        unsafeAccessors,
-                        out var isShorthandExpression,
-                        out var shorthandResolution))
-                {
-                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.BindingPath &&
-                        shorthandResolution.Path is not null &&
-                        TryBuildRuntimeBindingExpression(
-                            compilation,
-                            document,
-                            new BindingMarkup(
-                                isCompiledBinding: false,
-                                path: shorthandResolution.Path,
-                                mode: null,
-                                elementName: null,
-                                relativeSource: null,
-                                source: null,
-                                dataType: null,
-                                converter: null,
-                                converterCulture: null,
-                                converterParameter: null,
-                                stringFormat: null,
-                                fallbackValue: null,
-                                targetNullValue: null,
-                                delay: null,
-                                priority: null,
-                                updateSourceTrigger: null,
-                                hasSourceConflict: false,
-                                sourceConflictMessage: null),
-                            targetType,
-                            BindingPriorityScope.Style,
-                            out var shorthandBindingExpression))
-                    {
-                        var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                        if (shorthandResolution.SourceTypeName is not null &&
-                            shorthandResolution.AccessorExpression is not null)
-                        {
-                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                                TargetTypeName: targetTypeName,
-                                TargetPropertyName: resolvedPropertyName,
-                                Path: shorthandResolution.Path,
-                                SourceTypeName: shorthandResolution.SourceTypeName,
-                                ResultTypeName: shorthandResolution.ResultTypeName,
-                                AccessorExpression: shorthandResolution.AccessorExpression,
-                                IsSetterBinding: true,
-                                Line: setter.Line,
-                                Column: setter.Column));
-                        }
 
                         setters.Add(new ResolvedSetterDefinition(
-                            PropertyName: resolvedPropertyName,
-                            ValueExpression: shorthandBindingExpression,
-                            IsCompiledBinding: shorthandResolution.SourceTypeName is not null,
-                            CompiledBindingPath: shorthandResolution.Path,
-                            CompiledBindingSourceTypeName: shorthandResolution.SourceTypeName,
-                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                            AvaloniaPropertyFieldName: setterPropertyFieldName,
-                            Line: setter.Line,
-                            Column: setter.Column,
-                            Condition: setter.Condition,
-                            ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                        continue;
-                    }
-
-                    if (shorthandResolution.Kind == CSharpShorthandResolutionKind.RootExpression &&
-                        shorthandResolution.ValueExpression is not null)
-                    {
-                        setters.Add(new ResolvedSetterDefinition(
-                            PropertyName: resolvedPropertyName,
-                            ValueExpression: shorthandResolution.ValueExpression,
+                            PropertyName: setterPropertyPlan.ResolvedPropertyName,
+                            ValueExpression: "global::Avalonia.AvaloniaProperty.UnsetValue",
                             IsCompiledBinding: false,
                             CompiledBindingPath: null,
                             CompiledBindingSourceTypeName: null,
-                            AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                            AvaloniaPropertyFieldName: setterPropertyFieldName,
+                            FrameworkPropertyOperation: setterPropertyPlan.FrameworkPropertyOperation,
                             Line: setter.Line,
                             Column: setter.Column,
                             Condition: setter.Condition,
-                            ValueKind: ResolvedValueKind.Binding,
-                            ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                        continue;
-                    }
-
-                    if (isShorthandExpression &&
-                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticId) &&
-                        !string.IsNullOrWhiteSpace(shorthandResolution.DiagnosticMessage))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            shorthandResolution.DiagnosticId!,
-                            shorthandResolution.DiagnosticMessage!,
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
+                            ValueKind: ResolvedValueKind.Literal));
                         continue;
                     }
                 }
 
-                var themeExpressionAccessorPlaceholderToken = BuildCompiledBindingAccessorPlaceholderToken(
-                    setter.Line,
-                    setter.Column);
-
-                if (TryConvertCSharpExpressionMarkupToBindingExpression(
-                        setter.Value,
-                        compilation,
-                        document,
-                        options,
-                        themeDataType,
-                        themeExpressionAccessorPlaceholderToken,
-                        out var isExpressionMarkup,
-                        out var expressionBindingValueExpression,
-                        out var expressionAccessorExpression,
-                        out var normalizedExpression,
-                        out var expressionResultTypeName,
-                        out var expressionErrorCode,
-                        out var expressionErrorMessage))
-                {
-                    var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                    var expressionPath = "{= " + normalizedExpression + " }";
-                    var sourceTypeName = themeDataType!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                        TargetTypeName: targetTypeName,
-                        TargetPropertyName: resolvedPropertyName,
-                        Path: expressionPath,
-                        SourceTypeName: sourceTypeName,
-                        ResultTypeName: expressionResultTypeName,
-                        AccessorExpression: expressionAccessorExpression,
-                        IsSetterBinding: true,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        AccessorPlaceholderToken: themeExpressionAccessorPlaceholderToken));
-
-                    setters.Add(new ResolvedSetterDefinition(
-                        PropertyName: resolvedPropertyName,
-                        ValueExpression: expressionBindingValueExpression,
-                        IsCompiledBinding: true,
-                        CompiledBindingPath: expressionPath,
-                        CompiledBindingSourceTypeName: sourceTypeName,
-                        AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                        AvaloniaPropertyFieldName: setterPropertyFieldName,
-                        Line: setter.Line,
-                        Column: setter.Column,
-                        Condition: setter.Condition,
-                        ValueKind: ResolvedValueKind.Binding,
-                        ValueRequirements: ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true)));
-                    continue;
-                }
-
-                if (isExpressionMarkup)
-                {
-                    var message = expressionErrorCode == "AXSG0110"
-                        ? $"Expression binding for control theme setter '{setter.PropertyName}' requires x:DataType on the control theme."
-                        : $"Expression binding '{setter.Value}' is invalid for source type '{themeDataType?.ToDisplayString() ?? "unknown"}': {expressionErrorMessage}";
-                    diagnostics.Add(new DiagnosticInfo(
-                        expressionErrorCode,
-                        message,
-                        document.FilePath,
-                        setter.Line,
-                        setter.Column,
-                        options.StrictMode));
-                    continue;
-                }
-
-                if (TryParseBindingMarkup(setter.Value, out var bindingMarkup))
-                {
-                    var wantsCompiledBinding = bindingMarkup.IsCompiledBinding || compileBindingsEnabled;
-                    INamedTypeSymbol? compiledBindingSourceTypeSymbol = null;
-                    var requiresAmbientDataType = false;
-                    var hasInvalidLocalDataType = false;
-                    if (!TryReportBindingSourceConflict(
-                            bindingMarkup,
-                            diagnostics,
-                            document,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode) &&
-                        wantsCompiledBinding &&
-                        TryResolveCompiledBindingSourceType(
-                            compilation,
-                            document,
-                            bindingMarkup,
-                            themeDataType,
-                            targetType,
-                            out compiledBindingSourceTypeSymbol,
-                            out requiresAmbientDataType,
-                            out hasInvalidLocalDataType))
-                    {
-                        if (!TryBuildCompiledBindingAccessorExpression(
-                                     compilation,
-                                     document,
-                                     compiledBindingSourceTypeSymbol!,
-                                     bindingMarkup.Path,
-                                     setterValueType,
-                                     unsafeAccessors,
-                                     out var compiledBindingResolution,
-                                     out var errorMessage))
-                        {
-                            diagnostics.Add(new DiagnosticInfo(
-                                "AXSG0111",
-                                $"Compiled binding path '{bindingMarkup.Path}' is invalid for source type '{compiledBindingSourceTypeSymbol!.ToDisplayString()}': {errorMessage}",
-                                document.FilePath,
-                                setter.Line,
-                                setter.Column,
-                                options.StrictMode));
-                        }
-                        else
-                        {
-                            var targetTypeName = targetType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Object";
-                            compiledBindings.Add(new ResolvedCompiledBindingDefinition(
-                                TargetTypeName: targetTypeName,
-                                TargetPropertyName: resolvedPropertyName,
-                                Path: compiledBindingResolution.NormalizedPath,
-                                SourceTypeName: compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                                ResultTypeName: compiledBindingResolution.ResultTypeName,
-                                AccessorExpression: compiledBindingResolution.AccessorExpression,
-                                IsSetterBinding: true,
-                                Line: setter.Line,
-                                Column: setter.Column));
-
-                            isCompiledBinding = true;
-                            compiledBindingPath = compiledBindingResolution.NormalizedPath;
-                            compiledBindingSourceType = compiledBindingSourceTypeSymbol!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        }
-                    }
-                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && hasInvalidLocalDataType)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0110",
-                            $"Compiled binding for control theme setter '{setter.PropertyName}' specifies invalid DataType '{bindingMarkup.DataType}'.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-                    else if (!bindingMarkup.HasSourceConflict && wantsCompiledBinding && requiresAmbientDataType)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0110",
-                            $"Compiled binding for control theme setter '{setter.PropertyName}' requires x:DataType on the control theme.",
-                            document.FilePath,
-                            setter.Line,
-                            setter.Column,
-                            options.StrictMode));
-                    }
-
-                    if (!isCompiledBinding &&
-                        !bindingMarkup.HasSourceConflict &&
-                        TryBuildRuntimeBindingExpression(
-                            compilation,
-                            document,
-                            bindingMarkup,
-                            targetType,
-                            BindingPriorityScope.Style,
-                            out var runtimeBindingExpression))
-                    {
-                        valueExpression = runtimeBindingExpression;
-                        valueResolvedFromMarkup = true;
-                        valueKind = ResolvedValueKind.Binding;
-                        valueRequirements = ResolvedValueRequirements.ForMarkupExtensionRuntime(includeParentStack: true);
-                    }
-                }
-
-                var conversionTargetType = setterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
-                var hasKnownSetterValueType = setterValueType is not null;
-                if (!valueResolvedFromMarkup &&
-                    TryResolveSetterValueWithPolicy(
+                var conversionTargetType = setterPropertyPlan.SetterValueType ?? compilation.GetSpecialType(SpecialType.System_Object);
+                var hasKnownSetterValueType = setterPropertyPlan.SetterValueType is not null;
+                if (!SetterValuePlanningService.TryBuildPlan(
                         rawValue: setter.Value,
-                        conversionTargetType: conversionTargetType,
+                        authoredPropertyName: setter.PropertyName,
+                        resolvedPropertyName: setterPropertyPlan.ResolvedPropertyName,
                         compilation: compilation,
                         document: document,
-                        setterTargetType: targetType,
-                        bindingPriorityScope: BindingPriorityScope.Style,
-                        strictMode: options.StrictMode,
-                        preferTypedStaticResourceCoercion: string.IsNullOrWhiteSpace(setterPropertyOwnerTypeName),
+                        options: options,
+                        scopeDataType: themeDataType,
+                        rootContextType: rootContextType,
+                        targetType: targetType,
+                        setterValueType: setterPropertyPlan.SetterValueType,
+                        conversionTargetType: conversionTargetType,
+                        ownerDisplayName: targetType?.ToDisplayString() ?? "control theme",
+                        contextDisplayName: "control theme",
+                        bindingPriorityScope: (int)BindingPriorityScope.Style,
+                        compileBindingsEnabled: compileBindingsEnabled,
+                        preferTypedStaticResourceCoercion: setterPropertyPlan.PreferTypedStaticResourceCoercion,
                         allowObjectStringLiteralFallbackDuringConversion: !options.StrictMode &&
                                                                         hasKnownSetterValueType &&
                                                                         conversionTargetType.SpecialType == SpecialType.System_Object,
                         allowCompatibilityStringLiteralFallback: !options.StrictMode &&
                                                                  conversionTargetType.SpecialType == SpecialType.System_Object,
-                        propertyName: resolvedPropertyName,
-                        ownerDisplayName: targetType?.ToDisplayString() ?? "control theme",
                         line: setter.Line,
                         column: setter.Column,
                         diagnostics: diagnostics,
-                        resolution: out var controlThemeSetterResolution,
-                        setterContext: true,
-                        converterAttributes: targetProperty?.GetAttributes() ?? default))
-                {
-                    valueExpression = controlThemeSetterResolution.Expression;
-                    valueResolvedFromMarkup = true;
-                    valueKind = controlThemeSetterResolution.ValueKind;
-                    requiresStaticResourceResolver = controlThemeSetterResolution.RequiresStaticResourceResolver;
-                    valueRequirements = controlThemeSetterResolution.ValueRequirements;
-                }
-
-                if (!valueResolvedFromMarkup)
+                        unsafeAccessors: unsafeAccessors,
+                        converterAttributes: setterPropertyPlan.TargetProperty?.GetAttributes() ?? default,
+                        plan: out var setterValuePlan))
                 {
                     continue;
                 }
 
+                compiledBindings.AddRange(setterValuePlan.CompiledBindings);
+
                 setters.Add(new ResolvedSetterDefinition(
-                    PropertyName: resolvedPropertyName,
-                    ValueExpression: valueExpression,
-                    IsCompiledBinding: isCompiledBinding,
-                    CompiledBindingPath: compiledBindingPath,
-                    CompiledBindingSourceTypeName: compiledBindingSourceType,
-                    AvaloniaPropertyOwnerTypeName: setterPropertyOwnerTypeName,
-                    AvaloniaPropertyFieldName: setterPropertyFieldName,
+                    PropertyName: setterPropertyPlan.ResolvedPropertyName,
+                    ValueExpression: setterValuePlan.ValueExpression,
+                    IsCompiledBinding: setterValuePlan.IsCompiledBinding,
+                    CompiledBindingPath: setterValuePlan.CompiledBindingPath,
+                    CompiledBindingSourceTypeName: setterValuePlan.CompiledBindingSourceTypeName,
+                    FrameworkPropertyOperation: setterPropertyPlan.FrameworkPropertyOperation,
                     Line: setter.Line,
                     Column: setter.Column,
                     Condition: setter.Condition,
-                    ValueKind: isCompiledBinding
-                        ? ResolvedValueKind.Binding
-                        : valueKind,
-                    RequiresStaticResourceResolver: requiresStaticResourceResolver,
-                    ValueRequirements: valueRequirements));
+                    ValueKind: setterValuePlan.ValueKind,
+                    RequiresStaticResourceResolver: setterValuePlan.RequiresStaticResourceResolver,
+                    ValueRequirements: setterValuePlan.ValueRequirements));
             }
 
             controlThemes.Add(new ResolvedControlThemeDefinition(
@@ -1141,977 +419,9 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
         ValidateControlThemeBasedOnChains(
             resolvedControlThemes,
             diagnostics,
-            document,
-            options);
+            document);
 
         return resolvedControlThemes;
     }
 
-    private static void ValidateControlThemeBasedOnChains(
-        ImmutableArray<ResolvedControlThemeDefinition> controlThemes,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        XamlDocumentModel document,
-        GeneratorOptions options)
-    {
-        if (controlThemes.IsDefaultOrEmpty)
-        {
-            return;
-        }
-
-        var byKey = new Dictionary<string, ResolvedControlThemeDefinition>(StringComparer.Ordinal);
-        var indicesByKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        for (var index = 0; index < controlThemes.Length; index++)
-        {
-            var controlTheme = controlThemes[index];
-            if (controlTheme.Key is null)
-            {
-                continue;
-            }
-
-            var controlThemeKey = controlTheme.Key.Trim();
-            if (controlThemeKey.Length == 0)
-            {
-                continue;
-            }
-
-            byKey[controlThemeKey] = controlTheme;
-            if (!indicesByKey.TryGetValue(controlThemeKey, out var indices))
-            {
-                indices = new List<int>();
-                indicesByKey[controlThemeKey] = indices;
-            }
-
-            indices.Add(index);
-        }
-
-        for (var index = 0; index < controlThemes.Length; index++)
-        {
-            var controlTheme = controlThemes[index];
-            var basedOnKey = TryExtractControlThemeBasedOnKey(controlTheme.BasedOn);
-            if (basedOnKey is null)
-            {
-                continue;
-            }
-
-            var basedOnKeyValue = basedOnKey.Trim();
-            if (basedOnKeyValue.Length == 0)
-            {
-                continue;
-            }
-        }
-
-        var state = new Dictionary<int, int>();
-        var emitted = new HashSet<string>(StringComparer.Ordinal);
-        for (var index = 0; index < controlThemes.Length; index++)
-        {
-            DetectCycle(index, index);
-        }
-
-        void DetectCycle(int index, int startIndex)
-        {
-            var currentTheme = controlThemes[index];
-            if (currentTheme.Key is null)
-            {
-                return;
-            }
-
-            if (state.TryGetValue(index, out var currentState))
-            {
-                if (currentState == 2)
-                {
-                    return;
-                }
-
-                if (currentState == 1)
-                {
-                    var cycleKey = startIndex.ToString(global::System.Globalization.CultureInfo.InvariantCulture) +
-                        "->" +
-                        index.ToString(global::System.Globalization.CultureInfo.InvariantCulture);
-                    if (emitted.Add(cycleKey))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0306",
-                            $"ControlTheme BasedOn chain contains a cycle at key '{currentTheme.Key}'.",
-                            document.FilePath,
-                            currentTheme.Line,
-                            currentTheme.Column,
-                            true));
-                    }
-
-                    return;
-                }
-            }
-
-            state[index] = 1;
-            var basedOnKey = TryExtractControlThemeBasedOnKey(currentTheme.BasedOn);
-            if (basedOnKey is not null)
-            {
-                var basedOnKeyValue = basedOnKey.Trim();
-                if (basedOnKeyValue.Length > 0 &&
-                    TryResolveLocalControlThemeIndex(indicesByKey, basedOnKeyValue, index, out var basedOnIndex))
-                {
-                    DetectCycle(basedOnIndex, startIndex);
-                }
-            }
-
-            state[index] = 2;
-        }
-    }
-
-    private static bool TryResolveLocalControlThemeIndex(
-        Dictionary<string, List<int>> indicesByKey,
-        string key,
-        int currentIndex,
-        out int resolvedIndex)
-    {
-        resolvedIndex = -1;
-        if (!indicesByKey.TryGetValue(key, out var indices) || indices.Count == 0)
-        {
-            return false;
-        }
-
-        for (var i = indices.Count - 1; i >= 0; i--)
-        {
-            var candidateIndex = indices[i];
-            if (candidateIndex < currentIndex)
-            {
-                resolvedIndex = candidateIndex;
-                return true;
-            }
-        }
-
-        for (var i = indices.Count - 1; i >= 0; i--)
-        {
-            var candidateIndex = indices[i];
-            if (candidateIndex != currentIndex)
-            {
-                resolvedIndex = candidateIndex;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string? TryExtractControlThemeBasedOnKey(string? basedOnExpression)
-    {
-        return StaticResourceReferenceParser.TryExtractResourceKey(
-            basedOnExpression,
-            out var resourceKey)
-            ? resourceKey
-            : null;
-    }
-
-    private static ImmutableArray<ResolvedResourceDefinition> BindResources(
-        XamlDocumentModel document,
-        Compilation compilation,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        GeneratorOptions options)
-    {
-        var result = ImmutableArray.CreateBuilder<ResolvedResourceDefinition>(document.Resources.Length);
-
-        foreach (var resource in document.Resources)
-        {
-            if (ShouldSkipConditionalBranch(
-                    resource.Condition,
-                    compilation,
-                    document,
-                    diagnostics,
-                    options))
-            {
-                continue;
-            }
-
-            var typeName = ResolveResourceTypeName(compilation, document, resource, out var symbol);
-            if (symbol is null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0100",
-                    $"Could not resolve resource type '{resource.XmlTypeName}' for key '{resource.Key}'. Falling back to System.Object metadata.",
-                    document.FilePath,
-                    resource.Line,
-                    resource.Column,
-                    false));
-                typeName = "global::System.Object";
-            }
-
-            result.Add(new ResolvedResourceDefinition(
-                Key: resource.Key,
-                TypeName: typeName!,
-                RawXaml: resource.RawXaml,
-                Line: resource.Line,
-                Column: resource.Column,
-                Condition: resource.Condition));
-        }
-
-        return result.ToImmutable();
-    }
-
-    private static string? ResolveResourceTypeName(
-        Compilation compilation,
-        XamlDocumentModel document,
-        XamlResourceDefinition resource,
-        out INamedTypeSymbol? symbol)
-    {
-        symbol = ResolveResourceTypeSymbol(compilation, document, resource);
-        return symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-    }
-
-    private static INamedTypeSymbol? ResolveResourceTypeSymbol(
-        Compilation compilation,
-        XamlDocumentModel document,
-        XamlResourceDefinition resource)
-    {
-        if (resource.TypeArguments.IsDefaultOrEmpty)
-        {
-            return ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
-        }
-
-        var resolvedTypeArguments = new List<ITypeSymbol>(resource.TypeArguments.Length);
-        foreach (var argumentToken in resource.TypeArguments)
-        {
-            var resolvedTypeArgument = ResolveTypeToken(compilation, document, argumentToken, document.ClassNamespace);
-            if (resolvedTypeArgument is null)
-            {
-                return ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
-            }
-
-            resolvedTypeArguments.Add(resolvedTypeArgument);
-        }
-
-        var genericType = ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName, resource.TypeArguments.Length) ??
-                          ResolveTypeSymbol(compilation, resource.XmlNamespace, resource.XmlTypeName);
-        if (genericType is null)
-        {
-            return null;
-        }
-
-        if (genericType.TypeParameters.Length == resolvedTypeArguments.Count)
-        {
-            return genericType.Construct(resolvedTypeArguments.ToArray());
-        }
-
-        if (genericType.OriginalDefinition.TypeParameters.Length == resolvedTypeArguments.Count)
-        {
-            return genericType.OriginalDefinition.Construct(resolvedTypeArguments.ToArray());
-        }
-
-        return genericType;
-    }
-
-    private static ImmutableArray<ResolvedTemplateDefinition> BindTemplates(
-        XamlDocumentModel document,
-        Compilation compilation,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        GeneratorOptions options)
-    {
-        var result = ImmutableArray.CreateBuilder<ResolvedTemplateDefinition>(document.Templates.Length);
-
-        foreach (var template in document.Templates)
-        {
-            if (ShouldSkipConditionalBranch(
-                    template.Condition,
-                    compilation,
-                    document,
-                    diagnostics,
-                    options))
-            {
-                continue;
-            }
-
-            string? targetTypeName = null;
-            INamedTypeSymbol? controlTemplateTargetType = null;
-
-            if (!IsKnownTemplateKind(template.Kind))
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0101",
-                    $"Template kind '{template.Kind}' is not recognized as a template node.",
-                    document.FilePath,
-                    template.Line,
-                    template.Column,
-                    false));
-                continue;
-            }
-
-            if ((template.Kind.Equals("DataTemplate", StringComparison.Ordinal) ||
-                 template.Kind.Equals("TreeDataTemplate", StringComparison.Ordinal)) &&
-                string.IsNullOrWhiteSpace(template.DataType))
-            {
-                if (options.StrictMode)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        "AXSG0500",
-                        $"Template '{template.Kind}' should declare x:DataType for compiled-binding safety.",
-                        document.FilePath,
-                        template.Line,
-                        template.Column,
-                        true));
-                }
-            }
-
-            if (template.Kind.Equals("ControlTemplate", StringComparison.Ordinal))
-            {
-                if (string.IsNullOrWhiteSpace(template.TargetType))
-                {
-                    if (options.StrictMode)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0501",
-                            "ControlTemplate requires TargetType for source-generated validation.",
-                            document.FilePath,
-                            template.Line,
-                            template.Column,
-                            true));
-                    }
-                }
-                else
-                {
-                    controlTemplateTargetType = ResolveTypeFromTypeExpression(
-                        compilation,
-                        document,
-                        template.TargetType,
-                        document.ClassNamespace);
-                    if (controlTemplateTargetType is null)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            "AXSG0501",
-                            $"ControlTemplate target type '{template.TargetType}' could not be resolved.",
-                            document.FilePath,
-                            template.Line,
-                            template.Column,
-                            options.StrictMode));
-                    }
-                    else
-                    {
-                        targetTypeName = controlTemplateTargetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        ValidateControlTemplateParts(
-                            template,
-                            controlTemplateTargetType,
-                            compilation,
-                            document,
-                            diagnostics,
-                            options);
-                    }
-                }
-            }
-
-            ValidateTemplateContentRootType(
-                template,
-                compilation,
-                document,
-                diagnostics,
-                options);
-
-            result.Add(new ResolvedTemplateDefinition(
-                Kind: template.Kind,
-                Key: template.Key,
-                TargetTypeName: targetTypeName,
-                DataType: template.DataType,
-                RawXaml: template.RawXaml,
-                Line: template.Line,
-                Column: template.Column,
-                Condition: template.Condition));
-        }
-
-        return result.ToImmutable();
-    }
-
-    private static void ValidateControlTemplateParts(
-        XamlTemplateDefinition template,
-        INamedTypeSymbol targetType,
-        Compilation compilation,
-        XamlDocumentModel document,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        GeneratorOptions options)
-    {
-        var expectedParts = ResolveControlTemplatePartExpectations(targetType);
-        if (expectedParts.Count == 0)
-        {
-            return;
-        }
-
-        if (!TryFindTemplateNode(document, template, out var templateNode))
-        {
-            return;
-        }
-
-        if (!TryCollectControlTemplateNamedParts(templateNode, compilation, out var actualParts))
-        {
-            return;
-        }
-
-        foreach (var pair in expectedParts)
-        {
-            var partName = pair.Key;
-            var expectation = pair.Value;
-            if (!actualParts.TryGetValue(partName, out var actual))
-            {
-                if (expectation.IsRequired)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        "AXSG0502",
-                        $"Required template part with x:Name '{partName}' must be defined on '{targetType.Name}' ControlTemplate.",
-                        document.FilePath,
-                        template.Line,
-                        template.Column,
-                        true));
-                }
-                else
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        "AXSG0504",
-                        $"Optional template part with x:Name '{partName}' can be defined on '{targetType.Name}' ControlTemplate.",
-                        document.FilePath,
-                        template.Line,
-                        template.Column,
-                        options.StrictMode));
-                }
-
-                continue;
-            }
-
-            if (expectation.ExpectedType is not null &&
-                actual.Type is not null &&
-                !IsTypeAssignableTo(actual.Type, expectation.ExpectedType))
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    "AXSG0503",
-                    $"Template part '{partName}' is expected to be assignable to '{expectation.ExpectedType.Name}', but actual type is {actual.Type.Name}.",
-                    document.FilePath,
-                    actual.Line,
-                    actual.Column,
-                    true));
-            }
-        }
-    }
-
-    private static void ValidateTemplateContentRootType(
-        XamlTemplateDefinition template,
-        Compilation compilation,
-        XamlDocumentModel document,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        GeneratorOptions options)
-    {
-        var expectedTypeContractId = template.Kind switch
-        {
-            "ItemsPanelTemplate" => TypeContractId.AvaloniaPanel,
-            "ControlTemplate" => TypeContractId.AvaloniaControl,
-            "DataTemplate" => TypeContractId.AvaloniaControl,
-            "TreeDataTemplate" => TypeContractId.AvaloniaControl,
-            _ => (TypeContractId?)null
-        };
-
-        if (expectedTypeContractId is null)
-        {
-            return;
-        }
-
-        var expectedType = ResolveContractType(compilation, expectedTypeContractId.Value);
-        if (expectedType is null)
-        {
-            return;
-        }
-
-        if (!TryFindTemplateNode(document, template, out var templateNode))
-        {
-            return;
-        }
-
-        if (!TryGetTemplateContentRootNode(templateNode, out var contentRoot))
-        {
-            return;
-        }
-
-        var actualType = ResolveTypeSymbol(compilation, contentRoot.XmlNamespace, contentRoot.XmlTypeName);
-        if (actualType is null || IsTypeAssignableTo(actualType, expectedType))
-        {
-            return;
-        }
-
-        diagnostics.Add(new DiagnosticInfo(
-            "AXSG0506",
-            $"Template '{template.Kind}' content root '{contentRoot.XmlTypeName}' is expected to be assignable to '{expectedType.Name}', but actual type is '{actualType.Name}'.",
-            document.FilePath,
-            contentRoot.Line,
-            contentRoot.Column,
-            options.StrictMode));
-    }
-
-    private static bool TryGetTemplateContentRootNode(XamlObjectNode templateNode, out XamlObjectNode contentRoot)
-    {
-        foreach (var propertyElement in templateNode.PropertyElements)
-        {
-            if (!NormalizePropertyName(propertyElement.PropertyName).Equals("Content", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (propertyElement.ObjectValues.Length > 0)
-            {
-                contentRoot = propertyElement.ObjectValues[0];
-                return true;
-            }
-        }
-
-        if (templateNode.ChildObjects.Length > 0)
-        {
-            contentRoot = templateNode.ChildObjects[0];
-            return true;
-        }
-
-        contentRoot = default!;
-        return false;
-    }
-
-    private static void ValidateItemContainerInsideTemplateWarning(
-        INamedTypeSymbol objectType,
-        IPropertySymbol property,
-        XamlPropertyElement propertyElement,
-        Compilation compilation,
-        XamlDocumentModel document,
-        ImmutableArray<DiagnosticInfo>.Builder diagnostics,
-        GeneratorOptions options)
-    {
-        if (!property.Name.Equals("ItemTemplate", StringComparison.Ordinal) &&
-            !property.Name.Equals("DataTemplates", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var itemsControlType = ResolveContractType(compilation, TypeContractId.ItemsControl);
-        if (itemsControlType is null || !IsTypeAssignableTo(objectType, itemsControlType))
-        {
-            return;
-        }
-
-        var knownContainerType = ResolveKnownItemContainerType(objectType, compilation);
-        if (knownContainerType is null)
-        {
-            return;
-        }
-
-        var contentControlType = ResolveContractType(compilation, TypeContractId.ContentControl);
-        if (contentControlType is null)
-        {
-            return;
-        }
-
-        foreach (var templateNode in propertyElement.ObjectValues)
-        {
-            if (!IsDataTemplateNode(templateNode))
-            {
-                continue;
-            }
-
-            var contentNode = TryGetTemplateContentNode(templateNode);
-            if (contentNode is null)
-            {
-                continue;
-            }
-
-            var contentType = ResolveTypeSymbol(compilation, contentNode.XmlNamespace, contentNode.XmlTypeName);
-            if (contentType is null ||
-                !IsTypeAssignableTo(contentType, contentControlType) ||
-                !IsTypeAssignableTo(contentType, knownContainerType))
-            {
-                continue;
-            }
-
-            diagnostics.Add(new DiagnosticInfo(
-                "AXSG0505",
-                $"Unexpected '{knownContainerType.Name}' inside of '{objectType.Name}.{property.Name}'. '{objectType.Name}.{property.Name}' defines template of the container content, not the container itself.",
-                document.FilePath,
-                contentNode.Line,
-                contentNode.Column,
-                options.StrictMode));
-        }
-    }
-
-    private static INamedTypeSymbol? ResolveKnownItemContainerType(
-        INamedTypeSymbol itemsControlType,
-        Compilation compilation)
-    {
-        foreach (var mapping in KnownItemContainerTypeMappings)
-        {
-            var mappedControlType = compilation.GetTypeByMetadataName(mapping.ItemsControlMetadataName);
-            if (mappedControlType is null || !IsTypeAssignableTo(itemsControlType, mappedControlType))
-            {
-                continue;
-            }
-
-            return compilation.GetTypeByMetadataName(mapping.ItemContainerMetadataName);
-        }
-
-        return null;
-    }
-
-    private static bool IsDataTemplateNode(XamlObjectNode node)
-    {
-        return node.XmlTypeName is "DataTemplate" or "TreeDataTemplate";
-    }
-
-    private static XamlObjectNode? TryGetTemplateContentNode(XamlObjectNode templateNode)
-    {
-        foreach (var propertyElement in templateNode.PropertyElements)
-        {
-            if (NormalizePropertyName(propertyElement.PropertyName).Equals("Content", StringComparison.Ordinal) &&
-                propertyElement.ObjectValues.Length > 0)
-            {
-                return propertyElement.ObjectValues[0];
-            }
-        }
-
-        if (templateNode.ChildObjects.Length > 0)
-        {
-            return templateNode.ChildObjects[0];
-        }
-
-        return null;
-    }
-
-    private static Dictionary<string, TemplatePartExpectation> ResolveControlTemplatePartExpectations(INamedTypeSymbol targetType)
-    {
-        var result = new Dictionary<string, TemplatePartExpectation>(StringComparer.Ordinal);
-        for (var current = targetType; current is not null; current = current.BaseType)
-        {
-            foreach (var attribute in current.GetAttributes())
-            {
-                if (!attribute.AttributeClass?.Name.Equals("TemplatePartAttribute", StringComparison.Ordinal) ?? true)
-                {
-                    continue;
-                }
-
-                var partName = TryGetTemplatePartName(attribute);
-                if (string.IsNullOrWhiteSpace(partName) || result.ContainsKey(partName!))
-                {
-                    continue;
-                }
-
-                result.Add(partName!, new TemplatePartExpectation(
-                    expectedType: TryGetTemplatePartType(attribute),
-                    isRequired: TryGetTemplatePartIsRequired(attribute)));
-            }
-        }
-
-        return result;
-    }
-
-    private static string? TryGetTemplatePartName(AttributeData attribute)
-    {
-        foreach (var namedArgument in attribute.NamedArguments)
-        {
-            if (namedArgument.Key.Equals("Name", StringComparison.Ordinal) &&
-                namedArgument.Value.Value is string namedName &&
-                !string.IsNullOrWhiteSpace(namedName))
-            {
-                return namedName;
-            }
-        }
-
-        if (attribute.ConstructorArguments.Length > 0 &&
-            attribute.ConstructorArguments[0].Value is string ctorName &&
-            !string.IsNullOrWhiteSpace(ctorName))
-        {
-            return ctorName;
-        }
-
-        return null;
-    }
-
-    private static ITypeSymbol? TryGetTemplatePartType(AttributeData attribute)
-    {
-        foreach (var namedArgument in attribute.NamedArguments)
-        {
-            if (namedArgument.Key.Equals("Type", StringComparison.Ordinal) &&
-                namedArgument.Value.Kind == TypedConstantKind.Type &&
-                namedArgument.Value.Value is ITypeSymbol namedType)
-            {
-                return namedType;
-            }
-        }
-
-        if (attribute.ConstructorArguments.Length > 1 &&
-            attribute.ConstructorArguments[1].Kind == TypedConstantKind.Type &&
-            attribute.ConstructorArguments[1].Value is ITypeSymbol ctorType)
-        {
-            return ctorType;
-        }
-
-        return null;
-    }
-
-    private static bool TryGetTemplatePartIsRequired(AttributeData attribute)
-    {
-        foreach (var namedArgument in attribute.NamedArguments)
-        {
-            if (namedArgument.Key.Equals("IsRequired", StringComparison.Ordinal) &&
-                namedArgument.Value.Value is bool isRequired)
-            {
-                return isRequired;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryCollectControlTemplateNamedParts(
-        XamlObjectNode templateNode,
-        Compilation compilation,
-        out ImmutableDictionary<string, TemplatePartActual> parts)
-    {
-        var result = ImmutableDictionary.CreateBuilder<string, TemplatePartActual>(StringComparer.Ordinal);
-        CollectControlTemplateNamedPartsRecursive(templateNode, compilation, result, isTemplateRoot: true);
-        parts = result.ToImmutable();
-        return true;
-    }
-
-    private static void CollectControlTemplateNamedPartsRecursive(
-        XamlObjectNode node,
-        Compilation compilation,
-        ImmutableDictionary<string, TemplatePartActual>.Builder result,
-        bool isTemplateRoot)
-    {
-        if (!isTemplateRoot && IsTemplateLikeElement(node.XmlTypeName))
-        {
-            return;
-        }
-
-        if (TryGetNodeNameScopeRegistration(node, out var partName, out var line, out var column) &&
-            !result.ContainsKey(partName))
-        {
-            var type = ResolveTypeSymbol(compilation, node.XmlNamespace, node.XmlTypeName);
-            result[partName] = new TemplatePartActual(
-                type: type,
-                line: line,
-                column: column);
-        }
-
-        foreach (var constructorArgument in node.ConstructorArguments)
-        {
-            CollectControlTemplateNamedPartsRecursive(constructorArgument, compilation, result, isTemplateRoot: false);
-        }
-
-        foreach (var child in node.ChildObjects)
-        {
-            CollectControlTemplateNamedPartsRecursive(child, compilation, result, isTemplateRoot: false);
-        }
-
-        foreach (var propertyElement in node.PropertyElements)
-        {
-            foreach (var objectValue in propertyElement.ObjectValues)
-            {
-                CollectControlTemplateNamedPartsRecursive(objectValue, compilation, result, isTemplateRoot: false);
-            }
-        }
-    }
-
-    private static bool TryGetNodeNameScopeRegistration(
-        XamlObjectNode node,
-        out string name,
-        out int line,
-        out int column)
-    {
-        name = string.Empty;
-        line = node.Line;
-        column = node.Column;
-
-        if (TryParseNameScopeRegistrationValue(node.Name ?? string.Empty, out var parsedNodeName))
-        {
-            name = parsedNodeName;
-            return true;
-        }
-
-        foreach (var assignment in node.PropertyAssignments)
-        {
-            if (!NormalizePropertyName(assignment.PropertyName).Equals("Name", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!TryParseNameScopeRegistrationValue(assignment.Value, out var parsedName))
-            {
-                continue;
-            }
-
-            name = parsedName;
-            line = assignment.Line;
-            column = assignment.Column;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool TryParseNameScopeRegistrationValue(string rawValue, out string name)
-    {
-        name = string.Empty;
-        if (string.IsNullOrWhiteSpace(rawValue))
-        {
-            return false;
-        }
-
-        var trimmed = rawValue.Trim();
-        if (TryParseMarkupExtension(trimmed, out _))
-        {
-            return false;
-        }
-
-        if (!TryNormalizeReferenceName(trimmed, out var normalizedName))
-        {
-            return false;
-        }
-
-        name = normalizedName;
-        return true;
-    }
-
-    private static string? NormalizeObjectNodeName(string? rawName)
-    {
-        return TryParseNameScopeRegistrationValue(rawName ?? string.Empty, out var name)
-            ? name
-            : null;
-    }
-
-    private static string? ResolveObjectNodeNameScopeRegistration(
-        XamlObjectNode node,
-        INamedTypeSymbol? resolvedType,
-        Compilation compilation)
-    {
-        return ResolveObjectNodeNameScopeRegistration(
-            node,
-            resolvedType,
-            compilation,
-            GetActiveTypeSymbolCatalog(compilation));
-    }
-
-    private static string? ResolveObjectNodeNameScopeRegistration(
-        XamlObjectNode node,
-        INamedTypeSymbol? resolvedType,
-        Compilation compilation,
-        ITypeSymbolCatalog? typeSymbolCatalog)
-    {
-        var normalizedName = NormalizeObjectNodeName(node.Name);
-        if (string.IsNullOrWhiteSpace(normalizedName))
-        {
-            return null;
-        }
-
-        // Bare Name attributes should only be promoted to name-scope registrations
-        // for control types; for style primitives (for example ContainerQuery.Name),
-        // Name is a normal property and can be intentionally duplicated.
-        if (!HasExplicitNamePropertyAssignment(node))
-        {
-            return normalizedName;
-        }
-
-        return NameScopeRegistrationSemanticsService.SupportsRegistrationFromNameProperty(resolvedType, typeSymbolCatalog)
-            ? normalizedName
-            : null;
-    }
-
-    private static bool HasExplicitNamePropertyAssignment(XamlObjectNode node)
-    {
-        foreach (var assignment in node.PropertyAssignments)
-        {
-            if (NormalizePropertyName(assignment.PropertyName).Equals("Name", StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryFindTemplateNode(
-        XamlDocumentModel document,
-        XamlTemplateDefinition template,
-        out XamlObjectNode templateNode)
-    {
-        foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
-        {
-            if (!node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (node.Line == template.Line &&
-                node.Column == template.Column)
-            {
-                templateNode = node;
-                return true;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(template.Key))
-        {
-            foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
-            {
-                if (!node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (string.Equals(node.Key, template.Key, StringComparison.Ordinal))
-                {
-                    templateNode = node;
-                    return true;
-                }
-            }
-        }
-
-        foreach (var node in EnumerateObjectNodeSubtree(document.RootObject))
-        {
-            if (node.XmlTypeName.Equals(template.Kind, StringComparison.Ordinal))
-            {
-                templateNode = node;
-                return true;
-            }
-        }
-
-        templateNode = default!;
-        return false;
-    }
-
-    private static IEnumerable<XamlObjectNode> EnumerateObjectNodeSubtree(XamlObjectNode node)
-    {
-        yield return node;
-
-        foreach (var constructorArgument in node.ConstructorArguments)
-        {
-            foreach (var descendant in EnumerateObjectNodeSubtree(constructorArgument))
-            {
-                yield return descendant;
-            }
-        }
-
-        foreach (var child in node.ChildObjects)
-        {
-            foreach (var descendant in EnumerateObjectNodeSubtree(child))
-            {
-                yield return descendant;
-            }
-        }
-
-        foreach (var propertyElement in node.PropertyElements)
-        {
-            foreach (var objectValue in propertyElement.ObjectValues)
-            {
-                foreach (var descendant in EnumerateObjectNodeSubtree(objectValue))
-                {
-                    yield return descendant;
-                }
-            }
-        }
-    }
-
-    private static bool IsTemplateLikeElement(string localName)
-    {
-        return IsKnownTemplateKind(localName);
-    }
-
-    private static bool IsKnownTemplateKind(string kind)
-    {
-        return kind is "DataTemplate" or "ControlTemplate" or "ItemsPanelTemplate" or "TreeDataTemplate";
-    }
 }

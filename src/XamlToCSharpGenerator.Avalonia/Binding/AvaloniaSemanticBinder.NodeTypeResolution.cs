@@ -14,6 +14,7 @@ using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.ExpressionSemantics;
+using XamlToCSharpGenerator.Framework.Shared.Binding;
 using XamlToCSharpGenerator.MiniLanguageParsing.Bindings;
 using XamlToCSharpGenerator.MiniLanguageParsing.Selectors;
 using XamlToCSharpGenerator.MiniLanguageParsing.Text;
@@ -121,8 +122,8 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
                 {
                     var selectorTargetType = AvaloniaSelectorSemanticAdapter.TryResolveSelectorTargetType(
                         selectorValidation.Branches,
-                        typeToken => ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace),
-                        IsTypeAssignableTo,
+                        typeToken => ResolveSelectorTypeToken(compilation, document, typeToken),
+                        TypeSymbolLookupSemanticsService.IsTypeAssignableTo,
                         out _,
                         out _);
                     if (selectorTargetType is not null)
@@ -182,48 +183,38 @@ public sealed partial class AvaloniaSemanticBinder : IXamlSemanticBinder
 
     private static bool IsStyleType(INamedTypeSymbol type, Compilation compilation)
     {
-        var styleType = ResolveContractType(compilation, TypeContractId.Style);
-        return styleType is not null && IsTypeAssignableTo(type, styleType);
+        return MatchesKnownTypeContracts(type, compilation, SemanticConventions.StyleTypeContractIds);
     }
 
     private static bool IsControlThemeType(INamedTypeSymbol type, Compilation compilation)
     {
-        var controlThemeType = ResolveContractType(compilation, TypeContractId.ControlTheme);
-        return controlThemeType is not null && IsTypeAssignableTo(type, controlThemeType);
+        return MatchesKnownTypeContracts(type, compilation, SemanticConventions.ControlThemeTypeContractIds);
     }
 
     private static bool IsControlTemplateType(INamedTypeSymbol type, Compilation compilation)
     {
-        var markupControlTemplateType = ResolveContractType(compilation, TypeContractId.MarkupControlTemplate);
-        if (markupControlTemplateType is not null && IsTypeAssignableTo(type, markupControlTemplateType))
-        {
-            return true;
-        }
-
-        var controlsControlTemplateType = ResolveContractType(compilation, TypeContractId.ControlsControlTemplate);
-        if (controlsControlTemplateType is not null && IsTypeAssignableTo(type, controlsControlTemplateType))
-        {
-            return true;
-        }
-
-        var iControlTemplate = ResolveContractType(compilation, TypeContractId.ControlTemplateInterface);
-        return iControlTemplate is not null && IsTypeAssignableTo(type, iControlTemplate);
+        return MatchesKnownTypeContracts(type, compilation, SemanticConventions.ControlTemplateTypeContractIds);
     }
 
     private static bool IsTemplateScopeType(INamedTypeSymbol type, Compilation compilation)
     {
-        if (IsControlTemplateType(type, compilation))
+        return MatchesKnownTypeContracts(type, compilation, SemanticConventions.TemplateScopeTypeContractIds);
+    }
+
+    private static bool MatchesKnownTypeContracts(
+        INamedTypeSymbol type,
+        Compilation compilation,
+        ImmutableArray<TypeContractId> contractIds)
+    {
+        foreach (var contractId in contractIds)
         {
-            return true;
+            var targetType = ResolveContractType(compilation, contractId);
+            if (targetType is not null && TypeSymbolLookupSemanticsService.IsTypeAssignableTo(type, targetType))
+            {
+                return true;
+            }
         }
 
-        var itemsPanelTemplateType = ResolveContractType(compilation, TypeContractId.ItemsPanelTemplate);
-        if (itemsPanelTemplateType is not null && IsTypeAssignableTo(type, itemsPanelTemplateType))
-        {
-            return true;
-        }
-
-        var templateType = ResolveContractType(compilation, TypeContractId.MarkupTemplate);
-        return templateType is not null && IsTypeAssignableTo(type, templateType);
+        return false;
     }
 }

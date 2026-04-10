@@ -1940,6 +1940,55 @@ public static class SourceGenMarkupExtensionRuntime
         return element is not null;
     }
 
+    private static object? ResolveNamedElementFallback(
+        string name,
+        object targetObject,
+        object intermediateRootObject,
+        object rootObject,
+        IReadOnlyList<object>? parentStack)
+    {
+        if (TryResolveNamedElement(targetObject, name, out var resolved))
+        {
+            return resolved;
+        }
+
+        if (!ReferenceEquals(intermediateRootObject, targetObject) &&
+            TryResolveNamedElement(intermediateRootObject, name, out resolved))
+        {
+            return resolved;
+        }
+
+        if (!ReferenceEquals(rootObject, targetObject) &&
+            !ReferenceEquals(rootObject, intermediateRootObject) &&
+            TryResolveNamedElement(rootObject, name, out resolved))
+        {
+            return resolved;
+        }
+
+        if (parentStack is null)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < parentStack.Count; index++)
+        {
+            var candidate = parentStack[index];
+            if (ReferenceEquals(candidate, targetObject) ||
+                ReferenceEquals(candidate, intermediateRootObject) ||
+                ReferenceEquals(candidate, rootObject))
+            {
+                continue;
+            }
+
+            if (TryResolveNamedElement(candidate, name, out resolved))
+            {
+                return resolved;
+            }
+        }
+
+        return null;
+    }
+
     public static object? ProvideReference(
         string name,
         IServiceProvider? parentServiceProvider,
@@ -1963,7 +2012,12 @@ public static class SourceGenMarkupExtensionRuntime
         var value = extension.ProvideValue(contextProvider);
         if (ReferenceEquals(value, AvaloniaProperty.UnsetValue))
         {
-            return SourceGenNameReferenceHelper.ResolveByName(targetObject, name);
+            return ResolveNamedElementFallback(
+                name,
+                targetObject,
+                intermediateRootObject,
+                rootObject,
+                parentStack);
         }
 
         return value;

@@ -1,6 +1,5 @@
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
-using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Avalonia.Binding;
 
@@ -11,7 +10,10 @@ public sealed partial class AvaloniaSemanticBinder
         XamlDocumentModel document,
         string typeToken)
     {
-        return ResolveTypeToken(compilation, document, typeToken, document.ClassNamespace);
+        var normalizedTypeToken = typeToken.IndexOf('|') >= 0 && typeToken.IndexOf(':') < 0
+            ? typeToken.Replace('|', ':')
+            : typeToken;
+        return ResolveTypeToken(compilation, document, normalizedTypeToken, document.ClassNamespace);
     }
 
     private static bool TryResolvePropertyReference(
@@ -89,33 +91,12 @@ public sealed partial class AvaloniaSemanticBinder
         out string expression,
         out ITypeSymbol? propertyValueType)
     {
-        expression = string.Empty;
-        propertyValueType = null;
-        if (!XamlPropertyReferenceTokenSemantics.TryNormalize(rawValue, out var token))
-        {
-            return false;
-        }
-
-        var ownerType = defaultOwnerType;
-        var propertyName = token;
-
-        if (XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(
-                token,
-                out var ownerToken,
-                out var normalizedPropertyName))
-        {
-            ownerType = ResolveTypeToken(compilation, document, ownerToken, document.ClassNamespace) ?? ownerType;
-            propertyName = normalizedPropertyName;
-        }
-
-        if (ownerType is null ||
-            !TryFindAvaloniaPropertyField(ownerType, propertyName, out var resolvedOwnerType, out var propertyField))
-        {
-            return false;
-        }
-
-        expression = resolvedOwnerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "." + propertyField.Name;
-        propertyValueType = TryGetAvaloniaPropertyValueType(propertyField.Type);
-        return true;
+        return FrameworkPropertyReferenceResolutionService.TryResolveReferenceExpression(
+            rawValue,
+            compilation,
+            document,
+            defaultOwnerType,
+            out expression,
+            out propertyValueType);
     }
 }
