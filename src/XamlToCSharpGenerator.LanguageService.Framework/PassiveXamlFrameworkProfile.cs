@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Abstractions;
+using XamlToCSharpGenerator.Core.Configuration;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Framework.Abstractions;
 
@@ -27,13 +28,47 @@ public sealed class PassiveXamlFrameworkProfile : IXamlFrameworkProfile
         Id = id;
         DefaultXmlNamespace = defaultXmlNamespace;
         _buildContract = new PassiveBuildContract(preferredProjectXamlItemName, projectXamlItemNames);
+        BaseConfiguration = XamlSourceGenConfiguration.Default with
+        {
+            Parser = XamlSourceGenConfiguration.Default.Parser with
+            {
+                AllowImplicitXmlnsDeclaration = true,
+                ImplicitDefaultXmlns = defaultXmlNamespace
+            }
+        };
+        SemanticContractMap = new SemanticContractMap(
+            mapId: id + ".Passive",
+            frameworkId: id,
+            typeContracts: Array.Empty<SemanticTypeContract>());
+        DocumentUriResolver = new PassiveDocumentUriResolver(id);
     }
 
     public string Id { get; }
 
     public string DefaultXmlNamespace { get; }
 
+    public XamlSourceGenConfiguration BaseConfiguration { get; }
+
+    public XamlFrameworkMsBuildSettings MsBuildSettings { get; } = new(
+    [
+        new KeyValuePair<XamlFrameworkMsBuildSettingKey, IEnumerable<string>>(
+            XamlFrameworkMsBuildSettingKey.Backend,
+            new[] { "XamlSourceGenBackend" }),
+        new KeyValuePair<XamlFrameworkMsBuildSettingKey, IEnumerable<string>>(
+            XamlFrameworkMsBuildSettingKey.IsEnabled,
+            new[] { "XamlSourceGenEnabled" }),
+        new KeyValuePair<XamlFrameworkMsBuildSettingKey, IEnumerable<string>>(
+            XamlFrameworkMsBuildSettingKey.ConfigurationPrecedence,
+            new[] { "XamlSourceGenConfigurationPrecedence" })
+    ]);
+
+    public SemanticContractMap SemanticContractMap { get; }
+
+    public XamlFrameworkSemanticConventions SemanticConventions { get; } = XamlFrameworkSemanticConventions.Empty;
+
     public IXamlFrameworkBuildContract BuildContract => _buildContract;
+
+    public IXamlFrameworkDocumentUriResolver DocumentUriResolver { get; }
 
     public IXamlFrameworkTransformProvider TransformProvider { get; } = new PassiveTransformProvider();
 
@@ -66,6 +101,13 @@ public sealed class PassiveXamlFrameworkProfile : IXamlFrameworkProfile
             implicitDefaultXmlns: string.IsNullOrWhiteSpace(options.ImplicitDefaultXmlns)
                 ? DefaultXmlNamespace
                 : options.ImplicitDefaultXmlns);
+    }
+
+    public string? BuildHotReloadAssemblyMetadataHandlerSource(bool hasXamlInputs, GeneratorOptions options)
+    {
+        _ = hasXamlInputs;
+        _ = options;
+        return null;
     }
 
     private sealed class PassiveBuildContract : IXamlFrameworkBuildContract
@@ -166,6 +208,35 @@ public sealed class PassiveXamlFrameworkProfile : IXamlFrameworkProfile
         public (string HintName, string Source) Emit(ResolvedViewModel viewModel)
         {
             throw new NotSupportedException("Passive language-service framework profiles do not emit source.");
+        }
+    }
+
+    private sealed class PassiveDocumentUriResolver : IXamlFrameworkDocumentUriResolver
+    {
+        private readonly string _schemePrefix;
+
+        public PassiveDocumentUriResolver(string frameworkId)
+        {
+            _schemePrefix = frameworkId.ToLowerInvariant() + "://";
+        }
+
+        public string BuildDocumentUri(string assemblyName, string normalizedTargetPath)
+        {
+            return _schemePrefix + assemblyName + "/" + normalizedTargetPath;
+        }
+
+        public bool TryResolveIncludeUri(
+            string includeSource,
+            string currentTargetPath,
+            string currentDocumentUri,
+            out string resolvedUri,
+            out bool isProjectLocal)
+        {
+            _ = currentTargetPath;
+            _ = currentDocumentUri;
+            resolvedUri = includeSource;
+            isProjectLocal = false;
+            return !string.IsNullOrWhiteSpace(includeSource);
         }
     }
 }

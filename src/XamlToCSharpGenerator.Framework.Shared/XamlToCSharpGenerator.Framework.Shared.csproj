@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>XamlToCSharpGenerator.Framework.Shared</PackageId>
+    <Description>Framework-neutral semantic binding and emission services for the source-generated XAML compiler.</Description>
+    <PackageTags>$(PackageTags);framework;shared;binder;emitter</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
+    <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
+    <Reference Include="XamlToCSharpGenerator.Core">
+      <HintPath>..\XamlToCSharpGenerator.Core\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.ExpressionSemantics">
+      <HintPath>..\XamlToCSharpGenerator.ExpressionSemantics\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.ExpressionSemantics.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
+      <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

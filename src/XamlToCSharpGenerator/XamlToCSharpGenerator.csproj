@@ -138,6 +138,10 @@
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
+    <None Include="..\XamlToCSharpGenerator.Framework.Shared\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Framework.Shared.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
     <None Include="..\XamlToCSharpGenerator.Avalonia\bin\$(Configuration)\$(BundledAnalyzerTargetFramework)\XamlToCSharpGenerator.Avalonia.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
@@ -163,6 +167,7 @@
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+      <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj" />
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" />
       <_BundledAssetProjectToRestore Include="..\XamlToCSharpGenerator.NoUi\XamlToCSharpGenerator.NoUi.csproj" />
@@ -196,6 +201,10 @@
              RemoveProperties="$(BundledAssetNestedBuildRemoveProperties)"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
     <MSBuild Projects="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj"
+             Targets="Build"
+             RemoveProperties="$(BundledAssetNestedBuildRemoveProperties)"
+             Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />
+    <MSBuild Projects="..\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj"
              Targets="Build"
              RemoveProperties="$(BundledAssetNestedBuildRemoveProperties)"
              Properties="Configuration=$(Configuration);GenerateDocumentationFile=false;NoWarn=CS1591;RS2008" />

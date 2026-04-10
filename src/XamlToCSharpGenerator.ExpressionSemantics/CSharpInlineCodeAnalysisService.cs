@@ -819,8 +819,8 @@ public static class CSharpInlineCodeAnalysisService
         return parameterCount switch
         {
             0 => "object? sender = null; object? e = null; " + trimmedStatements,
-            1 => "object? e = null; " + trimmedStatements,
-            2 => trimmedStatements,
+            1 => "var sender = arg0; object? e = null; " + trimmedStatements,
+            2 => "var sender = arg0; var e = arg1; " + trimmedStatements,
             _ => "var sender = arg0; var e = arg1; " + trimmedStatements
         };
     }

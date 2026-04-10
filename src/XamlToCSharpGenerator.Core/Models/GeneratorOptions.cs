@@ -43,49 +43,47 @@ public sealed record GeneratorOptions(
 
     public static GeneratorOptions From(AnalyzerConfigOptions globalOptions, string? assemblyName)
     {
+        var defaults = XamlSourceGenConfiguration.Default;
         var backend = GetOrDefault(
             globalOptions,
             "build_property.XamlSourceGenBackend",
-            GetOrDefault(globalOptions, "build_property.AvaloniaXamlCompilerBackend", "XamlIl"));
-        var explicitEnable = GetBool(
-            globalOptions,
-            "build_property.XamlSourceGenEnabled",
-            GetBool(globalOptions, "build_property.AvaloniaSourceGenCompilerEnabled", false));
-        var strictMode = GetBool(globalOptions, "build_property.AvaloniaSourceGenStrictMode", false);
+            defaults.Build.Backend);
+        var explicitEnable = GetBool(globalOptions, "build_property.XamlSourceGenEnabled", defaults.Build.IsEnabled);
+        var strictMode = GetBool(globalOptions, "build_property.XamlSourceGenStrictMode", defaults.Build.StrictMode);
         var compatibilityFallbackEnabled = TryGetBool(
             globalOptions,
-            "build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
+            "build_property.XamlSourceGenTypeResolutionCompatibilityFallbackEnabled",
             out var configuredFallbackEnabled)
             ? configuredFallbackEnabled
-            : false;
+            : defaults.Binding.TypeResolutionCompatibilityFallbackEnabled;
 
         return new GeneratorOptions(
             IsEnabled: explicitEnable || backend.Equals("SourceGen", System.StringComparison.OrdinalIgnoreCase),
-            UseCompiledBindingsByDefault: GetBool(globalOptions, "build_property.AvaloniaSourceGenUseCompiledBindingsByDefault", false),
-            CSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenCSharpExpressionsEnabled", true),
-            ImplicitCSharpExpressionsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitCSharpExpressionsEnabled", true),
-            CreateSourceInfo: GetBool(globalOptions, "build_property.AvaloniaSourceGenCreateSourceInfo", false),
+            UseCompiledBindingsByDefault: GetBool(globalOptions, "build_property.XamlSourceGenUseCompiledBindingsByDefault", defaults.Binding.UseCompiledBindingsByDefault),
+            CSharpExpressionsEnabled: GetBool(globalOptions, "build_property.XamlSourceGenCSharpExpressionsEnabled", defaults.Binding.CSharpExpressionsEnabled),
+            ImplicitCSharpExpressionsEnabled: GetBool(globalOptions, "build_property.XamlSourceGenImplicitCSharpExpressionsEnabled", defaults.Binding.ImplicitCSharpExpressionsEnabled),
+            CreateSourceInfo: GetBool(globalOptions, "build_property.XamlSourceGenCreateSourceInfo", defaults.Emitter.CreateSourceInfo),
             StrictMode: strictMode,
-            HotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadEnabled", true),
-            HotReloadErrorResilienceEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotReloadErrorResilienceEnabled", true),
-            IdeHotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenIdeHotReloadEnabled", true),
-            HotDesignEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenHotDesignEnabled", false),
-            IosHotReloadEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenIosHotReloadEnabled", false),
-            IosHotReloadUseInterpreter: GetBool(globalOptions, "build_property.AvaloniaSourceGenIosHotReloadUseInterpreter", false),
+            HotReloadEnabled: GetBool(globalOptions, "build_property.XamlSourceGenHotReloadEnabled", defaults.Build.HotReloadEnabled),
+            HotReloadErrorResilienceEnabled: GetBool(globalOptions, "build_property.XamlSourceGenHotReloadErrorResilienceEnabled", defaults.Build.HotReloadErrorResilienceEnabled),
+            IdeHotReloadEnabled: GetBool(globalOptions, "build_property.XamlSourceGenIdeHotReloadEnabled", defaults.Build.IdeHotReloadEnabled),
+            HotDesignEnabled: GetBool(globalOptions, "build_property.XamlSourceGenHotDesignEnabled", defaults.Build.HotDesignEnabled),
+            IosHotReloadEnabled: GetBool(globalOptions, "build_property.XamlSourceGenIosHotReloadEnabled", defaults.Build.IosHotReloadEnabled),
+            IosHotReloadUseInterpreter: GetBool(globalOptions, "build_property.XamlSourceGenIosHotReloadUseInterpreter", defaults.Build.IosHotReloadUseInterpreter),
             DotNetWatchBuild: GetBool(globalOptions, "build_property.DotNetWatchBuild", false),
             BuildingInsideVisualStudio: GetBool(globalOptions, "build_property.BuildingInsideVisualStudio", false),
             BuildingByReSharper: GetBool(globalOptions, "build_property.BuildingByReSharper", false),
-            TracePasses: GetBool(globalOptions, "build_property.AvaloniaSourceGenTracePasses", false),
-            MetricsEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsEnabled", false),
-            MetricsDetailed: GetBool(globalOptions, "build_property.AvaloniaSourceGenMetricsDetailed", false),
-            MarkupParserLegacyInvalidNamedArgumentFallbackEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled", false),
+            TracePasses: GetBool(globalOptions, "build_property.XamlSourceGenTracePasses", defaults.Emitter.TracePasses),
+            MetricsEnabled: GetBool(globalOptions, "build_property.XamlSourceGenMetricsEnabled", defaults.Emitter.MetricsEnabled),
+            MetricsDetailed: GetBool(globalOptions, "build_property.XamlSourceGenMetricsDetailed", defaults.Emitter.MetricsDetailed),
+            MarkupParserLegacyInvalidNamedArgumentFallbackEnabled: GetBool(globalOptions, "build_property.XamlSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled", defaults.Binding.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled),
             TypeResolutionCompatibilityFallbackEnabled: compatibilityFallbackEnabled,
-            AllowImplicitXmlnsDeclaration: GetBool(globalOptions, "build_property.AvaloniaSourceGenAllowImplicitXmlnsDeclaration", false),
-            ImplicitStandardXmlnsPrefixesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled", true),
-            ImplicitDefaultXmlns: GetOrDefault(globalOptions, "build_property.AvaloniaSourceGenImplicitDefaultXmlns", "https://github.com/avaloniaui"),
-            InferClassFromPath: GetBool(globalOptions, "build_property.AvaloniaSourceGenInferClassFromPath", false),
-            ImplicitProjectNamespacesEnabled: GetBool(globalOptions, "build_property.AvaloniaSourceGenImplicitProjectNamespacesEnabled", false),
-            GlobalXmlnsPrefixes: GetNullable(globalOptions, "build_property.AvaloniaSourceGenGlobalXmlnsPrefixes"),
+            AllowImplicitXmlnsDeclaration: GetBool(globalOptions, "build_property.XamlSourceGenAllowImplicitXmlnsDeclaration", defaults.Parser.AllowImplicitXmlnsDeclaration),
+            ImplicitStandardXmlnsPrefixesEnabled: GetBool(globalOptions, "build_property.XamlSourceGenImplicitStandardXmlnsPrefixesEnabled", defaults.Parser.ImplicitStandardXmlnsPrefixesEnabled),
+            ImplicitDefaultXmlns: GetOrDefault(globalOptions, "build_property.XamlSourceGenImplicitDefaultXmlns", defaults.Parser.ImplicitDefaultXmlns),
+            InferClassFromPath: GetBool(globalOptions, "build_property.XamlSourceGenInferClassFromPath", defaults.Parser.InferClassFromPath),
+            ImplicitProjectNamespacesEnabled: GetBool(globalOptions, "build_property.XamlSourceGenImplicitProjectNamespacesEnabled", defaults.Parser.ImplicitProjectNamespacesEnabled),
+            GlobalXmlnsPrefixes: GetNullable(globalOptions, "build_property.XamlSourceGenGlobalXmlnsPrefixes"),
             RootNamespace: GetNullable(globalOptions, "build_property.RootNamespace"),
             IntermediateOutputPath: GetNullable(globalOptions, "build_property.IntermediateOutputPath"),
             BaseIntermediateOutputPath: GetNullable(globalOptions, "build_property.BaseIntermediateOutputPath"),

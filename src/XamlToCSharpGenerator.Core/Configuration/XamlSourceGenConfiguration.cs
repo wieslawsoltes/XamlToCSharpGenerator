@@ -120,7 +120,7 @@ public sealed record XamlSourceGenParserOptions
 
     public bool ImplicitStandardXmlnsPrefixesEnabled { get; init; } = true;
 
-    public string ImplicitDefaultXmlns { get; init; } = "https://github.com/avaloniaui";
+    public string ImplicitDefaultXmlns { get; init; } = string.Empty;
 
     public bool InferClassFromPath { get; init; }
 

@@ -14,6 +14,11 @@ public static class XamlRuntimeBindingPathSemantics
         }
 
         var normalized = path.Trim();
+        if (normalized.Length == 0)
+        {
+            return ".";
+        }
+
         if (!TrySplitTypeCastPrefix(normalized, out var typeToken, out var remainder))
         {
             return normalized;

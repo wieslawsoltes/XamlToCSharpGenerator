@@ -31,6 +31,7 @@
     <Project Path="src/XamlToCSharpGenerator.Editor.Avalonia/XamlToCSharpGenerator.Editor.Avalonia.csproj" />
     <Project Path="src/XamlToCSharpGenerator.ExpressionSemantics/XamlToCSharpGenerator.ExpressionSemantics.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Framework.Abstractions/XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <Project Path="src/XamlToCSharpGenerator.Framework.Shared/XamlToCSharpGenerator.Framework.Shared.csproj" />
     <Project Path="src/XamlToCSharpGenerator.Generator/XamlToCSharpGenerator.Generator.csproj" />
     <Project Path="src/XamlToCSharpGenerator.LanguageServer/XamlToCSharpGenerator.LanguageServer.csproj" />
     <Project Path="src/XamlToCSharpGenerator.LanguageService.Framework/XamlToCSharpGenerator.LanguageService.Framework.csproj" />

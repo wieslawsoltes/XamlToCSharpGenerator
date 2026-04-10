@@ -12,5 +12,6 @@ public enum ResolvedObjectNodeSemanticFlags
     StaticResourceMarkupExtension = 1 << 3,
     IsResourceDictionary = 1 << 4,
     CanBeDeferredResource = 1 << 5,
-    IsNotSharedDeferredResource = 1 << 6
+    IsNotSharedDeferredResource = 1 << 6,
+    MarkupExtensionObject = 1 << 7
 }

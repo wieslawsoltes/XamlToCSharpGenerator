@@ -170,7 +170,7 @@ public static class SemanticContractMaps
                 Create(TypeContractId.SystemListOfT, false, "bcl", "System.Collections.Generic.List`1"),
                 Create(TypeContractId.StyledElement, false, "styling", "Avalonia.StyledElement"),
                 Create(TypeContractId.NameScope, false, "namescope", "Avalonia.Controls.NameScope"),
-                Create(TypeContractId.AvaloniaInamed, false, "namescope", "Avalonia.INamed"),
+                Create(TypeContractId.AvaloniaInamed, false, "namescope", "Avalonia.INamed", "Avalonia.Controls.INameScope"),
                 Create(TypeContractId.AvaloniaMarkupExtensionBase, false, "markup", "Avalonia.Markup.Xaml.MarkupExtension"),
                 Create(TypeContractId.AvaloniaBindingBase, false, "binding", "Avalonia.Data.BindingBase"),
                 Create(TypeContractId.AvaloniaBindingInterface, false, "binding", "Avalonia.Data.IBinding"),

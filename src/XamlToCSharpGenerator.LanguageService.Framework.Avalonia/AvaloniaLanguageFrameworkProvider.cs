@@ -11,6 +11,34 @@ namespace XamlToCSharpGenerator.LanguageService.Framework.Avalonia;
 public sealed class AvaloniaLanguageFrameworkProvider : IXamlLanguageFrameworkProvider
 {
     private const string AvaloniaDefaultXmlNamespace = "https://github.com/avaloniaui";
+    private static readonly ImmutableArray<string> AvaloniaDefaultXmlNamespaceClrNamespaces =
+    [
+        "Avalonia.Controls",
+        "Avalonia.Controls.Primitives",
+        "Avalonia.Controls.Presenters",
+        "Avalonia.Controls.Shapes",
+        "Avalonia.Controls.Documents",
+        "Avalonia.Controls.Chrome",
+        "Avalonia.Controls.Embedding",
+        "Avalonia.Controls.Notifications",
+        "Avalonia.Controls.Converters",
+        "Avalonia.Markup.Xaml.Templates",
+        "Avalonia.Markup.Xaml.Styling",
+        "Avalonia.Markup.Xaml.MarkupExtensions",
+        "Avalonia.Styling",
+        "Avalonia.Controls.Templates",
+        "Avalonia.Input",
+        "Avalonia.Automation",
+        "Avalonia.Dialogs",
+        "Avalonia.Dialogs.Internal",
+        "Avalonia.Layout",
+        "Avalonia.Media",
+        "Avalonia.Media.Transformation",
+        "Avalonia.Media.Imaging",
+        "Avalonia.Animation",
+        "Avalonia.Animation.Easings",
+        "Avalonia"
+    ];
 
     public static AvaloniaLanguageFrameworkProvider Instance { get; } = new();
 
@@ -65,7 +93,8 @@ public sealed class AvaloniaLanguageFrameworkProvider : IXamlLanguageFrameworkPr
             PseudoClassesAttributeMetadataName: "Avalonia.Controls.Metadata.PseudoClassesAttribute",
             SupportsAssemblyResourceUris: true,
             IncludeSourceAssemblyClrNamespacesInDefaultXmlNamespace: true,
-            UseCompiledBindingsByDefault: true);
+            UseCompiledBindingsByDefault: true,
+            DefaultXmlNamespaceClrNamespaces: AvaloniaDefaultXmlNamespaceClrNamespaces);
     }
 
     public XamlLanguageFrameworkInfo Framework { get; }

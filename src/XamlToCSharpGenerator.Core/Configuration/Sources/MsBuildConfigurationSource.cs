@@ -9,14 +9,49 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
 {
     private const string BuildPropertyPrefix = "build_property.";
     private const string RawGlobalXmlnsPrefixesAdditionalPropertyKey = "RawGlobalXmlnsPrefixes";
+    private static readonly ImmutableDictionary<XamlFrameworkMsBuildSettingKey, ImmutableArray<string>> DefaultFallbackAliases =
+        ImmutableDictionary.CreateRange(new[]
+        {
+            Alias(XamlFrameworkMsBuildSettingKey.Backend, "XamlSourceGenBackend", "AvaloniaXamlCompilerBackend"),
+            Alias(XamlFrameworkMsBuildSettingKey.IsEnabled, "XamlSourceGenEnabled", "AvaloniaSourceGenCompilerEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.ConfigurationPrecedence, "XamlSourceGenConfigurationPrecedence", "AvaloniaSourceGenConfigurationPrecedence"),
+            Alias(XamlFrameworkMsBuildSettingKey.StrictMode, "AvaloniaSourceGenStrictMode"),
+            Alias(XamlFrameworkMsBuildSettingKey.HotReloadEnabled, "XamlSourceGenHotReloadEnabled", "AvaloniaSourceGenHotReloadEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.HotReloadErrorResilienceEnabled, "AvaloniaSourceGenHotReloadErrorResilienceEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.IdeHotReloadEnabled, "XamlSourceGenIdeHotReloadEnabled", "AvaloniaSourceGenIdeHotReloadEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.HotDesignEnabled, "XamlSourceGenHotDesignEnabled", "AvaloniaSourceGenHotDesignEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.IosHotReloadEnabled, "AvaloniaSourceGenIosHotReloadEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.IosHotReloadUseInterpreter, "AvaloniaSourceGenIosHotReloadUseInterpreter"),
+            Alias(XamlFrameworkMsBuildSettingKey.AllowImplicitXmlnsDeclaration, "AvaloniaSourceGenAllowImplicitXmlnsDeclaration"),
+            Alias(XamlFrameworkMsBuildSettingKey.ImplicitStandardXmlnsPrefixesEnabled, "AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.ImplicitDefaultXmlns, "AvaloniaSourceGenImplicitDefaultXmlns"),
+            Alias(XamlFrameworkMsBuildSettingKey.InferClassFromPath, "AvaloniaSourceGenInferClassFromPath"),
+            Alias(XamlFrameworkMsBuildSettingKey.ImplicitProjectNamespacesEnabled, "AvaloniaSourceGenImplicitProjectNamespacesEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.GlobalXmlnsPrefixes, "AvaloniaSourceGenGlobalXmlnsPrefixes"),
+            Alias(XamlFrameworkMsBuildSettingKey.UseCompiledBindingsByDefault, "XamlSourceGenUseCompiledBindingsByDefault", "AvaloniaSourceGenUseCompiledBindingsByDefault"),
+            Alias(XamlFrameworkMsBuildSettingKey.CSharpExpressionsEnabled, "AvaloniaSourceGenCSharpExpressionsEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.ImplicitCSharpExpressionsEnabled, "AvaloniaSourceGenImplicitCSharpExpressionsEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled, "AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.TypeResolutionCompatibilityFallbackEnabled, "AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.CreateSourceInfo, "XamlSourceGenCreateSourceInfo", "AvaloniaSourceGenCreateSourceInfo"),
+            Alias(XamlFrameworkMsBuildSettingKey.TracePasses, "AvaloniaSourceGenTracePasses"),
+            Alias(XamlFrameworkMsBuildSettingKey.MetricsEnabled, "AvaloniaSourceGenMetricsEnabled"),
+            Alias(XamlFrameworkMsBuildSettingKey.MetricsDetailed, "AvaloniaSourceGenMetricsDetailed")
+        });
     private readonly AnalyzerConfigOptions _globalOptions;
+    private readonly XamlSourceGenConfiguration _baseConfiguration;
+    private readonly XamlFrameworkMsBuildSettings _frameworkMsBuildSettings;
 
     public MsBuildConfigurationSource(
         AnalyzerConfigOptions globalOptions,
+        XamlSourceGenConfiguration? baseConfiguration = null,
+        XamlFrameworkMsBuildSettings? frameworkMsBuildSettings = null,
         int precedence = 200,
         string? name = null)
     {
         _globalOptions = globalOptions ?? throw new ArgumentNullException(nameof(globalOptions));
+        _baseConfiguration = baseConfiguration ?? XamlSourceGenConfiguration.Default;
+        _frameworkMsBuildSettings = frameworkMsBuildSettings ?? new XamlFrameworkMsBuildSettings(Array.Empty<KeyValuePair<XamlFrameworkMsBuildSettingKey, IEnumerable<string>>>());
         Precedence = precedence;
         Name = string.IsNullOrWhiteSpace(name) ? "MsBuild" : name!;
     }
@@ -30,13 +65,13 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
         _ = context;
         var issues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
 
-        var backend = ReadStringOverrideByPropertyNames(
-            names: new[] { "XamlSourceGenBackend", "AvaloniaXamlCompilerBackend" },
-            defaultValue: XamlSourceGenConfiguration.Default.Build.Backend);
-        var explicitEnable = ReadBooleanOverrideByPropertyNames(
-            names: new[] { "XamlSourceGenEnabled", "AvaloniaSourceGenCompilerEnabled" },
-            defaultValue: XamlSourceGenConfiguration.Default.Build.IsEnabled,
-            issues: issues);
+        var backend = ReadStringOverrideBySettingKey(
+            XamlFrameworkMsBuildSettingKey.Backend,
+            _baseConfiguration.Build.Backend);
+        var explicitEnable = ReadBooleanOverrideBySettingKey(
+            XamlFrameworkMsBuildSettingKey.IsEnabled,
+            _baseConfiguration.Build.IsEnabled,
+            issues);
 
         var isEnabled = default(ConfigValue<bool>);
         if (explicitEnable.HasValue)
@@ -49,7 +84,7 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
             isEnabled = true;
         }
 
-        var rawGlobalXmlnsPrefixes = GetNullableByPropertyName("AvaloniaSourceGenGlobalXmlnsPrefixes");
+        var rawGlobalXmlnsPrefixes = GetNullableBySettingKey(XamlFrameworkMsBuildSettingKey.GlobalXmlnsPrefixes);
         var globalXmlnsPrefixes = ParseGlobalXmlnsPrefixes(rawGlobalXmlnsPrefixes, issues);
 
         var parserAdditionalProperties = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.Ordinal);
@@ -64,111 +99,111 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
             {
                 IsEnabled = isEnabled,
                 Backend = backend,
-                StrictMode = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenStrictMode",
-                    XamlSourceGenConfiguration.Default.Build.StrictMode,
+                StrictMode = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.StrictMode,
+                    _baseConfiguration.Build.StrictMode,
                     issues),
-                HotReloadEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenHotReloadEnabled",
-                    XamlSourceGenConfiguration.Default.Build.HotReloadEnabled,
+                HotReloadEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.HotReloadEnabled,
+                    _baseConfiguration.Build.HotReloadEnabled,
                     issues),
-                HotReloadErrorResilienceEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenHotReloadErrorResilienceEnabled",
-                    XamlSourceGenConfiguration.Default.Build.HotReloadErrorResilienceEnabled,
+                HotReloadErrorResilienceEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.HotReloadErrorResilienceEnabled,
+                    _baseConfiguration.Build.HotReloadErrorResilienceEnabled,
                     issues),
-                IdeHotReloadEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenIdeHotReloadEnabled",
-                    XamlSourceGenConfiguration.Default.Build.IdeHotReloadEnabled,
+                IdeHotReloadEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.IdeHotReloadEnabled,
+                    _baseConfiguration.Build.IdeHotReloadEnabled,
                     issues),
-                HotDesignEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenHotDesignEnabled",
-                    XamlSourceGenConfiguration.Default.Build.HotDesignEnabled,
+                HotDesignEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.HotDesignEnabled,
+                    _baseConfiguration.Build.HotDesignEnabled,
                     issues),
-                IosHotReloadEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenIosHotReloadEnabled",
-                    XamlSourceGenConfiguration.Default.Build.IosHotReloadEnabled,
+                IosHotReloadEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.IosHotReloadEnabled,
+                    _baseConfiguration.Build.IosHotReloadEnabled,
                     issues),
-                IosHotReloadUseInterpreter = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenIosHotReloadUseInterpreter",
-                    XamlSourceGenConfiguration.Default.Build.IosHotReloadUseInterpreter,
+                IosHotReloadUseInterpreter = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.IosHotReloadUseInterpreter,
+                    _baseConfiguration.Build.IosHotReloadUseInterpreter,
                     issues),
                 DotNetWatchBuild = ReadBooleanOverrideByPropertyName(
                     "DotNetWatchBuild",
-                    XamlSourceGenConfiguration.Default.Build.DotNetWatchBuild,
+                    _baseConfiguration.Build.DotNetWatchBuild,
                     issues),
                 BuildingInsideVisualStudio = ReadBooleanOverrideByPropertyName(
                     "BuildingInsideVisualStudio",
-                    XamlSourceGenConfiguration.Default.Build.BuildingInsideVisualStudio,
+                    _baseConfiguration.Build.BuildingInsideVisualStudio,
                     issues),
                 BuildingByReSharper = ReadBooleanOverrideByPropertyName(
                     "BuildingByReSharper",
-                    XamlSourceGenConfiguration.Default.Build.BuildingByReSharper,
+                    _baseConfiguration.Build.BuildingByReSharper,
                     issues)
             },
             Parser = new XamlSourceGenParserOptionsPatch
             {
-                AllowImplicitXmlnsDeclaration = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenAllowImplicitXmlnsDeclaration",
-                    XamlSourceGenConfiguration.Default.Parser.AllowImplicitXmlnsDeclaration,
+                AllowImplicitXmlnsDeclaration = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.AllowImplicitXmlnsDeclaration,
+                    _baseConfiguration.Parser.AllowImplicitXmlnsDeclaration,
                     issues),
-                ImplicitStandardXmlnsPrefixesEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenImplicitStandardXmlnsPrefixesEnabled",
-                    XamlSourceGenConfiguration.Default.Parser.ImplicitStandardXmlnsPrefixesEnabled,
+                ImplicitStandardXmlnsPrefixesEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.ImplicitStandardXmlnsPrefixesEnabled,
+                    _baseConfiguration.Parser.ImplicitStandardXmlnsPrefixesEnabled,
                     issues),
-                ImplicitDefaultXmlns = ReadStringOverrideByPropertyName(
-                    "AvaloniaSourceGenImplicitDefaultXmlns",
-                    XamlSourceGenConfiguration.Default.Parser.ImplicitDefaultXmlns),
-                InferClassFromPath = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenInferClassFromPath",
-                    XamlSourceGenConfiguration.Default.Parser.InferClassFromPath,
+                ImplicitDefaultXmlns = ReadStringOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.ImplicitDefaultXmlns,
+                    _baseConfiguration.Parser.ImplicitDefaultXmlns),
+                InferClassFromPath = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.InferClassFromPath,
+                    _baseConfiguration.Parser.InferClassFromPath,
                     issues),
-                ImplicitProjectNamespacesEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenImplicitProjectNamespacesEnabled",
-                    XamlSourceGenConfiguration.Default.Parser.ImplicitProjectNamespacesEnabled,
+                ImplicitProjectNamespacesEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.ImplicitProjectNamespacesEnabled,
+                    _baseConfiguration.Parser.ImplicitProjectNamespacesEnabled,
                     issues),
                 GlobalXmlnsPrefixes = globalXmlnsPrefixes,
                 AdditionalProperties = parserAdditionalProperties.ToImmutable()
             },
             Binding = new XamlSourceGenBindingOptionsPatch
             {
-                UseCompiledBindingsByDefault = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenUseCompiledBindingsByDefault",
-                    XamlSourceGenConfiguration.Default.Binding.UseCompiledBindingsByDefault,
+                UseCompiledBindingsByDefault = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.UseCompiledBindingsByDefault,
+                    _baseConfiguration.Binding.UseCompiledBindingsByDefault,
                     issues),
-                CSharpExpressionsEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenCSharpExpressionsEnabled",
-                    XamlSourceGenConfiguration.Default.Binding.CSharpExpressionsEnabled,
+                CSharpExpressionsEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.CSharpExpressionsEnabled,
+                    _baseConfiguration.Binding.CSharpExpressionsEnabled,
                     issues),
-                ImplicitCSharpExpressionsEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenImplicitCSharpExpressionsEnabled",
-                    XamlSourceGenConfiguration.Default.Binding.ImplicitCSharpExpressionsEnabled,
+                ImplicitCSharpExpressionsEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.ImplicitCSharpExpressionsEnabled,
+                    _baseConfiguration.Binding.ImplicitCSharpExpressionsEnabled,
                     issues),
-                MarkupParserLegacyInvalidNamedArgumentFallbackEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenMarkupParserLegacyInvalidNamedArgumentFallbackEnabled",
-                    XamlSourceGenConfiguration.Default.Binding.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled,
+                MarkupParserLegacyInvalidNamedArgumentFallbackEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled,
+                    _baseConfiguration.Binding.MarkupParserLegacyInvalidNamedArgumentFallbackEnabled,
                     issues),
-                TypeResolutionCompatibilityFallbackEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled",
-                    XamlSourceGenConfiguration.Default.Binding.TypeResolutionCompatibilityFallbackEnabled,
+                TypeResolutionCompatibilityFallbackEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.TypeResolutionCompatibilityFallbackEnabled,
+                    _baseConfiguration.Binding.TypeResolutionCompatibilityFallbackEnabled,
                     issues)
             },
             Emitter = new XamlSourceGenEmitterOptionsPatch
             {
-                CreateSourceInfo = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenCreateSourceInfo",
-                    XamlSourceGenConfiguration.Default.Emitter.CreateSourceInfo,
+                CreateSourceInfo = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.CreateSourceInfo,
+                    _baseConfiguration.Emitter.CreateSourceInfo,
                     issues),
-                TracePasses = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenTracePasses",
-                    XamlSourceGenConfiguration.Default.Emitter.TracePasses,
+                TracePasses = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.TracePasses,
+                    _baseConfiguration.Emitter.TracePasses,
                     issues),
-                MetricsEnabled = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenMetricsEnabled",
-                    XamlSourceGenConfiguration.Default.Emitter.MetricsEnabled,
+                MetricsEnabled = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.MetricsEnabled,
+                    _baseConfiguration.Emitter.MetricsEnabled,
                     issues),
-                MetricsDetailed = ReadBooleanOverrideByPropertyName(
-                    "AvaloniaSourceGenMetricsDetailed",
-                    XamlSourceGenConfiguration.Default.Emitter.MetricsDetailed,
+                MetricsDetailed = ReadBooleanOverrideBySettingKey(
+                    XamlFrameworkMsBuildSettingKey.MetricsDetailed,
+                    _baseConfiguration.Emitter.MetricsDetailed,
                     issues)
             }
         };
@@ -186,6 +221,14 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
         ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
     {
         return ReadBooleanOverrideByPropertyNames(new[] { name }, defaultValue, issues);
+    }
+
+    private ConfigValue<bool> ReadBooleanOverrideBySettingKey(
+        XamlFrameworkMsBuildSettingKey key,
+        bool defaultValue,
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
+    {
+        return ReadBooleanOverrideByPropertyNames(GetPropertyNames(key), defaultValue, issues);
     }
 
     private ConfigValue<bool> ReadBooleanOverrideByPropertyNames(
@@ -233,6 +276,13 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
         return ReadStringOverrideByPropertyNames(new[] { name }, defaultValue);
     }
 
+    private ConfigValue<string> ReadStringOverrideBySettingKey(
+        XamlFrameworkMsBuildSettingKey key,
+        string defaultValue)
+    {
+        return ReadStringOverrideByPropertyNames(GetPropertyNames(key), defaultValue);
+    }
+
     private ConfigValue<string> ReadStringOverrideByPropertyNames(
         IReadOnlyList<string> names,
         string defaultValue)
@@ -268,6 +318,42 @@ public sealed class MsBuildConfigurationSource : IXamlSourceGenConfigurationSour
         }
 
         return value;
+    }
+
+    private string? GetNullableBySettingKey(XamlFrameworkMsBuildSettingKey key)
+    {
+        foreach (var name in GetPropertyNames(key))
+        {
+            var value = GetNullableByPropertyName(name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private IReadOnlyList<string> GetPropertyNames(XamlFrameworkMsBuildSettingKey key)
+    {
+        var configuredAliases = _frameworkMsBuildSettings.GetAliases(key);
+        if (configuredAliases.Count > 0)
+        {
+            return configuredAliases;
+        }
+
+        return DefaultFallbackAliases.TryGetValue(key, out var fallbackAliases)
+            ? fallbackAliases
+            : ImmutableArray<string>.Empty;
+    }
+
+    private static KeyValuePair<XamlFrameworkMsBuildSettingKey, ImmutableArray<string>> Alias(
+        XamlFrameworkMsBuildSettingKey key,
+        params string[] aliases)
+    {
+        return new KeyValuePair<XamlFrameworkMsBuildSettingKey, ImmutableArray<string>>(
+            key,
+            aliases.ToImmutableArray());
     }
 
     private ImmutableDictionary<string, string?> ParseGlobalXmlnsPrefixes(

@@ -12,6 +12,7 @@
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
@@ -23,6 +24,9 @@
     </Reference>
     <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
       <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Shared">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Shared\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Shared.dll</HintPath>
     </Reference>
   </ItemGroup>
 

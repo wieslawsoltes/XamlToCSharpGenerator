@@ -18,4 +18,5 @@ public sealed record XamlLanguageFrameworkInfo(
     string? PseudoClassesAttributeMetadataName = null,
     bool SupportsAssemblyResourceUris = false,
     bool IncludeSourceAssemblyClrNamespacesInDefaultXmlNamespace = false,
-    bool UseCompiledBindingsByDefault = false);
+    bool UseCompiledBindingsByDefault = false,
+    ImmutableArray<string> DefaultXmlNamespaceClrNamespaces = default);

@@ -12,7 +12,7 @@ public sealed record ResolvedPropertyElementAssignment(
     int Line,
     int Column,
     ConditionalXamlExpression? Condition = null,
-    ResolvedFrameworkPropertyPayload? FrameworkPayload = null,
+    ResolvedFrameworkPropertyOperation? FrameworkPropertyOperation = null,
     bool PreserveBindingValue = false,
     ImmutableArray<ResolvedCollectionAddInstruction> CollectionAddInstructions = default)
 {
@@ -42,7 +42,7 @@ public sealed record ResolvedPropertyElementAssignment(
             Line,
             Column,
             Condition,
-            CreateCompatibilityPayload(
+            CreateCompatibilityOperation(
                 AvaloniaPropertyOwnerTypeName,
                 AvaloniaPropertyFieldName,
                 BindingPriorityExpression),
@@ -60,37 +60,40 @@ public sealed record ResolvedPropertyElementAssignment(
     public string? BindingPriorityExpression =>
         GetFrameworkValuePriorityExpression(FrameworkProfileIds.Avalonia);
 
-    public string? GetFrameworkPropertyOwnerTypeName(string frameworkId)
+    public ResolvedFrameworkPropertyPayload? FrameworkPayload =>
+        FrameworkPropertyOperation?.ToCompatibilityPayload();
+
+    public bool HasFrameworkPropertyOperation(string frameworkId)
     {
-        if (FrameworkPayload is null || !FrameworkPayload.IsFramework(frameworkId))
+        return GetFrameworkPropertyOperation(frameworkId) is not null;
+    }
+
+    public ResolvedFrameworkPropertyOperation? GetFrameworkPropertyOperation(string frameworkId)
+    {
+        if (FrameworkPropertyOperation is null || !FrameworkPropertyOperation.IsFramework(frameworkId))
         {
             return null;
         }
 
-        return FrameworkPayload.PropertyOwnerTypeName;
+        return FrameworkPropertyOperation;
+    }
+
+    public string? GetFrameworkPropertyOwnerTypeName(string frameworkId)
+    {
+        return GetFrameworkPropertyOperation(frameworkId)?.PropertyOwnerTypeName;
     }
 
     public string? GetFrameworkPropertyFieldName(string frameworkId)
     {
-        if (FrameworkPayload is null || !FrameworkPayload.IsFramework(frameworkId))
-        {
-            return null;
-        }
-
-        return FrameworkPayload.PropertyFieldName;
+        return GetFrameworkPropertyOperation(frameworkId)?.PropertyFieldName;
     }
 
     public string? GetFrameworkValuePriorityExpression(string frameworkId)
     {
-        if (FrameworkPayload is null || !FrameworkPayload.IsFramework(frameworkId))
-        {
-            return null;
-        }
-
-        return FrameworkPayload.ValuePriorityExpression;
+        return GetFrameworkPropertyOperation(frameworkId)?.ValuePriorityExpression;
     }
 
-    private static ResolvedFrameworkPropertyPayload? CreateCompatibilityPayload(
+    private static ResolvedFrameworkPropertyOperation? CreateCompatibilityOperation(
         string? propertyOwnerTypeName,
         string? propertyFieldName,
         string? valuePriorityExpression)
@@ -102,7 +105,7 @@ public sealed record ResolvedPropertyElementAssignment(
             return null;
         }
 
-        return new ResolvedFrameworkPropertyPayload(
+        return new ResolvedFrameworkPropertyOperation(
             FrameworkProfileIds.Avalonia,
             propertyOwnerTypeName,
             propertyFieldName,

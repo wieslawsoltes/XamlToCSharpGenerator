@@ -51,6 +51,34 @@ public sealed class SourceGenXamlPropertyAliasAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+public sealed class SourceGenXamlFrameworkPropertyAliasAttribute : Attribute
+{
+    public SourceGenXamlFrameworkPropertyAliasAttribute(
+        string frameworkId,
+        string targetTypeName,
+        string xamlPropertyName,
+        string propertyOwnerTypeName,
+        string propertyFieldName)
+    {
+        FrameworkId = frameworkId;
+        TargetTypeName = targetTypeName;
+        XamlPropertyName = xamlPropertyName;
+        PropertyOwnerTypeName = propertyOwnerTypeName;
+        PropertyFieldName = propertyFieldName;
+    }
+
+    public string FrameworkId { get; }
+
+    public string TargetTypeName { get; }
+
+    public string XamlPropertyName { get; }
+
+    public string PropertyOwnerTypeName { get; }
+
+    public string PropertyFieldName { get; }
+}
+
+[AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
 public sealed class SourceGenXamlAvaloniaPropertyAliasAttribute : Attribute
 {
     public SourceGenXamlAvaloniaPropertyAliasAttribute(

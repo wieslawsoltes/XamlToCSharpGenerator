@@ -11,6 +11,7 @@
     <ProjectReference Include="..\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <ProjectReference Include="..\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj" />
     <ProjectReference Include="..\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
   </ItemGroup>
 
@@ -23,6 +24,9 @@
     </Reference>
     <Reference Include="XamlToCSharpGenerator.Framework.Abstractions">
       <HintPath>..\XamlToCSharpGenerator.Framework.Abstractions\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="XamlToCSharpGenerator.Framework.Shared">
+      <HintPath>..\XamlToCSharpGenerator.Framework.Shared\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.Framework.Shared.dll</HintPath>
     </Reference>
     <Reference Include="XamlToCSharpGenerator.MiniLanguageParsing">
       <HintPath>..\XamlToCSharpGenerator.MiniLanguageParsing\bin\$(Configuration)\netstandard2.0\XamlToCSharpGenerator.MiniLanguageParsing.dll</HintPath>

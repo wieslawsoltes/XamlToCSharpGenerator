@@ -12,7 +12,7 @@ public sealed record ResolvedSetterDefinition(
     ResolvedValueKind ValueKind = ResolvedValueKind.Unknown,
     bool RequiresStaticResourceResolver = false,
     ResolvedValueRequirements ValueRequirements = default,
-    ResolvedFrameworkPropertyPayload? FrameworkPayload = null)
+    ResolvedFrameworkPropertyOperation? FrameworkPropertyOperation = null)
 {
     // Compatibility constructor retained while Avalonia call sites migrate.
     public ResolvedSetterDefinition(
@@ -41,7 +41,7 @@ public sealed record ResolvedSetterDefinition(
             ValueKind,
             RequiresStaticResourceResolver,
             ValueRequirements,
-            CreateCompatibilityPayload(AvaloniaPropertyOwnerTypeName, AvaloniaPropertyFieldName))
+            CreateCompatibilityOperation(AvaloniaPropertyOwnerTypeName, AvaloniaPropertyFieldName))
     {
     }
 
@@ -51,27 +51,35 @@ public sealed record ResolvedSetterDefinition(
     public string? AvaloniaPropertyFieldName =>
         GetFrameworkPropertyFieldName(FrameworkProfileIds.Avalonia);
 
-    public string? GetFrameworkPropertyOwnerTypeName(string frameworkId)
+    public ResolvedFrameworkPropertyPayload? FrameworkPayload =>
+        FrameworkPropertyOperation?.ToCompatibilityPayload();
+
+    public bool HasFrameworkPropertyOperation(string frameworkId)
     {
-        if (FrameworkPayload is null || !FrameworkPayload.IsFramework(frameworkId))
+        return GetFrameworkPropertyOperation(frameworkId) is not null;
+    }
+
+    public ResolvedFrameworkPropertyOperation? GetFrameworkPropertyOperation(string frameworkId)
+    {
+        if (FrameworkPropertyOperation is null || !FrameworkPropertyOperation.IsFramework(frameworkId))
         {
             return null;
         }
 
-        return FrameworkPayload.PropertyOwnerTypeName;
+        return FrameworkPropertyOperation;
+    }
+
+    public string? GetFrameworkPropertyOwnerTypeName(string frameworkId)
+    {
+        return GetFrameworkPropertyOperation(frameworkId)?.PropertyOwnerTypeName;
     }
 
     public string? GetFrameworkPropertyFieldName(string frameworkId)
     {
-        if (FrameworkPayload is null || !FrameworkPayload.IsFramework(frameworkId))
-        {
-            return null;
-        }
-
-        return FrameworkPayload.PropertyFieldName;
+        return GetFrameworkPropertyOperation(frameworkId)?.PropertyFieldName;
     }
 
-    private static ResolvedFrameworkPropertyPayload? CreateCompatibilityPayload(
+    private static ResolvedFrameworkPropertyOperation? CreateCompatibilityOperation(
         string? propertyOwnerTypeName,
         string? propertyFieldName)
     {
@@ -81,7 +89,7 @@ public sealed record ResolvedSetterDefinition(
             return null;
         }
 
-        return new ResolvedFrameworkPropertyPayload(
+        return new ResolvedFrameworkPropertyOperation(
             FrameworkProfileIds.Avalonia,
             propertyOwnerTypeName,
             propertyFieldName);

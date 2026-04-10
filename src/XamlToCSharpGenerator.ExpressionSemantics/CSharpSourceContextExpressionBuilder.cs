@@ -57,6 +57,7 @@ internal readonly struct SourceContextLambdaRewriteResult
 public static class CSharpSourceContextExpressionBuilder
 {
     internal const string RawSpanAnnotationKind = "AXSGExpressionRawSpan";
+    internal const string ExplicitSourceAlias = "source";
 
     public static bool TryBuildAccessorExpression(
         Compilation compilation,
@@ -533,10 +534,20 @@ public static class CSharpSourceContextExpressionBuilder
             var name = node.Identifier.ValueText;
             if (name.Length == 0 ||
                 name.Equals(_sourceParameterName, StringComparison.Ordinal) ||
+                IsExplicitSourceAlias(name) ||
                 _localNames.Contains(name) ||
                 IsScopedName(name) ||
                 !_sourceMemberNames.Contains(name))
             {
+                if (IsExplicitSourceAlias(name) &&
+                    !_localNames.Contains(name) &&
+                    !IsScopedName(name))
+                {
+                    return SyntaxFactory.IdentifierName(_sourceParameterName)
+                        .WithTriviaFrom(node)
+                        .WithAdditionalAnnotations(node.GetAnnotations(RawSpanAnnotationKind));
+                }
+
                 return base.VisitIdentifierName(node);
             }
 
@@ -571,7 +582,7 @@ public static class CSharpSourceContextExpressionBuilder
         public override SyntaxNode? VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
         {
             if (node.Expression is IdentifierNameSyntax identifier &&
-                identifier.Identifier.ValueText.Equals(_sourceParameterName, StringComparison.Ordinal))
+                IsSourceReceiverIdentifier(identifier.Identifier.ValueText))
             {
                 Dependencies.Add(node.Name.Identifier.ValueText);
             }
@@ -582,7 +593,7 @@ public static class CSharpSourceContextExpressionBuilder
         public override SyntaxNode? VisitConditionalAccessExpression(ConditionalAccessExpressionSyntax node)
         {
             if (node.Expression is IdentifierNameSyntax identifier &&
-                identifier.Identifier.ValueText.Equals(_sourceParameterName, StringComparison.Ordinal) &&
+                IsSourceReceiverIdentifier(identifier.Identifier.ValueText) &&
                 node.WhenNotNull is MemberBindingExpressionSyntax memberBinding &&
                 memberBinding.Name is SimpleNameSyntax memberName)
             {
@@ -643,6 +654,17 @@ public static class CSharpSourceContextExpressionBuilder
             }
 
             return false;
+        }
+
+        private bool IsSourceReceiverIdentifier(string identifier)
+        {
+            return identifier.Equals(_sourceParameterName, StringComparison.Ordinal) ||
+                   IsExplicitSourceAlias(identifier);
+        }
+
+        private static bool IsExplicitSourceAlias(string identifier)
+        {
+            return identifier.Equals(ExplicitSourceAlias, StringComparison.Ordinal);
         }
     }
 }

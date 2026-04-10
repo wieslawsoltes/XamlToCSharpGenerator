@@ -20,12 +20,14 @@ using XamlToCSharpGenerator.Core.Diagnostics;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Framework.Abstractions;
+using XamlToCSharpGenerator.Framework.Shared.Runtime;
 
 namespace XamlToCSharpGenerator.Compiler;
 
 public static class XamlSourceGeneratorCompilerHost
 {
     private const string PersistentCacheVersionHeader = "AXSG-HOTRELOAD-CACHE-V1";
+    private static readonly XamlIncludeUriResolutionService IncludeUriResolutionService = new();
 
     private static readonly ConcurrentDictionary<string, CachedGeneratedSource> LastGoodGeneratedSources =
         new(StringComparer.OrdinalIgnoreCase);
@@ -74,7 +76,7 @@ public static class XamlSourceGeneratorCompilerHost
         var configurationProvider = context.CompilationProvider
             .Combine(context.AnalyzerConfigOptionsProvider)
             .Combine(configurationFileSnapshot)
-            .Select(static (payload, _) =>
+            .Select((payload, _) =>
             {
                 var compilation = payload.Left.Left;
                 var optionsProvider = payload.Left.Right;
@@ -82,12 +84,17 @@ public static class XamlSourceGeneratorCompilerHost
                 var globalOptions = optionsProvider.GlobalOptions;
                 var projectDirectory = GetNullableAnalyzerOption(globalOptions, "build_property.MSBuildProjectDirectory");
                 var precedenceIssues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
-                var sourcePrecedence = ResolveConfigurationSourcePrecedence(globalOptions, precedenceIssues);
+                var sourcePrecedence = ResolveConfigurationSourcePrecedence(globalOptions, precedenceIssues, frameworkProfile.MsBuildSettings);
                 var hasDefaultConfigurationFile = configurationFiles.Any(static file =>
                     FileConfigurationSource.IsSupportedConfigurationFileName(Path.GetFileName(file.Path)));
 
                 var configurationBuilder = new XamlSourceGenConfigurationBuilder()
-                    .AddSource(new MsBuildConfigurationSource(globalOptions, sourcePrecedence.MsBuild));
+                    .SetBaseConfiguration(frameworkProfile.BaseConfiguration)
+                    .AddSource(new MsBuildConfigurationSource(
+                        globalOptions,
+                        frameworkProfile.BaseConfiguration,
+                        frameworkProfile.MsBuildSettings,
+                        sourcePrecedence.MsBuild));
 
                 foreach (var configurationFile in configurationFiles)
                 {
@@ -296,8 +303,7 @@ public static class XamlSourceGeneratorCompilerHost
             .Select((pair, _) =>
             {
                 var (inputs, options) = pair;
-                return BuildHotReloadAssemblyMetadataHandlerSource(
-                    frameworkProfile.Id,
+                return frameworkProfile.BuildHotReloadAssemblyMetadataHandlerSource(
                     !inputs.IsDefaultOrEmpty,
                     options);
             });
@@ -337,7 +343,7 @@ public static class XamlSourceGeneratorCompilerHost
                     }
                 }
 
-                var diagnostics = AnalyzeGlobalDocumentGraph(documents.ToImmutable(), pair.Right);
+                var diagnostics = AnalyzeGlobalDocumentGraph(documents.ToImmutable(), pair.Right, frameworkProfile);
                 var globalGraphElapsed = GetElapsedTimeSince(globalGraphStart);
                 return new GlobalDiagnosticsResult(
                     diagnostics,
@@ -515,6 +521,24 @@ public static class XamlSourceGeneratorCompilerHost
                     finally
                     {
                         emitElapsed = GetElapsedTimeSince(emitStart);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    usedFallbackSource = TryUseCachedSource(
+                        sourceContext,
+                        cacheKey,
+                        parseResult?.FilePath ?? parsedDocument.Input.FilePath,
+                        resilienceEnabled,
+                        options,
+                        frameworkProfile.Id);
+                    status = usedFallbackSource ? "fallback-unhandled" : "unhandled";
+                    if (!usedFallbackSource)
+                    {
+                        sourceContext.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticCatalog.InternalError,
+                            Location.None,
+                            $"[{frameworkProfile.Id}] {parseResult?.ClassFullName ?? parseResult?.TargetPath ?? parsedDocument.Input.TargetPath}: {ex.ToString().Replace(Environment.NewLine, " | ")}"));
                     }
                 }
                 finally
@@ -1482,17 +1506,7 @@ public static class XamlSourceGeneratorCompilerHost
 
     private static string ComputeStableHashHex(string text)
     {
-        unchecked
-        {
-            var hash = 2166136261u;
-            foreach (var character in text)
-            {
-                hash ^= character;
-                hash *= 16777619u;
-            }
-
-            return hash.ToString("x8", CultureInfo.InvariantCulture);
-        }
+        return StableHashSemantics.ComputeFnv1aHex(text);
     }
 
     private static string NormalizeFrameworkHintName(string frameworkProfileId, string hintName)
@@ -1962,7 +1976,8 @@ public static class XamlSourceGeneratorCompilerHost
 
     internal static ImmutableArray<DiagnosticInfo> AnalyzeGlobalDocumentGraph(
         ImmutableArray<XamlDocumentModel> documents,
-        GeneratorOptions options)
+        GeneratorOptions options,
+        IXamlFrameworkProfile frameworkProfile)
     {
         if (documents.IsDefaultOrEmpty)
         {
@@ -1993,13 +2008,13 @@ public static class XamlSourceGeneratorCompilerHost
                 continue;
             }
 
-            var buildUri = BuildUri(assemblyName, normalizedTargetPath);
+            var buildUri = frameworkProfile.DocumentUriResolver.BuildDocumentUri(assemblyName, normalizedTargetPath);
             var entry = new DocumentGraphEntry(document, buildUri, normalizedTargetPath);
             if (entriesByTargetPath.TryGetValue(normalizedTargetPath, out _))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0601",
-                    $"Generated URI target '{normalizedTargetPath}' is produced by multiple AXAML files. Source-generated URI registration would conflict.",
+                    $"Generated URI target '{normalizedTargetPath}' is produced by multiple XAML files. Source-generated URI registration would conflict.",
                     document.FilePath,
                     document.RootObject.Line,
                     document.RootObject.Column,
@@ -2014,7 +2029,7 @@ public static class XamlSourceGeneratorCompilerHost
             {
                 diagnostics.Add(new DiagnosticInfo(
                     "AXSG0601",
-                    $"Generated URI '{buildUri}' is registered by multiple AXAML files.",
+                    $"Generated URI '{buildUri}' is registered by multiple XAML files.",
                     document.FilePath,
                     document.RootObject.Line,
                     document.RootObject.Column,
@@ -2044,6 +2059,7 @@ public static class XamlSourceGeneratorCompilerHost
                         include.Source,
                         entry.NormalizedTargetPath,
                         assemblyName,
+                        frameworkProfile.DocumentUriResolver,
                         out var resolvedUri,
                         out var isProjectLocal) ||
                     !isProjectLocal)
@@ -2055,7 +2071,7 @@ public static class XamlSourceGeneratorCompilerHost
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         "AXSG0403",
-                        $"Include source '{include.Source}' resolves to '{resolvedUri}', but no source-generated AXAML file was found for that URI.",
+                        $"Include source '{include.Source}' resolves to '{resolvedUri}', but no source-generated XAML file was found for that URI.",
                         entry.Document.FilePath,
                         include.Line,
                         include.Column,
@@ -2154,6 +2170,7 @@ public static class XamlSourceGeneratorCompilerHost
         string includeSource,
         string currentTargetPath,
         string assemblyName,
+        IXamlFrameworkDocumentUriResolver documentUriResolver,
         out string resolvedUri,
         out bool isProjectLocal)
     {
@@ -2164,286 +2181,38 @@ public static class XamlSourceGeneratorCompilerHost
             return false;
         }
 
-        var trimmedSource = NormalizeIncludeSource(includeSource);
-        var trimmedSourceSpan = trimmedSource.AsSpan();
-        if (trimmedSourceSpan.Length == 0)
-        {
-            return false;
-        }
-
-        if (trimmedSource.StartsWith("/", StringComparison.Ordinal))
-        {
-            var rootedPath = NormalizeIncludePath(trimmedSource.TrimStart('/'));
-            if (rootedPath.Length == 0)
-            {
-                return false;
-            }
-
-            resolvedUri = BuildUri(assemblyName, rootedPath);
-            isProjectLocal = true;
-            return true;
-        }
-
-        if (TryResolveAvaresIncludeUri(trimmedSource, trimmedSourceSpan, assemblyName, out resolvedUri, out isProjectLocal))
-        {
-            return true;
-        }
-
-        if (LooksLikeAbsoluteUri(trimmedSourceSpan) &&
-            Uri.TryCreate(trimmedSource, UriKind.Absolute, out var absoluteSource))
-        {
-            if (!absoluteSource.Scheme.Equals("avares", StringComparison.OrdinalIgnoreCase))
-            {
-                resolvedUri = absoluteSource.ToString();
-                return true;
-            }
-
-            if (!absoluteSource.Host.Equals(assemblyName, StringComparison.OrdinalIgnoreCase))
-            {
-                resolvedUri = absoluteSource.ToString();
-                return true;
-            }
-
-            var normalizedPath = NormalizeIncludePath(absoluteSource.AbsolutePath.TrimStart('/'));
-            if (normalizedPath.Length == 0)
-            {
-                return false;
-            }
-
-            resolvedUri = BuildUri(assemblyName, normalizedPath);
-            isProjectLocal = true;
-            return true;
-        }
-
-        var includePath = NormalizeIncludePath(CombineIncludePath(GetIncludeDirectory(currentTargetPath), trimmedSource));
-
-        if (includePath.Length == 0)
-        {
-            return false;
-        }
-
-        resolvedUri = BuildUri(assemblyName, includePath);
-        isProjectLocal = true;
-        return true;
-    }
-
-    private static bool TryResolveAvaresIncludeUri(
-        string includeSourceText,
-        ReadOnlySpan<char> includeSource,
-        string assemblyName,
-        out string resolvedUri,
-        out bool isProjectLocal)
-    {
-        resolvedUri = string.Empty;
-        isProjectLocal = false;
-
-        if (!includeSource.StartsWith("avares://".AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var hostAndPath = includeSource.Slice("avares://".Length);
-        var pathSeparatorIndex = hostAndPath.IndexOf('/');
-        if (pathSeparatorIndex <= 0)
-        {
-            return false;
-        }
-
-        var host = hostAndPath.Slice(0, pathSeparatorIndex);
-        var path = hostAndPath.Slice(pathSeparatorIndex + 1);
-        if (!host.Equals(assemblyName.AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            resolvedUri = includeSourceText;
-            return true;
-        }
-
-        var normalizedPath = NormalizeIncludePath(path);
-        if (normalizedPath.Length == 0)
-        {
-            return false;
-        }
-
-        resolvedUri = BuildUri(assemblyName, normalizedPath);
-        isProjectLocal = true;
-        return true;
-    }
-
-    private static bool LooksLikeAbsoluteUri(ReadOnlySpan<char> source)
-    {
-        if (source.Length < 3 || !char.IsLetter(source[0]))
-        {
-            return false;
-        }
-
-        for (var index = 1; index < source.Length; index++)
-        {
-            var ch = source[index];
-            if (ch == ':')
-            {
-                return true;
-            }
-
-            if (IsDirectorySeparator(ch) || char.IsWhiteSpace(ch))
-            {
-                return false;
-            }
-
-            if (!char.IsLetterOrDigit(ch) &&
-                ch != '+' &&
-                ch != '-' &&
-                ch != '.')
-            {
-                return false;
-            }
-        }
-
-        return false;
+        var currentDocumentUri = documentUriResolver.BuildDocumentUri(
+            assemblyName,
+            NormalizeIncludePath(currentTargetPath));
+        return IncludeUriResolutionService.TryResolveIncludeUri(
+            includeSource,
+            currentTargetPath,
+            currentDocumentUri,
+            documentUriResolver,
+            out resolvedUri,
+            out isProjectLocal);
     }
 
     internal static string NormalizeIncludeSource(string includeSource)
     {
-        var trimmed = TrimWhitespace(includeSource.AsSpan());
-        if (trimmed.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        if (trimmed[0] != '{' || trimmed[trimmed.Length - 1] != '}')
-        {
-            return SliceToString(trimmed, includeSource);
-        }
-
-        var inner = TrimWhitespace(trimmed.Slice(1, trimmed.Length - 2));
-        if (inner.Length == 0)
-        {
-            return SliceToString(trimmed, includeSource);
-        }
-
-        var separatorIndex = IndexOfWhitespaceOrComma(inner);
-        var markupName = separatorIndex >= 0
-            ? inner.Slice(0, separatorIndex)
-            : inner;
-        if (!markupName.Equals("x:Uri".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
-            !markupName.Equals("Uri".AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            return SliceToString(trimmed, includeSource);
-        }
-
-        var arguments = separatorIndex >= 0
-            ? TrimWhitespace(inner.Slice(separatorIndex + 1))
-            : ReadOnlySpan<char>.Empty;
-        if (arguments.Length == 0)
-        {
-            return SliceToString(trimmed, includeSource);
-        }
-
-        var argumentSegment = arguments;
-        var commaIndex = argumentSegment.IndexOf(',');
-        if (commaIndex >= 0)
-        {
-            argumentSegment = TrimWhitespace(argumentSegment.Slice(0, commaIndex));
-        }
-
-        var equalsIndex = argumentSegment.IndexOf('=');
-        if (equalsIndex > 0)
-        {
-            var key = TrimWhitespace(argumentSegment.Slice(0, equalsIndex));
-            var value = TrimWhitespace(argumentSegment.Slice(equalsIndex + 1));
-            if (key.Equals("Uri".AsSpan(), StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("Value".AsSpan(), StringComparison.OrdinalIgnoreCase))
-            {
-                return UnquoteIncludeSource(value);
-            }
-
-            return SliceToString(trimmed, includeSource);
-        }
-
-        return UnquoteIncludeSource(argumentSegment);
-    }
-
-    private static string UnquoteIncludeSource(ReadOnlySpan<char> value)
-    {
-        if (value.Length >= 2)
-        {
-            if ((value[0] == '"' && value[value.Length - 1] == '"') ||
-                (value[0] == '\'' && value[value.Length - 1] == '\''))
-            {
-                return value.Slice(1, value.Length - 2).ToString();
-            }
-        }
-
-        return value.ToString();
-    }
-
-    private static int IndexOfWhitespaceOrComma(ReadOnlySpan<char> value)
-    {
-        for (var index = 0; index < value.Length; index++)
-        {
-            if (value[index] == ',' || char.IsWhiteSpace(value[index]))
-            {
-                return index;
-            }
-        }
-
-        return -1;
-    }
-
-    private static string SliceToString(ReadOnlySpan<char> value, string original)
-    {
-        return value.Length == original.Length ? original : value.ToString();
-    }
-
-    private static string BuildUri(string assemblyName, string normalizedTargetPath)
-    {
-        return "avares://" + assemblyName + "/" + normalizedTargetPath;
-    }
-
-    private static string? BuildHotReloadAssemblyMetadataHandlerSource(
-        string frameworkProfileId,
-        bool hasXamlInputs,
-        GeneratorOptions options)
-    {
-        if (!hasXamlInputs ||
-            !options.IsEnabled ||
-            !options.HotReloadEnabled ||
-            !string.Equals(frameworkProfileId, FrameworkProfileIds.Avalonia, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var preserveIosDebugEntryPointsSource = options.IosHotReloadEnabled
-            ? """
-#if NET6_0_OR_GREATER && DEBUG && IOS
-namespace XamlToCSharpGenerator.Generated
-{
-    [global::System.Runtime.CompilerServices.CompilerGenerated]
-    internal static class __SourceGenHotReloadLinkerHints
-    {
-        [global::System.Runtime.CompilerServices.ModuleInitializer]
-        [global::System.Diagnostics.CodeAnalysis.DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.ClearCache), typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
-        [global::System.Diagnostics.CodeAnalysis.DynamicDependency(nameof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager.UpdateApplication), typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
-        internal static void Initialize()
-        {
-        }
-    }
-}
-#endif
-"""
-            : string.Empty;
-
-        return """
-#if NET6_0_OR_GREATER
-[assembly: global::System.Reflection.Metadata.MetadataUpdateHandler(typeof(global::XamlToCSharpGenerator.Runtime.XamlSourceGenHotReloadManager))]
-#endif
-""" + preserveIosDebugEntryPointsSource;
+        return IncludeUriResolutionService.NormalizeIncludeSource(includeSource);
     }
 
     private static ConfigurationSourcePrecedence ResolveConfigurationSourcePrecedence(
         AnalyzerConfigOptions options,
-        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues)
+        ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues,
+        XamlFrameworkMsBuildSettings frameworkMsBuildSettings)
     {
-        var rawValue = GetNullableAnalyzerOption(options, "build_property.XamlSourceGenConfigurationPrecedence") ??
-                       GetNullableAnalyzerOption(options, "build_property.AvaloniaSourceGenConfigurationPrecedence");
+        string? rawValue = null;
+        foreach (var propertyName in frameworkMsBuildSettings.GetAliases(XamlFrameworkMsBuildSettingKey.ConfigurationPrecedence))
+        {
+            rawValue = GetNullableAnalyzerOption(options, "build_property." + propertyName);
+            if (!string.IsNullOrWhiteSpace(rawValue))
+            {
+                break;
+            }
+        }
+
         return ResolveConfigurationSourcePrecedence(rawValue, issues);
     }
 
@@ -3028,27 +2797,6 @@ namespace XamlToCSharpGenerator.Generated
         public int Start { get; }
 
         public int Length { get; }
-    }
-
-    private static string GetIncludeDirectory(string path)
-    {
-        var lastSeparator = path.LastIndexOf('/');
-        if (lastSeparator <= 0)
-        {
-            return string.Empty;
-        }
-
-        return path.Substring(0, lastSeparator);
-    }
-
-    private static string CombineIncludePath(string baseDirectory, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(baseDirectory))
-        {
-            return relativePath;
-        }
-
-        return baseDirectory + "/" + relativePath;
     }
 
     internal static string NormalizeIncludePath(string path)

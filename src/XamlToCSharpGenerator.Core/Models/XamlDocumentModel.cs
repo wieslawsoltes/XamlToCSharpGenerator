@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using XamlToCSharpGenerator.Core.Parsing;
 
 namespace XamlToCSharpGenerator.Core.Models;
 
@@ -87,14 +88,6 @@ public sealed record XamlDocumentModel(
 
     private static string ComputeStableHashHex(string value)
     {
-        // Stable FNV-1a hash over normalized target path for deterministic artifact names.
-        var hash = 2166136261u;
-        foreach (var ch in value.ToLowerInvariant())
-        {
-            hash ^= ch;
-            hash *= 16777619u;
-        }
-
-        return hash.ToString("x8", CultureInfo.InvariantCulture);
+        return StableHashSemantics.ComputeFnv1aHexIgnoreCase(value);
     }
 }

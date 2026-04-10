@@ -12,4 +12,13 @@ public sealed record ResolvedFrameworkPropertyPayload(
     {
         return string.Equals(FrameworkId, frameworkId, StringComparison.Ordinal);
     }
+
+    internal ResolvedFrameworkPropertyOperation ToOperation()
+    {
+        return new ResolvedFrameworkPropertyOperation(
+            FrameworkId,
+            PropertyOwnerTypeName,
+            PropertyFieldName,
+            ValuePriorityExpression);
+    }
 }
