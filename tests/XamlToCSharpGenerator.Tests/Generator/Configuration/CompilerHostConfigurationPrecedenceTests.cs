@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using XamlToCSharpGenerator.Compiler;
 using XamlToCSharpGenerator.Core.Configuration;
+using XamlToCSharpGenerator.Tests.Infrastructure;
 
 namespace XamlToCSharpGenerator.Tests.Generator.Configuration;
 
@@ -37,5 +40,31 @@ public class CompilerHostConfigurationPrecedenceTests
         Assert.Equal(XamlSourceGeneratorCompilerHost.ConfigurationSourcePrecedence.Default.File, result.File);
         Assert.Equal(XamlSourceGeneratorCompilerHost.ConfigurationSourcePrecedence.Default.MsBuild, result.MsBuild);
         Assert.Equal(450, result.Code);
+    }
+
+    [Fact]
+    public void ResolveConfigurationSourcePrecedence_Uses_Default_MsBuild_Key_When_Profile_Alias_Is_Omitted()
+    {
+        var issues = ImmutableArray.CreateBuilder<XamlSourceGenConfigurationIssue>();
+        var optionsProvider = new TestAnalyzerConfigOptionsProvider(
+            [
+                new KeyValuePair<string, string>(
+                    "build_property.XamlSourceGenConfigurationPrecedence",
+                    "ProjectDefaultFile=80;MsBuild=200;Code=300;File=400")
+            ],
+            []);
+        var msBuildSettings = new XamlFrameworkMsBuildSettings(
+            Array.Empty<KeyValuePair<XamlFrameworkMsBuildSettingKey, IEnumerable<string>>>());
+
+        var result = XamlSourceGeneratorCompilerHost.ResolveConfigurationSourcePrecedence(
+            optionsProvider.GlobalOptions,
+            issues,
+            msBuildSettings);
+
+        Assert.Empty(issues);
+        Assert.Equal(80, result.ProjectDefaultFile);
+        Assert.Equal(400, result.File);
+        Assert.Equal(200, result.MsBuild);
+        Assert.Equal(300, result.Code);
     }
 }

@@ -2198,19 +2198,26 @@ public static class XamlSourceGeneratorCompilerHost
         return IncludeUriResolutionService.NormalizeIncludeSource(includeSource);
     }
 
-    private static ConfigurationSourcePrecedence ResolveConfigurationSourcePrecedence(
+    internal static ConfigurationSourcePrecedence ResolveConfigurationSourcePrecedence(
         AnalyzerConfigOptions options,
         ImmutableArray<XamlSourceGenConfigurationIssue>.Builder issues,
         XamlFrameworkMsBuildSettings frameworkMsBuildSettings)
     {
         string? rawValue = null;
-        foreach (var propertyName in frameworkMsBuildSettings.GetAliases(XamlFrameworkMsBuildSettingKey.ConfigurationPrecedence))
+        var aliases = frameworkMsBuildSettings.GetAliases(XamlFrameworkMsBuildSettingKey.ConfigurationPrecedence);
+        foreach (var propertyName in aliases)
         {
             rawValue = GetNullableAnalyzerOption(options, "build_property." + propertyName);
             if (!string.IsNullOrWhiteSpace(rawValue))
             {
                 break;
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(rawValue) &&
+            !aliases.Contains("XamlSourceGenConfigurationPrecedence", StringComparer.Ordinal))
+        {
+            rawValue = GetNullableAnalyzerOption(options, "build_property.XamlSourceGenConfigurationPrecedence");
         }
 
         return ResolveConfigurationSourcePrecedence(rawValue, issues);
