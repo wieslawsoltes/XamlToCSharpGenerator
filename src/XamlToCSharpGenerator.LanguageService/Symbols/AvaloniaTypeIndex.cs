@@ -153,6 +153,27 @@ public sealed class AvaloniaTypeIndex
     private static AvaloniaTypeIndex BuildIndex(Compilation compilation, XamlLanguageFrameworkInfo framework)
     {
         var map = BuildXmlNamespaceToClrNamespaceMap(compilation, framework);
+        if (!framework.DefaultXmlNamespaceClrNamespaces.IsDefaultOrEmpty)
+        {
+            var frameworkNamespaces = framework.DefaultXmlNamespaceClrNamespaces
+                .Where(static candidate => !string.IsNullOrWhiteSpace(candidate))
+                .Select(static candidate => candidate.Trim().TrimEnd('.'))
+                .Where(static candidate => candidate.Length > 0)
+                .ToImmutableHashSet(StringComparer.Ordinal);
+
+            if (!frameworkNamespaces.IsEmpty)
+            {
+                if (map.TryGetValue(framework.DefaultXmlNamespace, out var defaultNamespaces))
+                {
+                    map = map.SetItem(framework.DefaultXmlNamespace, defaultNamespaces.Union(frameworkNamespaces));
+                }
+                else
+                {
+                    map = map.SetItem(framework.DefaultXmlNamespace, frameworkNamespaces);
+                }
+            }
+        }
+
         if (framework.IncludeSourceAssemblyClrNamespacesInDefaultXmlNamespace)
         {
             var fallbackNamespaces = BuildFallbackClrNamespaces(compilation);
@@ -626,7 +647,7 @@ public sealed class AvaloniaTypeIndex
         {
             foreach (var attribute in assembly.GetAttributes())
             {
-                var attributeMetadataName = attribute.AttributeClass?.ToDisplayString();
+                var attributeMetadataName = attribute.AttributeClass?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
                 if (string.IsNullOrWhiteSpace(attributeMetadataName) ||
                     !xmlnsDefinitionAttributes.Contains(attributeMetadataName))
                 {

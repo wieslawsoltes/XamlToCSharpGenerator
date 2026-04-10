@@ -42,6 +42,7 @@
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" WatchOnly="true" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" WatchOnly="true" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" WatchOnly="true" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj" WatchOnly="true" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Avalonia\XamlToCSharpGenerator.Avalonia.csproj" WatchOnly="true" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" WatchOnly="true" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" WatchOnly="true" />

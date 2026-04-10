@@ -795,31 +795,9 @@ internal static class XamlExpressionBindingNavigationService
         XElement element,
         XAttribute attribute)
     {
-        if (!XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, element, out var elementType))
-        {
-            return null;
-        }
-
         var eventName = attribute.Name.LocalName;
-        if (string.IsNullOrWhiteSpace(eventName))
-        {
-            return null;
-        }
-
-        return FindEvent(elementType, eventName)?.Type as INamedTypeSymbol;
-    }
-
-    private static IEventSymbol? FindEvent(INamedTypeSymbol typeSymbol, string eventName)
-    {
-        for (var current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            var eventSymbol = current.GetMembers(eventName).OfType<IEventSymbol>().FirstOrDefault();
-            if (eventSymbol is not null)
-            {
-                return eventSymbol;
-            }
-        }
-
-        return null;
+        return string.IsNullOrWhiteSpace(eventName)
+            ? null
+            : XamlEventHandlerTypeResolver.ResolveHandlerType(analysis, element, eventName);
     }
 }

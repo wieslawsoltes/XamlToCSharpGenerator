@@ -12,6 +12,7 @@ using Microsoft.CodeAnalysis.Text;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.LanguageService.Analysis;
 using XamlToCSharpGenerator.LanguageService.Completion;
+using XamlToCSharpGenerator.LanguageService.Definitions;
 using XamlToCSharpGenerator.LanguageService.Documents;
 using XamlToCSharpGenerator.LanguageService.Models;
 using XamlToCSharpGenerator.LanguageService.Text;
@@ -182,28 +183,17 @@ internal sealed class XamlEventHandlerRefactoringProvider : IXamlRefactoringProv
             return false;
         }
 
-        IEventSymbol? eventSymbol = FindEvent(elementType, eventName);
-        if (eventSymbol?.Type is not INamedTypeSymbol namedDelegateType)
+        INamedTypeSymbol? namedDelegateType = XamlEventHandlerTypeResolver.ResolveHandlerType(
+            analysis,
+            elementType,
+            eventName);
+        if (namedDelegateType is null)
         {
             return false;
         }
 
         delegateType = namedDelegateType;
         return true;
-    }
-
-    private static IEventSymbol? FindEvent(INamedTypeSymbol typeSymbol, string eventName)
-    {
-        for (INamedTypeSymbol? current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            IEventSymbol? eventSymbol = current.GetMembers(eventName).OfType<IEventSymbol>().FirstOrDefault();
-            if (eventSymbol is not null)
-            {
-                return eventSymbol;
-            }
-        }
-
-        return null;
     }
 
     private static bool TryBuildWorkspaceEdit(

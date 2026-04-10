@@ -254,20 +254,18 @@ internal static class XamlSemanticSourceTypeResolver
         out INamedTypeSymbol typeSymbol)
     {
         typeSymbol = null!;
-        if (!TryResolveElementTypeInfo(analysis, element, out var typeInfo) ||
-            typeInfo is null)
+        if (TryResolveElementTypeInfo(analysis, element, out var typeInfo) &&
+            typeInfo is not null)
         {
-            return false;
+            var resolvedType = ResolveTypeSymbolByFullTypeName(analysis.Compilation, typeInfo.FullTypeName);
+            if (resolvedType is not null)
+            {
+                typeSymbol = resolvedType;
+                return true;
+            }
         }
 
-        var resolvedType = ResolveTypeSymbolByFullTypeName(analysis.Compilation, typeInfo.FullTypeName);
-        if (resolvedType is null)
-        {
-            return false;
-        }
-
-        typeSymbol = resolvedType;
-        return true;
+        return TryResolveElementTypeSymbolByNamespaceFallback(analysis, element, out typeSymbol);
     }
 
     public static INamedTypeSymbol? ResolveTypeSymbol(
@@ -346,66 +344,7 @@ internal static class XamlSemanticSourceTypeResolver
 
     public static INamedTypeSymbol? ResolveTypeSymbolByFullTypeName(Compilation? compilation, string fullTypeName)
     {
-        if (compilation is null || string.IsNullOrWhiteSpace(fullTypeName))
-        {
-            return null;
-        }
-
-        var direct = compilation.GetTypeByMetadataName(fullTypeName);
-        if (direct is not null)
-        {
-            return direct;
-        }
-
-        var segments = fullTypeName.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0)
-        {
-            return null;
-        }
-
-        ISymbol current = compilation.GlobalNamespace;
-        var index = 0;
-        while (index < segments.Length)
-        {
-            if (current is INamespaceSymbol namespaceSymbol)
-            {
-                var nextNamespace = namespaceSymbol.GetNamespaceMembers()
-                    .FirstOrDefault(candidate => string.Equals(candidate.Name, segments[index], StringComparison.Ordinal));
-                if (nextNamespace is not null)
-                {
-                    current = nextNamespace;
-                    index++;
-                    continue;
-                }
-
-                var nextType = namespaceSymbol.GetTypeMembers(segments[index]).FirstOrDefault();
-                if (nextType is null)
-                {
-                    return null;
-                }
-
-                current = nextType;
-                index++;
-                continue;
-            }
-
-            if (current is INamedTypeSymbol typeSymbol)
-            {
-                var nextType = typeSymbol.GetTypeMembers(segments[index]).FirstOrDefault();
-                if (nextType is null)
-                {
-                    return null;
-                }
-
-                current = nextType;
-                index++;
-                continue;
-            }
-
-            return null;
-        }
-
-        return current as INamedTypeSymbol;
+        return CompilationTypeSymbolResolver.ResolveByFullTypeName(compilation, fullTypeName);
     }
 
     public static bool TryResolveTypeInfo(
@@ -612,6 +551,64 @@ internal static class XamlSemanticSourceTypeResolver
         }
 
         return false;
+    }
+
+    private static bool TryResolveElementTypeSymbolByNamespaceFallback(
+        XamlAnalysisResult analysis,
+        XElement element,
+        out INamedTypeSymbol typeSymbol)
+    {
+        typeSymbol = null!;
+        if (analysis.Compilation is null)
+        {
+            return false;
+        }
+
+        if (XamlClrSymbolResolver.TryResolveClrNamespace(element.Name.NamespaceName, out var clrNamespace))
+        {
+            var resolvedClrNamespaceType = ResolveTypeSymbolByNamespaceAndName(
+                analysis.Compilation,
+                clrNamespace,
+                element.Name.LocalName);
+            if (resolvedClrNamespaceType is not null)
+            {
+                typeSymbol = resolvedClrNamespaceType;
+                return true;
+            }
+        }
+
+        if (!string.Equals(element.Name.NamespaceName, analysis.Framework.DefaultXmlNamespace, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var candidateNamespace in analysis.Framework.DefaultXmlNamespaceClrNamespaces)
+        {
+            if (string.IsNullOrWhiteSpace(candidateNamespace))
+            {
+                continue;
+            }
+
+            var resolvedDefaultNamespaceType = ResolveTypeSymbolByNamespaceAndName(
+                analysis.Compilation,
+                candidateNamespace.Trim().TrimEnd('.'),
+                element.Name.LocalName);
+            if (resolvedDefaultNamespaceType is not null)
+            {
+                typeSymbol = resolvedDefaultNamespaceType;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static INamedTypeSymbol? ResolveTypeSymbolByNamespaceAndName(
+        Compilation compilation,
+        string clrNamespace,
+        string typeName)
+    {
+        return CompilationTypeSymbolResolver.ResolveByNamespaceAndName(compilation, clrNamespace, typeName);
     }
 
     private static string NormalizeTypeReferenceToken(string rawTypeValue)

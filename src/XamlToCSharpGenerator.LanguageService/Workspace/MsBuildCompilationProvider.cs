@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -26,7 +27,7 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     private const string MissingMetadataReferencePrefix =
         "Found project reference without a matching metadata reference:";
 
-    private readonly MSBuildWorkspace _workspace;
+    private MSBuildWorkspace _workspace;
     private readonly XamlLanguageFrameworkRegistry _frameworkRegistry;
     private readonly SemaphoreSlim _workspaceGate = new(1, 1);
     private readonly ConcurrentDictionary<string, Lazy<Task<CompilationSnapshot>>> _projectCompilationCache =
@@ -139,8 +140,17 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         {
             await _workspaceGate.WaitAsync().ConfigureAwait(false);
             Project? project;
+            LanguageServiceDiagnostic? restoreDiagnostic = null;
             try
             {
+                var restoreResult = await EnsureProjectRestoreArtifactsAsync(projectPath).ConfigureAwait(false);
+                restoreDiagnostic = restoreResult.Diagnostic;
+                if (restoreResult.RestorePerformed && TryGetLoadedProject(projectPath) is not null)
+                {
+                    _workspace.Dispose();
+                    _workspace = MSBuildWorkspace.Create(CreateWorkspaceProperties());
+                }
+
                 project = TryGetLoadedProject(projectPath);
                 if (project is null)
                 {
@@ -169,6 +179,11 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
             }
 
             var diagnosticsBuilder = ImmutableArray.CreateBuilder<LanguageServiceDiagnostic>();
+            if (restoreDiagnostic is not null)
+            {
+                diagnosticsBuilder.Add(restoreDiagnostic);
+            }
+
             var analyzerOnlyReferences = GetAnalyzerOnlyProjectReferences(projectPath);
             foreach (var workspaceDiagnostic in _workspace.Diagnostics)
             {
@@ -484,6 +499,83 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
         return UriPathHelper.NormalizeFilePath(path);
     }
 
+    private static bool HasProjectRestoreArtifacts(string projectPath)
+    {
+        var projectDirectory = Path.GetDirectoryName(projectPath);
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return true;
+        }
+
+        var objDirectory = Path.Combine(projectDirectory, "obj");
+        if (!Directory.Exists(objDirectory))
+        {
+            return false;
+        }
+
+        return File.Exists(Path.Combine(objDirectory, "project.assets.json")) &&
+               Directory.EnumerateFiles(objDirectory, "*.nuget.g.props", SearchOption.TopDirectoryOnly).Any() &&
+               Directory.EnumerateFiles(objDirectory, "*.nuget.g.targets", SearchOption.TopDirectoryOnly).Any();
+    }
+
+    private static async Task<ProjectRestoreResult> EnsureProjectRestoreArtifactsAsync(string projectPath)
+    {
+        if (HasProjectRestoreArtifacts(projectPath))
+        {
+            return ProjectRestoreResult.NotNeeded;
+        }
+
+        var projectDirectory = Path.GetDirectoryName(projectPath);
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return ProjectRestoreResult.NotNeeded;
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"restore \"{projectPath}\" --disable-build-servers",
+            WorkingDirectory = projectDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = new Process { StartInfo = startInfo };
+        process.Start();
+
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+        var standardErrorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync().ConfigureAwait(false);
+
+        var standardOutput = await standardOutputTask.ConfigureAwait(false);
+        var standardError = await standardErrorTask.ConfigureAwait(false);
+        if (process.ExitCode == 0 && HasProjectRestoreArtifacts(projectPath))
+        {
+            return ProjectRestoreResult.Restored;
+        }
+
+        var message = "Failed to restore project assets for language-service compilation.";
+        if (!string.IsNullOrWhiteSpace(standardError))
+        {
+            message += " " + standardError.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(standardOutput))
+        {
+            message += " " + standardOutput.Trim();
+        }
+
+        return new ProjectRestoreResult(
+            RestorePerformed: false,
+            Diagnostic: new LanguageServiceDiagnostic(
+                "AXSGLS0004",
+                message,
+                EmptyRange,
+                LanguageServiceDiagnosticSeverity.Warning,
+                Source: "MSBuildWorkspace"));
+    }
+
     private static bool IsIgnorableProjectPathResolutionException(Exception ex)
     {
         return ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
@@ -557,4 +649,13 @@ public sealed class MsBuildCompilationProvider : ICompilationProvider
     private readonly record struct CachedProjectPathResolution(
         DateTimeOffset CachedAtUtc,
         string? ProjectPath);
+
+    private readonly record struct ProjectRestoreResult(
+        bool RestorePerformed,
+        LanguageServiceDiagnostic? Diagnostic)
+    {
+        public static ProjectRestoreResult NotNeeded { get; } = new(false, null);
+
+        public static ProjectRestoreResult Restored { get; } = new(true, null);
+    }
 }

@@ -1,4 +1,3 @@
-using System;
 using System.Text;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Framework.Abstractions;
@@ -6,10 +5,14 @@ using XamlToCSharpGenerator.Framework.Shared.Emission;
 
 namespace XamlToCSharpGenerator.NoUi.Emission;
 
-public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
+public abstract class PilotCodeEmitterBase : IXamlFrameworkEmitter
 {
     private static readonly GeneratedSourceHintNameService GeneratedSourceHintNameService = new();
     private static readonly CSharpLiteralEmissionService CSharpLiteralEmissionService = new();
+
+    protected abstract string HintPrefix { get; }
+    protected abstract string PublicBuildMethodName { get; }
+    protected abstract string PrivateBuildMethodName { get; }
 
     public (string HintName, string Source) Emit(ResolvedViewModel viewModel)
     {
@@ -28,7 +31,7 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
         return (BuildHintName(document), builder.ToString());
     }
 
-    private static void EmitClassBackedView(StringBuilder builder, ResolvedViewModel viewModel)
+    private void EmitClassBackedView(StringBuilder builder, ResolvedViewModel viewModel)
     {
         var document = viewModel.Document;
         if (!string.IsNullOrWhiteSpace(document.ClassNamespace))
@@ -44,15 +47,21 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
             .Append(document.ClassName)
             .AppendLine();
         builder.AppendLine("{");
-        builder.AppendLine("    public global::XamlToCSharpGenerator.NoUi.NoUiObjectNode BuildNoUiObjectGraph()");
+        builder.Append("    public global::XamlToCSharpGenerator.NoUi.NoUiObjectNode ")
+            .Append(PublicBuildMethodName)
+            .AppendLine("()");
         builder.AppendLine("    {");
-        builder.AppendLine("        return __BuildNoUiObjectGraph();");
+        builder.Append("        return ")
+            .Append(PrivateBuildMethodName)
+            .AppendLine("();");
         builder.AppendLine("    }");
         builder.AppendLine();
         builder.AppendLine("    public void InitializeComponent(bool loadXaml = true)");
         builder.AppendLine("    {");
         builder.AppendLine("        _ = loadXaml;");
-        builder.AppendLine("        _ = __BuildNoUiObjectGraph();");
+        builder.Append("        _ = ")
+            .Append(PrivateBuildMethodName)
+            .AppendLine("();");
         builder.AppendLine("    }");
         builder.AppendLine();
 
@@ -61,7 +70,7 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
         builder.AppendLine("}");
     }
 
-    private static void EmitClasslessArtifact(StringBuilder builder, ResolvedViewModel viewModel)
+    private void EmitClasslessArtifact(StringBuilder builder, ResolvedViewModel viewModel)
     {
         builder.AppendLine("namespace XamlToCSharpGenerator.Generated;");
         builder.AppendLine();
@@ -73,11 +82,13 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
         builder.AppendLine("}");
     }
 
-    private static void EmitBuildMethod(StringBuilder builder, ResolvedViewModel viewModel, string methodModifier)
+    private void EmitBuildMethod(StringBuilder builder, ResolvedViewModel viewModel, string methodModifier)
     {
         builder.Append("    ")
             .Append(methodModifier)
-            .AppendLine(" global::XamlToCSharpGenerator.NoUi.NoUiObjectNode __BuildNoUiObjectGraph()");
+            .Append(" global::XamlToCSharpGenerator.NoUi.NoUiObjectNode ")
+            .Append(PrivateBuildMethodName)
+            .AppendLine("()");
         builder.AppendLine("    {");
         var nodeIndex = 0;
         var rootVariable = EmitNode(builder, viewModel.RootObject, indentLevel: 2, ref nodeIndex);
@@ -145,9 +156,9 @@ public sealed class NoUiCodeEmitter : IXamlFrameworkEmitter
         builder.AppendLine(line);
     }
 
-    private static string BuildHintName(XamlDocumentModel document)
+    private string BuildHintName(XamlDocumentModel document)
     {
         var classToken = document.ClassName.Replace('.', '_');
-        return GeneratedSourceHintNameService.BuildHintName(classToken, document.TargetPath, ignoreCaseHash: true);
+        return GeneratedSourceHintNameService.BuildHintName(HintPrefix + "." + classToken, document.TargetPath, ignoreCaseHash: true);
     }
 }

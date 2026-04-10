@@ -6,11 +6,26 @@ using Microsoft.CodeAnalysis;
 using XamlToCSharpGenerator.Core.Models;
 using XamlToCSharpGenerator.Core.Parsing;
 using XamlToCSharpGenerator.Framework.Abstractions;
+using XamlToCSharpGenerator.Framework.Shared.Binding;
 
 namespace XamlToCSharpGenerator.NoUi.Binding;
 
 public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
 {
+    private static readonly UnsupportedFeatureDiagnosticsService UnsupportedFeatureDiagnosticsService = new(
+        "Pilot",
+        new UnsupportedFeatureDiagnosticsService.SupportedFeatures(
+            DocumentResources: false,
+            DocumentTemplates: false,
+            DocumentStyles: false,
+            DocumentControlThemes: false,
+            DocumentIncludes: false,
+            MarkupExtensions: false,
+            CompiledBindingScopes: false,
+            CreateSourceInfo: false,
+            HotReload: false,
+            HotDesign: false));
+
     public (ResolvedViewModel? ViewModel, ImmutableArray<DiagnosticInfo> Diagnostics) Bind(
         XamlDocumentModel document,
         Compilation compilation,
@@ -19,6 +34,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
     {
         _ = transformConfiguration;
         var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
+        UnsupportedFeatureDiagnosticsService.ReportUnsupportedDocumentAndOptionFeatures(document, options, diagnostics);
 
         var rootObject = BindObject(document.RootObject, document, compilation, diagnostics);
         var classModifier = string.IsNullOrWhiteSpace(document.ClassModifier)
@@ -74,9 +90,11 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
         ImmutableArray<DiagnosticInfo>.Builder diagnostics)
     {
         var typeName = ResolveTypeName(node, document, compilation, diagnostics);
-
-        var propertyAssignments = node.PropertyAssignments
-            .Select(static property => new ResolvedPropertyAssignment(
+        var propertyAssignments = ImmutableArray.CreateBuilder<ResolvedPropertyAssignment>(node.PropertyAssignments.Length);
+        foreach (var property in node.PropertyAssignments)
+        {
+            UnsupportedFeatureDiagnosticsService.ReportUnsupportedPropertyMarkupExtension(property, document, diagnostics);
+            propertyAssignments.Add(new ResolvedPropertyAssignment(
                 property.PropertyName,
                 property.Value,
                 ClrPropertyOwnerTypeName: null,
@@ -84,8 +102,8 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
                 property.Line,
                 property.Column,
                 property.Condition,
-                ValueKind: ResolvedValueKind.Literal))
-            .ToImmutableArray();
+                ValueKind: ResolvedValueKind.Literal));
+        }
 
         var propertyElementAssignments = node.PropertyElements
             .Select(propertyElement => new ResolvedPropertyElementAssignment(
@@ -115,7 +133,7 @@ public sealed class NoUiSemanticBinder : IXamlFrameworkSemanticBinder
             FactoryValueRequirements: ResolvedValueRequirements.None,
             UseServiceProviderConstructor: false,
             UseTopDownInitialization: false,
-            PropertyAssignments: propertyAssignments,
+            PropertyAssignments: propertyAssignments.ToImmutable(),
             PropertyElementAssignments: propertyElementAssignments,
             EventSubscriptions: ImmutableArray<ResolvedEventSubscription>.Empty,
             Children: childObjects,

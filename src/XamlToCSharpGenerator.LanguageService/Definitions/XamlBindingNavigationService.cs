@@ -1388,66 +1388,7 @@ internal static class XamlBindingNavigationService
 
     private static INamedTypeSymbol? ResolveTypeSymbolByFullTypeName(Compilation? compilation, string fullTypeName)
     {
-        if (compilation is null || string.IsNullOrWhiteSpace(fullTypeName))
-        {
-            return null;
-        }
-
-        var direct = compilation.GetTypeByMetadataName(fullTypeName);
-        if (direct is not null)
-        {
-            return direct;
-        }
-
-        var segments = fullTypeName.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0)
-        {
-            return null;
-        }
-
-        ISymbol current = compilation.GlobalNamespace;
-        var index = 0;
-        while (index < segments.Length)
-        {
-            if (current is INamespaceSymbol namespaceSymbol)
-            {
-                var nextNamespace = namespaceSymbol.GetNamespaceMembers()
-                    .FirstOrDefault(candidate => string.Equals(candidate.Name, segments[index], StringComparison.Ordinal));
-                if (nextNamespace is not null)
-                {
-                    current = nextNamespace;
-                    index++;
-                    continue;
-                }
-
-                var nextType = namespaceSymbol.GetTypeMembers(segments[index]).FirstOrDefault();
-                if (nextType is null)
-                {
-                    return null;
-                }
-
-                current = nextType;
-                index++;
-                continue;
-            }
-
-            if (current is INamedTypeSymbol typeSymbol)
-            {
-                var nextType = typeSymbol.GetTypeMembers(segments[index]).FirstOrDefault();
-                if (nextType is null)
-                {
-                    return null;
-                }
-
-                current = nextType;
-                index++;
-                continue;
-            }
-
-            return null;
-        }
-
-        return current as INamedTypeSymbol;
+        return CompilationTypeSymbolResolver.ResolveByFullTypeName(compilation, fullTypeName);
     }
 
     private static ITypeSymbol? ResolveDisplayTypeSymbol(

@@ -92,7 +92,6 @@
       <Analyzer Include="@(_XamlToCSharpGeneratorLocalAnalyzerAssembly)" />
       <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)" />
       <UpToDateCheckInput Include="@(_XamlToCSharpGeneratorLocalAnalyzerAssembly)" />
-
       <Watch Remove="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)" />
       <Watch Include="@(_XamlToCSharpGeneratorLocalAnalyzerWatchDistinct)">
         <XamlToCSharpGeneratorLocalAnalyzer>true</XamlToCSharpGeneratorLocalAnalyzer>

@@ -694,17 +694,12 @@ internal static class XamlInlineCSharpNavigationService
                 return null;
             }
 
-            return FindEvent(inlineOwnerType, inlineMemberName)?.Type as INamedTypeSymbol;
+            return XamlEventHandlerTypeResolver.ResolveHandlerType(analysis, inlineOwnerType, inlineMemberName);
         }
 
         if (attribute is not null)
         {
-            if (!XamlSemanticSourceTypeResolver.TryResolveElementTypeSymbol(analysis, scopeElement, out var elementType))
-            {
-                return null;
-            }
-
-            return FindEvent(elementType, attribute.Name.LocalName)?.Type as INamedTypeSymbol;
+            return XamlEventHandlerTypeResolver.ResolveHandlerType(analysis, scopeElement, attribute.Name.LocalName);
         }
 
         var ownerElement = ResolveOwnerElementForInlineCodeElement(scopeElement);
@@ -723,7 +718,7 @@ internal static class XamlInlineCSharpNavigationService
             return null;
         }
 
-        return FindEvent(ownerType, memberName)?.Type as INamedTypeSymbol;
+        return XamlEventHandlerTypeResolver.ResolveHandlerType(analysis, ownerType, memberName);
     }
 
     private static bool IsInlineCodeElementAttribute(XElement scopeElement, XAttribute? attribute)
@@ -838,20 +833,6 @@ internal static class XamlInlineCSharpNavigationService
         return new SourceRange(
             TextCoordinateHelper.GetPosition(text, startOffset),
             TextCoordinateHelper.GetPosition(text, startOffset + length));
-    }
-
-    private static IEventSymbol? FindEvent(INamedTypeSymbol typeSymbol, string eventName)
-    {
-        for (var current = typeSymbol; current is not null; current = current.BaseType)
-        {
-            var eventSymbol = current.GetMembers(eventName).OfType<IEventSymbol>().FirstOrDefault();
-            if (eventSymbol is not null)
-            {
-                return eventSymbol;
-            }
-        }
-
-        return null;
     }
 
     private static ISymbol NormalizeSymbol(ISymbol symbol)

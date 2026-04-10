@@ -7,6 +7,9 @@
     <RootNamespace>NoUiFrameworkPilotSample</RootNamespace>
     <XamlSourceGenBackend>SourceGen</XamlSourceGenBackend>
     <XamlSourceGenEnabled>true</XamlSourceGenEnabled>
+    <XamlSourceGenCreateSourceInfo>false</XamlSourceGenCreateSourceInfo>
+    <XamlSourceGenHotReloadEnabled>false</XamlSourceGenHotReloadEnabled>
+    <XamlSourceGenHotDesignEnabled>false</XamlSourceGenHotDesignEnabled>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
@@ -22,6 +25,9 @@
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="TargetPath" />
     <CompilerVisibleProperty Include="XamlSourceGenBackend" />
     <CompilerVisibleProperty Include="XamlSourceGenEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenCreateSourceInfo" />
+    <CompilerVisibleProperty Include="XamlSourceGenHotReloadEnabled" />
+    <CompilerVisibleProperty Include="XamlSourceGenHotDesignEnabled" />
     <CompilerVisibleProperty Include="RootNamespace" />
   </ItemGroup>
 
@@ -34,6 +40,7 @@
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Core\XamlToCSharpGenerator.Core.csproj" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Compiler\XamlToCSharpGenerator.Compiler.csproj" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Abstractions\XamlToCSharpGenerator.Framework.Abstractions.csproj" />
+    <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.Framework.Shared\XamlToCSharpGenerator.Framework.Shared.csproj" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.MiniLanguageParsing\XamlToCSharpGenerator.MiniLanguageParsing.csproj" />
     <XamlSourceGenLocalAnalyzerProject Include="..\..\src\XamlToCSharpGenerator.ExpressionSemantics\XamlToCSharpGenerator.ExpressionSemantics.csproj" />
   </ItemGroup>
