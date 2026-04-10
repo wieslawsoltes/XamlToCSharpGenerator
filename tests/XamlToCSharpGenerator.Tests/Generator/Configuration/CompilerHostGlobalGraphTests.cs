@@ -92,6 +92,15 @@ public class CompilerHostGlobalGraphTests
     }
 
     [Fact]
+    public void NormalizeIncludeSource_Extracts_Value_Argument_From_Uri_Markup()
+    {
+        var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(
+            "{x:Uri Value='/Assets/Theme.axaml', Relative=true}");
+
+        Assert.Equal("/Assets/Theme.axaml", normalized);
+    }
+
+    [Fact]
     public void NormalizeIncludeSource_Preserves_NonUri_Markup_Extension_Text()
     {
         var normalized = XamlSourceGeneratorCompilerHost.NormalizeIncludeSource(

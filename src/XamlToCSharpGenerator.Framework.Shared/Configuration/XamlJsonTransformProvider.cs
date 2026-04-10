@@ -35,7 +35,13 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
     {
         try
         {
-            using var document = JsonDocument.Parse(input.Text);
+            using var document = JsonDocument.Parse(
+                input.Text,
+                new JsonDocumentOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true
+                });
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return Failure(input.FilePath, "AXSG0900", "Transform rule file must contain a JSON object.");
@@ -206,15 +212,19 @@ public sealed class XamlJsonTransformProvider : IXamlFrameworkTransformProvider
                 ReadTrimmedString(aliasElement, "propertyFieldName") ??
                 ReadFirstConfiguredProperty(aliasElement, _legacyFieldPropertyNames);
 
-            if (string.IsNullOrWhiteSpace(targetType) ||
-                string.IsNullOrWhiteSpace(xamlProperty) ||
+            if (string.IsNullOrWhiteSpace(targetType))
+            {
+                targetType = "*";
+            }
+
+            if (string.IsNullOrWhiteSpace(xamlProperty) ||
                 (string.IsNullOrWhiteSpace(clrProperty) &&
                  string.IsNullOrWhiteSpace(propertyOwnerTypeName) &&
                  string.IsNullOrWhiteSpace(propertyFieldName)))
             {
                 diagnostics.Add(InvalidEntry(
                     filePath,
-                    "propertyAliases entry requires targetType, xamlProperty, and clrProperty or framework property metadata."));
+                    "propertyAliases entry requires xamlProperty and clrProperty or framework property metadata."));
                 continue;
             }
 

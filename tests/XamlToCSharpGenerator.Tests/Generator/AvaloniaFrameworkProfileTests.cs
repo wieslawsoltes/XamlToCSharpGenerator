@@ -88,6 +88,52 @@ public class AvaloniaFrameworkProfileTests
     }
 
     [Fact]
+    public void TransformProvider_Allows_Wildcard_Property_Aliases_When_TargetType_Is_Omitted()
+    {
+        IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
+        var provider = profile.TransformProvider;
+
+        var result = provider.ParseTransformRule(new XamlFrameworkTransformRuleInput(
+            "wildcard.json",
+            """
+            {
+              "propertyAliases": [
+                { "xamlProperty": "AccentText", "clrProperty": "Foreground" }
+              ]
+            }
+            """));
+
+        var alias = Assert.Single(result.Configuration.PropertyAliases);
+        Assert.Equal("*", alias.TargetTypeName);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void TransformProvider_Accepts_Comments_And_Trailing_Commas()
+    {
+        IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
+        var provider = profile.TransformProvider;
+
+        var result = provider.ParseTransformRule(new XamlFrameworkTransformRuleInput(
+            "comments.json",
+            """
+            {
+              // Keep tolerated JSON syntax for existing rule files.
+              "typeAliases": [
+                { "xmlNamespace": "https://github.com/avaloniaui", "xamlType": "Demo", "clrType": "App.Demo", },
+              ],
+              "propertyAliases": [
+                { "xamlProperty": "AccentText", "clrProperty": "Foreground", },
+              ],
+            }
+            """));
+
+        Assert.Single(result.Configuration.TypeAliases);
+        Assert.Single(result.Configuration.PropertyAliases);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void BuildParserSettings_Adds_Implicit_Standard_Prefixes_When_Enabled()
     {
         IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;

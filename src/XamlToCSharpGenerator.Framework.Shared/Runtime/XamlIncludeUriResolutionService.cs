@@ -73,18 +73,33 @@ public sealed class XamlIncludeUriResolutionService
             return trimmed;
         }
 
-        var namedUriIndex = arguments.IndexOf("Uri=", StringComparison.OrdinalIgnoreCase);
-        if (namedUriIndex >= 0)
+        if (TryExtractNamedArgument(arguments, "Uri", out var extractedUriValue))
         {
-            var namedValue = arguments.Substring(namedUriIndex + "Uri=".Length).TrimStart();
-            return TryExtractQuotedOrBareValue(namedValue, out var extractedNamedValue)
-                ? extractedNamedValue
-                : trimmed;
+            return extractedUriValue;
+        }
+
+        if (TryExtractNamedArgument(arguments, "Value", out var extractedValueArgument))
+        {
+            return extractedValueArgument;
         }
 
         return TryExtractQuotedOrBareValue(arguments, out var extractedPositionalValue)
             ? extractedPositionalValue
             : trimmed;
+    }
+
+    private static bool TryExtractNamedArgument(string arguments, string argumentName, out string value)
+    {
+        value = string.Empty;
+
+        var namedArgumentIndex = arguments.IndexOf(argumentName + "=", StringComparison.OrdinalIgnoreCase);
+        if (namedArgumentIndex < 0)
+        {
+            return false;
+        }
+
+        var namedValue = arguments.Substring(namedArgumentIndex + argumentName.Length + 1).TrimStart();
+        return TryExtractQuotedOrBareValue(namedValue, out value);
     }
 
     private static bool TryExtractQuotedOrBareValue(string rawValue, out string value)
