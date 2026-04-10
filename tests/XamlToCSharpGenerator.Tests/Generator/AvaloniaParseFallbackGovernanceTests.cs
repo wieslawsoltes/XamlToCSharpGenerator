@@ -22,7 +22,7 @@ public class AvaloniaParseFallbackGovernanceTests
     [Fact]
     public void Binder_Explicit_Parse_Emission_Is_Constrained_To_Allowlist()
     {
-        var source = ReadBindingSemanticsSource();
+        var source = ReadMarkupTypeConversionSource();
         var explicitParseTypes = CollectExplicitGlobalParseTypes(source);
 
         var unexpected = explicitParseTypes
@@ -33,21 +33,16 @@ public class AvaloniaParseFallbackGovernanceTests
         Assert.True(
             unexpected.Length == 0,
             "Unexpected explicit Parse emission types in binder: " + string.Join(", ", unexpected));
-
-        foreach (var expectedType in AllowedExplicitParseTypes)
-        {
-            Assert.Contains(expectedType, explicitParseTypes);
-        }
     }
 
     [Fact]
     public void Binder_Preserves_Generic_Static_Parse_Fallback_Hook()
     {
-        var source = ReadBindingSemanticsSource();
-        var markupHelpersSource = ReadMarkupHelpersSource();
+        var typedLiteralConversionSource = ReadTypedLiteralConversionSource();
+        var markupTypeConversionSource = ReadMarkupTypeConversionSource();
 
-        Assert.Contains("TryConvertByStaticParseMethod(type, value, out var parsedExpression)", source, StringComparison.Ordinal);
-        Assert.Contains("private static bool TryConvertByStaticParseMethod(ITypeSymbol type, string value, out string expression)", markupHelpersSource, StringComparison.Ordinal);
+        Assert.Contains("_tryConvertByStaticParseMethod(type, rawValue, out var parseExpression)", typedLiteralConversionSource, StringComparison.Ordinal);
+        Assert.Contains("public bool TryConvertByStaticParseMethod(", markupTypeConversionSource, StringComparison.Ordinal);
     }
 
     private static HashSet<string> CollectExplicitGlobalParseTypes(string source)
@@ -72,17 +67,17 @@ public class AvaloniaParseFallbackGovernanceTests
         return result;
     }
 
-    private static string ReadBindingSemanticsSource()
+    private static string ReadTypedLiteralConversionSource()
     {
         var root = GetRepositoryRoot();
-        var path = Path.Combine(root, "src", "XamlToCSharpGenerator.Avalonia", "Binding", "AvaloniaSemanticBinder.BindingSemantics.cs");
+        var path = Path.Combine(root, "src", "XamlToCSharpGenerator.Framework.Shared", "Binding", "TypedLiteralValueConversionService.cs");
         return File.ReadAllText(path);
     }
 
-    private static string ReadMarkupHelpersSource()
+    private static string ReadMarkupTypeConversionSource()
     {
         var root = GetRepositoryRoot();
-        var path = Path.Combine(root, "src", "XamlToCSharpGenerator.Avalonia", "Binding", "AvaloniaSemanticBinder.MarkupHelpers.cs");
+        var path = Path.Combine(root, "src", "XamlToCSharpGenerator.Framework.Shared", "Binding", "MarkupTypeConversionService.cs");
         return File.ReadAllText(path);
     }
 

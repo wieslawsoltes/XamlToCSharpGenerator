@@ -13,6 +13,7 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit.Abstractions;
+using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Compiler;
 using XamlToCSharpGenerator.LanguageService;
 using XamlToCSharpGenerator.LanguageService.Definitions;
@@ -509,10 +510,10 @@ public sealed class CompilerMicrobenchmarkTests
         const int iterations = 400;
 
         _ = BaselineAnalyzeGlobalDocumentGraph(state.Documents, state.Options);
-        _ = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(state.Documents, state.Options);
+        _ = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(state.Documents, state.Options, AvaloniaFrameworkProfile.Instance);
 
         var baseline = MeasureBestOf(5, iterations, static value => BaselineAnalyzeGlobalDocumentGraph(value.Documents, value.Options).Length, state);
-        var optimized = MeasureBestOf(5, iterations, static value => XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(value.Documents, value.Options).Length, state);
+        var optimized = MeasureBestOf(5, iterations, static value => XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(value.Documents, value.Options, AvaloniaFrameworkProfile.Instance).Length, state);
 
         Assert.Equal(baseline.Checksum, optimized.Checksum);
         Assert.True(
@@ -1296,6 +1297,7 @@ public sealed class CompilerMicrobenchmarkTests
                     input.IncludeSource,
                     input.CurrentTargetPath,
                     input.AssemblyName,
+                    AvaloniaFrameworkProfile.Instance.DocumentUriResolver,
                     out var resolvedUri,
                     out var isProjectLocal))
             {

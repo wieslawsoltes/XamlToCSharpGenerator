@@ -9,6 +9,7 @@ public class XamlRuntimeBindingPathSemanticsTests
     [InlineData("(global::Demo.ViewModels.Person).Address.City", "Address.City")]
     [InlineData("(global::Demo.ViewModels.Person).", ".")]
     [InlineData(" Name ", "Name")]
+    [InlineData("   ", ".")]
     [InlineData("(Person).Name", "(Person).Name")]
     [InlineData("(vm:List[0]).Name", "(vm:List[0]).Name")]
     public void NormalizePath_Normalizes_Runtime_TypeCast_Prefix(string input, string expected)

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.IO;
+using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Compiler;
 using XamlToCSharpGenerator.Core.Models;
 
@@ -23,7 +24,7 @@ public class CompilerHostGlobalGraphTests
                         4,
                         9))));
 
-        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions());
+        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions(), AvaloniaFrameworkProfile.Instance);
 
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal("AXSG0403", diagnostic.Id);
@@ -44,7 +45,7 @@ public class CompilerHostGlobalGraphTests
                 includes: ImmutableArray.Create(
                     new XamlIncludeDefinition("ResourceInclude", "/Views/A.axaml", "MergedDictionaries", string.Empty, 4, 9))));
 
-        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions());
+        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions(), AvaloniaFrameworkProfile.Instance);
 
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal("AXSG0404", diagnostic.Id);
@@ -57,7 +58,7 @@ public class CompilerHostGlobalGraphTests
             CreateDocument("FolderA/Main.axaml", "Main.axaml"),
             CreateDocument("FolderB/Main.axaml", "Main.axaml"));
 
-        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions());
+        var diagnostics = XamlSourceGeneratorCompilerHost.AnalyzeGlobalDocumentGraph(documents, CreateOptions(), AvaloniaFrameworkProfile.Instance);
 
         Assert.Equal(2, diagnostics.Length);
         Assert.All(diagnostics, diagnostic => Assert.Equal("AXSG0601", diagnostic.Id));
@@ -106,6 +107,7 @@ public class CompilerHostGlobalGraphTests
             "../Shared/Theme.axaml",
             "Views/Pages/MainView.axaml",
             "DemoAssembly",
+            AvaloniaFrameworkProfile.Instance.DocumentUriResolver,
             out var resolvedUri,
             out var isProjectLocal);
 
@@ -121,6 +123,7 @@ public class CompilerHostGlobalGraphTests
             "avares://DemoAssembly/Styles/../Themes/Fluent.axaml",
             "Views/MainView.axaml",
             "DemoAssembly",
+            AvaloniaFrameworkProfile.Instance.DocumentUriResolver,
             out var resolvedUri,
             out var isProjectLocal);
 
@@ -136,6 +139,7 @@ public class CompilerHostGlobalGraphTests
             "avares://External.Library/Themes/Fluent.axaml",
             "Views/MainView.axaml",
             "DemoAssembly",
+            AvaloniaFrameworkProfile.Instance.DocumentUriResolver,
             out var resolvedUri,
             out var isProjectLocal);
 

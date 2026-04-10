@@ -67,6 +67,37 @@ public class CSharpSourceContextExpressionBuilderTests
     }
 
     [Fact]
+    public void TryBuildAccessorExpression_Rewrites_Explicit_Source_Alias_And_Collects_Dependencies()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo
+            {
+                public sealed class PersonVm
+                {
+                    public string FirstName { get; set; } = string.Empty;
+                    public string LastName { get; set; } = string.Empty;
+                }
+            }
+            """);
+        var sourceType = compilation.GetTypeByMetadataName("Demo.PersonVm");
+        Assert.NotNull(sourceType);
+
+        var success = CSharpSourceContextExpressionBuilder.TryBuildAccessorExpression(
+            compilation,
+            sourceType!,
+            "source.FirstName + \" \" + source.LastName",
+            "__source",
+            out var result,
+            out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Contains("__source.FirstName", result.AccessorExpression, StringComparison.Ordinal);
+        Assert.Contains("__source.LastName", result.AccessorExpression, StringComparison.Ordinal);
+        Assert.Equal(new[] { "FirstName", "LastName" }, result.DependencyNames.ToArray());
+    }
+
+    [Fact]
     public void TryBuildAccessorExpression_Returns_Parse_Error_For_Invalid_Expression()
     {
         var compilation = CreateCompilation(
@@ -153,6 +184,37 @@ public class CSharpSourceContextExpressionBuilderTests
         Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "FirstName");
         Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "LastName");
         Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "Count");
+    }
+
+    [Fact]
+    public void TryAnalyze_Binds_Explicit_Source_Alias_Expression()
+    {
+        var compilation = CreateCompilation(
+            """
+            namespace Demo
+            {
+                public sealed class PersonVm
+                {
+                    public string FirstName { get; } = "Ava";
+                    public string LastName { get; } = "SourceGen";
+                }
+            }
+            """);
+        var sourceType = compilation.GetTypeByMetadataName("Demo.PersonVm");
+        Assert.NotNull(sourceType);
+
+        var success = CSharpSourceContextExpressionAnalysisService.TryAnalyze(
+            compilation,
+            sourceType!,
+            "source.FirstName + \" \" + source.LastName",
+            "__source",
+            out var result,
+            out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Equal(new[] { "FirstName", "LastName" }, result.DependencyNames.ToArray());
+        Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "FirstName");
+        Assert.Contains(result.SymbolReferences, reference => reference.Symbol.Name == "LastName");
     }
 
     private static CSharpCompilation CreateCompilation(string code)

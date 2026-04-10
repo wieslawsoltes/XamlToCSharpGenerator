@@ -295,7 +295,7 @@ public class AvaloniaXamlSourceGeneratorTests
                     "false")
             ]);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.DoesNotContain("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodad()", generated);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
@@ -348,7 +348,7 @@ public class AvaloniaXamlSourceGeneratorTests
             diagnostic => diagnostic.Id == "AXSG0113" &&
                           diagnostic.GetMessage().Contains("Avalonia default xml namespace compatibility fallback", StringComparison.Ordinal));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodad()", generated);
     }
 
@@ -487,7 +487,7 @@ public class AvaloniaXamlSourceGeneratorTests
                 new KeyValuePair<string, string>("build_property.AvaloniaSourceGenTypeResolutionCompatibilityFallbackEnabled", "true")
             ]);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.DoesNotContain("new global::Avalonia.Markup.Xaml.Styling.ThemeDoodadExtension()", generated);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0113");
@@ -544,7 +544,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("new global::Demo.Controls.CustomControl()", generated);
     }
 
@@ -604,7 +604,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("new global::Avalonia.Controls.Button()", generated);
         Assert.Contains("new global::Demo.Controls.CustomControl()", generated);
     }
@@ -652,7 +652,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0002");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("partial class MainView", generated);
         Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
     }
@@ -693,7 +693,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0002");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("namespace Demo.Views", generated);
         Assert.Contains("partial class MainView", generated);
         Assert.Contains("__PopulateGeneratedObjectGraph(__self, __serviceProvider);", generated);
@@ -774,7 +774,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Controls.CustomPanel()", generated);
     }
 
@@ -828,7 +828,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0110");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlCompiledBindingRegistry.Register", generated);
         Assert.Contains("\"Name\"", generated);
     }
@@ -888,7 +888,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Demo.Catalog.SampleStaticValues.VersionLabel", generated);
     }
 
@@ -923,7 +923,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0002");
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("namespace XamlToCSharpGenerator.Generated", generated);
         Assert.Contains("static class GeneratedXaml_MainView_", generated);
         Assert.Contains("__BuildGeneratedObjectGraph", generated);
@@ -998,7 +998,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__BuildGeneratedObjectGraph", generated);
         Assert.Contains("__PopulateGeneratedObjectGraph", generated);
         Assert.Contains("var __root = __CreateRootInstance(null);", generated);
@@ -1214,7 +1214,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("private static void __BeginInit(object? value)", generated);
         Assert.DoesNotContain("private static void __EndInit(object? value)", generated);
         Assert.DoesNotContain("private static void __TryCompleteNameScope(object? scope)", generated);
@@ -1275,7 +1275,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "new global::Avalonia.Controls.ServiceOnlyControl(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CreateObjectConstructionServiceProvider(",
             generated);
@@ -1345,7 +1345,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         var attachIndex = generated.IndexOf("__root.Content =", StringComparison.Ordinal);
         if (attachIndex < 0)
         {
@@ -1379,7 +1379,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
         Assert.Contains("internal static void __InitializeXamlSourceGenArtifacts()", generated);
         Assert.Contains("__RegisterXamlSourceGenArtifacts();", generated);
@@ -1411,7 +1411,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("private static void __RegisterSourceGenHotReload(object __instance)", generated);
         Assert.Contains("__RegisterSourceGenHotReload(__instance);", generated);
         Assert.Contains("TrackingType = typeof(", generated);
@@ -1443,7 +1443,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("__ApplySourceGenHotReload", generated);
         Assert.DoesNotContain("XamlSourceGenHotReloadManager.Register", generated);
     }
@@ -1471,7 +1471,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("internal void __ApplySourceGenHotReload()", generated);
         Assert.DoesNotContain("XamlSourceGenHotReloadManager.Register", generated);
         Assert.Contains("XamlSourceGenHotDesignManager.Register", generated);
@@ -1589,7 +1589,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__GetSourceGenHotReloadClrPropertyCleanupDescriptors()", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"AcceptButton\",", generated);
     }
@@ -1671,7 +1671,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__AXSGObjectGraph.TryClearDictionaryEntries(__root.Resources);", generated);
         Assert.True(
             generated.Contains("__root.Resources.Add(\"PrimaryButton\",", StringComparison.Ordinal) ||
@@ -1725,7 +1725,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__AXSGObjectGraph.TryAddToDictionary(__root.Resources, \"PrimaryButton\",", generated);
         Assert.Contains("__SourceGenDocumentUri, false);", generated);
     }
@@ -1797,7 +1797,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("CreateDeferredResourceNameScope(__deferredServiceProvider);", generated);
         Assert.Contains("CreateDeferredResourceServiceProvider(__deferredServiceProvider,", generated);
         Assert.Contains("__deferredResourceNameScope", generated);
@@ -1838,7 +1838,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__GetSourceGenHotReloadRootEventCleanupDescriptors()", generated);
         Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenHotReloadCleanupDescriptor(\"C|Loaded|OnLoaded|||\",", generated);
         Assert.Contains("__GetSourceGenHotReloadRootEventCleanupDescriptors());", generated);
@@ -2251,7 +2251,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("// pass: AXSG-P001-BindNamedElements => AXSG-P010-BindRootObject, XNameTransformer", generated);
         Assert.Contains("// pass: AXSG-P900-Finalize", generated);
         Assert.Contains("AddNameScopeRegistration", generated);
@@ -2408,7 +2408,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.True(
             generated.Contains("__root.Content =", StringComparison.Ordinal) ||
             generated.Contains("__TrySetClrProperty(__root, \"Content\",", StringComparison.Ordinal));
@@ -2476,7 +2476,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__AXSGObjectGraph.TryClearCollection(__n0.Children);", generated);
         Assert.DoesNotContain("__TryInvokeClearMethod(", generated);
         Assert.DoesNotContain("if (list.IsReadOnly || list.IsFixedSize)", generated);
@@ -2588,7 +2588,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__AXSGObjectGraph.TryClearCollection(__n0.Items);", generated);
         Assert.DoesNotContain("if (list.IsReadOnly || list.IsFixedSize)", generated);
         Assert.DoesNotContain("catch (global::System.InvalidOperationException)", generated);
@@ -2648,7 +2648,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(".ItemTemplate =", generated);
         Assert.Contains(".Content =", generated);
         Assert.Contains("__n2.Text =", generated);
@@ -2703,7 +2703,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.True(
             generated.Contains(".Add(\"Greeting\",", StringComparison.Ordinal) ||
             (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
@@ -2760,7 +2760,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.True(
             generated.Contains(".Resources.Add(\"Greeting\",", StringComparison.Ordinal) ||
             (generated.Contains("__AXSGObjectGraph.TryAddToDictionary(", StringComparison.Ordinal) &&
@@ -2946,7 +2946,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("__NormalizeDictionaryValue(", generated);
         Assert.DoesNotContain("__TryResolveDictionaryEntryValue(", generated);
         Assert.DoesNotContain("map[key] = dictionaryValue;", generated);
@@ -3009,7 +3009,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ProvideMarkupExtension((global::Avalonia.Markup.Xaml.MarkupExtensions.StaticResourceExtension)",
             generated);
@@ -3062,7 +3062,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Controls.SolidColorBrush.Parse(\"Red\")", generated);
         Assert.True(
             generated.Contains(".Resources.Add(\"AccentBrush\",", StringComparison.Ordinal) ||
@@ -3140,7 +3140,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
         Assert.Contains("global::Avalonia.Controls.TextBox.TextProperty", generated);
         Assert.Contains("global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(new global::Avalonia.Data.Binding(\"Name\")", generated);
@@ -3270,7 +3270,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Name\") {", generated);
         Assert.Contains("Mode = global::Avalonia.Data.BindingMode.TwoWay", generated);
         Assert.Contains("Source = global::Demo.BindingSources.Primary", generated);
@@ -3457,7 +3457,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Text\")", generated);
         Assert.Contains("Mode = global::Avalonia.Data.BindingMode.OneWay", generated);
         Assert.Contains("ElementName = \"SearchBox\"", generated);
@@ -3542,7 +3542,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Value\")", generated);
         Assert.Contains("ElementName = \"TintOpacitySlider\"", generated);
         Assert.Contains("StringFormat = \"{0:0.#}\"", generated);
@@ -3643,7 +3643,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(", generated);
         Assert.Contains("ElementName = \"SearchBox\"", generated);
     }
@@ -3745,7 +3745,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Tag\")", generated);
         Assert.Contains("RelativeSource = new global::Avalonia.Data.RelativeSource(global::Avalonia.Data.RelativeSourceMode.FindAncestor)", generated);
     }
@@ -3846,7 +3846,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0110");
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("RelativeSourceMode.FindAncestor", generated);
         Assert.Contains("AncestorType = typeof(global::Avalonia.Controls.DataGrid)", generated);
         Assert.Contains("\"!IsEnabled\"", generated);
@@ -3949,7 +3949,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Tag\")", generated);
         Assert.Contains("RelativeSource = new global::Avalonia.Data.RelativeSource(global::Avalonia.Data.RelativeSourceMode.Self)", generated);
     }
@@ -4050,7 +4050,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Tag\")", generated);
         Assert.Contains("RelativeSourceMode.FindAncestor", generated);
         Assert.Contains("AncestorLevel = 2", generated);
@@ -4143,7 +4143,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Tag\")", generated);
         Assert.Contains("RelativeSourceMode.FindAncestor", generated);
         Assert.Contains("AncestorType = typeof(global::Avalonia.Controls.StackPanel)", generated);
@@ -4228,7 +4228,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.Binding(\"Text\")", generated);
         Assert.Contains("ElementName = \"SearchBox\"", generated);
         Assert.DoesNotContain("new global::Avalonia.Data.Binding(\"Text\") { Source =", generated);
@@ -4306,7 +4306,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("ProvideReference(\"Background\"", generated);
         Assert.DoesNotContain("PlacementTargetProperty, \"Background\"", generated);
     }
@@ -4379,7 +4379,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("ProvideReference(\"Target\"", generated);
         Assert.DoesNotContain("LeftOfProperty, \"Target\"", generated);
     }
@@ -4430,7 +4430,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideReference(\"SearchBox\"", generated);
         Assert.Contains("SourceGenProvideValueTargetPropertyFactory.CreateWritable<global::Avalonia.Controls.Border", generated);
         Assert.Contains("(\"Tag\", static (__target, __value) => __target.Tag = __value)", generated);
@@ -4527,7 +4527,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideReflectionBinding(new global::Avalonia.Markup.Xaml.MarkupExtensions.ReflectionBindingExtension(\"Message\")", generated);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
         Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty", generated);
@@ -4611,9 +4611,9 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
-        Assert.Contains("__AXSG_CompiledBinding_", generated);
+        Assert.Contains("__AXSG_CompiledBindingAccessorMethod_", generated);
         Assert.DoesNotContain("static source => (object?)(source.FirstName + \" - \" + source.LastName)", generated);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
@@ -4697,9 +4697,9 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
-        Assert.Contains("__AXSG_CompiledBinding_", generated);
+        Assert.Contains("__AXSG_CompiledBindingAccessorMethod_", generated);
         Assert.DoesNotContain("static source => (object?)(source.FirstName + '!')", generated);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.ApplyBinding(",
@@ -4784,7 +4784,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
         Assert.Contains("$\"Total: {source.Price * source.Quantity:F2}\"", generated);
     }
@@ -4931,7 +4931,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.FirstName", generated);
         Assert.Contains("source.LastName", generated);
         Assert.Contains("source.Count", generated);
@@ -5004,7 +5004,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlCompiledBindingRegistry.Register", generated);
         Assert.Contains("\"{= Caption + '!'", generated);
         Assert.Contains("source.Title", generated);
@@ -5701,7 +5701,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.LastName", generated);
     }
 
@@ -5784,7 +5784,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("ProvideExpressionBinding<global::Demo.ViewModels.PersonVm>", generated);
         Assert.Contains("\"{FirstName + '!'}\"", generated);
     }
@@ -5863,7 +5863,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new string[] { \"FirstName\", \"LastName\" }", generated);
     }
 
@@ -5911,7 +5911,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideOnPlatform(", generated);
         Assert.Contains("\"Base\", \"Win\"", generated);
         Assert.DoesNotContain("__AXSG_CTX_", generated);
@@ -5921,20 +5921,74 @@ public class AvaloniaXamlSourceGeneratorTests
     public void Resolves_OnPlatform_Object_Element_To_Markup_Extension_Type()
     {
         const string code = """
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaObject { }
+                public class AvaloniaProperty { }
+                public class StyledElement : AvaloniaObject { }
+                public class Application : StyledElement { }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+                public class BindingBase : IBinding { }
+                public class Binding : BindingBase { }
+                public class RelativeSource { }
+                public class TemplateBinding : BindingBase { }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class Styles { }
+                public class Style { }
+                public class ControlTheme { }
+            }
+
             namespace Avalonia.Controls
             {
-                public class Control { }
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+                public class Panel : Control { }
+                public class ItemsControl : Control { }
+                public class ContentControl : Control { }
+                public class ResourceDictionary { }
                 public class UserControl : Control
                 {
                     public object? Content { get; set; }
                 }
             }
 
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension { }
+            }
+
             namespace Avalonia.Markup.Xaml.MarkupExtensions
             {
-                public class OnPlatformExtension
+                public class StaticResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+                public class DynamicResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+
+                public class OnPlatformExtension : global::Avalonia.Markup.Xaml.MarkupExtension
                 {
                     public object? Default { get; set; }
+                    public object? Windows { get; set; }
+                    public object? macOS { get; set; }
+                    public object? Linux { get; set; }
+                    public object? Android { get; set; }
+                    public object? iOS { get; set; }
+                    public object? Browser { get; set; }
                 }
 
                 public class On
@@ -5963,7 +6017,7 @@ public class AvaloniaXamlSourceGeneratorTests
                 <local:Host>
                     <local:Host.Value>
                         <OnPlatform Default="Base">
-                            <On Options="Windows" Content="Win" />
+                            <On Options="macOS, Linux, Windows" Content="Green" />
                         </OnPlatform>
                     </local:Host.Value>
                 </local:Host>
@@ -5974,9 +6028,271 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension()", generated);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension((global::Avalonia.Markup.Xaml.MarkupExtensions.OnPlatformExtension)", generated);
+        Assert.Contains(".Windows = \"Green\";", generated);
+        Assert.DoesNotContain(".Options.Add(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(".AddChild(", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("new global::System.Object();", generated);
+    }
+
+    [Fact]
+    public void Uses_Content_Attributed_Collection_Property_For_Object_Children()
+    {
+        const string code = """
+            using Avalonia.Metadata;
+
+            [assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Controls")]
+            [assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Controls.Documents")]
+
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaObject { }
+                public class AvaloniaProperty { }
+                public class StyledElement : AvaloniaObject { }
+                public class Application : StyledElement { }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+                public class BindingBase : IBinding { }
+                public class Binding : BindingBase { }
+                public class RelativeSource { }
+                public class TemplateBinding : BindingBase { }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class Styles { }
+                public class Style { }
+                public class ControlTheme { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Assembly, AllowMultiple = true)]
+                public sealed class XmlnsDefinitionAttribute : global::System.Attribute
+                {
+                    public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                }
+
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class ContentAttribute : global::System.Attribute
+                {
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class Panel : Control { }
+                public class ItemsControl : Control { }
+                public class ContentControl : Control { }
+                public class ResourceDictionary { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension { }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class StaticResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+                public class DynamicResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+            }
+
+            namespace Avalonia.Controls.Documents
+            {
+                public class Inline { }
+
+                public sealed class InlineCollection : global::System.Collections.Generic.List<object> { }
+
+                public class Span : Inline
+                {
+                    [global::Avalonia.Metadata.Content]
+                    public InlineCollection Inlines { get; } = new();
+
+                    public void AddChild(object child) { }
+                }
+
+                public sealed class Bold : Span { }
+                public sealed class Italic : Span { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <Span>
+                    prefix
+                    <Bold>middle</Bold>
+                    <Italic>suffix</Italic>
+                </Span>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(".Inlines.Add(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(".AddChild(", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Treats_Content_Property_Value_Container_As_Scalar_Assignment()
+    {
+        const string code = """
+            using Avalonia.Metadata;
+
+            [assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Controls")]
+
+            namespace System.Windows.Input
+            {
+                public interface ICommand { }
+            }
+
+            namespace Avalonia
+            {
+                public class AvaloniaObject { }
+                public class AvaloniaProperty { }
+                public class StyledElement : AvaloniaObject { }
+                public class Application : StyledElement { }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+                public class BindingBase : IBinding { }
+                public class Binding : BindingBase { }
+                public class RelativeSource { }
+                public class TemplateBinding : BindingBase { }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class Styles { }
+                public class Style { }
+                public class ControlTheme { }
+            }
+
+            namespace Avalonia.Metadata
+            {
+                [global::System.AttributeUsage(global::System.AttributeTargets.Assembly, AllowMultiple = true)]
+                public sealed class XmlnsDefinitionAttribute : global::System.Attribute
+                {
+                    public XmlnsDefinitionAttribute(string xmlNamespace, string clrNamespace) { }
+                }
+
+                [global::System.AttributeUsage(global::System.AttributeTargets.Property)]
+                public sealed class ContentAttribute : global::System.Attribute
+                {
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public interface INameScope { }
+
+                public class NameScope : INameScope
+                {
+                    public static void SetNameScope(global::Avalonia.StyledElement styled, INameScope scope) { }
+                }
+
+                public class Control : global::Avalonia.StyledElement { }
+
+                public class Panel : Control { }
+                public class ItemsControl : Control { }
+                public class ContentControl : Control { }
+                public class ResourceDictionary { }
+
+                public class UserControl : Control
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class NativeMenuItemBase { }
+
+                public class NativeMenu
+                {
+                    [global::Avalonia.Metadata.Content]
+                    public global::System.Collections.Generic.List<NativeMenuItemBase> Items { get; } = new();
+                }
+
+                public class NativeMenuItem : NativeMenuItemBase
+                {
+                    [global::Avalonia.Metadata.Content]
+                    public NativeMenu? Menu { get; set; }
+                }
+            }
+
+            namespace Avalonia.Markup.Xaml
+            {
+                public abstract class MarkupExtension { }
+            }
+
+            namespace Avalonia.Markup.Xaml.MarkupExtensions
+            {
+                public class StaticResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+                public class DynamicResourceExtension : global::Avalonia.Markup.Xaml.MarkupExtension { }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <NativeMenuItem>
+                    <NativeMenu>
+                        <NativeMenuItem />
+                    </NativeMenu>
+                </NativeMenuItem>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains(".Menu = ", generated, StringComparison.Ordinal);
+        Assert.Contains(".Items.Add(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Menu.Add(", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -6023,7 +6339,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideOnFormFactor(", generated);
         Assert.Contains("\"Base\", \"Desktop\", \"Mobile\", null, __serviceProvider", generated);
         Assert.DoesNotContain("__AXSG_CTX_", generated);
@@ -6079,7 +6395,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "SourceGenMarkupExtensionRuntime.CoerceMarkupExtensionValue<global::Demo.DisplayMode>(global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideOnFormFactor(",
             generated);
@@ -6147,7 +6463,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.RelativeSource(global::Avalonia.Data.RelativeSourceMode.Self)", generated);
     }
 
@@ -6393,7 +6709,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(diagnostics, d => d.Id is "AXSG0110" or "AXSG0111" or "AXSG0300" or "AXSG0301" or "AXSG0302" or "AXSG0303");
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlCompiledBindingRegistry.Register", generated);
         Assert.Contains("__CompiledBindingAccessor(0, source)", generated);
         Assert.Contains("private static object? __CompiledBindingAccessor(int __index, object __source)", generated);
@@ -6485,7 +6801,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.Item.Id", generated);
         Assert.Contains("source.Id", generated);
         Assert.Contains("source.ResolveTitle()", generated);
@@ -6603,7 +6919,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source.Owner.Factory)", generated);
         Assert.Contains("SourceGenMethodCommandRuntime.ConvertParameter<int>(parameter)", generated);
         Assert.Contains("CanFloatDockable(parameter)", generated);
@@ -6707,7 +7023,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<global::Demo.ViewModels.MainVm>", generated);
         Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source.Owner.Factory)", generated);
         Assert.Contains("new string[] { \"Owner\", \"Owner.Factory\" }", generated);
@@ -6896,7 +7212,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source.Actions)", generated);
         Assert.Contains("\"Actions.Execute()\"", generated);
     }
@@ -6992,7 +7308,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("CanExecute(parameter)", generated);
         Assert.Contains("new string[] { \"IsEnabled\" }", generated);
     }
@@ -7066,7 +7382,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("SourceGenMethodCommandRuntime.Create(", generated, StringComparison.Ordinal);
         Assert.Contains("source.Save", generated);
         Assert.DoesNotContain("source.Save()", generated, StringComparison.Ordinal);
@@ -7148,7 +7464,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMethodCommandRuntime.Create((object?)(source.Actions)", generated);
         Assert.Contains("\"Actions.Execute()\"", generated);
     }
@@ -7215,7 +7531,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("SourceGenMethodCommandRuntime.Create(", generated, StringComparison.Ordinal);
         Assert.Contains("source.BuildCommand()", generated);
     }
@@ -7290,7 +7606,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("SourceGenMethodCommandRuntime.Create(", generated, StringComparison.Ordinal);
         Assert.Contains("source.BuildLabel()", generated);
     }
@@ -7656,7 +7972,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             ".DataType = (global::System.Type)(typeof(global::Demo.ViewModels.ItemViewModel));",
             generated);
@@ -7748,7 +8064,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.DoesNotContain(updatedCompilation.GetDiagnostics(), diagnostic => diagnostic.Id == "CS0144");
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("typeof(global::Demo.ViewModels.ValueEditor<bool>)", generated);
         Assert.DoesNotContain("new global::System.Type()", generated, StringComparison.Ordinal);
     }
@@ -9138,7 +9454,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0110" or "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         var rootMatch = Regex.Match(
             generated,
@@ -9742,7 +10058,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlControlThemeRegistry.Register", generated);
         Assert.Contains("static () => __BuildGeneratedControlTheme(0)", generated);
         Assert.Contains("private static global::Avalonia.Styling.ControlTheme __BuildGeneratedControlTheme(int __index)", generated);
@@ -9844,7 +10160,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("ProvideRuntimeXamlValue(\"<Template", generated);
         Assert.DoesNotContain(
             "new global::Avalonia.Styling.Setter(global::Avalonia.Controls.ContentControl.ContentProperty, \"<Template",
@@ -9930,7 +10246,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("ProvideRuntimeXamlValue(\"<Template", generated);
     }
 
@@ -9988,7 +10304,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__theme.TargetType = typeof(global::Demo.FancyControl);", generated);
     }
 
@@ -10068,7 +10384,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains(diagnostics, diagnostic =>
             diagnostic.Id == "AXSG0102" &&
             diagnostic.GetMessage().Contains("Strategy=AvaloniaProperty.UnsetValueFallback.", StringComparison.Ordinal));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "new global::Avalonia.Styling.Setter(global::Avalonia.Controls.FancyControl.TransformProperty, global::Avalonia.AvaloniaProperty.UnsetValue));",
             generated);
@@ -10157,7 +10473,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic =>
             diagnostic.Id == "AXSG0102" &&
             diagnostic.GetMessage().Contains("TransparencyLevelHint", StringComparison.Ordinal));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "new global::System.Collections.Generic.List<global::Avalonia.Controls.WindowTransparencyLevel> { global::Avalonia.Controls.WindowTransparencyLevel.Transparent, global::Avalonia.Controls.WindowTransparencyLevel.Blur }",
             generated);
@@ -10229,7 +10545,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("Value = \"scale(1.2)\";", generated);
     }
 
@@ -10342,7 +10658,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0301");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0300");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("\"global::Avalonia.Controls.TextBlock\"", generated);
     }
 
@@ -10388,7 +10704,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0300");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0301");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("\"global::Demo.Controls.FancyControl\"", generated);
     }
 
@@ -10437,7 +10753,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0102" or "AXSG0300" or "AXSG0301");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("typeof(global::Demo.Controls.FancyControl)", generated, StringComparison.Ordinal);
     }
 
@@ -10766,7 +11082,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("public partial class MainView", generated);
     }
 
@@ -11015,7 +11331,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlSourceInfoRegistry.Register", generated);
         Assert.Contains("\"Object\"", generated);
         Assert.Contains("\"NamedElement\"", generated);
@@ -11041,7 +11357,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("// AXSG:XAML", generated);
         Assert.DoesNotContain("#line ", generated);
     }
@@ -11072,7 +11388,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("\"StyleSetter\"", generated);
         Assert.Contains("Style:0:TextBlock/Setter:0:Text", generated);
     }
@@ -11129,7 +11445,7 @@ public class AvaloniaXamlSourceGeneratorTests
             ]);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("\"Event\"", generated);
         Assert.Contains("/Event:0:Click", generated);
     }
@@ -11258,7 +11574,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0600");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__n0.Click += __root.OnAccept;", generated);
     }
 
@@ -11314,7 +11630,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
         Assert.Contains("private void __AXSG_EventBinding_", generated);
         Assert.Contains("__TryGetEventBindingDataContext(__arg0)", generated);
@@ -11375,7 +11691,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("SourceGenEventBindingRuntime.InvokeCommand(", generated);
         Assert.DoesNotContain("System.Reflection", generated);
         Assert.DoesNotContain("BindingFlags", generated);
@@ -11436,7 +11752,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
         Assert.Contains("private void __AXSG_EventBinding_", generated);
         Assert.DoesNotContain("SourceGenEventBindingRuntime.InvokeMethod(", generated);
@@ -11620,7 +11936,7 @@ public class AvaloniaXamlSourceGeneratorTests
             diagnostic.Id == "AXSG0600" &&
             diagnostic.GetMessage().Contains("does not support async lambdas", StringComparison.Ordinal));
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain(".Click += __root.__AXSG_EventBinding_", generated, StringComparison.Ordinal);
     }
 
@@ -11694,7 +12010,6 @@ public class AvaloniaXamlSourceGeneratorTests
         var shiftedMethodName = ExtractGeneratedEventBindingMethodName(shiftedGenerated);
         Assert.False(string.IsNullOrWhiteSpace(originalMethodName));
         Assert.Equal(originalMethodName, shiftedMethodName);
-        Assert.DoesNotContain("__AXSG_EventBinding_Click_", shiftedGenerated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -11765,7 +12080,6 @@ public class AvaloniaXamlSourceGeneratorTests
 
         var originalMethodName = ExtractGeneratedEventBindingMethodName(originalGenerated);
         Assert.Contains($"private void {originalMethodName}(", shiftedGenerated);
-        Assert.DoesNotContain("__AXSG_EventBinding_Click_", shiftedGenerated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -11901,7 +12215,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0600");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__n0.RemoveHandler(global::Avalonia.Controls.Button.ClickEvent, (global::System.EventHandler<global::Avalonia.Interactivity.RoutedEventArgs>)__root.OnAccept);", generated);
         Assert.Contains("__n0.AddHandler(global::Avalonia.Controls.Button.ClickEvent, (global::System.EventHandler<global::Avalonia.Interactivity.RoutedEventArgs>)__root.OnAccept);", generated);
     }
@@ -11959,7 +12273,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "AXSG0600");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain(".AddHandler(global::Avalonia.Controls.Button.ClickEvent", generated);
     }
 
@@ -12057,7 +12371,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("global::Avalonia.Media.Brush.Parse(\"Red\")", generated);
     }
 
@@ -12466,7 +12780,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0501");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("XamlTemplateRegistry.Register", generated);
         Assert.Contains("\"global::Avalonia.Controls.Button\"", generated);
     }
@@ -12524,7 +12838,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.People[0].Name", generated);
     }
 
@@ -12636,7 +12950,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("((global::Demo.ViewModels.DerivedPerson)source.SelectedPerson).Name", generated);
     }
 
@@ -12689,7 +13003,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.ResolveTitle()", generated);
     }
 
@@ -12797,7 +13111,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.FormatTitle(", generated);
         Assert.Contains("\"x\"", generated);
         Assert.DoesNotContain("source.FormatTitle(2, 'x')", generated);
@@ -12913,7 +13227,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.ResolveValue(", generated);
         Assert.Contains(".Name", generated);
         Assert.DoesNotContain("ResolveValue((global::System.Object)", generated);
@@ -12973,7 +13287,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("FormatTitle(", generated);
         Assert.DoesNotContain("Name = \"FormatTitle\"", generated, StringComparison.Ordinal);
     }
@@ -13032,7 +13346,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("Name = \"FormatTitle\"", generated, StringComparison.Ordinal);
     }
 
@@ -13087,7 +13401,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("source.SelectedPerson?.Name", generated);
     }
 
@@ -13194,7 +13508,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Controls.Grid.GetRow(source.Item)", generated);
     }
 
@@ -13244,7 +13558,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("!global::System.Convert.ToBoolean(source.IsActive)", generated);
     }
 
@@ -13300,7 +13614,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenCompiledBindingStreamHelper.UnwrapTask<global::Demo.ViewModels.TitleValue>(source.NameTask)", generated);
         Assert.Contains(".Name", generated);
         Assert.Contains("\"NameTask^.Name\"", generated);
@@ -13380,7 +13694,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0111");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenCompiledBindingStreamHelper.UnwrapObservable<global::Demo.ViewModels.TitleValue>(source.NameObservable)", generated);
         Assert.Contains(".Name", generated);
         Assert.Contains("\"NameObservable^.Name\"", generated);
@@ -13515,7 +13829,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideStaticResource(\"AccentBrush\"", generated);
         Assert.Contains("private static object? __ResolveStaticResource(object? anchor, object key)", generated);
         Assert.DoesNotContain("__AXSG_CTX_", generated);
@@ -13653,7 +13967,92 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
+        Assert.Contains(
+            "Converter = global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CoerceStaticResourceValue<global::Avalonia.Data.Converters.IValueConverter>(",
+            generated);
+        Assert.Contains("ProvideStaticResource(\"Conv\"", generated);
+    }
+
+    [Fact]
+    public void Casts_StaticResource_In_Binding_Initializer_When_Typed_Property_Is_On_Base_Type()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public global::Avalonia.Data.IBinding this[global::Avalonia.Data.IndexerDescriptor binding]
+                    {
+                        get => throw new global::System.NotImplementedException();
+                        set { }
+                    }
+                }
+            }
+
+            namespace Avalonia.Data.Converters
+            {
+                public interface IValueConverter { }
+            }
+
+            namespace Avalonia.Data
+            {
+                public interface IBinding { }
+
+                public class IndexerDescriptor
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                }
+
+                public abstract class BindingBase : IBinding
+                {
+                    public global::Avalonia.Data.Converters.IValueConverter? Converter { get; set; }
+                }
+
+                public class Binding : BindingBase
+                {
+                    public Binding(string path) { }
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class UserControl : global::Avalonia.AvaloniaObject
+                {
+                    public object? Content { get; set; }
+                }
+
+                public class TextBlock : global::Avalonia.AvaloniaObject
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public sealed class DemoConverter : global::Avalonia.Data.Converters.IValueConverter { }
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <local:DemoConverter x:Key="Conv" />
+                </UserControl.Resources>
+                <TextBlock Text="{Binding Path=Name, Converter={StaticResource Conv}}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "Converter = global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.CoerceStaticResourceValue<global::Avalonia.Data.Converters.IValueConverter>(",
             generated);
@@ -13812,7 +14211,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideDynamicResource(\"AccentBrush\"", generated);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
         Assert.Contains("global::Avalonia.Controls.TextBlock.ForegroundProperty", generated);
@@ -13886,6 +14285,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("global::Avalonia.Controls.TextBlock.TextProperty", generated);
+        Assert.Contains(".Property = (global::Avalonia.AvaloniaProperty)(global::Avalonia.Controls.TextBlock.TextProperty);", generated);
         Assert.True(
             generated.Contains(".Add(__n1);", StringComparison.Ordinal) ||
             generated.Contains("__TryAddToCollection(", StringComparison.Ordinal) ||
@@ -13968,6 +14368,185 @@ public class AvaloniaXamlSourceGeneratorTests
     }
 
     [Fact]
+    public void Emits_Nested_Style_Setters_Into_Setters_Collection_And_Nested_Styles_Into_Children()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control { }
+
+                public class UserControl : Control
+                {
+                    public global::Avalonia.Controls.Styles Styles { get; } = new();
+                }
+
+                public class Styles : global::System.Collections.Generic.List<global::Avalonia.Styling.Style> { }
+
+                public class TextBlock : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty TextProperty = new();
+                    public static readonly global::Avalonia.AvaloniaProperty TagProperty = new();
+                }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public interface IStyle { }
+
+                public class Style : IStyle
+                {
+                    public string Selector { get; set; } = string.Empty;
+                    public global::System.Collections.Generic.List<global::Avalonia.Styling.Setter> Setters { get; } = new();
+                    public global::System.Collections.Generic.List<global::Avalonia.Styling.IStyle> Children { get; } = new();
+                }
+
+                public class Setter
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                    public object? Value { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Styles>
+                    <Style Selector="TextBlock">
+                        <Setter Property="Text" Value="Base" />
+                        <Style Selector="^:pointerover">
+                            <Setter Property="Tag" Value="Hover" />
+                        </Style>
+                    </Style>
+                </UserControl.Styles>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Matches(
+            new Regex(@"new global::Avalonia\.Styling\.Setter\(\);[\s\S]*?\.Setters\.Add\(__n\d+\);", RegexOptions.CultureInvariant),
+            generated);
+        Assert.Matches(
+            new Regex(@"new global::Avalonia\.Styling\.Style\(\);[\s\S]*?\.Children\.Add\(__n\d+\);", RegexOptions.CultureInvariant),
+            generated);
+    }
+
+    [Fact]
+    public void Emits_ObjectGraph_Setter_And_Transition_Property_Assignments_For_ControlTheme_Transitions()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty { }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class ResourceDictionary : global::System.Collections.Generic.Dictionary<object, object> { }
+
+                public class UserControl
+                {
+                    public ResourceDictionary Resources { get; } = new();
+                }
+
+                public class Visual
+                {
+                    public static readonly global::Avalonia.StyledProperty<object?> RenderTransformProperty = new();
+                }
+
+                public class Animatable : Visual
+                {
+                    public static readonly global::Avalonia.StyledProperty<object?> TransitionsProperty = new();
+                }
+
+                public class Button : Animatable { }
+            }
+
+            namespace Avalonia.Animation
+            {
+                public interface ITransition { }
+
+                public class Transitions : global::System.Collections.Generic.List<global::Avalonia.Animation.ITransition> { }
+
+                public class TransformOperationsTransition : ITransition
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                    public string? Duration { get; set; }
+                }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public abstract class SetterBase { }
+
+                public abstract class StyleBase
+                {
+                    public void Add(global::Avalonia.Styling.SetterBase setter) { }
+                }
+
+                public class ControlTheme : StyleBase
+                {
+                    public global::System.Type? TargetType { get; set; }
+                }
+
+                public class Setter : SetterBase
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                    public object? Value { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Button" TargetType="Button">
+                        <Setter Property="Transitions">
+                            <Transitions>
+                                <TransformOperationsTransition Property="RenderTransform"
+                                                               Duration="0:0:0.1" />
+                            </Transitions>
+                        </Setter>
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("global::Avalonia.Controls.Animatable.TransitionsProperty", generated);
+        Assert.Contains("TransformOperationsTransition", generated);
+    }
+
+    [Fact]
     public void Converts_Setter_Value_Using_Resolved_AvaloniaProperty_Value_Type()
     {
         const string code = """
@@ -14032,10 +14611,107 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__n1.Property =", generated);
         Assert.Contains("global::Avalonia.Controls.TextBlock.FontSizeProperty", generated);
         Assert.Contains("Value = 17", generated);
+    }
+
+    [Fact]
+    public void Emits_Object_Graph_ControlTheme_Setter_Enum_Values_As_Typed_Literals()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaProperty<T> : AvaloniaProperty { }
+                public class StyledProperty<T> : AvaloniaProperty<T> { }
+            }
+
+            namespace Avalonia.Layout
+            {
+                public enum HorizontalAlignment
+                {
+                    Left,
+                    Center,
+                    Right,
+                    Stretch
+                }
+
+                public enum VerticalAlignment
+                {
+                    Top,
+                    Center,
+                    Bottom,
+                    Stretch
+                }
+
+                public class Layoutable
+                {
+                    public static readonly global::Avalonia.StyledProperty<HorizontalAlignment> HorizontalAlignmentProperty = new();
+                    public static readonly global::Avalonia.StyledProperty<VerticalAlignment> VerticalAlignmentProperty = new();
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.Layout.Layoutable { }
+
+                public class UserControl : Control
+                {
+                    public ResourceDictionary Resources { get; } = new();
+                }
+
+                public class Button : Control { }
+
+                public class ResourceDictionary : global::System.Collections.Generic.List<object> { }
+            }
+
+            namespace Avalonia.Styling
+            {
+                public class Setter
+                {
+                    public global::Avalonia.AvaloniaProperty? Property { get; set; }
+                    public object? Value { get; set; }
+                }
+
+                public class SetterCollection : global::System.Collections.Generic.List<Setter> { }
+
+                public class ControlTheme
+                {
+                    public object? TargetType { get; set; }
+                    public SetterCollection Setters { get; } = new();
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl { }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         x:Class="Demo.MainView">
+                <UserControl.Resources>
+                    <ControlTheme x:Key="Theme.Button" TargetType="Button">
+                        <Setter Property="HorizontalAlignment" Value="Left" />
+                        <Setter Property="VerticalAlignment" Value="Center" />
+                    </ControlTheme>
+                </UserControl.Resources>
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("global::Avalonia.Layout.Layoutable.HorizontalAlignmentProperty", generated);
+        Assert.Contains("global::Avalonia.Layout.HorizontalAlignment.Left", generated);
+        Assert.Contains("global::Avalonia.Layout.Layoutable.VerticalAlignmentProperty", generated);
+        Assert.Contains("global::Avalonia.Layout.VerticalAlignment.Center", generated);
     }
 
     [Fact]
@@ -14153,7 +14829,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.Child(", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.Template(", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.Name(", generated);
@@ -14216,7 +14892,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.Or(", generated);
         Assert.Contains("typeof(global::Avalonia.Controls.TextBlock)", generated);
         Assert.Contains("typeof(global::Avalonia.Controls.Button)", generated);
@@ -14270,7 +14946,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.Is(", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.Not(", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.NthChild(", generated);
@@ -14329,7 +15005,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.PropertyEquals(", generated);
         Assert.Contains("global::Avalonia.Controls.TextBlock.IsVisibleProperty", generated);
         Assert.Contains(", true)", generated);
@@ -14390,7 +15066,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.PropertyEquals(", generated);
         Assert.Contains("global::Avalonia.Controls.Grid.RowProperty", generated);
         Assert.Contains(", 1)", generated);
@@ -14521,7 +15197,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.Nesting(", generated);
         Assert.Contains("global::Avalonia.Controls.TextBox.IsReadOnlyProperty", generated);
     }
@@ -14608,7 +15284,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Controls.TabControl.TabStripPlacementProperty", generated);
         Assert.Contains("global::Avalonia.Controls.Dock.Left", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.Nesting(", generated);
@@ -14721,7 +15397,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Styling.Selectors.Not(", generated);
         Assert.Contains("global::Avalonia.Styling.Selectors.Or(", generated);
     }
@@ -14813,7 +15489,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("Priority = global::Avalonia.Data.BindingPriority.Style", generated);
     }
 
@@ -14904,7 +15580,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("Priority = global::Avalonia.Data.BindingPriority.LocalValue", generated);
         Assert.DoesNotContain("Priority = global::Avalonia.Data.BindingPriority.Style", generated);
     }
@@ -15102,7 +15778,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0103");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Markup.Xaml.Templates.ControlTemplate()", generated);
         Assert.True(
             generated.Contains(".Value =", StringComparison.Ordinal) ||
@@ -15394,7 +16070,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0300");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0301");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("\"global::Avalonia.Controls.Control\"", generated);
     }
 
@@ -15637,7 +16313,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.TemplateBinding(global::Demo.TemplatedInfoControl.TitleProperty)", generated);
         Assert.Contains("new global::Avalonia.Data.TemplateBinding(global::Avalonia.Controls.ContentControl.ContentProperty)", generated);
         Assert.DoesNotContain("SetValue(global::Avalonia.Controls.TextBlock.TextProperty, \"{TemplateBinding Title}\"", generated);
@@ -15790,7 +16466,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains(
             "new global::Avalonia.Data.TemplateBinding(global::Demo.TemplatedInfoControl.TitleProperty) { Mode = global::Avalonia.Data.BindingMode.TwoWay, Converter = global::Demo.TemplateConverters.Identity, ConverterParameter = \"marker\" }",
             generated);
@@ -15934,7 +16610,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Data.TemplateBinding(global::Demo.FancyTemplateRoot.TitleProperty)", generated);
         Assert.Contains("new global::Avalonia.Data.TemplateBinding(global::Avalonia.Controls.ContentControl.ContentProperty)", generated);
         Assert.DoesNotContain("SetValue(global::Avalonia.Controls.TextBlock.TextProperty, \"{TemplateBinding Title}\"", generated);
@@ -16586,7 +17262,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("__AXSGObjectGraph.TrySetNameScope", generated);
         Assert.Contains("__nameScope.Register(\"ActionButton\"", generated);
     }
@@ -16636,7 +17312,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("__nameScope.Register(\"{Binding BadName}\"", generated);
     }
 
@@ -16772,7 +17448,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0106" or "AXSG0107");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Controls.PairControl(7, \"west\")", generated);
     }
 
@@ -16823,7 +17499,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id is "AXSG0106" or "AXSG0107");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Demo.Controls.GenericHolder<string>", generated);
         Assert.Contains(".Create(\"Hello\")", generated);
     }
@@ -16875,7 +17551,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0108");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new string[]", generated);
         Assert.Contains("\"One\"", generated);
         Assert.Contains("\"Two\"", generated);
@@ -16927,7 +17603,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("((byte)5)", generated);
         Assert.Contains("12.5m", generated);
         Assert.Contains("global::System.DateTime.FromBinary(", generated);
@@ -16994,7 +17670,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Avalonia.Media.FontFeatureCollection {", generated);
         Assert.Contains("global::Avalonia.Media.FontFeature.Parse(\"liga 1\")", generated);
         Assert.Contains("global::Avalonia.Media.FontFeature.Parse(\"kern 0\")", generated);
@@ -17124,7 +17800,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains(
             "new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromUInt32(0xFF010203u))",
@@ -17240,7 +17916,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains(
             "global::Avalonia.Media.Transformation.TransformOperations.Identity",
@@ -17320,7 +17996,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains(
             "new global::Avalonia.Input.Cursor(global::Avalonia.Input.StandardCursorType.Hand)",
@@ -17400,7 +18076,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains(
             "new global::Avalonia.Input.KeyGesture(global::Avalonia.Input.Key.A, global::Avalonia.Input.KeyModifiers.Control | global::Avalonia.Input.KeyModifiers.Shift)",
@@ -17606,7 +18282,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains("ThicknessValue", generated);
         Assert.Contains("CornerRadiusValue", generated);
@@ -17708,7 +18384,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
         Assert.Contains("new global::Demo.Markup.EchoExtension(\"Hello\") { Prefix = \">>\" }", generated);
     }
@@ -17798,7 +18474,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
         Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
@@ -17897,7 +18573,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
         Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
@@ -18021,7 +18697,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", generated);
         Assert.Contains("new global::Demo.Markup.PlatformGesture() { Text = \"Primary+N\" }", generated);
@@ -18152,7 +18828,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0102");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains(
             "global::Avalonia.Input.KeyBinding.CommandProperty, global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.AttachBindingNameScope(new global::Avalonia.Data.Binding(\"Trigger\")",
@@ -18302,7 +18978,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
 
         Assert.Contains("ProvideExpressionBinding<global::Demo.ViewModels.MainVm>", generated);
         Assert.Contains("global::Avalonia.Input.KeyBinding.CommandProperty", generated);
@@ -18376,7 +19052,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("SourceGenMarkupExtensionRuntime.ApplyBinding(", generated);
         Assert.Contains("global::Avalonia.Visual.IsVisibleProperty", generated);
         Assert.DoesNotContain(".IsVisible = (bool)(", generated);
@@ -18609,7 +19285,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0301");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Controls.Grid.RowProperty", generated);
     }
 
@@ -18717,7 +19393,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0301");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0303");
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("global::Avalonia.Controls.Grid.RowProperty", generated);
     }
 
@@ -18848,7 +19524,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Custom.FancyAliasControl()", generated);
         Assert.Contains("Foreground", generated);
     }
@@ -18916,7 +19592,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Custom.FancyAliasControl()", generated);
         Assert.Contains("Foreground", generated);
     }
@@ -19009,7 +19685,7 @@ public class AvaloniaXamlSourceGeneratorTests
                           diagnostic.GetMessage().Contains("legacy transform rule files and unified configuration", StringComparison.Ordinal));
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Custom.ConfigAliasControl()", generated);
         Assert.DoesNotContain("new global::Demo.Custom.LegacyAliasControl()", generated);
         Assert.Contains("Foreground", generated);
@@ -19077,7 +19753,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0101");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("new global::Demo.Custom.FancyAliasControl()", generated);
         Assert.Contains("Foreground", generated);
     }
@@ -19168,7 +19844,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("VisibleLabel", generated);
         Assert.DoesNotContain("HiddenLabel", generated);
         Assert.DoesNotContain("DoesNotExistControl", generated);
@@ -19389,7 +20065,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.IStyle> styleCollection:", generated);
         Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Controls.IResourceProvider> resourceProviderCollection:", generated);
         Assert.DoesNotContain("case global::System.Collections.Generic.ICollection<global::Avalonia.Styling.SetterBase> setterCollection:", generated);
@@ -19448,7 +20124,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0100");
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         Assert.Contains("partial class App", generated);
         Assert.Contains("Resources", generated);
         Assert.Contains("new global::Avalonia.Controls.ResourceDictionary(", generated);
@@ -19498,7 +20174,7 @@ public class AvaloniaXamlSourceGeneratorTests
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
-        var generated = updatedCompilation.SyntaxTrees.Last().ToString();
+        var generated = GetPrimaryGeneratedSource(updatedCompilation);
         var forbiddenTokens = new[]
         {
             "System.Reflection",
@@ -21750,7 +22426,7 @@ public class AvaloniaXamlSourceGeneratorTests
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains("AcceptButton = null!;", generated);
         Assert.DoesNotContain("AcceptButton?;", generated, StringComparison.Ordinal);
-        Assert.Contains("AcceptButton = __self.FindNameScope()?.Find<global::Avalonia.Controls.Button>(\"AcceptButton\")!;", generated);
+        Assert.Contains("AcceptButton = (global::Avalonia.Controls.Button)global::XamlToCSharpGenerator.Runtime.SourceGenNameReferenceHelper.ResolveByName(__self, \"AcceptButton\")!;", generated);
     }
 
     [Fact]
@@ -22247,25 +22923,87 @@ public class AvaloniaXamlSourceGeneratorTests
             .Select(static tree => tree.ToString())
             .ToArray();
 
-        var generated = sources.FirstOrDefault(source =>
-            source.StartsWith("// <auto-generated />", StringComparison.Ordinal) &&
-            source.Contains($"partial class {className}", StringComparison.Ordinal));
+        var generated = sources
+            .Where(source =>
+                source.StartsWith("// <auto-generated />", StringComparison.Ordinal) &&
+                source.Contains($"partial class {className}", StringComparison.Ordinal))
+            .OrderByDescending(ScoreGeneratedPartialClassSource)
+            .ThenByDescending(static source => source.Length)
+            .FirstOrDefault();
         if (!string.IsNullOrEmpty(generated))
         {
             return generated;
         }
 
-        generated = sources.FirstOrDefault(source =>
-            source.Contains($"partial class {className}", StringComparison.Ordinal) &&
-            (source.Contains("__PopulateGeneratedObjectGraph(", StringComparison.Ordinal) ||
-             source.Contains("__RegisterXamlSourceGenArtifacts(", StringComparison.Ordinal) ||
-             source.Contains("InitializeComponent(", StringComparison.Ordinal)));
+        generated = sources
+            .Where(source =>
+                source.Contains($"partial class {className}", StringComparison.Ordinal) &&
+                (source.Contains("__PopulateGeneratedObjectGraph(", StringComparison.Ordinal) ||
+                 source.Contains("__RegisterXamlSourceGenArtifacts(", StringComparison.Ordinal) ||
+                 source.Contains("InitializeComponent(", StringComparison.Ordinal)))
+            .OrderByDescending(ScoreGeneratedPartialClassSource)
+            .ThenByDescending(static source => source.Length)
+            .FirstOrDefault();
         if (!string.IsNullOrEmpty(generated))
         {
             return generated;
         }
 
         return sources.First(source => source.Contains($"partial class {className}", StringComparison.Ordinal));
+    }
+
+    private static string GetPrimaryGeneratedSource(Compilation compilation)
+    {
+        var generated = compilation.SyntaxTrees
+            .Select(static tree => tree.ToString())
+            .Where(static source => source.StartsWith("// <auto-generated />", StringComparison.Ordinal))
+            .OrderByDescending(ScoreGeneratedPartialClassSource)
+            .ThenByDescending(static source => source.Length)
+            .FirstOrDefault();
+
+        if (!string.IsNullOrEmpty(generated))
+        {
+            return generated;
+        }
+
+        return compilation.SyntaxTrees.Last().ToString();
+    }
+
+    private static int ScoreGeneratedPartialClassSource(string source)
+    {
+        var score = 0;
+
+        if (source.Contains("partial class ", StringComparison.Ordinal))
+        {
+            score += 8;
+        }
+
+        if (source.Contains("__PopulateGeneratedObjectGraph(", StringComparison.Ordinal))
+        {
+            score += 8;
+        }
+
+        if (source.Contains("__RegisterXamlSourceGenArtifacts(", StringComparison.Ordinal))
+        {
+            score += 8;
+        }
+
+        if (source.Contains("__BuildGeneratedObjectGraph(", StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+
+        if (source.Contains("__CompiledBindingAccessor(", StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+
+        if (source.Contains("InitializeComponent(", StringComparison.Ordinal))
+        {
+            score += 2;
+        }
+
+        return score;
     }
 
     private static string ExtractGeneratedEventBindingMethodName(string generatedSource)

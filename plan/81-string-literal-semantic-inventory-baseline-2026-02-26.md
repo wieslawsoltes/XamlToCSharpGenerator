@@ -25,9 +25,9 @@ Current classification rules:
 
 ## Snapshot Metrics
 
-1. Total direct `GetTypeByMetadataName("...")` literals: `46`
+1. Total direct `GetTypeByMetadataName("...")` literals: `47`
 2. `semantic-contract.framework`: `36`
-3. `semantic-contract.bcl`: `10`
+3. `semantic-contract.bcl`: `11`
 4. `data-payload`: `0`
 5. `unknown`: `0`
 
@@ -42,6 +42,7 @@ Current classification rules:
 | 2 | `src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.TransformExtensions.cs` |
 | 1 | `src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.SelectorPropertyReferences.cs` |
 | 1 | `src/XamlToCSharpGenerator.Avalonia/Binding/Services/NameScopeRegistrationSemanticsService.cs` |
+| 1 | `src/XamlToCSharpGenerator.Framework.Shared/Binding/CompiledBindingAccessorResolutionService.cs` |
 
 ## Guard Policy
 
@@ -54,4 +55,3 @@ Current classification rules:
 Enforced by:
 
 `tests/XamlToCSharpGenerator.Tests/Generator/StringLiteralSemanticInventoryTests.cs`
-

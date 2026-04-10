@@ -2,7 +2,9 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlToCSharpGenerator.Avalonia.Framework;
 using XamlToCSharpGenerator.Core.Configuration;
+using XamlToCSharpGenerator.NoUi.Framework;
 
 namespace XamlToCSharpGenerator.Tests.Generator.Configuration;
 
@@ -11,7 +13,7 @@ public class CompilationTypeSymbolCatalogTests
     [Fact]
     public void Avalonia_Default_Contract_Map_Defines_Expected_Core_Contracts()
     {
-        var map = SemanticContractMaps.AvaloniaDefault;
+        var map = AvaloniaSemanticContractMap.Instance;
 
         var styledElement = map.GetTypeContract(TypeContractId.StyledElement);
         Assert.Equal("Avalonia.Default", map.MapId);
@@ -30,7 +32,7 @@ public class CompilationTypeSymbolCatalogTests
     [Fact]
     public void NoUi_Default_Contract_Map_Contains_Bcl_Contracts_Only()
     {
-        var map = SemanticContractMaps.NoUiDefault;
+        var map = NoUiSemanticContractMap.Instance;
 
         Assert.Equal("NoUi.Default", map.MapId);
         Assert.Equal("NoUi", map.FrameworkId);

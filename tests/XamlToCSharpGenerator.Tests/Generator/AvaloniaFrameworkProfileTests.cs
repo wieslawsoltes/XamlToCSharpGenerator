@@ -243,4 +243,23 @@ public class AvaloniaFrameworkProfileTests
         Assert.Equal("https://custom.example/mc", settings.GlobalXmlnsPrefixes["mc"]);
         Assert.Equal("http://schemas.microsoft.com/expression/blend/2008", settings.GlobalXmlnsPrefixes["d"]);
     }
+
+    [Fact]
+    public void SemanticConventions_Expose_Avalonia_Template_And_Type_Predicates()
+    {
+        IXamlFrameworkProfile profile = AvaloniaFrameworkProfile.Instance;
+        var conventions = profile.SemanticConventions;
+
+        Assert.Contains("ControlTemplate", conventions.KnownTemplateKinds);
+        Assert.Contains("TreeDataTemplate", conventions.KnownTemplateKinds);
+        Assert.Contains("StyleInclude", conventions.IncludeRootTypeNames);
+        Assert.Contains("Style", conventions.StyleDefinitionRootTypeNames);
+        Assert.Contains("ControlTheme", conventions.ControlThemeDefinitionRootTypeNames);
+        Assert.True(conventions.IsUsableDuringInitializationAttribute("global::Avalonia.Metadata.UsableDuringInitializationAttribute"));
+        Assert.Contains("global::Avalonia.Metadata.InheritDataTypeFromItemsAttribute", conventions.InheritDataTypeFromItemsAttributeMetadataNames);
+        Assert.Contains(conventions.ControlTemplateTypeContractIds, static id => id == Core.Configuration.TypeContractId.ControlTemplateInterface);
+        Assert.Contains(conventions.TemplateScopeTypeContractIds, static id => id == Core.Configuration.TypeContractId.MarkupTemplate);
+        Assert.True(conventions.IsKnownTemplateKind("DataTemplate"));
+        Assert.True(conventions.IsKnownTemplateKind("TreeDataTemplate"));
+    }
 }

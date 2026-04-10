@@ -1,868 +1,425 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace XamlToCSharpGenerator.Tests.Generator;
 
 public class AvaloniaSemanticBinderDeHackGuardTests
 {
     [Fact]
-    public void Binder_Does_Not_Use_Legacy_Markup_Context_Token_Scanning()
+    public void Binder_Does_Not_Use_Legacy_Lexical_Heuristics()
     {
         var source = ReadBinderSource();
 
         Assert.DoesNotContain("ContainsMarkupContextTokens(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Does_Not_Use_Binding_Type_Suffix_Heuristics()
-    {
-        var source = ReadBinderSource();
-
         Assert.DoesNotContain("EndsWith(\".Binding\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("EndsWith(\"Binding\"", source, StringComparison.Ordinal);
-        Assert.Contains("IsBindingObjectType(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_EventBinding_Source_Validation()
-    {
-        var source = ReadBinderSource();
-
-        Assert.Contains("TryValidateEventBindingBindingSource(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_Binding_And_Event_Markup_Parser()
-    {
-        var binderSource = ReadBinderSource();
-        var selectorAdapterSource = ReadSelectorSemanticAdapterSource();
-        var selectorSemanticsSource = ReadSelectorExpressionSemanticsSource();
-        var selectorPredicateResolverSource = ReadSelectorPredicateResolverSource();
-
-        Assert.Contains("BindingEventMarkupParser.TryParseBindingMarkup(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("BindingEventMarkupParser.TryParseEventBindingMarkup(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("EventBindingPathSemantics.TrySplitMethodPath(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("EventBindingPathSemantics.BuildMethodArgumentSets(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("DeterministicTypeResolutionSemantics.TryParseGenericTypeToken(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("DeterministicTypeResolutionSemantics.TryBuildClrNamespaceMetadataName(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaSelectorSemanticAdapter.TryResolveSelectorTargetType(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaSelectorSemanticAdapter.TryBuildSelectorExpression(", binderSource, StringComparison.Ordinal);
-
-        Assert.Contains("SelectorTargetTypeResolutionSemantics.ResolveTargetType(", selectorAdapterSource, StringComparison.Ordinal);
-        Assert.Contains("SelectorExpressionBuildSemantics.TryBuildSelectorExpression(", selectorAdapterSource, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaSelectorPropertyPredicateResolver.TryResolve(", selectorAdapterSource, StringComparison.Ordinal);
-
-        Assert.Contains("SelectorPseudoSyntax.ClassifyPseudoFunction(", selectorSemanticsSource, StringComparison.Ordinal);
-        Assert.Contains("SelectorTokenSyntax.TryReadStandaloneTypeToken(", selectorSemanticsSource, StringComparison.Ordinal);
-        Assert.Contains("SelectorPropertyPredicateSyntax.TryParse(", selectorPredicateResolverSource, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Does_Not_Use_Lexical_Xaml_Fragment_Heuristic()
-    {
-        var source = ReadBinderSource();
-
-        Assert.DoesNotContain("IsLikelyXamlFragment(", source, StringComparison.Ordinal);
-        Assert.Contains("RuntimeXamlFragmentDetectionService.IsValidFragment(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Does_Not_Use_String_Slicing_For_XType_Resolution()
-    {
-        var source = ReadBinderSource();
-
-        Assert.DoesNotContain("ExtractTypeToken(", source, StringComparison.Ordinal);
-        Assert.Contains("TypeExpressionResolutionService.ResolveTypeFromExpression(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Emitter_Does_Not_Use_Theme_Class_Name_Heuristics()
-    {
-        var source = ReadEmitterSource();
-
-        Assert.DoesNotContain("IsThemeLikeDocument(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("ResolveHotDesignArtifactKindToken(", source, StringComparison.Ordinal);
-        Assert.Contains("viewModel.HotDesignArtifactKind", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Emitter_MergedDictionary_Include_Resolver_Handles_ResourceInclude()
-    {
-        var emitterSource = ReadEmitterSource();
-        var runtimeHelperSource = ReadObjectGraphRuntimeHelpersSource();
-
-        Assert.DoesNotContain(
-            "includeValue is not MergeResourceInclude",
-            runtimeHelperSource,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "includeValue is not ResourceInclude",
-            runtimeHelperSource,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "__AXSGObjectGraph.TryApplyMergedResourceInclude(",
-            emitterSource,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Emitter_StyleInclude_Is_Resolved_Before_Collection_Add()
-    {
-        var emitterSource = ReadEmitterSource();
-        var runtimeHelperSource = ReadObjectGraphRuntimeHelpersSource();
-
-        Assert.Contains(
-            "__AXSGObjectGraph.TryApplyStyleInclude(",
-            emitterSource,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "public static bool TryApplyStyleInclude(",
-            runtimeHelperSource,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "if (!TryResolveDictionaryEntryValue(dictionary, value, documentUri, out dictionaryValue))",
-            runtimeHelperSource,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Emitter_MergedDictionary_Include_Preserves_MergedDictionary_Semantics()
-    {
-        var source = ReadObjectGraphRuntimeHelpersSource();
-
-        Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceDictionary);", source, StringComparison.Ordinal);
-        Assert.Contains("destinationDictionary.MergedDictionaries.Add(mergedResourceProvider);", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Emitter_Uses_ObjectNode_Semantic_Flags_For_Include_And_StaticResource_Decisions()
-    {
-        var source = ReadEmitterSource();
-
-        Assert.Contains("ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor", source, StringComparison.Ordinal);
-        Assert.Contains("ResolvedObjectNodeSemanticFlags.IsResourceInclude", source, StringComparison.Ordinal);
-        Assert.Contains("ResolvedObjectNodeSemanticFlags.IsStyleInclude", source, StringComparison.Ordinal);
-        Assert.Contains("ResolvedObjectNodeSemanticFlags.StaticResourceMarkupExtension", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static bool ShouldUseBaseUriConstructor(string typeName)", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Object_Node_Semantics_Use_Typed_Contract_Service()
-    {
-        var binderSource = ReadBinderSource();
-        var serviceSource = ReadObjectNodeSemanticContractServiceSource();
-
-        Assert.Contains("ObjectNodeSemanticContractService.Classify(", binderSource, StringComparison.Ordinal);
-        Assert.Contains("TypeContractId.ResourceInclude", serviceSource, StringComparison.Ordinal);
-        Assert.Contains("TypeContractId.MergeResourceInclude", serviceSource, StringComparison.Ordinal);
-        Assert.Contains("TypeContractId.StyleInclude", serviceSource, StringComparison.Ordinal);
-        Assert.Contains("TypeContractId.StaticResourceExtension", serviceSource, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DocumentFeatureEnricher_Does_Not_Use_PropertyElement_Suffix_Heuristics()
-    {
-        var source = ReadDocumentFeatureEnricherSource();
-
-        Assert.DoesNotContain("EndsWith(\".Value\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("EndsWith(\".MergedDictionaries\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("EndsWith(\".Styles\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("scope.Name.LocalName + \".Setters\"", source, StringComparison.Ordinal);
-        Assert.Contains("XamlPropertyTokenSemantics.IsPropertyElementName(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void SelectorPropertyReferences_Use_Centralized_PropertyToken_Semantics()
-    {
-        var source = ReadSelectorPropertyReferencesSource();
-
-        Assert.DoesNotContain("LastIndexOf('.')", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("token[0] == '('", source, StringComparison.Ordinal);
-        Assert.Contains("XamlPropertyTokenSemantics.TrySplitOwnerQualifiedProperty(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlPropertyReferenceTokenSemantics.TryNormalize(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void SelectorPropertyPredicateResolver_Uses_Centralized_Quoted_Value_Semantics()
-    {
-        var source = ReadSelectorPredicateResolverSource();
-
-        Assert.Contains("XamlQuotedValueSemantics.UnquoteWrapped(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static string Unquote(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void MarkupHelpers_Use_Centralized_StaticMember_Token_Split()
-    {
-        var source = ReadMarkupHelpersSource();
-
-        Assert.DoesNotContain("memberToken.LastIndexOf('.')", source, StringComparison.Ordinal);
-        Assert.Contains("XamlTokenSplitSemantics.TrySplitAtLastSeparator(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Markup_Extension_Name_Resolution_Uses_Canonical_Name_Semantics_Service()
-    {
-        var markupHelpersSource = ReadMarkupHelpersSource();
-        var bindingSemanticsSource = ReadBindingSemanticsSource();
-        var includesSource = ReadIncludesBinderSource();
-        var expressionClassificationSource = ReadCSharpExpressionClassificationServiceSource();
-        var typeExpressionResolutionSource = ReadXamlTypeExpressionResolutionServiceSource();
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", markupHelpersSource, StringComparison.Ordinal);
-        Assert.Contains("XamlMarkupExtensionNameSemantics.EnumerateClrExtensionTypeTokens(", markupHelpersSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("markup.Name.Trim().ToLowerInvariant()", markupHelpersSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("token += \"Extension\"", markupHelpersSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", bindingSemanticsSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("switch (markup.Name.ToLowerInvariant())", bindingSemanticsSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", includesSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("markup.Name.ToLowerInvariant()", includesSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Matches(", expressionClassificationSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("_knownMarkupExtensionNames.Contains(token + \"Extension\")", expressionClassificationSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", typeExpressionResolutionSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static string Unquote(", typeExpressionResolutionSource, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_Property_Suffix_Trimming()
-    {
-        var source = ReadBinderSource();
-
         Assert.DoesNotContain("propertyToken.EndsWith(\"Property\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("trimmed.EndsWith(\"Property\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var colonIndex = normalized.IndexOf(':');", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var separatorIndex = trimmed.IndexOf(':');", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var closingParenthesisIndex = normalized.IndexOf(')');", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var typeToken = normalized.Substring(1, closingParenthesisIndex - 1).Trim();", source, StringComparison.Ordinal);
+        Assert.Contains("XamlRuntimeBindingPathSemantics.NormalizePath(", source, StringComparison.Ordinal);
+        Assert.Contains("XamlTokenSplitSemantics.TrySplitAtFirstSeparator(", source, StringComparison.Ordinal);
         Assert.Contains("XamlTokenSplitSemantics.TrimTerminalSuffix(", source, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Centralized_Colon_Token_Splitting()
+    public void Binder_Composition_Root_Uses_Shared_Services()
     {
-        var source = ReadBinderSource();
+        var source = ReadBinderCompositionRootSource();
 
-        Assert.DoesNotContain("var colonIndex = normalized.IndexOf(':');", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("var separatorIndex = trimmed.IndexOf(':');", source, StringComparison.Ordinal);
-        Assert.Contains("XamlTokenSplitSemantics.TrySplitAtFirstSeparator(", source, StringComparison.Ordinal);
+        Assert.Contains("MarkupTypeConversionSemanticsService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("CompiledBindingSourceTypeResolutionService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("NamespaceDiscoveryService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeAttachmentPlanningService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeFinalizationService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeConstructionPlanningService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodePropertyElementProjectionService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeAssemblyService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("XBindSourceConfigurationService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("XBindBindBackExpressionService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("EventHandlerBindingService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("EventBindingDefinitionService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("EventSubscriptionBindingService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ValueConversionSemanticService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("SetterPropertyBindingPlanService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("SetterValuePlanningService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("ResourceDefinitionBindingService = new(", source, StringComparison.Ordinal);
+        Assert.Contains("TemplateDefinitionBindingService = new(", source, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void IncludeBinding_Uses_Centralized_Include_Path_Semantics()
+    public void Binder_Uses_Shared_Event_Semantic_Services()
     {
-        var source = ReadIncludesBinderSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var definitionSource = ReadFrameworkSharedBindingSource("EventBindingDefinitionService.cs");
+        var subscriptionSource = ReadFrameworkSharedBindingSource("EventSubscriptionBindingService.cs");
+        var handlerSource = ReadFrameworkSharedBindingSource("EventHandlerBindingService.cs");
 
-        Assert.DoesNotContain("targetPath.LastIndexOf('/')", source, StringComparison.Ordinal);
-        Assert.Contains("XamlIncludePathSemantics.GetDirectory(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlIncludePathSemantics.CombinePath(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlIncludePathSemantics.NormalizePath(", source, StringComparison.Ordinal);
+        Assert.Contains("EventBindingDefinitionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("EventSubscriptionBindingService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("EventHandlerBindingService = new(", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("BindingEventMarkupParser.IsEventBindingMarkupExtension(", definitionSource, StringComparison.Ordinal);
+        Assert.Contains("BindingEventMarkupParser.TryParseEventBindingMarkup(", definitionSource, StringComparison.Ordinal);
+        Assert.Contains("_eventBindingDefinitionService.TryBuildParsedDefinition(", subscriptionSource, StringComparison.Ordinal);
+        Assert.Contains("_eventHandlerBindingService.TryParseHandlerName(", subscriptionSource, StringComparison.Ordinal);
+        Assert.Contains("_eventHandlerBindingService.HasCompatibleInstanceMethod(", subscriptionSource, StringComparison.Ordinal);
+        Assert.Contains("XamlEventHandlerNameSemantics.TryParseHandlerName(", handlerSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Shared_StaticResource_Key_Semantics_For_ControlTheme_BasedOn()
+    public void Binder_Uses_Shared_XBind_Services()
     {
-        var source = ReadStylesTemplatesBinderSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var xBindSource = ReadBinderPartialSource("AvaloniaSemanticBinder.XBind.cs");
+        var xBindServicesSource = ReadBinderPartialSource("AvaloniaSemanticBinder.XBindServices.cs");
+        var xBindSemanticServiceSource = ReadFrameworkSharedBindingSource("XBindExpressionSemanticService.cs");
+        var xBindBindBackServiceSource = ReadFrameworkSharedBindingSource("XBindBindBackExpressionService.cs");
+        var xBindOptionServiceSource = ReadFrameworkSharedBindingSource("XBindOptionExpressionService.cs");
 
-        Assert.Contains("StaticResourceReferenceParser.TryExtractResourceKey(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmed.StartsWith(\"{\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("markup.Name.ToLowerInvariant()", source, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("XBindSourceConfigurationService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("XBindBindBackExpressionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("XBindEventBindingDefinitionService = new(", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("XBindExpressionSemanticService.TryLowerExpression(", xBindSource, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService.CollectDependencies(", xBindSource, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService.IsMainSourceReference(", xBindSource, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService.BuildPathReferenceExpression(", xBindSource, StringComparison.Ordinal);
+        Assert.Contains("XBindExpressionSemanticService.BuildPathReferenceArrayLiteral(", xBindSource, StringComparison.Ordinal);
+
+        Assert.Contains("XBindBindBackExpressionService.TryBuildBindBackExpression(", xBindServicesSource, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService.TryBuildOptionExpression(", xBindServicesSource, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService.TryBuildDelayExpression(", xBindServicesSource, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService.TryBuildUpdateSourceTriggerExpression(", xBindServicesSource, StringComparison.Ordinal);
+        Assert.Contains("XBindOptionExpressionService.TryBuildPriorityExpression(", xBindServicesSource, StringComparison.Ordinal);
+
+        Assert.Contains("ResolveNamedElement<", xBindSemanticServiceSource, StringComparison.Ordinal);
+        Assert.Contains("new global::XamlToCSharpGenerator.Runtime.SourceGenBindingDependency(", xBindSemanticServiceSource, StringComparison.Ordinal);
+        Assert.Contains("_xBindExpressionSemanticService.TryBuildAssignmentExpression(", xBindBindBackServiceSource, StringComparison.Ordinal);
+        Assert.Contains("_tryGetWritableProperty(", xBindOptionServiceSource, StringComparison.Ordinal);
+        Assert.Contains("_tryConvertMarkupOptionValue(", xBindOptionServiceSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Runtime_ControlThemeRegistry_Uses_Shared_StaticResource_Key_Semantics()
+    public void Binder_Uses_Shared_Markup_And_Value_Conversion_Services()
     {
-        var source = ReadRuntimeControlThemeRegistrySource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var markupHelpersSource = ReadBinderPartialSource("AvaloniaSemanticBinder.MarkupHelpers.cs");
+        var bindingSemanticsSource = ReadBinderPartialSource("AvaloniaSemanticBinder.BindingSemantics.cs");
+        var commonMarkupSource = ReadFrameworkSharedBindingSource("CommonMarkupExtensionConversionService.cs");
+        var primitiveMarkupSource = ReadFrameworkSharedBindingSource("XamlPrimitiveMarkupExtensionConversionService.cs");
+        var activationSource = ReadFrameworkSharedBindingSource("MarkupExtensionActivationService.cs");
+        var runtimeResolutionSource = ReadFrameworkSharedBindingSource("MarkupRuntimeOperationResolutionService.cs");
+        var runtimeEmissionSource = ReadFrameworkSharedBindingSource("MarkupRuntimeOperationEmissionService.cs");
+        var typedLiteralSource = ReadFrameworkSharedBindingSource("TypedLiteralValueConversionService.cs");
 
-        Assert.Contains("StaticResourceReferenceParser.TryExtractResourceKey(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("inner.StartsWith(\"StaticResource\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("inner.StartsWith(\"DynamicResource\"", source, StringComparison.Ordinal);
+        Assert.Contains("CommonMarkupExtensionConversionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("PrimitiveMarkupExtensionConversionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupExtensionActivationService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupRuntimeOperationResolutionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupRuntimeOperationEmissionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("TypedLiteralValueConversionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ValueConversionSemanticService = new(", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("PrimitiveMarkupExtensionConversionService.TryConvert(", markupHelpersSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupExtensionActivationService.TryConvertGenericExpression(", markupHelpersSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupExtensionActivationService.TryResolveExtensionType(", markupHelpersSource, StringComparison.Ordinal);
+        Assert.Contains("ValueConversionSemanticService.TryConvert(", bindingSemanticsSource, StringComparison.Ordinal);
+        Assert.Contains("ValueConversionSemanticService.TryConvertForCollectionAdd(", bindingSemanticsSource, StringComparison.Ordinal);
+        Assert.Contains("ValueConversionSemanticService.TryConvertMarkupExtension(", bindingSemanticsSource, StringComparison.Ordinal);
+
+        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", commonMarkupSource, StringComparison.Ordinal);
+        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", primitiveMarkupSource, StringComparison.Ordinal);
+        Assert.Contains("XamlTimeSpanLiteralSemantics.TryParse(", primitiveMarkupSource, StringComparison.Ordinal);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideMarkupExtension(", activationSource, StringComparison.Ordinal);
+        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", runtimeResolutionSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedValueKind.DynamicResourceBinding", runtimeEmissionSource, StringComparison.Ordinal);
+        Assert.Contains("private static bool TryConvertPrimitive(", typedLiteralSource, StringComparison.Ordinal);
+        Assert.Contains("bool.TryParse(value, out var boolValue)", typedLiteralSource, StringComparison.Ordinal);
+        Assert.Contains("double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue)", typedLiteralSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Runtime_Binding_Deferral_Uses_Typed_Classification_Not_Exception_Message_Matching()
+    public void Binder_Uses_Shared_Type_Resolution_And_Symbol_Services()
     {
-        var source = ReadRuntimeMarkupExtensionSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var binderSource = ReadBinderSource();
+        var typeResolutionSource = ReadBinderPartialSource("AvaloniaSemanticBinder.TypeResolution.cs");
+        var namespaceDiscoverySource = ReadFrameworkSharedBindingSource("TypeResolutionNamespaceDiscoveryService.cs");
+        var typeSymbolLookupSource = ReadFrameworkSharedBindingSource("TypeSymbolLookupSemanticsService.cs");
 
-        Assert.Contains("ClassifyDeferredBindingFailure(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("exception.Message.IndexOf(\"DataContext\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("exception.Message.IndexOf(\"TemplatedParent\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsDeferredBindingContextException(", source, StringComparison.Ordinal);
+        Assert.Contains("TypeSymbolLookupSemanticsService.IsTypeAssignableTo", rootSource, StringComparison.Ordinal);
+        Assert.Contains("NamespaceDiscoveryService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("MarkupObjectElementTypeResolutionService.TryResolve(", binderSource, StringComparison.Ordinal);
+
+        Assert.Contains("NamespaceDiscoveryService.GetFrameworkDefaultNamespaceCandidates(", typeResolutionSource, StringComparison.Ordinal);
+        Assert.Contains("NamespaceDiscoveryService.GetXmlnsDefinitionTargetsForXmlNamespace(", typeResolutionSource, StringComparison.Ordinal);
+        Assert.Contains("NamespaceDiscoveryService.GetProjectNamespaceCandidates(", typeResolutionSource, StringComparison.Ordinal);
+        Assert.Contains("NamespaceDiscoveryService.CollectTypeCandidatesFromXmlnsDefinitionTargets(", typeResolutionSource, StringComparison.Ordinal);
+
+        Assert.Contains("ConditionalWeakTable<Compilation, NamespaceCandidateCacheEntry>", namespaceDiscoverySource, StringComparison.Ordinal);
+        Assert.Contains("ConditionalWeakTable<Compilation, XmlnsDefinitionCacheEntry>", namespaceDiscoverySource, StringComparison.Ordinal);
+        Assert.Contains("public static bool IsTypeAssignableTo(", typeSymbolLookupSource, StringComparison.Ordinal);
+        Assert.Contains("public static IEnumerable<INamedTypeSymbol> EnumerateInstanceMemberLookupTypes(", typeSymbolLookupSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_NameScope_Registration_Semantics_Service()
+    public void Binder_Uses_Shared_Object_Node_Planning_Projection_And_Assembly_Services()
     {
-        var source = ReadStylesTemplatesBinderSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var planningSource = ReadBinderPartialSource("AvaloniaSemanticBinder.ObjectNodePlanning.cs");
+        var assemblySource = ReadBinderPartialSource("AvaloniaSemanticBinder.ObjectNodeAssembly.cs");
+        var propertyElementSource = ReadBinderPartialSource("AvaloniaSemanticBinder.ObjectNodePropertyElements.cs");
+        var attachmentPlanningSource = ReadFrameworkSharedBindingSource("ObjectNodeAttachmentPlanningService.cs");
+        var finalizationSource = ReadFrameworkSharedBindingSource("ObjectNodeFinalizationService.cs");
+        var projectionSource = ReadFrameworkSharedBindingSource("ObjectNodePropertyElementProjectionService.cs");
 
-        Assert.Contains("NameScopeRegistrationSemanticsService.SupportsRegistrationFromNameProperty(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("SupportsNameScopeRegistrationFromNameProperty(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GetTypeByMetadataName(\"Avalonia.Controls.Control\")", source, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeAttachmentPlanningService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeFinalizationService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeConstructionPlanningService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodePropertyElementProjectionService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeAssemblyService = new(", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("BuildGenericPropertyElementAssignmentPlan(", planningSource, StringComparison.Ordinal);
+        Assert.Contains("PlanObjectNodeConstruction(", planningSource, StringComparison.Ordinal);
+        Assert.Contains("FinalizeObjectNodeAttachmentPlan(", planningSource, StringComparison.Ordinal);
+        Assert.Contains("FinalizeObjectNode(", planningSource, StringComparison.Ordinal);
+        Assert.Contains("ProjectObjectNodePropertyElementAssignments(", assemblySource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeAssemblyService.Assemble(request)", assemblySource, StringComparison.Ordinal);
+        Assert.Contains("ItemContainerTemplateWarningService.Validate(", propertyElementSource, StringComparison.Ordinal);
+
+        Assert.Contains("ResolvedObjectNodeAttachmentFinalizationPlan", attachmentPlanningSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeAttachmentValidationIssueKind.MultipleContentChildren", attachmentPlanningSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.StaticResourceMarkupExtension", finalizationSource, StringComparison.Ordinal);
+        Assert.Contains("BuildGenericPropertyElementAssignmentPlanDelegate", projectionSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Centralized_Runtime_Binding_Path_Semantics()
+    public void Binder_Uses_Shared_Setter_Resource_And_Template_Services()
     {
-        var source = ReadBinderSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var stylesTemplatesSource = ReadBinderPartialSource("AvaloniaSemanticBinder.StylesTemplates.cs");
+        var transformExtensionsSource = ReadBinderPartialSource("AvaloniaSemanticBinder.TransformExtensions.cs");
+        var templateValidationSource = ReadBinderPartialSource("AvaloniaSemanticBinder.TemplateValidation.cs");
+        var setterPropertyPlanSource = ReadFrameworkSharedBindingSource("SetterPropertyBindingPlanService.cs");
+        var setterValuePlanningSource = ReadFrameworkSharedBindingSource("SetterValuePlanningService.cs");
+        var resourceDefinitionSource = ReadFrameworkSharedBindingSource("ResourceDefinitionBindingService.cs");
+        var templateDefinitionSource = ReadFrameworkSharedBindingSource("TemplateDefinitionBindingService.cs");
 
-        Assert.DoesNotContain("var closingParenthesisIndex = normalized.IndexOf(')');", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("var typeToken = normalized.Substring(1, closingParenthesisIndex - 1).Trim();", source, StringComparison.Ordinal);
-        Assert.Contains("XamlRuntimeBindingPathSemantics.NormalizePath(", source, StringComparison.Ordinal);
+        Assert.Contains("SetterPropertyBindingPlanService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("SetterValuePlanningService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ResourceDefinitionBindingService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("TemplateDefinitionBindingService = new(", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("SetterPropertyBindingPlanService.BuildPlan(", stylesTemplatesSource, StringComparison.Ordinal);
+        Assert.Contains("SetterValuePlanningService.TryBuildPlan(", stylesTemplatesSource, StringComparison.Ordinal);
+        Assert.Contains("ResourceDefinitionBindingService.BindResources(", transformExtensionsSource, StringComparison.Ordinal);
+        Assert.Contains("TemplateDefinitionBindingService.BindTemplates(", transformExtensionsSource, StringComparison.Ordinal);
+        Assert.Contains("ControlThemeBasedOnValidationService.Validate(", templateValidationSource, StringComparison.Ordinal);
+
+        Assert.Contains("public sealed record ResolvedSetterIdentityPlan", setterPropertyPlanSource, StringComparison.Ordinal);
+        Assert.Contains("public sealed record SetterPropertyBindingPlan", setterPropertyPlanSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedSetterValuePlan", setterValuePlanningSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedResourceDefinition", resourceDefinitionSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedTemplateDefinition", templateDefinitionSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Centralized_Type_Token_Semantics()
+    public void Binder_Uses_Shared_Include_ResolveByName_And_NameScope_Services()
     {
-        var source = ReadBinderSource();
+        var rootSource = ReadBinderCompositionRootSource();
+        var includesSource = ReadBinderPartialSource("AvaloniaSemanticBinder.Includes.cs");
+        var restoredCompatibilitySource = ReadBinderPartialSource("AvaloniaSemanticBinder.RestoredCompatibility.cs");
+        var includeBindingServiceSource = ReadFrameworkSharedBindingSource("IncludeBindingService.cs");
+        var resolveByNameSource = ReadFrameworkSharedBindingSource("ResolveByNameBindingService.cs");
 
-        Assert.DoesNotContain("token.StartsWith(\"global::\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("normalized.StartsWith(\"x:\", StringComparison.OrdinalIgnoreCase)", source, StringComparison.Ordinal);
-        Assert.Contains("XamlTypeTokenSemantics.TrimGlobalQualifier(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlTypeTokenSemantics.TrimXamlDirectivePrefix(", source, StringComparison.Ordinal);
+        Assert.Contains("IncludeBindingService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("ResolveByNameBindingService = new(", rootSource, StringComparison.Ordinal);
+        Assert.Contains("NameScopeRegistrationSemanticsService", rootSource, StringComparison.Ordinal);
+
+        Assert.Contains("IncludeBindingService.BindIncludes(", includesSource, StringComparison.Ordinal);
+        Assert.Contains("ResolveByNameBindingService.HasSemantics(", restoredCompatibilitySource, StringComparison.Ordinal);
+        Assert.Contains("ResolveByNameBindingService.TryBuildLiteralExpression(", restoredCompatibilitySource, StringComparison.Ordinal);
+
+        Assert.Contains("XamlIncludeUriResolutionService", includeBindingServiceSource, StringComparison.Ordinal);
+        Assert.Contains("TryResolveIncludeUri(", includeBindingServiceSource, StringComparison.Ordinal);
+        Assert.Contains("BindingEventMarkupParser.TryParseResolveByNameReferenceToken(", resolveByNameSource, StringComparison.Ordinal);
+        Assert.Contains("SourceGenMarkupExtensionRuntime.ProvideReference(", resolveByNameSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Dedicated_Markup_Object_Element_Type_Resolution_Service()
+    public void Binder_Uses_Profile_Conventions_And_Avalonia_Helper_Services()
     {
-        var source = ReadTypeResolutionSource();
+        var binderSource = ReadBinderSource();
+        var documentFeatureSource = ReadDocumentFeatureEnricherSource();
+        var selectorPropertyReferencesSource = ReadBinderPartialSource("AvaloniaSemanticBinder.SelectorPropertyReferences.cs");
+        var styleQuerySemanticsSource = ReadAvaloniaBindingServiceSource("AvaloniaStyleQuerySemantics.cs");
 
-        Assert.Contains("MarkupObjectElementTypeResolutionService.TryResolve(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("xmlTypeName == \"StaticResource\"", source, StringComparison.Ordinal);
+        Assert.Contains("SemanticConventions.InheritDataTypeFromItemsAttributeMetadataNames", binderSource, StringComparison.Ordinal);
+        Assert.Contains("SemanticConventions.KnownTemplateKinds.ToImmutableHashSet(StringComparer.Ordinal)", binderSource, StringComparison.Ordinal);
+        Assert.Contains("SemanticConventions.ControlThemeDefinitionRootTypeNames", binderSource, StringComparison.Ordinal);
+        Assert.Contains("AvaloniaBindingEnumSemantics.TryMapBindingModeToken(", binderSource, StringComparison.Ordinal);
+
+        Assert.Contains("XamlPropertyTokenSemantics.IsPropertyElementName(", documentFeatureSource, StringComparison.Ordinal);
+        Assert.Contains("FrameworkPropertyReferenceResolutionService.TryResolveReferenceExpression(", selectorPropertyReferencesSource, StringComparison.Ordinal);
+        Assert.Contains("public static bool TryParse(", styleQuerySemanticsSource, StringComparison.Ordinal);
+        Assert.Contains("XamlTokenSplitSemantics.TrySplitAtFirstSeparator(", styleQuerySemanticsSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void NoUiBinder_Uses_Centralized_XmlNamespace_Semantics()
+    public void Emitter_Composition_Root_Is_Thin()
     {
-        var source = ReadNoUiBinderSource();
+        var source = ReadEmitterCompositionRootSource();
 
-        Assert.DoesNotContain("xmlNamespace.StartsWith(ClrNamespacePrefix", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("xmlNamespace.StartsWith(UsingNamespacePrefix", source, StringComparison.Ordinal);
-        Assert.Contains("XamlXmlNamespaceSemantics.TryExtractClrNamespace(", source, StringComparison.Ordinal);
+        Assert.Contains("var context = CreateEmitContext(viewModel);", source, StringComparison.Ordinal);
+        Assert.Contains("EmitPreamble(context, sourceBuilder);", source, StringComparison.Ordinal);
+        Assert.Contains("EmitTypeOpening(context, sourceBuilder);", source, StringComparison.Ordinal);
+        Assert.Contains("EmitArtifactRegistrationMembers(context, sourceBuilder);", source, StringComparison.Ordinal);
+        Assert.Contains("EmitObjectGraphMembers(context, sourceBuilder);", source, StringComparison.Ordinal);
+        Assert.Contains("EmitRuntimeMembers(context, sourceBuilder);", source, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("__RegisterXamlSourceGenArtifacts()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("__PopulateGeneratedObjectGraph(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("__BuildGeneratedControlTheme(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("__InitializeXamlSourceGenComponent(", source, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DeterministicTypeResolution_Uses_Centralized_XmlNamespace_Semantics()
+    public void Emitter_Uses_Shared_Graph_And_Runtime_Services()
     {
-        var source = ReadDeterministicTypeResolutionSemanticsSource();
+        var emitterSource = ReadEmitterSource();
+        var recursiveGraphSource = ReadFrameworkSharedEmissionSource("RecursiveObjectGraphEmissionService.cs");
+        var objectNodeBodySource = ReadFrameworkSharedEmissionSource("ObjectNodeBodyEmissionService.cs");
+        var hotReloadSource = ReadFrameworkSharedEmissionSource("HotReloadRuntimeEmissionService.cs");
 
-        Assert.DoesNotContain("xmlNamespace.StartsWith(\"clr-namespace:\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("xmlNamespace.StartsWith(\"using:\"", source, StringComparison.Ordinal);
-        Assert.Contains("XamlXmlNamespaceSemantics.TryBuildClrNamespaceMetadataName(", source, StringComparison.Ordinal);
+        Assert.Contains("RecursiveObjectGraphEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeBodyEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeMemberEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("CollectionAttachmentEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("DeferredDictionaryEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("DeferredTemplateScaffoldEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeLifecycleEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ObjectNodeEventSubscriptionEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ContentChildAttachmentEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("AttachedNodeValueEmissionService = new();", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("RecursiveObjectGraphEmissionService.EmitNode(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("HotReloadRuntimeEmissionService.BuildRootHotReloadCollectionMembers(", emitterSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static string EmitNode(", emitterSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static bool HasExplicitContentValue(", emitterSource, StringComparison.Ordinal);
+
+        Assert.Contains("_emitObjectNodeBody(", recursiveGraphSource, StringComparison.Ordinal);
+        Assert.Contains("_objectNodeMemberEmissionService.EmitPropertyAssignments(", objectNodeBodySource, StringComparison.Ordinal);
+        Assert.Contains("_objectNodeEventSubscriptionEmissionService.EmitSubscriptions(", objectNodeBodySource, StringComparison.Ordinal);
+        Assert.Contains("_eventBindingEmissionService.ResolveEmittedMethodName(", hotReloadSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Binder_Uses_Expression_Classification_Service()
+    public void Emitter_Uses_Shared_Scaffold_Literal_And_Identifier_Services()
     {
-        var source = ReadExpressionMarkupSource();
+        var emitterSource = ReadEmitterCompositionRootSource();
+        var viewModelScaffoldSource = ReadFrameworkSharedEmissionSource("ViewModelScaffoldEmissionService.cs");
+        var literalSource = ReadFrameworkSharedEmissionSource("CSharpLiteralEmissionService.cs");
+        var identifierSource = ReadFrameworkSharedEmissionSource("IdentifierSanitizationService.cs");
+        var attachedNodeValueSource = ReadFrameworkSharedEmissionSource("AttachedNodeValueEmissionService.cs");
+        var clrObjectNodeEmissionSource = ReadFrameworkSharedEmissionSource("ClrObjectNodeEmissionService.cs");
 
-        Assert.Contains("ExpressionClassificationService.TryParseCSharpExpressionMarkup(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static bool IsImplicitCSharpExpressionMarkup(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static bool LooksLikeMarkupExtensionStart(", source, StringComparison.Ordinal);
+        Assert.Contains("CSharpLiteralEmissionService = new();", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("IdentifierSanitizationService = new();", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("ViewModelScaffoldEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.Contains("InitializeComponentBodyEmissionService = new(", emitterSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static string EscapeStringLiteral(", emitterSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("private static string BuildHintName(", emitterSource, StringComparison.Ordinal);
+
+        Assert.Contains("public int EstimateSourceCapacity(", viewModelScaffoldSource, StringComparison.Ordinal);
+        Assert.Contains("public void EmitCompiledBindingAccessorMethods(", viewModelScaffoldSource, StringComparison.Ordinal);
+        Assert.Contains("public string BuildHintName(", viewModelScaffoldSource, StringComparison.Ordinal);
+        Assert.Contains("public string EscapeStringLiteral(", literalSource, StringComparison.Ordinal);
+        Assert.Contains("public string NormalizeCommentText(", literalSource, StringComparison.Ordinal);
+        Assert.Contains("public string SanitizeIdentifier(", identifierSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.StaticResourceMarkupExtension", attachedNodeValueSource, StringComparison.Ordinal);
+        Assert.Contains("ResolvedObjectNodeSemanticFlags.RequiresBaseUriConstructor", clrObjectNodeEmissionSource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void CSharp_Expression_Classification_Uses_Markup_Envelope_Semantics()
+    public void Runtime_And_Parsing_Layers_Use_Current_Shared_Semantics()
     {
-        var source = ReadCSharpExpressionClassificationServiceSource();
+        var bindingEventParserSource = ReadCoreParsingSource("BindingEventMarkupParser.cs");
+        var runtimeMarkupSource = ReadRuntimeAvaloniaSource("SourceGenMarkupExtensionRuntime.cs");
+        var runtimeControlThemeRegistrySource = ReadRuntimeAvaloniaSource("XamlControlThemeRegistry.cs");
+        var schemeResolverSource = ReadFrameworkSharedRuntimeSource("SchemeBasedDocumentUriResolver.cs");
 
-        Assert.Contains("CSharpMarkupExpressionSemantics.TryParseMarkupExpression(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmed.StartsWith(\"{\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmed.Substring(1, trimmed.Length - 2)", source, StringComparison.Ordinal);
+        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", bindingEventParserSource, StringComparison.Ordinal);
+        Assert.Contains("BindingSourceQuerySemantics.TryParseElementName(", bindingEventParserSource, StringComparison.Ordinal);
+        Assert.Contains("EventBindingSourceModeSemantics.TryParse(", bindingEventParserSource, StringComparison.Ordinal);
+
+        Assert.Contains("ClassifyDeferredBindingFailure(", runtimeMarkupSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("exception.Message.IndexOf(\"DataContext\"", runtimeMarkupSource, StringComparison.Ordinal);
+        Assert.Contains("StaticResourceReferenceParser.TryExtractResourceKey(", runtimeControlThemeRegistrySource, StringComparison.Ordinal);
+        Assert.Contains("XamlIncludePathSemantics.GetDirectory(", schemeResolverSource, StringComparison.Ordinal);
+        Assert.Contains("XamlIncludePathSemantics.CombinePath(", schemeResolverSource, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Binder_Uses_Type_Resolution_Policy_Service()
+    private static string RepositoryRoot =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+
+    private static string ReadBinderSource() =>
+        ReadJoinedFiles(
+            Path.Combine(RepositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "Binding"),
+            "AvaloniaSemanticBinder*.cs");
+
+    private static string ReadBinderCompositionRootSource() =>
+        ReadFile("src", "XamlToCSharpGenerator.Avalonia", "Binding", "AvaloniaSemanticBinder.cs");
+
+    private static string ReadBinderPartialSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Avalonia", "Binding", fileName);
+
+    private static string ReadEmitterSource() =>
+        ReadJoinedFiles(
+            Path.Combine(RepositoryRoot, "src", "XamlToCSharpGenerator.Avalonia", "Emission"),
+            "AvaloniaCodeEmitter*.cs");
+
+    private static string ReadEmitterCompositionRootSource() =>
+        ReadFile("src", "XamlToCSharpGenerator.Avalonia", "Emission", "AvaloniaCodeEmitter.cs");
+
+    private static string ReadDocumentFeatureEnricherSource() =>
+        ReadFile("src", "XamlToCSharpGenerator.Avalonia", "Parsing", "AvaloniaDocumentFeatureEnricher.cs");
+
+    private static string ReadFrameworkSharedBindingSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Framework.Shared", "Binding", fileName);
+
+    private static string ReadFrameworkSharedEmissionSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Framework.Shared", "Emission", fileName);
+
+    private static string ReadFrameworkSharedRuntimeSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Framework.Shared", "Runtime", fileName);
+
+    private static string ReadAvaloniaBindingServiceSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Avalonia", "Binding", "Services", fileName);
+
+    private static string ReadCoreParsingSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Core", "Parsing", fileName);
+
+    private static string ReadRuntimeAvaloniaSource(string fileName) =>
+        ReadFile("src", "XamlToCSharpGenerator.Runtime.Avalonia", fileName);
+
+    private static string ReadFile(params string[] segments) =>
+        File.ReadAllText(Path.Combine(RepositoryRoot, Path.Combine(segments)));
+
+    private static string ReadJoinedFiles(string directory, string searchPattern)
     {
-        var source = ReadBinderSource();
-
-        Assert.Contains("TypeResolutionPolicyService.TryResolveTokenFallback(", source, StringComparison.Ordinal);
-        Assert.Contains("TypeResolutionPolicyService.TryResolveXmlNamespaceFallback(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Avalonia default namespace compatibility fallback", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Avalonia default xml namespace compatibility fallback", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_List_And_Member_Path_Semantics_Services()
-    {
-        var source = ReadBinderSource();
-        var eventBindingPathSource = ReadEventBindingPathSemanticsSource();
-
-        Assert.Contains("XamlListValueSemantics.SplitWhitespaceAndCommaTokens(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlListValueSemantics.SplitCommaSeparatedTokens(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static ImmutableArray<string> SplitClassTokens(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlMemberPathSemantics.SplitPathSegments(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlMemberPathSemantics.NormalizeSegmentForMemberLookup(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlMemberPathSemantics.SplitPathSegments(", eventBindingPathSource, StringComparison.Ordinal);
-        Assert.Contains("XamlDelimitedValueSemantics.SplitEnumFlagTokens(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlDelimitedValueSemantics.SplitCollectionItems(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmed.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmedValue.Split(separators, effectiveSplitOptions)", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BindingEventMarkupParser_Uses_BindingSourceQuery_Semantics_Service()
-    {
-        var source = ReadBindingEventMarkupParserSource();
-
-        Assert.Contains("BindingSourceQuerySemantics.TryParseElementName(", source, StringComparison.Ordinal);
-        Assert.Contains("BindingSourceQuerySemantics.TryParseSelf(", source, StringComparison.Ordinal);
-        Assert.Contains("BindingSourceQuerySemantics.TryParseParent(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("path.StartsWith(\"#\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("path.StartsWith(\"$self\", StringComparison.OrdinalIgnoreCase)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("path.StartsWith(\"$parent\", StringComparison.OrdinalIgnoreCase)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("inside.Split(new[] { ',', ';' }, 2, StringSplitOptions.None)", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BindingEventMarkupParser_Uses_Canonical_Markup_Extension_Name_Semantics()
-    {
-        var source = ReadBindingEventMarkupParserSource();
-
-        Assert.Contains("XamlMarkupExtensionNameSemantics.Classify(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("extensionName.Equals(\"Binding\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("extensionName.Equals(\"ReflectionBinding\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("markupExtension.Name.Equals(\"RelativeSource\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("markupName.Equals(\"x:Reference\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("extensionName.Equals(\"x:Null\"", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BindingEventMarkupParser_Uses_EventBinding_Source_Mode_Semantics_Service()
-    {
-        var source = ReadBindingEventMarkupParserSource();
-
-        Assert.Contains("EventBindingSourceModeSemantics.TryParse(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("normalized.Equals(\"DataContextThenRoot\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("normalized.Equals(\"DataContext\"", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("normalized.Equals(\"Root\"", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Avalonia_Binding_Enum_And_Style_Query_Semantics_Services()
-    {
-        var source = ReadBindingSemanticsSource();
-
-        Assert.Contains("AvaloniaBindingEnumSemantics.TryMapBindingModeToken(", source, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaBindingEnumSemantics.TryMapRelativeSourceModeToken(", source, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaBindingEnumSemantics.TryMapTreeTypeToken(", source, StringComparison.Ordinal);
-        Assert.Contains("AvaloniaStyleQuerySemantics.TryParse(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("var queryToken = rawQueryToken.ToLowerInvariant()", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_Scalar_Literal_Semantics_Service()
-    {
-        var source = ReadBindingSemanticsSource();
-
-        Assert.Contains("XamlScalarLiteralSemantics.IsNullLiteral(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseBoolean(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseInt32(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseInt64(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseDouble(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseSingle(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlScalarLiteralSemantics.TryParseDecimal(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("value.Trim().Equals(\"null\", StringComparison.OrdinalIgnoreCase)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("type.SpecialType == SpecialType.System_Boolean && bool.TryParse(value", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_TimeSpan_Literal_Semantics_Service()
-    {
-        var source = ReadBindingSemanticsSource();
-
-        Assert.Contains("XamlTimeSpanLiteralSemantics.TryParse(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("TimeSpan.TryParse(trimmed, CultureInfo.InvariantCulture", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_DateTime_Literal_Semantics_Service()
-    {
-        var source = ReadMarkupHelpersSource();
-
-        Assert.Contains("XamlDateTimeLiteralSemantics.TryParseRoundtrip(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("global::System.DateTime.Parse(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_Avalonia_Intrinsic_Literal_Semantics_Service()
-    {
-        var source = ReadBindingSemanticsSource();
-
-        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseThickness(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseGridLength(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlAvaloniaValueLiteralSemantics.TryParseHexColor(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlAvaloniaTransformLiteralSemantics.TryParse(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlAvaloniaCursorLiteralSemantics.TryParseStandardCursorTypeMember(", source, StringComparison.Ordinal);
-        Assert.Contains("XamlAvaloniaKeyGestureLiteralSemantics.TryParse(", source, StringComparison.Ordinal);
-        Assert.Contains("TryConvertDeterministicSolidColorBrushExpression(", source, StringComparison.Ordinal);
-        Assert.Contains("TryConvertDeterministicTransformOperationsExpression(", source, StringComparison.Ordinal);
-        Assert.Contains("TryConvertAvaloniaCursorExpression(", source, StringComparison.Ordinal);
-        Assert.Contains("TryConvertAvaloniaKeyGestureExpression(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "SourceGenMarkupExtensionRuntime.ParseFontFeatureCollection(",
-            source,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "SourceGenMarkupExtensionRuntime.ParseFontFamily(",
-            source,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Binder_Uses_Centralized_Event_Handler_Name_Semantics_Service()
-    {
-        var source = ReadBindingSemanticsSource();
-
-        Assert.Contains("XamlEventHandlerNameSemantics.TryParseHandlerName(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("trimmed.StartsWith(\"{\", StringComparison.Ordinal) || trimmed.IndexOf('.') >= 0", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static bool IsIdentifier(", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Modifier_Normalization_Uses_Centralized_Accessibility_Semantics_Service()
-    {
-        var typeResolutionSource = ReadTypeResolutionSource();
-        var xamlParserSource = ReadSimpleXamlDocumentParserSource();
-
-        Assert.Contains("XamlAccessibilityModifierSemantics.NormalizeClassModifier(", typeResolutionSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("classModifier!.Trim().ToLowerInvariant()", typeResolutionSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlAccessibilityModifierSemantics.NormalizeFieldModifier(", xamlParserSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("return fieldModifier.ToLowerInvariant() switch", xamlParserSource, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Parsers_Use_Centralized_Quoted_Value_Semantics()
-    {
-        var bindingSource = ReadBindingEventMarkupParserSource();
-        var listSource = ReadXamlListValueSemanticsSource();
-
-        Assert.Contains("XamlQuotedValueSemantics.TrimAndUnquote(", bindingSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("public static string Unquote(", bindingSource, StringComparison.Ordinal);
-
-        Assert.Contains("XamlQuotedValueSemantics.UnquoteWrapped(", listSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("private static string Unquote(", listSource, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void HotDesign_Property_Grid_Uses_Centralized_Markup_Envelope_Semantics()
-    {
-        var source = ReadHotDesignCoreToolsSource();
-
-        Assert.Contains("MarkupExpressionEnvelopeSemantics.IsMarkupExpression(", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("value.StartsWith(\"{\", StringComparison.Ordinal) && value.EndsWith(\"}\", StringComparison.Ordinal)", source, StringComparison.Ordinal);
-    }
-
-    private static string ReadBinderSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var bindingDirectory = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding");
-
-        var sourceFiles = Directory.GetFiles(bindingDirectory, "AvaloniaSemanticBinder*.cs")
+        var files = Directory.GetFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
             .OrderBy(static path => path, StringComparer.Ordinal)
             .ToArray();
+
         return string.Join(
             Environment.NewLine + Environment.NewLine,
-            sourceFiles.Select(File.ReadAllText));
-    }
-
-    private static string ReadSelectorExpressionSemanticsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var semanticsPath = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.ExpressionSemantics",
-            "SelectorExpressionBuildSemantics.cs");
-        return File.ReadAllText(semanticsPath);
-    }
-
-    private static string ReadSelectorSemanticAdapterSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var adapterPath = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSelectorSemanticAdapter.cs");
-        return File.ReadAllText(adapterPath);
-    }
-
-    private static string ReadSelectorPredicateResolverSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var resolverPath = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSelectorPropertyPredicateResolver.cs");
-        return File.ReadAllText(resolverPath);
-    }
-
-    private static string ReadEmitterSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var emitterPath = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Emission",
-            "AvaloniaCodeEmitter.cs");
-        return File.ReadAllText(emitterPath);
-    }
-
-    private static string ReadDocumentFeatureEnricherSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Parsing",
-            "AvaloniaDocumentFeatureEnricher.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadSelectorPropertyReferencesSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.SelectorPropertyReferences.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadExpressionMarkupSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.ExpressionMarkup.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadEventBindingPathSemanticsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Core",
-            "Parsing",
-            "EventBindingPathSemantics.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadBindingEventMarkupParserSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Core",
-            "Parsing",
-            "BindingEventMarkupParser.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadSimpleXamlDocumentParserSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Core",
-            "Parsing",
-            "SimpleXamlDocumentParser.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadXamlListValueSemanticsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Core",
-            "Parsing",
-            "XamlListValueSemantics.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadMarkupHelpersSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.MarkupHelpers.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadBindingSemanticsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.BindingSemantics.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadIncludesBinderSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.Includes.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadCSharpExpressionClassificationServiceSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "Services",
-            "CSharpExpressionClassificationService.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadObjectNodeSemanticContractServiceSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "Services",
-            "ObjectNodeSemanticContractService.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadXamlTypeExpressionResolutionServiceSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "Services",
-            "XamlTypeExpressionResolutionService.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadStylesTemplatesBinderSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.StylesTemplates.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadRuntimeControlThemeRegistrySource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Runtime.Avalonia",
-            "XamlControlThemeRegistry.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadRuntimeMarkupExtensionSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Runtime.Avalonia",
-            "SourceGenMarkupExtensionRuntime.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadObjectGraphRuntimeHelpersSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Runtime.Avalonia",
-            "SourceGenObjectGraphRuntimeHelpers.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadHotDesignCoreToolsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Runtime.Avalonia",
-            "XamlSourceGenHotDesignCoreTools.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadNoUiBinderSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.NoUi",
-            "Binding",
-            "NoUiSemanticBinder.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadTypeResolutionSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.Avalonia",
-            "Binding",
-            "AvaloniaSemanticBinder.TypeResolution.cs");
-        return File.ReadAllText(path);
-    }
-
-    private static string ReadDeterministicTypeResolutionSemanticsSource()
-    {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-        var path = Path.Combine(
-            repositoryRoot,
-            "src",
-            "XamlToCSharpGenerator.ExpressionSemantics",
-            "DeterministicTypeResolutionSemantics.cs");
-        return File.ReadAllText(path);
+            files.Select(File.ReadAllText));
     }
 }

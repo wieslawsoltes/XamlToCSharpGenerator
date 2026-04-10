@@ -18,7 +18,8 @@ public class StringLiteralSemanticInventoryTests
         "src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.SelectorPropertyReferences.cs",
         "src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.StylesTemplates.cs",
         "src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.TransformExtensions.cs",
-        "src/XamlToCSharpGenerator.Avalonia/Binding/Services/NameScopeRegistrationSemanticsService.cs"
+        "src/XamlToCSharpGenerator.Avalonia/Binding/Services/NameScopeRegistrationSemanticsService.cs",
+        "src/XamlToCSharpGenerator.Framework.Shared/Binding/CompiledBindingAccessorResolutionService.cs"
     };
 
     private static readonly IReadOnlyDictionary<string, int> BaselineHotspotCounts =
@@ -30,7 +31,8 @@ public class StringLiteralSemanticInventoryTests
             ["src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.StylesTemplates.cs"] = 2,
             ["src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.TransformExtensions.cs"] = 2,
             ["src/XamlToCSharpGenerator.Avalonia/Binding/AvaloniaSemanticBinder.SelectorPropertyReferences.cs"] = 1,
-            ["src/XamlToCSharpGenerator.Avalonia/Binding/Services/NameScopeRegistrationSemanticsService.cs"] = 1
+            ["src/XamlToCSharpGenerator.Avalonia/Binding/Services/NameScopeRegistrationSemanticsService.cs"] = 1,
+            ["src/XamlToCSharpGenerator.Framework.Shared/Binding/CompiledBindingAccessorResolutionService.cs"] = 1
         };
 
     [Fact]

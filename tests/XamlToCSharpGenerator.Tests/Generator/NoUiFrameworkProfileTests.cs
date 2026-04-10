@@ -93,4 +93,17 @@ public class NoUiFrameworkProfileTests
         Assert.Empty(aggregate.Configuration.PropertyAliases);
         Assert.Empty(aggregate.Diagnostics);
     }
+
+    [Fact]
+    public void SemanticConventions_Are_Empty_For_NoUi_Profile()
+    {
+        IXamlFrameworkProfile profile = NoUiFrameworkProfile.Instance;
+        var conventions = profile.SemanticConventions;
+
+        Assert.Empty(conventions.KnownTemplateKinds);
+        Assert.Empty(conventions.IncludeRootTypeNames);
+        Assert.Empty(conventions.StyleTypeContractIds);
+        Assert.False(conventions.IsKnownTemplateKind("DataTemplate"));
+        Assert.False(conventions.IsUsableDuringInitializationAttribute("global::Avalonia.Metadata.UsableDuringInitializationAttribute"));
+    }
 }

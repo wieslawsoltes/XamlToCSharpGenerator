@@ -48,6 +48,7 @@ internal static class BuildTestArtifactCache
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.Core", "netstandard2.0"),
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.Compiler", "netstandard2.0"),
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.Framework.Abstractions", "netstandard2.0"),
+            GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.Framework.Shared", "netstandard2.0"),
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.ExpressionSemantics", "netstandard2.0"),
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.Avalonia", "netstandard2.0"),
             GetAssemblyPath(repositoryRoot, "XamlToCSharpGenerator.MiniLanguageParsing", "netstandard2.0"),
