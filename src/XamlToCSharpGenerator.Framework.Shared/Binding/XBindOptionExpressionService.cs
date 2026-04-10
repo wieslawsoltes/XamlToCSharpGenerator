@@ -73,7 +73,7 @@ public sealed class XBindOptionExpressionService
         out string expression,
         out string errorMessage)
     {
-        expression = "null";
+        expression = "0";
         errorMessage = string.Empty;
         if (string.IsNullOrWhiteSpace(rawValue))
         {

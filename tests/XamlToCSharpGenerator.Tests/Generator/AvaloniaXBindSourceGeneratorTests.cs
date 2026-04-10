@@ -376,6 +376,87 @@ public class AvaloniaXBindSourceGeneratorTests
     }
 
     [Fact]
+    public void Generates_XBind_Default_Delay_As_Zero()
+    {
+        const string code = """
+            namespace Avalonia
+            {
+                public class AvaloniaProperty { }
+                public class AvaloniaObject
+                {
+                    public object? SetValue(AvaloniaProperty property, object? value) => value;
+                }
+            }
+
+            namespace Avalonia.Data
+            {
+                public enum BindingMode
+                {
+                    OneWay,
+                    TwoWay
+                }
+
+                public enum UpdateSourceTrigger
+                {
+                    Default,
+                    PropertyChanged
+                }
+
+                public enum BindingPriority
+                {
+                    LocalValue
+                }
+            }
+
+            namespace Avalonia.Controls
+            {
+                public class Control : global::Avalonia.AvaloniaObject { }
+
+                public class UserControl : Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty ContentProperty = new();
+                    public object? Content { get; set; }
+                }
+            }
+
+            namespace Demo.Controls
+            {
+                public class BindingTarget : global::Avalonia.Controls.Control
+                {
+                    public static readonly global::Avalonia.AvaloniaProperty MyPropertyProperty = new();
+                    public string? MyProperty { get; set; }
+                }
+            }
+
+            namespace Demo
+            {
+                public partial class MainView : global::Avalonia.Controls.UserControl
+                {
+                    public string? SearchText { get; set; }
+                }
+            }
+            """;
+
+        const string xaml = """
+            <UserControl xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:local="clr-namespace:Demo.Controls"
+                         x:Class="Demo.MainView">
+                <local:BindingTarget MyProperty="{x:Bind SearchText, Mode=TwoWay}" />
+            </UserControl>
+            """;
+
+        var compilation = CreateCompilation(code);
+        var (updatedCompilation, diagnostics) = RunGenerator(compilation, xaml);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
+        Assert.Contains("ProvideXBindExpressionBinding<global::Demo.MainView, global::Demo.MainView, global::Demo.Controls.BindingTarget>", generated);
+        Assert.Contains(", 0, global::Avalonia.Data.UpdateSourceTrigger.Default, global::Avalonia.Data.BindingPriority.LocalValue,", generated);
+    }
+
+    [Fact]
     public void Generates_XBind_Source_Options_And_Lifecycle_Surface()
     {
         const string code = """

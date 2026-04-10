@@ -5009,6 +5009,7 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.Contains("\"{= Caption + '!'", generated);
         Assert.Contains("source.Title", generated);
         Assert.Contains("source.Count", generated);
+        Assert.DoesNotContain("__source.", generated);
     }
 
     [Fact]
@@ -5567,8 +5568,11 @@ public class AvaloniaXamlSourceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "AXSG0600");
         var generated = GetGeneratedPartialClassSource(updatedCompilation, "MainView");
         Assert.Contains(".Click += __root.__AXSG_EventBinding_", generated);
+        Assert.Contains("__TryGetEventBindingDataContext(__arg0)", generated);
         Assert.Contains("source.ClickCount++", generated);
         Assert.Contains("source.RecordSender(sender);", generated);
+        Assert.DoesNotContain("var sender = arg0;", generated);
+        Assert.DoesNotContain("var e = arg1;", generated);
     }
 
     [Fact]

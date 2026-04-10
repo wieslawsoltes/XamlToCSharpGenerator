@@ -33,7 +33,7 @@ public sealed class AvaloniaFrameworkEventBindingEmitterAdapter : IXamlFramework
             $"        private void {emittedMethodName}({BuildEventBindingParameterList(definition.Parameters)})");
         sourceBuilder.AppendLine("        {");
 
-        if (definition.TargetKind is ResolvedEventBindingTargetKind.Command or ResolvedEventBindingTargetKind.Method)
+        if (definition.TargetKind is ResolvedEventBindingTargetKind.Command or ResolvedEventBindingTargetKind.Method or ResolvedEventBindingTargetKind.Lambda)
         {
             sourceBuilder.AppendLine("            static object? __TryGetEventBindingDataContext(object? value)");
             sourceBuilder.AppendLine("            {");

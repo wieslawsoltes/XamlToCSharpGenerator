@@ -419,7 +419,7 @@ public sealed class CSharpExpressionBindingService
 
         var dependencyArrayExpression = BuildStringArrayLiteral(dependencyNames);
         var accessorArgument = string.IsNullOrWhiteSpace(accessorPlaceholderToken)
-            ? "static source => (object?)(" + accessorExpression + ")"
+            ? "static source => (object?)(" + RewriteExpressionBindingSourceReceiver(accessorExpression) + ")"
             : accessorPlaceholderToken!;
         expression =
             "global::XamlToCSharpGenerator.Runtime.SourceGenMarkupExtensionRuntime.ProvideExpressionBinding<" +
@@ -444,6 +444,11 @@ public sealed class CSharpExpressionBindingService
             _markupContextTokens.ParentStackToken +
             ")";
         return true;
+    }
+
+    private static string RewriteExpressionBindingSourceReceiver(string accessorExpression)
+    {
+        return accessorExpression.Replace("__source", "source");
     }
 
     private static string GetTypeNameOrObject(INamedTypeSymbol? typeSymbol, Compilation compilation)
