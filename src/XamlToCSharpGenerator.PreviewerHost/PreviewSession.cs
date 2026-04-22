@@ -966,7 +966,7 @@ internal sealed class PreviewSession : IPreviewHostSession
 
         await transport.SendUpdateXamlAsync(
             xamlText,
-            assemblyPath: null,
+            assemblyPath: _sourceAssemblyPath,
             xamlFileProjectPath,
             cancellationToken).ConfigureAwait(false);
     }
