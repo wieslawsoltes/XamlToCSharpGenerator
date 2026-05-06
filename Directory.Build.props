@@ -17,6 +17,7 @@
     <AvaloniaEditVersion Condition="'$(AvaloniaEditVersion)' == ''">11.4.1</AvaloniaEditVersion>
     <AvaloniaEditTextMateVersion Condition="'$(AvaloniaEditTextMateVersion)' == ''">11.4.1</AvaloniaEditTextMateVersion>
     <MicrosoftCodeAnalysisVersion Condition="'$(MicrosoftCodeAnalysisVersion)' == ''">4.10.0</MicrosoftCodeAnalysisVersion>
+    <MicrosoftExtensionsLoggingVersion Condition="'$(MicrosoftExtensionsLoggingVersion)' == ''">8.0.1</MicrosoftExtensionsLoggingVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsPackable)' == 'true'">
