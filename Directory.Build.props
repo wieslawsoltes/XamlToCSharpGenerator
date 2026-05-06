@@ -1,5 +1,11 @@
 <Project>
   <PropertyGroup>
+    <_XamlToCSharpGeneratorConsumerProps>$([MSBuild]::GetPathOfFileAbove('XamlToCSharpGenerator.Consumer.props', '$(MSBuildThisFileDirectory)..'))</_XamlToCSharpGeneratorConsumerProps>
+  </PropertyGroup>
+
+  <Import Project="$(_XamlToCSharpGeneratorConsumerProps)" Condition="'$(_XamlToCSharpGeneratorConsumerProps)' != ''" />
+
+  <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
