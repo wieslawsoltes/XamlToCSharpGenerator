@@ -5,9 +5,6 @@
     <LangVersion>latest</LangVersion>
     <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.1.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha.28</VersionSuffix>
-    <AvaloniaVersion Condition="'$(AvaloniaVersion)' == ''">12.0.2</AvaloniaVersion>
-    <AvaloniaEditVersion Condition="'$(AvaloniaEditVersion)' == ''">12.0.0</AvaloniaEditVersion>
-    <AvaloniaEditTextMateVersion Condition="'$(AvaloniaEditTextMateVersion)' == ''">12.0.0</AvaloniaEditTextMateVersion>
     <XamlToCSharpGeneratorStrictBuild Condition="'$(XamlToCSharpGeneratorStrictBuild)' == ''">false</XamlToCSharpGeneratorStrictBuild>
     <TreatWarningsAsErrors Condition="'$(XamlToCSharpGeneratorStrictBuild)' == 'true'">true</TreatWarningsAsErrors>
     <TreatWarningsAsErrors Condition="'$(XamlToCSharpGeneratorStrictBuild)' != 'true'">false</TreatWarningsAsErrors>

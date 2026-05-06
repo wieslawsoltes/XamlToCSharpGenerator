@@ -74,14 +74,14 @@ public sealed class XamlLanguageServiceEngine : IDisposable
 
     public XamlLanguageServiceEngine()
         : this(
-            CreateDefaultCompilationProvider(XamlBuiltInLanguageFrameworkRegistry.Instance),
+            new DeferredCompilationProvider(static () => new MsBuildCompilationProvider(XamlBuiltInLanguageFrameworkRegistry.Instance)),
             XamlBuiltInLanguageFrameworkRegistry.Instance)
     {
     }
 
     public XamlLanguageServiceEngine(XamlLanguageFrameworkRegistry frameworkRegistry)
         : this(
-            CreateDefaultCompilationProvider(frameworkRegistry),
+            new DeferredCompilationProvider(() => new MsBuildCompilationProvider(frameworkRegistry)),
             frameworkRegistry)
     {
     }
@@ -144,13 +144,6 @@ public sealed class XamlLanguageServiceEngine : IDisposable
                 propertyElementRefactoringProvider,
                 namespaceImportRefactoringProvider),
             renameRefactoringProvider);
-    }
-
-    public static XamlLanguageServiceEngine CreateBrowser()
-    {
-        return new XamlLanguageServiceEngine(
-            new BrowserCompilationProvider(),
-            XamlBuiltInLanguageFrameworkRegistry.Instance);
     }
 
     public async Task<ImmutableArray<LanguageServiceDiagnostic>> OpenDocumentAsync(
@@ -522,11 +515,6 @@ public sealed class XamlLanguageServiceEngine : IDisposable
             AddMatchingWorkspaceSymbols(builder, _workspaceSymbolService.GetWorkspaceSymbols(analysis), normalizedQuery);
         }
 
-        if (OperatingSystem.IsBrowser())
-        {
-            return SortWorkspaceSymbolsDeterministically(builder);
-        }
-
         foreach (var filePath in XamlProjectFileDiscoveryService.DiscoverWorkspaceXamlFilePaths(options.WorkspaceRoot, _frameworkRegistry))
         {
             if (!seenFiles.Add(filePath) || !File.Exists(filePath))
@@ -847,22 +835,6 @@ public sealed class XamlLanguageServiceEngine : IDisposable
         CancellationToken cancellationToken)
     {
         return _analysisService.AnalyzeAsync(document, options, cancellationToken);
-    }
-
-    private static ICompilationProvider CreateDefaultCompilationProvider(XamlLanguageFrameworkRegistry frameworkRegistry)
-    {
-        ArgumentNullException.ThrowIfNull(frameworkRegistry);
-
-        if (OperatingSystem.IsBrowser())
-        {
-            return new BrowserCompilationProvider();
-        }
-
-#if NET10_0_OR_GREATER && !BROWSER
-        return new DeferredCompilationProvider(() => new MsBuildCompilationProvider(frameworkRegistry));
-#else
-        return new BrowserCompilationProvider();
-#endif
     }
 
     private void InvalidateUriCaches(string uri)
