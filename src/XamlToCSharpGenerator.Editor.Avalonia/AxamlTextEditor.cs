@@ -55,6 +55,7 @@ public sealed class AxamlTextEditor : TextEditor
     private ImmutableArray<LanguageServiceDiagnostic> _diagnostics = ImmutableArray<LanguageServiceDiagnostic>.Empty;
     private CancellationTokenSource? _analysisCts;
     private IThemeVariantHost? _themeVariantHost;
+    private bool _isInitialized;
 
     public AxamlTextEditor()
         : this(new XamlLanguageServiceEngine())
@@ -83,6 +84,7 @@ public sealed class AxamlTextEditor : TextEditor
             Interval = TimeSpan.FromMilliseconds(120)
         };
         _analysisDebounce.Tick += OnAnalysisDebounceTick;
+        _isInitialized = true;
     }
 
     public new string Text
@@ -123,6 +125,7 @@ public sealed class AxamlTextEditor : TextEditor
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        SyncTextFromEditorDocument();
         SubscribeThemeVariantChanges();
         _textMateSupport.ApplyThemeVariant(_themeVariantHost?.ActualThemeVariant);
         _textMateSupport.ApplyDocumentUri(DocumentUri);
@@ -133,8 +136,22 @@ public sealed class AxamlTextEditor : TextEditor
     {
         base.OnPropertyChanged(change);
 
+        if (!_isInitialized)
+        {
+            return;
+        }
+
         if (change.Property == DocumentUriProperty)
         {
+            _textMateSupport.ApplyDocumentUri(DocumentUri);
+            _ = EnsureDocumentOpenAndAnalyzeAsync();
+            return;
+        }
+
+        if (change.Property.Name == nameof(Document))
+        {
+            _foldingSupport.Reset();
+            SyncTextFromEditorDocument();
             _textMateSupport.ApplyDocumentUri(DocumentUri);
             _ = EnsureDocumentOpenAndAnalyzeAsync();
             return;
@@ -163,7 +180,7 @@ public sealed class AxamlTextEditor : TextEditor
         _openedDocumentUri = null;
         _completionWindow?.Close();
         _completionWindow = null;
-        _foldingSupport.Clear();
+        _foldingSupport.Reset();
     }
 
     private void OnEditorTextChanged(object? sender, EventArgs e)
@@ -226,7 +243,7 @@ public sealed class AxamlTextEditor : TextEditor
                 _documentVersion = 1;
                 var diagnostics = await _engine.OpenDocumentAsync(
                     currentDocumentUri,
-                    Text ?? string.Empty,
+                    GetCurrentEditorText(),
                     version: _documentVersion,
                     CreateOptions(),
                     cancellationToken).ConfigureAwait(false);
@@ -268,7 +285,7 @@ public sealed class AxamlTextEditor : TextEditor
         {
             var diagnostics = await _engine.UpdateDocumentAsync(
                 currentDocumentUri,
-                Text ?? string.Empty,
+                GetCurrentEditorText(),
                 version: ++_documentVersion,
                 CreateOptions(),
                 cancellationToken).ConfigureAwait(false);
@@ -370,6 +387,24 @@ public sealed class AxamlTextEditor : TextEditor
         return new XamlLanguageServiceOptions(WorkspaceRoot);
     }
 
+    private string GetCurrentEditorText()
+    {
+        return base.Text ?? Document?.Text ?? _text ?? string.Empty;
+    }
+
+    private void SyncTextFromEditorDocument()
+    {
+        var currentText = GetCurrentEditorText();
+        if (string.Equals(_text, currentText, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var previousText = _text;
+        SetAndRaise(TextProperty, ref _text, currentText);
+        RaisePropertyChanged(SourceTextProperty, previousText, currentText);
+    }
+
     private void CloseOpenedDocument()
     {
         if (!string.IsNullOrWhiteSpace(_openedDocumentUri))
@@ -380,7 +415,7 @@ public sealed class AxamlTextEditor : TextEditor
         _documentOpened = false;
         _openedDocumentUri = null;
         Diagnostics = ImmutableArray<LanguageServiceDiagnostic>.Empty;
-        _foldingSupport.Clear();
+        _foldingSupport.Reset();
     }
 
     private void SubscribeThemeVariantChanges()

@@ -13,26 +13,42 @@ internal sealed class AxamlTextEditorTextMateSupport
 {
     private const string XmlLanguageId = "xml";
     private readonly TextEditor _editor;
-    private readonly RegistryOptions _registryOptions;
-    private readonly TextMate.Installation _installation;
-    private readonly IReadOnlyDictionary<string, string> _vsCodeLightModernGuiColors;
+    private readonly RegistryOptions? _registryOptions;
+    private readonly TextMate.Installation? _installation;
+    private readonly IReadOnlyDictionary<string, string>? _vsCodeLightModernGuiColors;
     private string? _currentScopeName;
     private ThemeName _currentThemeName = ThemeName.LightPlus;
+    private readonly bool _isEnabled;
 
     public AxamlTextEditorTextMateSupport(TextEditor editor)
     {
         ArgumentNullException.ThrowIfNull(editor);
 
         _editor = editor;
+        if (OperatingSystem.IsBrowser())
+        {
+            return;
+        }
+
+        _isEnabled = true;
         _registryOptions = new RegistryOptions(_currentThemeName);
         _vsCodeLightModernGuiColors = AxamlTextEditorThemeResourceLoader.GetVsCodeLightModernGuiColors();
-        _installation = editor.InstallTextMate(_registryOptions, initCurrentDocument: true);
-        ApplyDocumentUri(documentUri: null);
+        _installation = editor.InstallTextMate(_registryOptions, initCurrentDocument: false);
         ApplyThemeVariant(themeVariant: null);
     }
 
     public void ApplyDocumentUri(string? documentUri)
     {
+        if (!_isEnabled || _installation is null)
+        {
+            return;
+        }
+
+        if (_editor.Document is null)
+        {
+            return;
+        }
+
         var scopeName = ResolveScopeName(documentUri);
         if (string.Equals(_currentScopeName, scopeName, StringComparison.Ordinal))
         {
@@ -45,6 +61,11 @@ internal sealed class AxamlTextEditorTextMateSupport
 
     public void ApplyThemeVariant(ThemeVariant? themeVariant)
     {
+        if (!_isEnabled || _installation is null || _registryOptions is null)
+        {
+            return;
+        }
+
         var themeName = MapThemeName(themeVariant);
         if (themeName != _currentThemeName)
         {
@@ -62,7 +83,7 @@ internal sealed class AxamlTextEditorTextMateSupport
             return scopeName;
         }
 
-        return _registryOptions.GetScopeByLanguageId(XmlLanguageId) ?? "text.xml";
+        return _registryOptions?.GetScopeByLanguageId(XmlLanguageId) ?? "text.xml";
     }
 
     private bool TryResolveScopeName(string? documentUri, out string scopeName)
@@ -85,11 +106,11 @@ internal sealed class AxamlTextEditorTextMateSupport
         if (string.Equals(extension, ".axaml", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(extension, ".xaml", StringComparison.OrdinalIgnoreCase))
         {
-            scopeName = _registryOptions.GetScopeByLanguageId(XmlLanguageId) ?? string.Empty;
+            scopeName = _registryOptions?.GetScopeByLanguageId(XmlLanguageId) ?? string.Empty;
             return !string.IsNullOrWhiteSpace(scopeName);
         }
 
-        scopeName = _registryOptions.GetScopeByExtension(extension) ?? string.Empty;
+        scopeName = _registryOptions?.GetScopeByExtension(extension) ?? string.Empty;
         return !string.IsNullOrWhiteSpace(scopeName);
     }
 
@@ -197,7 +218,8 @@ internal sealed class AxamlTextEditorTextMateSupport
             return true;
         }
 
-        return _installation.TryGetThemeColor(key, out colorString) &&
+        return _installation is not null &&
+               _installation.TryGetThemeColor(key, out colorString) &&
                !string.IsNullOrWhiteSpace(colorString);
     }
 

@@ -13,6 +13,10 @@
     <GenerateDocumentationFile Condition="'$(ApiDocumentationBuild)' != 'true'">false</GenerateDocumentationFile>
     <GenerateDocumentationFile Condition="'$(ApiDocumentationBuild)' == 'true'">true</GenerateDocumentationFile>
     <PackageReadmeFile Condition="'$(PackageReadmeFile)' == ''">README.md</PackageReadmeFile>
+    <AvaloniaVersion Condition="'$(AvaloniaVersion)' == ''">11.3.12</AvaloniaVersion>
+    <AvaloniaEditVersion Condition="'$(AvaloniaEditVersion)' == ''">11.4.1</AvaloniaEditVersion>
+    <AvaloniaEditTextMateVersion Condition="'$(AvaloniaEditTextMateVersion)' == ''">11.4.1</AvaloniaEditTextMateVersion>
+    <MicrosoftCodeAnalysisVersion Condition="'$(MicrosoftCodeAnalysisVersion)' == ''">4.10.0</MicrosoftCodeAnalysisVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsPackable)' == 'true'">

@@ -9,22 +9,44 @@ namespace XamlToCSharpGenerator.Editor.Avalonia;
 
 internal sealed class AxamlTextEditorFoldingSupport
 {
-    private readonly FoldingManager _foldingManager;
+    private readonly TextEditor _editor;
+    private FoldingManager? _foldingManager;
+    private TextDocument? _installedDocument;
 
     public AxamlTextEditorFoldingSupport(TextEditor editor)
     {
         ArgumentNullException.ThrowIfNull(editor);
-        _foldingManager = FoldingManager.Install(editor.TextArea);
+        _editor = editor;
     }
 
     public void Clear()
     {
-        _foldingManager.UpdateFoldings(Array.Empty<NewFolding>(), firstErrorOffset: -1);
+        _foldingManager?.UpdateFoldings(Array.Empty<NewFolding>(), firstErrorOffset: -1);
+    }
+
+    public void Reset()
+    {
+        if (_foldingManager is null)
+        {
+            _installedDocument = null;
+            return;
+        }
+
+        FoldingManager.Uninstall(_foldingManager);
+        _foldingManager = null;
+        _installedDocument = null;
     }
 
     public void UpdateFoldings(TextDocument? document, IReadOnlyList<XamlFoldingRange> ranges)
     {
-        if (document is null || ranges.Count == 0)
+        if (document is null || !ReferenceEquals(document, _editor.Document))
+        {
+            Reset();
+            return;
+        }
+
+        EnsureInstalled(document);
+        if (_foldingManager is null || ranges.Count == 0)
         {
             Clear();
             return;
@@ -39,7 +61,25 @@ internal sealed class AxamlTextEditorFoldingSupport
             }
         }
 
-        _foldingManager.UpdateFoldings(foldings, firstErrorOffset: -1);
+        _foldingManager?.UpdateFoldings(foldings, firstErrorOffset: -1);
+    }
+
+    private void EnsureInstalled(TextDocument document)
+    {
+        if (_foldingManager is not null && ReferenceEquals(_installedDocument, document))
+        {
+            return;
+        }
+
+        Reset();
+
+        if (!ReferenceEquals(_editor.TextArea.Document, document))
+        {
+            return;
+        }
+
+        _foldingManager = FoldingManager.Install(_editor.TextArea);
+        _installedDocument = document;
     }
 
     private static bool TryCreateFolding(TextDocument document, XamlFoldingRange range, out NewFolding folding)

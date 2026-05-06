@@ -32,6 +32,78 @@ public sealed class XamlCompletionService
         new("x:Null", "{x:Null}", XamlCompletionItemKind.MarkupExtension, "Null extension")
     ];
 
+    private static readonly ImmutableArray<XamlCompletionItem> BrowserElementCompletions =
+    [
+        CreateBrowserElement("Border"),
+        CreateBrowserElement("Button"),
+        CreateBrowserElement("Canvas"),
+        CreateBrowserElement("CheckBox"),
+        CreateBrowserElement("ComboBox"),
+        CreateBrowserElement("ContentControl"),
+        CreateBrowserElement("DataGrid"),
+        CreateBrowserElement("DockPanel"),
+        CreateBrowserElement("Expander"),
+        CreateBrowserElement("Grid"),
+        CreateBrowserElement("Image"),
+        CreateBrowserElement("ListBox"),
+        CreateBrowserElement("Menu"),
+        CreateBrowserElement("Panel"),
+        CreateBrowserElement("PasswordBox"),
+        CreateBrowserElement("ProgressBar"),
+        CreateBrowserElement("RadioButton"),
+        CreateBrowserElement("RepeatButton"),
+        CreateBrowserElement("ScrollViewer"),
+        CreateBrowserElement("Slider"),
+        CreateBrowserElement("StackPanel"),
+        CreateBrowserElement("TabControl"),
+        CreateBrowserElement("TextBlock"),
+        CreateBrowserElement("TextBox"),
+        CreateBrowserElement("ToggleButton"),
+        CreateBrowserElement("ToggleSwitch"),
+        CreateBrowserElement("TreeView"),
+        CreateBrowserElement("UniformGrid"),
+        CreateBrowserElement("Viewbox"),
+        CreateBrowserElement("WrapPanel")
+    ];
+
+    private static readonly ImmutableArray<XamlCompletionItem> BrowserAttributeCompletions =
+    [
+        CreateBrowserAttribute("Classes"),
+        CreateBrowserAttribute("ColumnDefinitions"),
+        CreateBrowserAttribute("Content"),
+        CreateBrowserAttribute("DataContext"),
+        CreateBrowserAttribute("DockPanel.Dock"),
+        CreateBrowserAttribute("FontFamily"),
+        CreateBrowserAttribute("FontSize"),
+        CreateBrowserAttribute("Foreground"),
+        CreateBrowserAttribute("Grid.Column"),
+        CreateBrowserAttribute("Grid.ColumnSpan"),
+        CreateBrowserAttribute("Grid.Row"),
+        CreateBrowserAttribute("Grid.RowSpan"),
+        CreateBrowserAttribute("Height"),
+        CreateBrowserAttribute("HorizontalAlignment"),
+        CreateBrowserAttribute("IsChecked"),
+        CreateBrowserAttribute("IsEnabled"),
+        CreateBrowserAttribute("ItemsSource"),
+        CreateBrowserAttribute("Margin"),
+        CreateBrowserAttribute("MaxHeight"),
+        CreateBrowserAttribute("MaxWidth"),
+        CreateBrowserAttribute("MinHeight"),
+        CreateBrowserAttribute("MinWidth"),
+        CreateBrowserAttribute("Name"),
+        CreateBrowserAttribute("Padding"),
+        CreateBrowserAttribute("PlaceholderText"),
+        CreateBrowserAttribute("RowDefinitions"),
+        CreateBrowserAttribute("SelectedIndex"),
+        CreateBrowserAttribute("Spacing"),
+        CreateBrowserAttribute("Text"),
+        CreateBrowserAttribute("VerticalAlignment"),
+        CreateBrowserAttribute("Width"),
+        CreateBrowserAttribute("x:DataType"),
+        CreateBrowserAttribute("x:Key"),
+        CreateBrowserAttribute("x:Name")
+    ];
+
     public ImmutableArray<XamlCompletionItem> GetCompletions(XamlAnalysisResult analysis, SourcePosition position)
     {
         if (XamlInlineCSharpCompletionService.TryGetCompletions(analysis, position, out var inlineCodeCompletions))
@@ -85,6 +157,7 @@ public sealed class XamlCompletionService
     {
         if (typeIndex is null)
         {
+            AddBrowserElementCompletions(completions, context.Token);
             return;
         }
 
@@ -157,6 +230,7 @@ public sealed class XamlCompletionService
 
         if (string.IsNullOrWhiteSpace(context.CurrentElementName) || analysis.TypeIndex is null)
         {
+            AddBrowserAttributeCompletions(completions, context.Token);
             return;
         }
 
@@ -360,6 +434,51 @@ public sealed class XamlCompletionService
         return BaseMarkupExtensionCompletions.AddRange(MapFrameworkCompletions(
             framework.MarkupExtensionCompletions,
             XamlCompletionItemKind.MarkupExtension));
+    }
+
+    private static void AddBrowserElementCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder completions,
+        string token)
+    {
+        AddMatchingBrowserCompletions(completions, BrowserElementCompletions, token);
+    }
+
+    private static void AddBrowserAttributeCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder completions,
+        string token)
+    {
+        AddMatchingBrowserCompletions(completions, BrowserAttributeCompletions, token);
+    }
+
+    private static void AddMatchingBrowserCompletions(
+        ImmutableArray<XamlCompletionItem>.Builder completions,
+        ImmutableArray<XamlCompletionItem> candidates,
+        string token)
+    {
+        var typedName = XamlXmlNamespaceResolver.SplitQualifiedName(token).TypeName;
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrEmpty(typedName) ||
+                candidate.Label.StartsWith(typedName, StringComparison.OrdinalIgnoreCase))
+            {
+                completions.Add(candidate);
+            }
+        }
+    }
+
+    private static XamlCompletionItem CreateBrowserElement(string name)
+    {
+        return new XamlCompletionItem(name, name, XamlCompletionItemKind.Element, "Avalonia control");
+    }
+
+    private static XamlCompletionItem CreateBrowserAttribute(string name)
+    {
+        return new XamlCompletionItem(
+            name,
+            name + "=\"$0\"",
+            XamlCompletionItemKind.Property,
+            "Avalonia property",
+            InsertTextIsSnippet: true);
     }
 
     private static ImmutableArray<XamlCompletionItem> MapFrameworkCompletions(

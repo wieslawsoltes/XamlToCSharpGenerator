@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(XamlToCSharpGeneratorEnableBrowserTarget)' == 'true'">net10.0;net10.0-browser</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Editor.Avalonia</PackageId>
     <Description>AvaloniaEdit-based AXAML editor control powered by XamlToCSharpGenerator language service.</Description>
@@ -8,9 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.12" />
-    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
-    <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="$(AvaloniaEditVersion)" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="$(AvaloniaEditTextMateVersion)" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
