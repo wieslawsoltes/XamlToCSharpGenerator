@@ -1,16 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net10.0-browser</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>XamlToCSharpGenerator.Editor.Avalonia</PackageId>
     <Description>AvaloniaEdit-based AXAML editor control powered by XamlToCSharpGenerator language service.</Description>
     <PackageTags>$(PackageTags);avalonia;avaloniaedit;editor;ide</PackageTags>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-browser'">
     <PackageReference Include="Avalonia" Version="11.3.12" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
     <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-browser'">
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="$(AvaloniaEditVersion)" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="$(AvaloniaEditTextMateVersion)" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' != 'true'">
@@ -19,7 +25,7 @@
 
   <ItemGroup Condition="'$(ApiDocumentationBuild)' == 'true'">
     <Reference Include="XamlToCSharpGenerator.LanguageService">
-      <HintPath>..\XamlToCSharpGenerator.LanguageService\bin\$(Configuration)\net10.0\XamlToCSharpGenerator.LanguageService.dll</HintPath>
+      <HintPath>..\XamlToCSharpGenerator.LanguageService\bin\$(Configuration)\$(TargetFramework)\XamlToCSharpGenerator.LanguageService.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
